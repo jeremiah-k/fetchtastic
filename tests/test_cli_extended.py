@@ -285,7 +285,7 @@ def test_cli_download_config_migration_failure(mocker, capsys):
 @pytest.mark.unit
 def test_cli_download_config_load_failure(mocker):
     """Test CLI download command when config loading fails after migration."""
-    # Mock successful migration but config load fails
+    # Mock successful migration but config load fails (returns None)
     mocker.patch(
         "fetchtastic.setup_config.config_exists",
         side_effect=[
@@ -299,7 +299,7 @@ def test_cli_download_config_load_failure(mocker):
     mocker.patch("fetchtastic.setup_config.migrate_config", return_value=True)
     mocker.patch(
         "fetchtastic.setup_config.load_config",
-        side_effect=ValueError("Config load failed"),
+        return_value=None,  # Config load fails - now returns None instead of raising
     )
     mocker.patch("builtins.input", side_effect=EOFError)
 
@@ -307,7 +307,7 @@ def test_cli_download_config_load_failure(mocker):
         try:
             cli.main()
         except SystemExit:
-            pass  # Expected
+            pass  # Expected - CLI should exit when config is None
 
     # Should handle the config load failure gracefully
 
@@ -580,7 +580,7 @@ def test_cli_topic_command_clipboard_failure(mocker, capsys):
 
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
     mocker.patch("builtins.input", return_value="y")  # Try to copy
-    mocker.patch("fetchtastic.setup_config.copy_to_clipboard_func", return_value=False)
+    mocker.patch("fetchtastic.cli.copy_to_clipboard_func", return_value=False)
 
     with patch("sys.argv", ["fetchtastic", "topic"]):
         cli.main()
