@@ -628,8 +628,8 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
     print("  [g] github         — GitHub API token (rate-limit boost)")
 
     while True:
-        response = input(
-            "Selection (examples: f, android; default: full setup): "
+        response = _safe_input(
+            "Selection (examples: f, android; default: full setup): ", default=""
         ).strip()
         if not response:
             return None
@@ -940,8 +940,8 @@ def configure_exclude_patterns(config: Dict[str, Any]) -> None:
             )
 
             if add_more:
-                additional_patterns = input(
-                    "Enter additional patterns (space-separated): "
+                additional_patterns = _safe_input(
+                    "Enter additional patterns (space-separated): ", default=""
                 ).strip()
                 if additional_patterns:
                     exclude_patterns.extend(additional_patterns.split())

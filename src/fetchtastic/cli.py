@@ -464,11 +464,9 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            try:
-                resp = input(copy_prompt_text)
-            except EOFError:
-                resp = ""
-            resp = (resp or "y").strip().lower()
+            resp = (
+                setup_config._safe_input(copy_prompt_text, default="y").strip().lower()
+            )
             if resp in {"y", "yes"}:
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
@@ -634,15 +632,14 @@ def run_clean():
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
-    try:
-        confirm = (
-            input("Are you sure you want to proceed? [y/n] (default: no): ")
-            .strip()
-            .lower()
-            or "n"
+    confirm = (
+        setup_config._safe_input(
+            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
         )
-    except EOFError:
-        confirm = "n"
+        .strip()
+        .lower()
+        or "n"
+    )
     if confirm != "y":
         print("Clean operation cancelled.")
         return
@@ -866,7 +863,11 @@ def run_repo_clean(config):
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )
     confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
+        setup_config._safe_input(
+            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
+        )
+        .strip()
+        .lower()
         or "n"
     )
     if confirm != "y":
