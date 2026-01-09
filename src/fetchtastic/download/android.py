@@ -633,6 +633,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 or (),
                 reverse=True,
             )
+            if not stable_releases:
+                logger.debug(
+                    "Skipping APK cleanup because no stable releases are available."
+                )
+                return
             prerelease_releases = self.handle_prereleases(cached_releases)
 
             def _build_expected_set(
