@@ -420,7 +420,7 @@ def test_load_config_new_location(tmp_path, mocker):
 
     config_data = {"SAVE_APKS": True}
     with open(new_config_path, "w") as f:
-        yaml.dump(config_data, f)
+        yaml.safe_dump(config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -439,7 +439,7 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
     # Create config in old location
     config_data = TEST_CONFIG.copy()
     with open(old_config_path, "w") as f:
-        yaml.dump(config_data, f)
+        yaml.safe_dump(config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -641,7 +641,7 @@ def test_load_config_old_location(tmp_path, mocker):
 
     config_data = {"SAVE_FIRMWARE": True}
     with open(old_config_path, "w") as f:
-        yaml.dump(config_data, f)
+        yaml.safe_dump(config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -660,9 +660,9 @@ def test_load_config_prefers_new_location(tmp_path, mocker):
     new_config_data = {"key": "new"}
     old_config_data = {"key": "old"}
     with open(new_config_path, "w") as f:
-        yaml.dump(new_config_data, f)
+        yaml.safe_dump(new_config_data, f)
     with open(old_config_path, "w") as f:
-        yaml.dump(old_config_data, f)
+        yaml.safe_dump(old_config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -680,7 +680,7 @@ def test_migrate_config(tmp_path, mocker):
     # Create an old config file
     old_config_data = {"key": "to_be_migrated"}
     with open(old_config_path, "w") as f:
-        yaml.dump(old_config_data, f)
+        yaml.safe_dump(old_config_data, f)
 
     # Run migration
     assert setup_config.migrate_config() is True

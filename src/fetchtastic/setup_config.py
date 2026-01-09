@@ -257,7 +257,6 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
             return True
         if normalized in {"n", "no", "false", "f", "0", "off"}:
             return False
-        return default
     return default
 
 
@@ -273,10 +272,12 @@ def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
     """
     try:
         with open(path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f) or {}
+            config = yaml.safe_load(f)
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         logger.error("Error loading config %s: %s", path, exc)
         return None
+    if config is None:
+        config = {}
     if not isinstance(config, dict):
         logger.error(
             "Invalid config %s: expected YAML mapping, got %s",
@@ -374,7 +375,12 @@ def migrate_pip_to_pipx() -> bool:
     print()
 
     migrate = (
-        input("Do you want to migrate to pipx? [y/n] (default: yes): ").strip().lower()
+        _safe_input(
+            "Do you want to migrate to pipx? [y/n] (default: yes): ",
+            default="y",
+        )
+        .strip()
+        .lower()
         or "y"
     )
     if not _coerce_bool(migrate, default=True):
@@ -590,7 +596,7 @@ def check_storage_setup() -> bool:
             # Run termux-setup-storage
             setup_storage()
             print("Please grant storage permissions when prompted.")
-            input("Press Enter after granting storage permissions to continue...")
+            _safe_input("Press Enter after granting storage permissions to continue...")
             # Re-check if storage is set up
             continue
 
@@ -746,6 +752,14 @@ def _setup_downloads(
                 config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
                     "selected_assets"
                 ]
+        elif not config.get("SELECTED_FIRMWARE_ASSETS"):
+            print(
+                "No existing firmware selection found. Firmware will not be downloaded."
+            )
+            save_firmware = False
+            config["SAVE_FIRMWARE"] = False
+            config["SELECTED_FIRMWARE_ASSETS"] = []
+            config["CHECK_PRERELEASES"] = False
 
     # --- Firmware Pre-release Configuration ---
     if save_firmware and (not is_partial_run or wants("firmware")):
@@ -1159,8 +1173,9 @@ def _prompt_for_cron_frequency() -> str:
     }
     while True:
         cron_choice = (
-            input(
-                "How often should Fetchtastic check for updates? [h/d/n] (h=hourly, d=daily, n=none, default: hourly): "
+            _safe_input(
+                "How often should Fetchtastic check for updates? [h/d/n] (h=hourly, d=daily, n=none, default: hourly): ",
+                default="h",
             )
             .strip()
             .lower()
@@ -1203,8 +1218,9 @@ def _setup_automation(
 
                 if os.path.exists(startup_shortcut_path):
                     startup_option = (
-                        input(
-                            "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
+                        _safe_input(
+                            "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): ",
+                            default="n",
                         )
                         .strip()
                         .lower()
@@ -1234,8 +1250,9 @@ def _setup_automation(
                         )
                 else:
                     startup_option = (
-                        input(
-                            "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
+                        _safe_input(
+                            "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): ",
+                            default="y",
                         )
                         .strip()
                         .lower()
@@ -1265,8 +1282,9 @@ def _setup_automation(
             cron_job_exists = check_cron_job_exists()
             if cron_job_exists:
                 cron_prompt = (
-                    input(
-                        "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+                    _safe_input(
+                        "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): ",
+                        default="n",
                     )
                     .strip()
                     .lower()
@@ -1289,8 +1307,9 @@ def _setup_automation(
             boot_script_exists = check_boot_script_exists()
             if boot_script_exists:
                 boot_prompt = (
-                    input(
-                        "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+                    _safe_input(
+                        "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): ",
+                        default="n",
                     )
                     .strip()
                     .lower()
@@ -1308,10 +1327,11 @@ def _setup_automation(
                     print("Boot script configuration left unchanged.")
             else:
                 # Ask if the user wants to set up a boot script
-                boot_default = "yes"  # Default to 'yes'
+                boot_default = "yes"
                 setup_boot = (
-                    input(
-                        f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
+                    _safe_input(
+                        f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): ",
+                        default=boot_default[0],
                     )
                     .strip()
                     .lower()
@@ -1333,8 +1353,9 @@ def _setup_automation(
             any_cron_jobs_exist = check_cron_job_exists() or check_any_cron_jobs_exist()
             if any_cron_jobs_exist:
                 cron_prompt = (
-                    input(
-                        "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
+                    _safe_input(
+                        "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): ",
+                        default="n",
                     )
                     .strip()
                     .lower()
@@ -1352,8 +1373,9 @@ def _setup_automation(
                     # Ask if they want to set up a reboot cron job
                     boot_default = "yes"
                     setup_reboot = (
-                        input(
-                            f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
+                        _safe_input(
+                            f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): ",
+                            default=boot_default[0],
                         )
                         .strip()
                         .lower()
@@ -1406,8 +1428,9 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
     notifications_default = "yes" if has_ntfy_config else "no"
 
     notifications = (
-        input(
-            f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
+        _safe_input(
+            f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ",
+            default=notifications_default[0],
         )
         .strip()
         .lower()
@@ -1418,7 +1441,10 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
         # Get NTFY server
         current_server = config.get("NTFY_SERVER", "ntfy.sh")
         ntfy_server = (
-            input(f"Enter the NTFY server (current: {current_server}): ").strip()
+            _safe_input(
+                f"Enter the NTFY server (current: {current_server}): ",
+                default=str(current_server),
+            ).strip()
             or current_server
         )
 
@@ -1436,7 +1462,10 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             )
 
         topic_name = (
-            input(f"Enter a unique topic name (current: {current_topic}): ").strip()
+            _safe_input(
+                f"Enter a unique topic name (current: {current_topic}): ",
+                default=current_topic,
+            ).strip()
             or current_topic
         )
 
@@ -1464,7 +1493,9 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
             text_to_copy = full_topic_url
 
-        copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
+        copy_to_clipboard = (
+            _safe_input(copy_prompt_text, default="y").strip().lower() or "y"
+        )
         if copy_to_clipboard == "y":
             success = copy_to_clipboard_func(text_to_copy)
             if success:
@@ -1480,8 +1511,9 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
         )
         notify_on_download_only = (
-            input(
-                f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
+            _safe_input(
+                f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): ",
+                default=notify_on_download_only_default[0],
             )
             .strip()
             .lower()
@@ -1554,7 +1586,10 @@ def _setup_github(config: Dict[str, Any]) -> Dict[str, Any]:
         masked_token = current_token[:4] + "..." if len(current_token) > 4 else "***"
         print(f"Current status: Token configured ({masked_token})")
         change_choice = (
-            input("Would you like to change the GitHub token? [y/n] (default: no): ")
+            _safe_input(
+                "Would you like to change the GitHub token? [y/n] (default: no): ",
+                default="n",
+            )
             .strip()
             .lower()
         )
@@ -1566,7 +1601,10 @@ def _setup_github(config: Dict[str, Any]) -> Dict[str, Any]:
 
     print()
     setup_choice = (
-        input("Would you like to set up a GitHub token now? [y/n] (default: no): ")
+        _safe_input(
+            "Would you like to set up a GitHub token now? [y/n] (default: no): ",
+            default="n",
+        )
         .strip()
         .lower()
     )
@@ -1669,7 +1707,10 @@ def _setup_base(
             print("=" * 60)
 
             migrate_to_pipx = (
-                input("Would you like to migrate to pipx now? [y/n] (default: no): ")
+                _safe_input(
+                    "Would you like to migrate to pipx now? [y/n] (default: no): ",
+                    default="n",
+                )
                 .strip()
                 .lower()
                 or "n"
@@ -1810,8 +1851,9 @@ def _setup_base(
                 )
             else:
                 create_menu = (
-                    input(
-                        "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
+                    _safe_input(
+                        "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): ",
+                        default="y",
                     )
                     .strip()
                     .lower()
@@ -1961,7 +2003,7 @@ def run_setup(
 
     # Persist configuration after all interactive sections
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        yaml.dump(config, f)
+        yaml.safe_dump(config, f)
     print(f"Configuration saved to: {CONFIG_FILE}")
 
     if not is_partial_run and perform_initial_download:
@@ -1977,12 +2019,13 @@ def run_setup(
                 "COMSPEC", ""
             ):
                 print("\nPress Enter to close this window...")
-                input()
+                _safe_input("")
         else:
             # On other platforms, offer to run it now
             perform_first_run = (
-                input(
-                    "Would you like to start the first run now? [y/n] (default: yes): "
+                _safe_input(
+                    "Would you like to start the first run now? [y/n] (default: yes): ",
+                    default="y",
                 )
                 .strip()
                 .lower()
@@ -2147,7 +2190,7 @@ def migrate_config() -> bool:
     # Save to new location
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            yaml.dump(config, f)
+            yaml.safe_dump(config, f)
 
         # Remove the old file after successful migration
         try:

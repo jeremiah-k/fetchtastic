@@ -304,10 +304,8 @@ def test_cli_download_config_load_failure(mocker):
     mocker.patch("builtins.input", side_effect=EOFError)
 
     with patch("sys.argv", ["fetchtastic", "download"]):
-        try:
+        with pytest.raises(SystemExit):
             cli.main()
-        except SystemExit:
-            pass  # Expected - CLI should exit when config is None
 
     # Should handle the config load failure gracefully
 
