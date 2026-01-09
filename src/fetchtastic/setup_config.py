@@ -1396,8 +1396,9 @@ def _setup_automation(
                 # Ask if they want to set up a reboot cron job
                 boot_default = "yes"
                 setup_reboot = (
-                    input(
-                        f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
+                    _safe_input(
+                        f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): ",
+                        default=boot_default[0],
                     )
                     .strip()
                     .lower()
@@ -1528,8 +1529,9 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
         if has_ntfy_config:
             # Ask for confirmation to disable existing notifications
             disable_confirm = (
-                input(
-                    "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
+                _safe_input(
+                    "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): ",
+                    default="n",
                 )
                 .strip()
                 .lower()
@@ -1953,8 +1955,9 @@ def run_setup(
         if not is_partial_run or wants("base"):
             wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
             wifi_only = (
-                input(
-                    f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
+                _safe_input(
+                    f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): ",
+                    default=wifi_only_default[0],
                 )
                 .strip()
                 .lower()

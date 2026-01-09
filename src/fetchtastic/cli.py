@@ -116,6 +116,8 @@ def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]
         try:
             config = setup_config.load_config()
         except Exception:
+            # Catch all exceptions - load_config can fail in various ways
+            # (YAML parsing, I/O, permissions) and we want to handle all gracefully
             log_utils.logger.exception("Failed to load configuration.")
             config = None
     else:
