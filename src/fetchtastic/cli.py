@@ -115,10 +115,14 @@ def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]
     if exists:
         try:
             config = setup_config.load_config()
-        except Exception:
-            # Catch all exceptions - load_config can fail in various ways
-            # (YAML parsing, I/O, permissions) and we want to handle all gracefully
-            log_utils.logger.exception("Failed to load configuration.")
+        except (
+            OSError,
+            UnicodeDecodeError,
+            TypeError,
+            ValueError,
+            yaml.YAMLError,
+        ) as exc:
+            log_utils.logger.exception("Failed to load configuration: %s", exc)
             config = None
     else:
         config = None
@@ -621,13 +625,24 @@ def run_clean():
             "Clean operation requires an interactive terminal; aborting."
         )
         return
+    # Load config (if present) before deleting config files so BASE_DIR is accurate.
+    loaded_config = setup_config.load_config()
+    download_dir_from_config = None
+    if loaded_config:
+        download_dir_from_config = loaded_config.get("BASE_DIR")
+
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
-    confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
-        or "n"
-    )
+    try:
+        confirm = (
+            input("Are you sure you want to proceed? [y/n] (default: no): ")
+            .strip()
+            .lower()
+            or "n"
+        )
+    except EOFError:
+        confirm = "n"
     if confirm != "y":
         print("Clean operation cancelled.")
         return
@@ -749,7 +764,7 @@ def run_clean():
                 )
 
             # Remove config shortcut in base directory
-            download_dir = setup_config.BASE_DIR
+            download_dir = download_dir_from_config or setup_config.BASE_DIR
             config_shortcut_path = os.path.join(download_dir, WINDOWS_SHORTCUT_FILE)
             if os.path.exists(config_shortcut_path):
                 try:
@@ -762,7 +777,7 @@ def run_clean():
                     )
 
     # Remove only managed directories from download directory
-    download_dir = setup_config.BASE_DIR
+    download_dir = download_dir_from_config or setup_config.BASE_DIR
 
     def _remove_managed_file(item_path: str) -> None:
         """

@@ -1791,7 +1791,7 @@ def _setup_base(
 
     if not is_partial_run or wants("base"):
         # Prompt for base directory
-        base_dir_input = input(base_dir_prompt).strip()
+        base_dir_input = _safe_input(base_dir_prompt, default="").strip()
 
         if base_dir_input:
             # User entered a custom directory
@@ -1844,8 +1844,9 @@ def _setup_base(
             # Check if Start Menu shortcuts already exist
             if os.path.exists(WINDOWS_START_MENU_FOLDER):
                 create_menu = (
-                    input(
-                        "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): "
+                    _safe_input(
+                        "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): ",
+                        default="y",
                     )
                     .strip()
                     .lower()
