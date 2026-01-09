@@ -198,7 +198,7 @@ SECTION_SHORTCUTS = {
 def is_termux() -> bool:
     """
     Determine whether the current process is running under Termux.
-    
+
     Returns:
         bool: True if the `PREFIX` environment variable contains "com.termux", False otherwise.
     """
@@ -208,15 +208,15 @@ def is_termux() -> bool:
 def _coerce_bool(value: Any, default: bool = False) -> bool:
     """
     Normalize a variety of common truthy and falsey representations to a boolean.
-    
+
     Accepts booleans, integers, and common string forms such as "y"/"yes", "n"/"no",
     "true"/"false", "1"/"0", and "on"/"off". If the input cannot be interpreted,
     returns the provided default.
-    
+
     Parameters:
         value (Any): The value to coerce to bool.
         default (bool): Value to return when `value` is unrecognized (defaults to False).
-    
+
     Returns:
         bool: `True` if `value` represents truth, `False` if it represents falsehood,
         or `default` when the representation is unrecognized.
@@ -225,7 +225,7 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
         return value
     if value is None:
         return default
-    if isinstance(value, int):
+    if isinstance(value, (int, float)):
         return value != 0
     if isinstance(value, str):
         normalized = value.strip().lower()
@@ -240,9 +240,9 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
 def is_fetchtastic_installed_via_pip() -> bool:
     """
     Determine whether Fetchtastic is installed via the system `pip` command.
-    
+
     If the `pip` command is unavailable or the check fails, this function returns False.
-    
+
     Returns:
         True if 'fetchtastic' appears in `pip list` output, False otherwise.
     """
@@ -297,9 +297,9 @@ def get_fetchtastic_installation_method() -> str:
 def migrate_pip_to_pipx() -> bool:
     """
     Migrate a Termux-installed Fetchtastic package from pip to pipx while preserving the user's configuration.
-    
+
     This is an interactive operation that runs only on Termux. It prompts the user for confirmation, ensures pipx is available, uninstalls the pip-installed Fetchtastic package, installs Fetchtastic with pipx, and restores the backed-up configuration file if present. If Fetchtastic is not installed via pip, the function treats migration as unnecessary and exits successfully.
-    
+
     Returns:
         bool: `True` if migration completed successfully, `False` otherwise.
     """
