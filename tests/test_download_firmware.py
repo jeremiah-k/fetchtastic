@@ -1044,17 +1044,17 @@ class TestFirmwareReleaseDownloader:
         assert storage_tag in {"v1.0.1-alpha", "v1.0.1-beta"}
 
     def test_get_storage_tag_candidates_with_suffixes_disabled(self, downloader):
-        """Channel suffixes should not be generated when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
-        # Without ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES enabled, no channel suffixes are added
+        """Suffix candidates should remain discoverable when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
+        # Even with suffixes disabled, discovery should include legacy channel directories.
         downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
         release = Release(tag_name="v1.0.2", prerelease=False)
         candidates = downloader._get_storage_tag_candidates(release, "v1.0.2")
 
-        # Standard suffixes (alpha, beta, rc) should not be present
-        # when feature is disabled
-        assert "v1.0.2-alpha" not in candidates
-        assert "v1.0.2-beta" not in candidates
-        assert "v1.0.2-rc" not in candidates
+        # Standard suffixes (alpha, beta, rc) should remain discoverable.
+        assert "v1.0.2-alpha" in candidates
+        assert "v1.0.2-beta" in candidates
+        assert "v1.0.2-rc" in candidates
+        assert "v1.0.2-revoked" in candidates
 
     def test_is_release_complete_unsafe_tag(self, downloader):
         """Unsafe tags should return False during completeness checks."""
