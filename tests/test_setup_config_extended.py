@@ -186,8 +186,8 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
 
     result = setup_config.migrate_pip_to_pipx()
 
-    # Should still attempt migration despite backup failure
-    assert result is True
+    # Migration should be aborted when backup fails
+    assert result is False
 
 
 @pytest.mark.configuration

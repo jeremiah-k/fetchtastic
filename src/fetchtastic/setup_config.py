@@ -370,7 +370,9 @@ def migrate_pip_to_pipx() -> bool:
                     config_backup = f.read()
                 print("   Configuration backed up.")
             except (OSError, UnicodeDecodeError) as exc:
-                print(f"   Warning: Could not back up configuration: {exc}")
+                print(f"   Error: Could not back up configuration: {exc}")
+                print("   Aborting migration to prevent data loss.")
+                return False
         else:
             print("   No existing configuration found.")
 
