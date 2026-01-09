@@ -456,57 +456,37 @@ class TestFirmwareReleaseDownloader:
         self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup when release tags contain unsafe characters."""
-        # Mock _get_release_storage_tag to raise for unsafe tags
-        with patch.object(downloader, "_get_release_storage_tag") as mock_storage_tag:
-            mock_exists.return_value = True
+        mock_exists.return_value = True
 
-            # Create mock directory entries for os.scandir
-            mock_v1 = Mock()
-            mock_v1.name = "v1.0.0"
-            mock_v1.is_symlink.return_value = False
-            mock_v1.is_dir.return_value = True
-            mock_v1.path = "/mock/firmware/v1.0.0"
+        # Create mock directory entries for os.scandir
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0"
 
-            mock_v2 = Mock()
-            mock_v2.name = "v2.0.0"
-            mock_v2.is_symlink.return_value = False
-            mock_v2.is_dir.return_value = True
-            mock_v2.path = "/mock/firmware/v2.0.0"
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0"
 
-            mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
 
-            def _storage_tag_side_effect(release):
-                """
-                Map a safe release to its storage tag or raise an error for unsafe tags.
+        downloader.get_releases = Mock(
+            return_value=[
+                Release(tag_name="v1.0.0"),
+                Release(tag_name="../../../unsafe"),
+            ]
+        )
 
-                Parameters:
-                    release: An object with a `tag_name` attribute representing the release tag.
+        downloader.cleanup_old_versions(keep_limit=2)
 
-                Returns:
-                    str: The storage tag corresponding to the provided release.
-
-                Raises:
-                    ValueError: If the release tag is considered unsafe.
-                """
-                if release.tag_name == "v1.0.0":
-                    return "v1.0.0"
-                raise ValueError("Unsafe release tag")
-
-            mock_storage_tag.side_effect = _storage_tag_side_effect
-            downloader.get_releases = Mock(
-                return_value=[
-                    Release(tag_name="v1.0.0"),
-                    Release(tag_name="../../../unsafe"),
-                ]
-            )
-
-            downloader.cleanup_old_versions(keep_limit=2)
-
-            # Should remove v2.0.0 since only v1.0.0 is safe
-            mock_rmtree.assert_called_once()
-            args = mock_rmtree.call_args[0][0]
-            assert "v2.0.0" in args
-            # Warning is logged but caplog testing is optional
+        # Should remove v2.0.0 since only v1.0.0 is safe
+        mock_rmtree.assert_called_once()
+        args = mock_rmtree.call_args[0][0]
+        assert "v2.0.0" in args
+        # Warning is logged but caplog testing is optional
 
     @patch("os.path.exists")
     @patch("os.scandir")

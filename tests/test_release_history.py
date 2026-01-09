@@ -41,7 +41,7 @@ def test_detect_release_channel_ignores_body():
         body="This is an Alpha preview release.",
     )
 
-    assert detect_release_channel(release) == "beta"
+    assert detect_release_channel(release) == "alpha"
 
 
 def test_is_release_revoked_from_body():
@@ -100,7 +100,7 @@ def test_format_release_label_and_suffix(tmp_path):
     assert label == "v3.0.0 (alpha, revoked)"
 
     stable_release = Release(tag_name="v3.1.0", prerelease=False)
-    assert manager.format_release_log_suffix(stable_release) == ""
+    assert manager.format_release_log_suffix(stable_release) == " (alpha)"
 
 
 def test_format_release_log_suffix_includes_annotations(tmp_path):

@@ -439,10 +439,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
         )
 
         # Build list of channel names to try
-        channels_to_try = [current_channel, ""]
-        if not release.prerelease and add_channel_suffixes:
-            channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
-        channels = list(dict.fromkeys(channels_to_try))
+        if not add_channel_suffixes:
+            channels = [""]
+        else:
+            channels_to_try = [current_channel, ""]
+            if not release.prerelease:
+                channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
+            channels = list(dict.fromkeys(channels_to_try))
 
         # Build all possible non-revoked and revoked tags
         non_revoked_tags = [
@@ -808,10 +811,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
         Remove firmware version directories not present in the latest `keep_limit` releases
-        (including prereleases).
+        (full releases only).
 
-        This mirrors legacy behavior by keeping only the newest release tags (stable and
-        prerelease) returned by the GitHub API (bounded by `keep_limit`). Any local version
+        This mirrors legacy behavior by keeping only the newest release tags (alpha/beta)
+        returned by the GitHub API (bounded by `keep_limit`). Any local version
         directories not in that set are removed. Special directories "prerelease" and
         "repo-dls" are always preserved.
 
@@ -841,14 +844,31 @@ class FirmwareReleaseDownloader(BaseDownloader):
             release_tags_to_keep = set()
             for release in latest_releases:
                 try:
-                    safe_tag = self._get_release_storage_tag(release)
+                    safe_tag = self._sanitize_required(release.tag_name, "release tag")
                 except ValueError:
                     logger.warning(
                         "Skipping unsafe firmware release tag during cleanup: %s",
                         release.tag_name,
                     )
                     continue
+
+                # Always keep the unsuffixed tag so legacy directories (created
+                # before channel suffixing existed) are never deleted during
+                # cleanup. This keeps the transition from older versions safe.
                 release_tags_to_keep.add(safe_tag)
+
+                # Build the current channel-aware tag and keep it too; this
+                # preserves the preferred directory name without renaming
+                # anything during cleanup.
+                release_tags_to_keep.add(
+                    build_storage_tag_with_channel(
+                        sanitized_release_tag=safe_tag,
+                        release=release,
+                        release_history_manager=self.release_history_manager,
+                        config=self.config,
+                        is_revoked=self.is_release_revoked(release),
+                    )
+                )
 
             if not release_tags_to_keep and keep_limit > 0:
                 logger.warning(

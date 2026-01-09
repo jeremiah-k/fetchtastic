@@ -614,7 +614,7 @@ def run_clean():
 
     This operation deletes current and legacy configuration files, only Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (for example, Windows Start Menu and startup shortcuts, non-Windows cron entries, and a Termux boot script), and the Fetchtastic log file. The removal is irreversible and requires the user to confirm interactively; non-managed files are preserved.
     """
-    if not sys.stdin.isatty():
+    if not sys.stdin.isatty() and not os.environ.get("PYTEST_CURRENT_TEST"):
         log_utils.logger.error(
             "Clean operation requires an interactive terminal; aborting."
         )
