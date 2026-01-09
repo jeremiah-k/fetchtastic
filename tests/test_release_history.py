@@ -119,15 +119,23 @@ def test_format_release_label_includes_channel_when_present(tmp_path):
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     history_path = cache_manager.get_cache_file_path("release_history_channel")
     manager = ReleaseHistoryManager(cache_manager, history_path)
-    release = Release(
-        tag_name="v4.0.0",
-        prerelease=False,
-        name="Meshtastic Firmware 4.0.0 Beta",
-    )
+    release = Release(tag_name="v4.0.0", prerelease=False)
+    manager.get_release_channel = lambda _release: "beta"
 
     assert (
         manager.format_release_label(release, include_status=False) == "v4.0.0 (beta)"
     )
+
+
+def test_format_release_label_skips_empty_channel(tmp_path):
+    # Ensure empty channel values do not add an annotation.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_no_channel")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    release = Release(tag_name="v4.1.0", prerelease=False)
+    manager.get_release_channel = lambda _release: ""
+
+    assert manager.format_release_label(release, include_status=False) == "v4.1.0"
 
 
 def test_log_release_status_entry_includes_channel_and_status(tmp_path, mocker):
@@ -142,6 +150,24 @@ def test_log_release_status_entry_includes_channel_and_status(tmp_path, mocker):
             "tag_name": "v5.0.0",
             "channel": "alpha",
             "status": "revoked",
+        }
+    )
+
+    assert mock_logger.info.called
+
+
+def test_log_release_status_entry_skips_empty_parts(tmp_path, mocker):
+    # Cover the empty channel/status branches in the logger helper.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_log_empty")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    mock_logger = mocker.patch("fetchtastic.download.release_history.logger")
+
+    manager._log_release_status_entry(
+        {
+            "tag_name": "v6.0.0",
+            "channel": "",
+            "status": "",
         }
     )
 

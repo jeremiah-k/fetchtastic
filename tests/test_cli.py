@@ -1416,6 +1416,18 @@ def test_run_clean_cancelled(mocker):
     mock_print.assert_any_call("Clean operation cancelled.")
 
 
+def test_run_clean_requires_tty(mocker, monkeypatch):
+    """Non-interactive sessions should abort clean operations."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mocker.patch("builtins.input")
+
+    cli.run_clean()
+
+    mock_logger.error.assert_called_once()
+
+
 def test_run_clean_user_says_no_explicitly(mocker):
     """Test run_clean when user explicitly says no."""
     mocker.patch("builtins.input", return_value="no")

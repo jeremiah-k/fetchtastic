@@ -2,6 +2,7 @@
 
 import functools
 import getpass
+import math
 import os
 import platform
 import random
@@ -226,6 +227,8 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
     if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return default
         return value != 0
     if isinstance(value, str):
         normalized = value.strip().lower()
@@ -327,7 +330,7 @@ def migrate_pip_to_pipx() -> bool:
         input("Do you want to migrate to pipx? [y/n] (default: yes): ").strip().lower()
         or "y"
     )
-    if migrate != "y":
+    if not _coerce_bool(migrate, default=True):
         print("Migration cancelled. You can continue using pip, but we recommend pipx.")
         return False
 
@@ -408,7 +411,7 @@ def migrate_pip_to_pipx() -> bool:
 
         return True
 
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError) as e:
         print(f"Migration failed with error: {e}")
         print("You can continue using the pip installation.")
         return False
@@ -666,14 +669,14 @@ def _setup_downloads(
         rerun_menu = True
         if is_partial_run:
             if config.get("SELECTED_FIRMWARE_ASSETS"):
-                keep_existing = (
+                rerun_menu_choice = (
                     input(
                         "Re-run the firmware asset selection menu? [y/n] (default: yes): "
                     )
                     .strip()
                     .lower()
                 )
-                if not _coerce_bool(keep_existing, default=True):
+                if not _coerce_bool(rerun_menu_choice, default=True):
                     rerun_menu = False
         if rerun_menu:
             firmware_selection = menu_firmware.run_menu()
@@ -703,12 +706,12 @@ def _setup_downloads(
     if save_apks and (not is_partial_run or wants("android")):
         rerun_menu = True
         if is_partial_run:
-            keep_existing = (
+            rerun_menu_choice = (
                 input("Re-run the Android APK selection menu? [y/n] (default: yes): ")
                 .strip()
                 .lower()
             )
-            if not _coerce_bool(keep_existing, default=True):
+            if not _coerce_bool(rerun_menu_choice, default=True):
                 rerun_menu = False
         if rerun_menu:
             apk_selection = menu_apk.run_menu()
@@ -2052,8 +2055,14 @@ def migrate_config() -> bool:
     # Load the old config
     try:
         with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-    except Exception as e:
+            config = yaml.safe_load(f) or {}
+        if not isinstance(config, dict):
+            logger.error(
+                "Error loading old config: expected YAML mapping, got %s",
+                type(config).__name__,
+            )
+            return False
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
         logger.error(f"Error loading old config: {e}")
         return False
 
@@ -3041,7 +3050,9 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             return None
 
         with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
+            config = yaml.safe_load(f) or {}
+        if not isinstance(config, dict):
+            return None
 
         # Update global variables
         BASE_DIR = directory
@@ -3056,7 +3067,9 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         # First check if config exists in the platformdirs location
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f)
+                config = yaml.safe_load(f) or {}
+            if not isinstance(config, dict):
+                return None
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:
@@ -3067,7 +3080,9 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         # Then check the old location
         elif os.path.exists(OLD_CONFIG_FILE):
             with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f)
+                config = yaml.safe_load(f) or {}
+            if not isinstance(config, dict):
+                return None
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:

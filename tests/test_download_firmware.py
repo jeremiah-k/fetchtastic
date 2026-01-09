@@ -486,6 +486,7 @@ class TestFirmwareReleaseDownloader:
         mock_rmtree.assert_called_once()
         args = mock_rmtree.call_args[0][0]
         assert "v2.0.0" in args
+        assert "v1.0.0" not in args
         # Warning is logged but caplog testing is optional
 
     @patch("os.path.exists")

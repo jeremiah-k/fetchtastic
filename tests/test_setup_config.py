@@ -71,6 +71,7 @@ def test_is_termux_no_prefix():
         (None, False, False),
         (1, False, True),
         (0, True, False),
+        (float("nan"), True, True),
         ("yes", False, True),
         ("no", True, False),
         ("ON", False, True),
@@ -155,6 +156,129 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
     assert save_firmware is False
     assert updated["SELECTED_APK_ASSETS"] == ["meshtastic.apk"]
     mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_reruns_firmware_menu(mocker):
+    """Partial runs should re-run firmware menu when confirmed."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+        "CHECK_PRERELEASES": False,
+    }
+
+    def wants(section: str) -> bool:
+        return section == "firmware"
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "y", "n", "n"],
+    )
+    mock_menu = mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["tbeam"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is False
+    assert save_firmware is True
+    assert updated["SELECTED_FIRMWARE_ASSETS"] == ["tbeam"]
+    mock_menu.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_reruns_apk_menu(mocker):
+    """Partial runs should re-run APK menu when confirmed."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["meshtastic.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    def wants(section: str) -> bool:
+        return section == "android"
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "y", "n", "n"],
+    )
+    mock_menu = mocker.patch(
+        "fetchtastic.menu_apk.run_menu",
+        return_value={"selected_assets": ["meshtastic-debug.apk"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert updated["SELECTED_APK_ASSETS"] == ["meshtastic-debug.apk"]
+    mock_menu.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_skips_channel_suffix_prompt(mocker):
+    """Channel suffix prompt should be skipped when sections are not selected."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+    }
+
+    def wants(_section: str) -> bool:
+        return False
+
+    mock_input = mocker.patch("builtins.input")
+    _setup_downloads(config, is_partial_run=True, wants=wants)
+
+    mock_input.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
+    """Full runs should prompt for channel suffixes when downloads are enabled."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {}
+
+    def wants(_section: str) -> bool:
+        return True
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["", "n", "n", "n"],
+    )
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["rak4631"]},
+    )
+    mocker.patch(
+        "fetchtastic.menu_apk.run_menu",
+        return_value={"selected_assets": ["meshtastic.apk"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=wants
+    )
+
+    assert save_apks is True
+    assert save_firmware is True
+    assert updated["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] is False
 
 
 @pytest.mark.configuration
@@ -584,7 +708,7 @@ def test_migrate_config_handles_load_error(tmp_path, mocker):
 
     # Force YAML loading to raise so we cover the error path.
     mocker.patch(
-        "fetchtastic.setup_config.yaml.safe_load", side_effect=ValueError("boom")
+        "fetchtastic.setup_config.yaml.safe_load", side_effect=yaml.YAMLError("boom")
     )
     mock_logger = mocker.patch("fetchtastic.log_utils.logger")
 
@@ -795,6 +919,31 @@ def test_config_file_operations(mocker):
 def test_load_config_missing_in_explicit_directory(tmp_path):
     """Explicit directory loads should return None when config is absent."""
     assert setup_config.load_config(str(tmp_path)) is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_rejects_non_mapping_yaml(tmp_path):
+    """Explicit directory loads should reject non-mapping YAML content."""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    config_path = config_dir / "fetchtastic.yaml"
+    config_path.write_text("- not-a-mapping\n")
+
+    assert setup_config.load_config(str(config_dir)) is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_empty_file_returns_empty_mapping(tmp_path, mocker):
+    """Empty config files should return an empty dict instead of crashing."""
+    config_path = tmp_path / "fetchtastic.yaml"
+    config_path.write_text("")
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(tmp_path / "old.yaml"))
+
+    config = setup_config.load_config()
+    assert config == {}
 
 
 @pytest.mark.configuration
