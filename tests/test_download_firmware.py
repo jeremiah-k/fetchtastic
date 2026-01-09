@@ -567,6 +567,38 @@ class TestFirmwareReleaseDownloader:
     @patch("os.path.exists")
     @patch("os.scandir")
     @patch("shutil.rmtree")
+    def test_cleanup_old_versions_skips_when_keep_set_mismatched(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Skip cleanup when expected tags do not match existing directories."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0-alpha"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0-alpha"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0-alpha"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0-alpha"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+
+        downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v2.0.0"), Release(tag_name="v1.0.0")]
+        )
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        mock_rmtree.assert_not_called()
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
     def test_cleanup_old_versions_all_unsafe_tags(
         self, mock_rmtree, mock_scandir, mock_exists, downloader, mocker
     ):

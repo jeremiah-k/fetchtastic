@@ -661,7 +661,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
             expected_prerelease = _build_expected_set(prerelease_releases, "prerelease")
 
-            def _remove_unexpected_entries(base_dir: str, allowed: set[str]) -> None:
+            def _remove_unexpected_entries(
+                base_dir: str,
+                allowed: set[str],
+                entries: Optional[List[os.DirEntry[str]]] = None,
+            ) -> None:
                 """
                 Scan base_dir and remove any filesystem entries whose names are not in `allowed`.
 
@@ -675,23 +679,49 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     - If base_dir does not exist, the function returns quietly.
                 """
                 try:
-                    with os.scandir(base_dir) as it:
-                        for entry in it:
-                            if entry.is_symlink():
-                                logger.warning(
-                                    "Skipping symlink in APK cleanup: %s", entry.name
-                                )
-                                continue
-                            if entry.name in allowed:
-                                continue
-                            logger.info("Removing unexpected APK entry: %s", entry.name)
-                            _safe_rmtree(entry.path, base_dir, entry.name)
+                    if entries is None:
+                        with os.scandir(base_dir) as it:
+                            scan_entries = list(it)
+                    else:
+                        scan_entries = entries
                 except FileNotFoundError:
                     return
+
+                for entry in scan_entries:
+                    if entry.is_symlink():
+                        logger.warning(
+                            "Skipping symlink in APK cleanup: %s", entry.name
+                        )
+                        continue
+                    if entry.name in allowed:
+                        continue
+                    logger.info("Removing unexpected APK entry: %s", entry.name)
+                    _safe_rmtree(entry.path, base_dir, entry.name)
+
+            try:
+                with os.scandir(android_dir) as it:
+                    android_entries = list(it)
+            except FileNotFoundError:
+                return
+
+            existing_entries = {
+                entry.name for entry in android_entries if not entry.is_symlink()
+            }
+            if (
+                keep_limit > 0
+                and expected_stable
+                and existing_entries
+                and expected_stable.isdisjoint(existing_entries)
+            ):
+                logger.warning(
+                    "Skipping APK cleanup: keep set does not match existing directories."
+                )
+                return
 
             _remove_unexpected_entries(
                 android_dir,
                 expected_stable | {APK_PRERELEASES_DIR_NAME},
+                entries=android_entries,
             )
 
             if not os.path.exists(prerelease_dir):
