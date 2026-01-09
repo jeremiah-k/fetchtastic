@@ -60,9 +60,9 @@ def _join_text(parts: Iterable[Optional[str]]) -> str:
 
 def detect_release_channel(release: Release) -> str:
     """
-    Determine the release channel from the release's name, tag, body, and prerelease flag.
+    Determine the release channel from the release's name, tag, and prerelease flag.
 
-    The function checks, in order: combined name and tag, the release body, and finally the release.prerelease boolean to classify the release.
+    The function checks, in order: combined name and tag, and finally the release.prerelease boolean to classify the release.
 
     Returns:
         One of "alpha", "beta", "rc", "prerelease", or "stable" indicating the inferred channel.
@@ -70,11 +70,6 @@ def detect_release_channel(release: Release) -> str:
     primary_text = _join_text([release.name, release.tag_name])
     for label, rx in _CHANNEL_RX.items():
         if rx.search(primary_text):
-            return label
-
-    body_text = _join_text([release.body])
-    for label, rx in _CHANNEL_RX.items():
-        if rx.search(body_text):
             return label
 
     tag_name = release.tag_name if isinstance(release.tag_name, str) else ""
