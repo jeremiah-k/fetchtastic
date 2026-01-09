@@ -62,10 +62,12 @@ def detect_release_channel(release: Release) -> str:
     """
     Determine the release channel from the release's name, tag, and prerelease flag.
 
-    The function checks, in order: combined name and tag, and finally the release.prerelease boolean to classify the release.
+    The function checks, in order: combined name and tag, and finally the release.prerelease
+    boolean to classify the release. When no explicit channel is found for a full release,
+    defaults to "beta" (the most stable full-release track).
 
     Returns:
-        One of "alpha", "beta", "rc", "prerelease", or "stable" indicating the inferred channel.
+        One of "alpha", "beta", "rc", or "prerelease" indicating the inferred channel.
     """
     primary_text = _join_text([release.name, release.tag_name])
     for label, rx in _CHANNEL_RX.items():
@@ -79,7 +81,7 @@ def detect_release_channel(release: Release) -> str:
     if release.prerelease:
         return CHANNEL_PRERELEASE
 
-    return CHANNEL_STABLE
+    return "beta"
 
 
 def is_release_revoked(release: Release) -> bool:

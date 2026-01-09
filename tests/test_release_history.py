@@ -34,11 +34,11 @@ def test_join_text_filters_non_strings():
     assert _join_text(parts) == "alpha beta"
 
 
-def test_detect_release_channel_from_body():
+def test_detect_release_channel_ignores_body():
     release = Release(
         tag_name="v2.1.0",
         prerelease=False,
-        body="This is a Beta preview release.",
+        body="This is an Alpha preview release.",
     )
 
     assert detect_release_channel(release) == "beta"
