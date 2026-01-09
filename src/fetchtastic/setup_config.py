@@ -635,7 +635,7 @@ def _setup_downloads(
                 .lower()
                 or current_apk_default
             )
-            save_apks = choice == "y"
+            save_apks = _coerce_bool(choice)
         if wants("firmware"):
             current_fw_default = "y" if save_firmware else "n"
             choice = (
@@ -646,7 +646,7 @@ def _setup_downloads(
                 .lower()
                 or current_fw_default
             )
-            save_firmware = choice == "y"
+            save_firmware = _coerce_bool(choice)
 
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
@@ -687,7 +687,7 @@ def _setup_downloads(
             .lower()
             or check_prereleases_default
         )
-        config["CHECK_PRERELEASES"] = check_prereleases_input[0] == "y"
+        config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
 
     if save_apks and (not is_partial_run or wants("android")):
         rerun_menu = True
@@ -722,7 +722,7 @@ def _setup_downloads(
             .lower()
             or check_apk_prereleases_default
         )
-        config["CHECK_APK_PRERELEASES"] = check_apk_prereleases_input[0] == "y"
+        config["CHECK_APK_PRERELEASES"] = _coerce_bool(check_apk_prereleases_input)
 
     # --- Channel Suffix Configuration ---
     if save_apks or save_firmware:
@@ -741,8 +741,8 @@ def _setup_downloads(
                 .lower()
                 or add_channel_suffixes_default
             )
-            config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = (
-                add_channel_suffixes_input[0] == "y"
+            config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = _coerce_bool(
+                add_channel_suffixes_input
             )
 
     # If both save_apks and save_firmware are False, inform the user and exit setup.
@@ -934,7 +934,7 @@ def _setup_firmware(
         .lower()
         or auto_extract_default[0]
     )
-    config["AUTO_EXTRACT"] = auto_extract == "y"
+    config["AUTO_EXTRACT"] = _coerce_bool(auto_extract)
 
     if config["AUTO_EXTRACT"]:
         # --- File Extraction Configuration ---
