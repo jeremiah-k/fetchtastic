@@ -737,13 +737,16 @@ def _setup_downloads(
     if save_apks and (not is_partial_run or wants("android")):
         rerun_menu = True
         if is_partial_run:
-            rerun_menu_choice = (
-                input("Re-run the Android APK selection menu? [y/n] (default: yes): ")
-                .strip()
-                .lower()
-            )
-            if not _coerce_bool(rerun_menu_choice, default=True):
-                rerun_menu = False
+            if config.get("SELECTED_APK_ASSETS"):
+                rerun_menu_choice = (
+                    input(
+                        "Re-run the Android APK selection menu? [y/n] (default: yes): "
+                    )
+                    .strip()
+                    .lower()
+                )
+                if not _coerce_bool(rerun_menu_choice, default=True):
+                    rerun_menu = False
         if rerun_menu:
             apk_selection = menu_apk.run_menu()
             if not apk_selection:
@@ -754,6 +757,12 @@ def _setup_downloads(
                 config["CHECK_APK_PRERELEASES"] = False
             else:
                 config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
+        elif not config.get("SELECTED_APK_ASSETS"):
+            print("No existing APK selection found. APKs will not be downloaded.")
+            save_apks = False
+            config["SAVE_APKS"] = False
+            config["SELECTED_APK_ASSETS"] = []
+            config["CHECK_APK_PRERELEASES"] = False
 
     # --- APK Pre-release Configuration ---
     if save_apks and (not is_partial_run or wants("android")):
@@ -2086,17 +2095,8 @@ def migrate_config() -> bool:
             return False
 
     # Load the old config
-    try:
-        with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f) or {}
-        if not isinstance(config, dict):
-            logger.error(
-                "Error loading old config: expected YAML mapping, got %s",
-                type(config).__name__,
-            )
-            return False
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
-        logger.error(f"Error loading old config: {e}")
+    config = _load_yaml_mapping(OLD_CONFIG_FILE)
+    if config is None:
         return False
 
     # Save to new location

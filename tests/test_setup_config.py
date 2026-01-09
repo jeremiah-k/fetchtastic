@@ -712,7 +712,7 @@ def test_migrate_config_handles_load_error(tmp_path, mocker):
     mocker.patch(
         "fetchtastic.setup_config.yaml.safe_load", side_effect=yaml.YAMLError("boom")
     )
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     assert setup_config.migrate_config() is False
     assert mock_logger.error.called
@@ -1411,7 +1411,8 @@ def test_run_setup_first_run_windows(
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup()
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup()
 
         mock_create_windows_menu_shortcuts.assert_called_once()
         mock_create_config_shortcut.assert_called_once()
