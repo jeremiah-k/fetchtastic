@@ -328,7 +328,7 @@ def migrate_pip_to_pipx() -> bool:
         config_backup = None
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, "r") as f:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     config_backup = f.read()
                 print("   Configuration backed up.")
             except OSError as exc:
@@ -383,7 +383,7 @@ def migrate_pip_to_pipx() -> bool:
         # Step 5: Restore configuration
         if config_backup:
             print("5. Restoring configuration...")
-            with open(CONFIG_FILE, "w") as f:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 f.write(config_backup)
             print("   Configuration restored.")
 
@@ -623,8 +623,8 @@ def _setup_downloads(
             save_apks = True
             save_firmware = True
     else:
-        save_apks = config.get("SAVE_APKS", False)
-        save_firmware = config.get("SAVE_FIRMWARE", False)
+        save_apks = _coerce_bool(config.get("SAVE_APKS", False))
+        save_firmware = _coerce_bool(config.get("SAVE_FIRMWARE", False))
         if wants("android"):
             current_apk_default = "y" if save_apks else "n"
             choice = (
@@ -677,7 +677,7 @@ def _setup_downloads(
 
     # --- Firmware Pre-release Configuration ---
     if save_firmware and (not is_partial_run or wants("firmware")):
-        check_prereleases_current = config.get("CHECK_PRERELEASES", False)
+        check_prereleases_current = _coerce_bool(config.get("CHECK_PRERELEASES", False))
         check_prereleases_default = "y" if check_prereleases_current else "n"
         check_prereleases_input = (
             input(
@@ -710,8 +710,8 @@ def _setup_downloads(
 
     # --- APK Pre-release Configuration ---
     if save_apks and (not is_partial_run or wants("android")):
-        check_apk_prereleases_current = config.get(
-            "CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES
+        check_apk_prereleases_current = _coerce_bool(
+            config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES)
         )  # Default: True. APK prereleases are typically more stable than firmware prereleases and safer to enable by default.
         check_apk_prereleases_default = "yes" if check_apk_prereleases_current else "no"
         check_apk_prereleases_input = (
@@ -727,8 +727,8 @@ def _setup_downloads(
     # --- Channel Suffix Configuration ---
     if save_apks or save_firmware:
         if not is_partial_run or wants("android") or wants("firmware"):
-            add_channel_suffixes_current = config.get(
-                "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True
+            add_channel_suffixes_current = _coerce_bool(
+                config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True)
             )
             add_channel_suffixes_default = (
                 "yes" if add_channel_suffixes_current else "no"
@@ -924,7 +924,7 @@ def _setup_firmware(
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
 
     # Prompt for automatic extraction
-    auto_extract_current = config.get("AUTO_EXTRACT", False)
+    auto_extract_current = _coerce_bool(config.get("AUTO_EXTRACT", False))
     auto_extract_default = "yes" if auto_extract_current else "no"
     auto_extract = (
         input(
@@ -1859,7 +1859,7 @@ def run_setup(
         config = _setup_github(config)
 
     # Persist configuration after all interactive sections
-    with open(CONFIG_FILE, "w") as f:
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         yaml.dump(config, f)
     print(f"Configuration saved to: {CONFIG_FILE}")
 
@@ -2048,7 +2048,7 @@ def migrate_config() -> bool:
 
     # Save to new location
     try:
-        with open(CONFIG_FILE, "w") as f:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             yaml.dump(config, f)
 
         # Remove the old file after successful migration
@@ -3044,7 +3044,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
     else:
         # First check if config exists in the platformdirs location
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
             # Update BASE_DIR from config
