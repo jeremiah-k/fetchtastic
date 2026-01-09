@@ -331,7 +331,7 @@ def migrate_pip_to_pipx() -> bool:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     config_backup = f.read()
                 print("   Configuration backed up.")
-            except OSError as exc:
+            except (OSError, UnicodeDecodeError) as exc:
                 print(f"   Warning: Could not back up configuration: {exc}")
         else:
             print("   No existing configuration found.")
@@ -662,7 +662,7 @@ def _setup_downloads(
                     .strip()
                     .lower()
                 )
-                if keep_existing.startswith("n"):
+                if not _coerce_bool(keep_existing, default=True):
                     rerun_menu = False
         if rerun_menu:
             firmware_selection = menu_firmware.run_menu()
@@ -697,7 +697,7 @@ def _setup_downloads(
                 .strip()
                 .lower()
             )
-            if keep_existing.startswith("n"):
+            if not _coerce_bool(keep_existing, default=True):
                 rerun_menu = False
         if rerun_menu:
             apk_selection = menu_apk.run_menu()
@@ -2040,7 +2040,7 @@ def migrate_config() -> bool:
 
     # Load the old config
     try:
-        with open(OLD_CONFIG_FILE, "r") as f:
+        with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
     except Exception as e:
         logger.error(f"Error loading old config: {e}")
@@ -3029,7 +3029,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not os.path.exists(config_path):
             return None
 
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         # Update global variables
@@ -3055,7 +3055,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
         # Then check the old location
         elif os.path.exists(OLD_CONFIG_FILE):
-            with open(OLD_CONFIG_FILE, "r") as f:
+            with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
             # Update BASE_DIR from config
