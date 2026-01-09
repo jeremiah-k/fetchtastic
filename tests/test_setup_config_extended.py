@@ -343,6 +343,99 @@ def test_setup_downloads_partial_run(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
+    """Partial Android run should skip the menu when user keeps existing selection."""
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["existing"],
+        "CHECK_APK_PRERELEASES": False,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Download Android APKs
+            "n",  # Don't rerun menu
+            "n",  # Disable prereleases
+            "n",  # Add channel suffixes
+        ],
+    )
+
+    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "android"
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert result_config["SAVE_APKS"] is True
+    assert result_config["CHECK_APK_PRERELEASES"] is False
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_run_firmware_forces_menu_without_selection(mocker):
+    """Partial firmware run should force menu when no existing selection exists."""
+    config = {"SAVE_APKS": False, "SAVE_FIRMWARE": True}
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Download firmware releases
+            "n",  # Disable firmware prereleases
+            "n",  # Add channel suffixes
+        ],
+    )
+
+    mocker.patch("fetchtastic.menu_firmware.run_menu", return_value=None)
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "firmware"
+    )
+
+    assert save_apks is False
+    assert save_firmware is False
+    assert result_config["SAVE_FIRMWARE"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_run_firmware_keep_existing_skips_menu(mocker):
+    """Partial firmware run should skip menu when user keeps existing selection."""
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["existing-firmware"],
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Download firmware releases
+            "n",  # Don't rerun menu
+            "n",  # Disable firmware prereleases
+            "n",  # Add channel suffixes
+        ],
+    )
+
+    mock_menu = mocker.patch("fetchtastic.menu_firmware.run_menu")
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "firmware"
+    )
+
+    assert save_apks is False
+    assert save_firmware is True
+    assert result_config["SAVE_FIRMWARE"] is True
+    assert result_config["SELECTED_FIRMWARE_ASSETS"] == ["existing-firmware"]
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_configure_exclude_patterns_use_defaults(mocker):
     """Test configure_exclude_patterns accepting recommended defaults."""
     config = {}

@@ -63,6 +63,32 @@ def test_is_termux_no_prefix():
 @pytest.mark.configuration
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    "value,default,expected",
+    [
+        (True, False, True),
+        (False, True, False),
+        (None, True, True),
+        (None, False, False),
+        (1, False, True),
+        (0, True, False),
+        ("yes", False, True),
+        ("no", True, False),
+        ("ON", False, True),
+        ("off", True, False),
+        ("maybe", True, True),
+        ("", False, False),
+    ],
+)
+def test_coerce_bool(value, default, expected):
+    """Test _coerce_bool handles common value types."""
+    from fetchtastic.setup_config import _coerce_bool
+
+    assert _coerce_bool(value, default=default) is expected
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@pytest.mark.parametrize(
     "is_termux_val, platform_system, expected",
     [
         (True, "Linux", "termux"),
@@ -1706,7 +1732,8 @@ def test_setup_firmware_extraction_tips_only_when_enabled(mock_input, capsys):
 
     mock_input.side_effect = ["2", "n"]
 
-    setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+    with patch("sys.stdin.isatty", return_value=False):
+        setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
 
     captured = capsys.readouterr()
     assert "File Extraction Configuration" not in captured.out
@@ -1722,7 +1749,8 @@ def test_setup_firmware_extraction_tips_when_enabled(mock_input, capsys):
 
     mock_input.side_effect = ["2", "y", ""]
 
-    setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+    with patch("sys.stdin.isatty", return_value=False):
+        setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
 
     captured = capsys.readouterr()
     assert "File Extraction Configuration" in captured.out
@@ -1851,9 +1879,10 @@ def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_inp
     # Simulate user inputs: keep 2 versions, no auto-extract
     mock_input.side_effect = ["2", "n"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is False
     assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Should be cleared
@@ -1903,6 +1932,28 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty when no input provided
     assert result["AUTO_EXTRACT"] is False  # Should be disabled with empty patterns
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_extract_patterns_string_config(mock_input):
+    """EXTRACT_PATTERNS should be split when provided as a string."""
+    config = {
+        "CHECK_PRERELEASES": True,
+        "AUTO_EXTRACT": True,
+        "EXTRACT_PATTERNS": "tbeam rak4631-",
+    }
+
+    mock_input.side_effect = ["2", "y", "y"]
+
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
+
+    assert result["EXTRACT_PATTERNS"] == ["tbeam", "rak4631-"]
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["tbeam", "rak4631-"]
 
 
 # Test helper functions for configuration handling
