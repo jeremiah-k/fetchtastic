@@ -77,6 +77,7 @@ def test_is_termux_no_prefix():
         ("off", True, False),
         ("maybe", True, True),
         ("", False, False),
+        (object(), True, True),
     ],
 )
 def test_coerce_bool(value, default, expected):
@@ -84,6 +85,76 @@ def test_coerce_bool(value, default, expected):
     from fetchtastic.setup_config import _coerce_bool
 
     assert _coerce_bool(value, default=default) is expected
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_skips_firmware_menu(mocker):
+    """Partial runs should respect "keep existing" and skip the firmware menu."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    # Preserve existing firmware selections and keep APKs disabled.
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+        "CHECK_PRERELEASES": False,
+    }
+
+    # Only run the firmware section in this partial pass.
+    def wants(section: str) -> bool:
+        return section == "firmware"
+
+    # Answer prompts: keep firmware enabled, skip rerun, decline prereleases, decline suffixes.
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "n", "n", "n"],
+    )
+    mock_menu = mocker.patch("fetchtastic.menu_firmware.run_menu")
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is False
+    assert save_firmware is True
+    assert updated["SELECTED_FIRMWARE_ASSETS"] == ["rak4631"]
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_skips_apk_menu(mocker):
+    """Partial runs should respect "keep existing" and skip the APK menu."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    # Preserve existing APK selections and skip firmware entirely.
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["meshtastic.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    # Only run the Android section in this partial pass.
+    def wants(section: str) -> bool:
+        return section == "android"
+
+    # Answer prompts: keep APKs enabled, skip rerun, decline prereleases, decline suffixes.
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "n", "n", "n"],
+    )
+    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert updated["SELECTED_APK_ASSETS"] == ["meshtastic.apk"]
+    mock_menu.assert_not_called()
 
 
 @pytest.mark.configuration
@@ -498,6 +569,29 @@ def test_migrate_config(tmp_path, mocker):
     assert new_config_data["key"] == "to_be_migrated"
 
 
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_migrate_config_handles_load_error(tmp_path, mocker):
+    """Migration should fail cleanly when loading the old config raises."""
+    new_config_path = tmp_path / "new_config.yaml"
+    old_config_path = tmp_path / "old_config.yaml"
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch("fetchtastic.setup_config.CONFIG_DIR", str(tmp_path))
+
+    # Create a stub old config so the migrate routine attempts to read it.
+    old_config_path.write_text("bad: yaml")
+
+    # Force YAML loading to raise so we cover the error path.
+    mocker.patch(
+        "fetchtastic.setup_config.yaml.safe_load", side_effect=ValueError("boom")
+    )
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+
+    assert setup_config.migrate_config() is False
+    assert mock_logger.error.called
+
+
 @pytest.mark.parametrize(
     "is_termux_val, install_method, expected",
     [
@@ -694,6 +788,13 @@ def test_config_file_operations(mocker):
         config = setup_config.load_config(temp_dir)
         assert config is not None
         assert config["TEST_KEY"] == "test_value"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_missing_in_explicit_directory(tmp_path):
+    """Explicit directory loads should return None when config is absent."""
+    assert setup_config.load_config(str(tmp_path)) is None
 
 
 @pytest.mark.configuration

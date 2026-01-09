@@ -28,6 +28,17 @@ def test_detect_release_channel_from_name():
     assert detect_release_channel(release) == "beta"
 
 
+def test_detect_release_channel_stable_maps_to_beta():
+    # "Stable" is treated as beta to avoid emitting a stable channel label.
+    release = Release(
+        tag_name="v2.0.1",
+        prerelease=False,
+        name="Meshtastic Firmware 2.0.1 Stable",
+    )
+
+    assert detect_release_channel(release) == "beta"
+
+
 def test_join_text_filters_non_strings():
     parts = [None, "  Alpha  ", "", " ", 123, "Beta"]
 
@@ -101,6 +112,40 @@ def test_format_release_label_and_suffix(tmp_path):
 
     stable_release = Release(tag_name="v3.1.0", prerelease=False)
     assert manager.format_release_log_suffix(stable_release) == " (alpha)"
+
+
+def test_format_release_label_includes_channel_when_present(tmp_path):
+    # Exercise the channel-append path without revoked status.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_channel")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    release = Release(
+        tag_name="v4.0.0",
+        prerelease=False,
+        name="Meshtastic Firmware 4.0.0 Beta",
+    )
+
+    assert (
+        manager.format_release_label(release, include_status=False) == "v4.0.0 (beta)"
+    )
+
+
+def test_log_release_status_entry_includes_channel_and_status(tmp_path, mocker):
+    # Directly cover the channel/status assembly in the log helper.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_log_entry")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    mock_logger = mocker.patch("fetchtastic.download.release_history.logger")
+
+    manager._log_release_status_entry(
+        {
+            "tag_name": "v5.0.0",
+            "channel": "alpha",
+            "status": "revoked",
+        }
+    )
+
+    assert mock_logger.info.called
 
 
 def test_format_release_log_suffix_includes_annotations(tmp_path):

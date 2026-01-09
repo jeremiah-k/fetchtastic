@@ -547,6 +547,34 @@ class TestMeshtasticAndroidAppDownloader:
         assert expected_dir.exists()
         assert stable_dir.exists()
 
+    def test_cleanup_prerelease_directories_skips_without_stable_releases(
+        self, tmp_path, mocker
+    ):
+        """Cleanup should bail early when only prereleases are present."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        # Ensure the base APK directory exists so cleanup logic proceeds.
+        (tmp_path / APKS_DIR_NAME).mkdir(parents=True)
+
+        # Provide only prerelease entries so the stable list is empty.
+        releases = [
+            Release(tag_name="v2.7.10-open.1", prerelease=True),
+            Release(tag_name="v2.7.10-open.2", prerelease=True),
+        ]
+
+        mock_logger = mocker.patch("fetchtastic.download.android.logger")
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        # Ensure we hit the early-return warning path.
+        mock_logger.debug.assert_called_once()
+
     def test_cleanup_prerelease_directories_removes_superseded_prereleases(
         self, tmp_path
     ):

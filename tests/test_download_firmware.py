@@ -563,6 +563,34 @@ class TestFirmwareReleaseDownloader:
         downloader.get_releases.assert_not_called()
         assert mock_rmtree.call_count == 0
 
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_all_unsafe_tags(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader, mocker
+    ):
+        """Cleanup should bail when no safe tags are available to keep."""
+        # Force the firmware directory to appear present.
+        mock_exists.return_value = True
+
+        # Every release tag should fail sanitization to hit the warning/return path.
+        downloader.get_releases = Mock(
+            return_value=[Release(tag_name="../unsafe"), Release(tag_name="..\\bad")]
+        )
+        mocker.patch.object(
+            downloader, "_sanitize_required", side_effect=ValueError("unsafe")
+        )
+
+        # Capture warnings for the empty keep set scenario.
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        # No filesystem deletion should happen when the keep set is empty.
+        mock_rmtree.assert_not_called()
+        mock_scandir.assert_not_called()
+        assert mock_logger.warning.called
+
     @patch("fetchtastic.download.firmware.make_github_api_request")
     def test_get_releases_negative_limit(self, mock_api_request, downloader):
         """Test get_releases with negative limit uses default behavior."""
@@ -1006,6 +1034,31 @@ class TestFirmwareReleaseDownloader:
         release = Release(tag_name="v9.9.9", prerelease=False, assets=[])
 
         assert downloader.is_release_complete(release) is False
+
+    def test_is_release_complete_missing_asset_file(self, downloader, tmp_path, mocker):
+        """Missing asset files in an existing release directory should return False."""
+        # Ensure the downloader points at a real temporary directory.
+        downloader.download_dir = str(tmp_path)
+
+        # Use a simple release tag to avoid channel suffix handling in this test.
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        release = Release(tag_name="v1.2.3", prerelease=False)
+        asset = Asset(
+            name="firmware-rak4631-1.2.3.bin",
+            download_url="https://example.com/fw.bin",
+            size=123,
+        )
+        release.assets.append(asset)
+
+        # Create the release directory but intentionally omit the asset file.
+        version_dir = tmp_path / "firmware" / "v1.2.3"
+        version_dir.mkdir(parents=True)
+
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        assert downloader.is_release_complete(release) is False
+        assert mock_logger.debug.called
 
     def test_extract_firmware_missing_zip(self, downloader):
         """Missing ZIP files should return a validation error result."""
