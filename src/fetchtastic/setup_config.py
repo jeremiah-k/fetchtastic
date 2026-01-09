@@ -290,7 +290,7 @@ def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
 
 def is_fetchtastic_installed_via_pip() -> bool:
     """
-    Determine whether Fetchtastic is installed via the system `pip` command.
+    Determine whether Fetchtastic is installed via the `pip` command.
 
     If the `pip` command is unavailable or the check fails, this function returns False.
 
@@ -381,7 +381,6 @@ def migrate_pip_to_pipx() -> bool:
         )
         .strip()
         .lower()
-        or "y"
     )
     if not _coerce_bool(migrate, default=True):
         print("Migration cancelled. You can continue using pip, but we recommend pipx.")
@@ -916,35 +915,31 @@ def configure_exclude_patterns(config: Dict[str, Any]) -> None:
         # Offer recommended defaults
         recommended_str = " ".join(RECOMMENDED_EXCLUDE_PATTERNS)
         use_defaults_default = "yes"
-        use_defaults = (
+        use_defaults = _coerce_bool(
             _safe_input(
                 f"Would you like to use our recommended exclude patterns?\n"
                 f"These skip common specialized variants and debug files: [y/n] (default: {use_defaults_default}): ",
                 default=use_defaults_default,
-            )
-            .strip()
-            .lower()
-            or use_defaults_default[0]
+            ).strip(),
+            default=True,
         )
 
-        if use_defaults == "y":
+        if use_defaults:
             # Start with recommended patterns
             exclude_patterns = RECOMMENDED_EXCLUDE_PATTERNS.copy()
             print(f"Using recommended exclude patterns: {recommended_str}")
 
             # Ask for additional patterns
             add_more_default = "no"
-            add_more = (
+            add_more = _coerce_bool(
                 _safe_input(
                     f"Would you like to add any additional exclude patterns? [y/n] (default: {add_more_default}): ",
                     default=add_more_default,
-                )
-                .strip()
-                .lower()
-                or add_more_default[0]
+                ).strip(),
+                default=False,
             )
 
-            if add_more == "y":
+            if add_more:
                 additional_patterns = input(
                     "Enter additional patterns (space-separated): "
                 ).strip()
@@ -975,17 +970,15 @@ def configure_exclude_patterns(config: Dict[str, Any]) -> None:
             )
 
         confirm_default = "yes"
-        confirm = (
+        confirm = _coerce_bool(
             _safe_input(
                 f"Is this correct? [y/n] (default: {confirm_default}): ",
                 default=confirm_default,
-            )
-            .strip()
-            .lower()
-            or confirm_default[0]
+            ).strip(),
+            default=True,
         )
 
-        if confirm == "y":
+        if confirm:
             # Save the configuration and break the loop
             config["EXCLUDE_PATTERNS"] = exclude_patterns
             if exclude_patterns:
@@ -1037,16 +1030,14 @@ def _setup_firmware(
     # Prompt for automatic extraction
     auto_extract_current = _coerce_bool(config.get("AUTO_EXTRACT", False))
     auto_extract_default = "yes" if auto_extract_current else "no"
-    auto_extract = (
+    auto_extract = _coerce_bool(
         _safe_input(
             f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ",
             default=auto_extract_default,
-        )
-        .strip()
-        .lower()
-        or auto_extract_default[0]
+        ).strip(),
+        default=False,
     )
-    config["AUTO_EXTRACT"] = _coerce_bool(auto_extract)
+    config["AUTO_EXTRACT"] = auto_extract
 
     if config["AUTO_EXTRACT"]:
         # --- File Extraction Configuration ---
@@ -1081,9 +1072,8 @@ def _setup_firmware(
                 )
                 .strip()
                 .lower()
-                or keep_patterns_default
             )
-            if keep_patterns_input[0] != "y":
+            if not _coerce_bool(keep_patterns_input):
                 current_patterns = []  # Clear to prompt for new ones
 
         if not current_patterns:
@@ -2028,12 +2018,11 @@ def run_setup(
             # On other platforms, offer to run it now
             perform_first_run = (
                 _safe_input(
-                    "Would you like to start the first run now? [y/n] (default: yes): ",
+                    "Would you like to start first run now? [y/n] (default: yes): ",
                     default="y",
                 )
                 .strip()
                 .lower()
-                or "y"
             )
             if perform_first_run == "y":
                 from fetchtastic.download.cli_integration import DownloadCLIIntegration
