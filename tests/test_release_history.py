@@ -28,20 +28,31 @@ def test_detect_release_channel_from_name():
     assert detect_release_channel(release) == "beta"
 
 
+def test_detect_release_channel_stable_maps_to_beta():
+    # "Stable" is treated as beta to avoid emitting a stable channel label.
+    release = Release(
+        tag_name="v2.0.1",
+        prerelease=False,
+        name="Meshtastic Firmware 2.0.1 Stable",
+    )
+
+    assert detect_release_channel(release) == "beta"
+
+
 def test_join_text_filters_non_strings():
     parts = [None, "  Alpha  ", "", " ", 123, "Beta"]
 
     assert _join_text(parts) == "alpha beta"
 
 
-def test_detect_release_channel_from_body():
+def test_detect_release_channel_ignores_body():
     release = Release(
         tag_name="v2.1.0",
         prerelease=False,
         body="This is a Beta preview release.",
     )
 
-    assert detect_release_channel(release) == "beta"
+    assert detect_release_channel(release) == "alpha"
 
 
 def test_is_release_revoked_from_body():
@@ -100,7 +111,79 @@ def test_format_release_label_and_suffix(tmp_path):
     assert label == "v3.0.0 (alpha, revoked)"
 
     stable_release = Release(tag_name="v3.1.0", prerelease=False)
-    assert manager.format_release_log_suffix(stable_release) == ""
+    assert manager.format_release_log_suffix(stable_release) == " (alpha)"
+
+
+def test_format_release_label_includes_channel_when_present(tmp_path):
+    # Exercise the channel-append path without revoked status.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_channel")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    release = Release(tag_name="v4.0.0", prerelease=False)
+    manager.get_release_channel = lambda _release: "beta"
+
+    assert (
+        manager.format_release_label(release, include_status=False) == "v4.0.0 (beta)"
+    )
+
+
+def test_format_release_label_skips_empty_channel(tmp_path):
+    # Ensure empty channel values do not add an annotation.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_no_channel")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    release = Release(tag_name="v4.1.0", prerelease=False)
+    manager.get_release_channel = lambda _release: ""
+
+    assert manager.format_release_label(release, include_status=False) == "v4.1.0"
+
+
+def test_log_release_status_entry_includes_channel_and_status(tmp_path, mocker):
+    # Directly cover the channel/status assembly in the log helper.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_log_entry")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    mock_logger = mocker.patch("fetchtastic.download.release_history.logger")
+
+    manager._log_release_status_entry(
+        {
+            "tag_name": "v5.0.0",
+            "channel": "alpha",
+            "status": "revoked",
+        }
+    )
+
+    mock_logger.info.assert_any_call(
+        "  - [%s][strike]%s[/strike][/%s]%s",
+        "yellow",
+        "v5.0.0",
+        "yellow",
+        " (alpha, revoked)",
+    )
+
+
+def test_log_release_status_entry_skips_empty_parts(tmp_path, mocker):
+    # Cover the empty channel/status branches in the logger helper.
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_log_empty")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    mock_logger = mocker.patch("fetchtastic.download.release_history.logger")
+
+    manager._log_release_status_entry(
+        {
+            "tag_name": "v6.0.0",
+            "channel": "",
+            "status": "",
+        }
+    )
+
+    mock_logger.info.assert_any_call(
+        "  - [%s][strike]%s[/strike][/%s]%s",
+        "red",
+        "v6.0.0",
+        "red",
+        "",
+    )
 
 
 def test_format_release_log_suffix_includes_annotations(tmp_path):

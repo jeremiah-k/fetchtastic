@@ -199,9 +199,9 @@ def test_configure_exclude_patterns_non_interactive_uses_recommended(mocker, cap
     mocker.patch("fetchtastic.setup_config.sys.stdin.isatty", return_value=False)
     mocker.patch.dict(os.environ, {}, clear=False)
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
     captured = capsys.readouterr()
     assert "Using recommended exclude patterns" in captured.out
 
@@ -213,9 +213,9 @@ def test_configure_exclude_patterns_ci_env_uses_recommended(mocker, capsys):
     mocker.patch("fetchtastic.setup_config.sys.stdin.isatty", return_value=True)
     mocker.patch.dict(os.environ, {"CI": "true"}, clear=False)
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
     captured = capsys.readouterr()
     assert "Using recommended exclude patterns" in captured.out
 

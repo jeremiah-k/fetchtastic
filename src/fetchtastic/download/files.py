@@ -1032,6 +1032,8 @@ def get_channel_suffix(
     if not add_channel_suffixes:
         return ""
 
+    # Ignore GitHub prerelease flags here; full releases still live on the
+    # alpha/beta/rc tracks and should keep their channel suffixes.
     channel = release_history_manager.get_release_channel(release)
     if channel and channel in STORAGE_CHANNEL_SUFFIXES:
         return f"-{channel}"

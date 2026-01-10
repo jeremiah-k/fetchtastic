@@ -113,11 +113,7 @@ def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]
             log_utils.logger.info(f"{separator}\n")
 
     if exists:
-        try:
-            config = setup_config.load_config()
-        except (ValueError, OSError, TypeError, yaml.YAMLError) as error:
-            log_utils.logger.error(f"Failed to load configuration: {error}")
-            config = None
+        config = setup_config.load_config()
     else:
         config = None
         config_path = None
@@ -458,12 +454,10 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            try:
-                resp = input(copy_prompt_text)
-            except EOFError:
-                resp = ""
-            resp = (resp or "y").strip().lower()
-            if resp in {"y", "yes"}:
+            resp = (
+                setup_config._safe_input(copy_prompt_text, default="y").strip().lower()
+            )
+            if setup_config._coerce_bool(resp, default=True):
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
@@ -482,16 +476,14 @@ def main():
         # Run the clean process
         run_clean()
     elif args.command == "version":
-        display_banner()
         # Get version information
         current_version, latest_version, update_available = get_version_info()
 
-        # Log version information
-        log_utils.logger.info(f"Fetchtastic v{current_version}")
+        print(f"Fetchtastic v{current_version}")
         if update_available and latest_version:
             upgrade_cmd = get_upgrade_command()
-            log_utils.logger.info(f"A newer version (v{latest_version}) is available!")
-            log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            print(f"A newer version (v{latest_version}) is available!")
+            print(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Handle help command
         help_command = args.help_command
@@ -614,14 +606,29 @@ def run_clean():
 
     This operation deletes current and legacy configuration files, only Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (for example, Windows Start Menu and startup shortcuts, non-Windows cron entries, and a Termux boot script), and the Fetchtastic log file. The removal is irreversible and requires the user to confirm interactively; non-managed files are preserved.
     """
+    if not sys.stdin.isatty() and not os.environ.get("PYTEST_CURRENT_TEST"):
+        log_utils.logger.error(
+            "Clean operation requires an interactive terminal; aborting."
+        )
+        return
+    # Load config (if present) before deleting config files so BASE_DIR is accurate.
+    loaded_config = setup_config.load_config()
+    download_dir_from_config: str | None = None
+    if loaded_config:
+        candidate = loaded_config.get("DOWNLOAD_DIR") or loaded_config.get("BASE_DIR")
+        download_dir_from_config = candidate if isinstance(candidate, str) else None
+
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
     confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
-        or "n"
+        setup_config._safe_input(
+            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
+        )
+        .strip()
+        .lower()
     )
-    if confirm != "y":
+    if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 
@@ -742,7 +749,7 @@ def run_clean():
                 )
 
             # Remove config shortcut in base directory
-            download_dir = setup_config.BASE_DIR
+            download_dir = download_dir_from_config or setup_config.BASE_DIR
             config_shortcut_path = os.path.join(download_dir, WINDOWS_SHORTCUT_FILE)
             if os.path.exists(config_shortcut_path):
                 try:
@@ -755,7 +762,7 @@ def run_clean():
                     )
 
     # Remove only managed directories from download directory
-    download_dir = setup_config.BASE_DIR
+    download_dir = download_dir_from_config or setup_config.BASE_DIR
 
     def _remove_managed_file(item_path: str) -> None:
         """
@@ -844,10 +851,13 @@ def run_repo_clean(config):
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )
     confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
-        or "n"
+        setup_config._safe_input(
+            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
+        )
+        .strip()
+        .lower()
     )
-    if confirm != "y":
+    if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 

@@ -48,7 +48,9 @@ def test_migrate_pip_to_pipx_success(mocker, tmp_path):
     )
 
     # Mock file operations
-    mocker.patch("builtins.open", mock_open(read_data=yaml.dump(mock_config_content)))
+    mocker.patch(
+        "builtins.open", mock_open(read_data=yaml.safe_dump(mock_config_content))
+    )
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.makedirs")
 
@@ -167,19 +169,27 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
     )
     mocker.patch("shutil.which", return_value="/usr/bin/pipx")
     mocker.patch("builtins.input", return_value="y")
+    mocker.patch(
+        "subprocess.run", return_value=mocker.MagicMock(returncode=0, stdout="")
+    )
+    mocker.patch(
+        "os.path.exists",
+        side_effect=lambda path: str(path) == str(mock_config_file),
+    )
 
     # Mock file operations to fail on backup read
-    def mock_open_failure(filename, mode="r"):
-        if "r" in mode and str(mock_config_file) in filename:
-            raise IOError("Permission denied")
-        return mock_open()(filename, mode)
+    def mock_open_failure(filename, mode="r", *_args, **_kwargs):
+        """Raise PermissionError when reading the test config file."""
+        if "r" in mode and str(mock_config_file) in str(filename):
+            raise PermissionError("Permission denied")
+        return mock_open()(filename, mode, *_args, **_kwargs)
 
     mocker.patch("builtins.open", side_effect=mock_open_failure)
 
     result = setup_config.migrate_pip_to_pipx()
 
-    # Should still attempt migration despite backup failure
-    assert result is True
+    # Migration should be aborted when backup fails
+    assert result is False
 
 
 @pytest.mark.configuration
@@ -193,8 +203,8 @@ def test_setup_downloads_apk_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "a",  # Choose APK only
-            "n",  # Add channel suffixes
             "y",  # Check APK prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
@@ -224,7 +234,8 @@ def test_setup_downloads_firmware_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "f",  # Choose firmware only
-            "n",  # Don't rerun menu
+            "n",  # Check firmware prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
@@ -253,9 +264,9 @@ def test_setup_downloads_both_selected(mocker, capsys):
         "builtins.input",
         side_effect=[
             "b",  # Choose both
-            "n",  # Don't rerun APK menu
-            "n",  # Don't rerun firmware menu
+            "n",  # Check firmware prereleases
             "y",  # Check APK prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
@@ -284,9 +295,7 @@ def test_setup_downloads_no_selection(mocker, capsys):
     config = {}
 
     # Mock input to select APK but then menu returns None
-    mocker.patch(
-        "builtins.input", side_effect=["a", "n"]
-    )  # Choose APK, Add channel suffixes
+    mocker.patch("builtins.input", side_effect=["a"])  # Choose APK only
     mocker.patch("fetchtastic.menu_apk.run_menu", return_value=None)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
@@ -317,10 +326,10 @@ def test_setup_downloads_partial_run(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",  # Keep APK selection
-            "n",  # Add channel suffixes
+            "y",  # Download Android APKs
             "n",  # Don't rerun menu (keep existing selection)
             "y",  # Enable prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
@@ -337,16 +346,110 @@ def test_setup_downloads_partial_run(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
+    """Partial Android run should skip the menu when user keeps existing selection."""
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["existing"],
+        "CHECK_APK_PRERELEASES": False,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Download Android APKs
+            "n",  # Don't rerun menu
+            "n",  # Disable prereleases
+            "n",  # Add channel suffixes
+        ],
+    )
+
+    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "android"
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert result_config["SAVE_APKS"] is True
+    assert result_config["CHECK_APK_PRERELEASES"] is False
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_run_firmware_forces_menu_without_selection(mocker):
+    """Partial firmware run should force menu when no existing selection exists."""
+    config = {"SAVE_APKS": False, "SAVE_FIRMWARE": True}
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Download firmware releases
+        ],
+    )
+
+    mock_menu = mocker.patch("fetchtastic.menu_firmware.run_menu", return_value=None)
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "firmware"
+    )
+
+    assert save_apks is False
+    assert save_firmware is False
+    assert result_config["SAVE_FIRMWARE"] is False
+    assert result_config["SELECTED_FIRMWARE_ASSETS"] == []
+    assert result_config["CHECK_PRERELEASES"] is False
+    mock_menu.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_run_firmware_keep_existing_skips_menu(mocker):
+    """Partial firmware run should skip menu when user keeps existing selection."""
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["existing-firmware"],
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Download firmware releases
+            "n",  # Don't rerun menu
+            "n",  # Disable firmware prereleases
+            "n",  # Add channel suffixes
+        ],
+    )
+
+    mock_menu = mocker.patch("fetchtastic.menu_firmware.run_menu")
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "firmware"
+    )
+
+    assert save_apks is False
+    assert save_firmware is True
+    assert result_config["SAVE_FIRMWARE"] is True
+    assert result_config["SELECTED_FIRMWARE_ASSETS"] == ["existing-firmware"]
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_configure_exclude_patterns_use_defaults(mocker):
     """Test configure_exclude_patterns accepting recommended defaults."""
     config = {}
 
     # Mock input to accept defaults
-    mocker.patch("builtins.input", side_effect=["y", "n", "y"])
+    mocker.patch("builtins.input", side_effect=["y", "n"])
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
 
 
 @pytest.mark.configuration
@@ -361,18 +464,11 @@ def test_configure_exclude_patterns_custom_patterns(mocker):
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use custom patterns
-    mocker.patch(
-        "builtins.input",
-        side_effect=[
-            "n",  # Don't use defaults
-            " ".join(custom_patterns),  # Custom patterns
-            "y",  # Confirm
-        ],
-    )
+    mocker.patch("builtins.input", side_effect=["n", " ".join(custom_patterns)])
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == custom_patterns
+    assert patterns == custom_patterns
 
 
 @pytest.mark.configuration
@@ -393,14 +489,13 @@ def test_configure_exclude_patterns_add_to_defaults(mocker):
             "y",  # Use defaults
             "y",  # Add more
             " ".join(additional),  # Additional patterns
-            "y",  # Confirm
         ],
     )
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
     expected = setup_config.RECOMMENDED_EXCLUDE_PATTERNS + additional
-    assert config["EXCLUDE_PATTERNS"] == expected
+    assert patterns == expected
 
 
 @pytest.mark.configuration
@@ -414,46 +509,36 @@ def test_configure_exclude_patterns_no_patterns(mocker):
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use no patterns
-    mocker.patch(
-        "builtins.input",
-        side_effect=[
-            "n",  # Don't use defaults
-            "",  # No custom patterns
-            "y",  # Confirm
-        ],
-    )
+    mocker.patch("builtins.input", side_effect=["n", ""])
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == []
+    assert patterns == []
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_configure_exclude_patterns_retry_on_invalid(mocker):
-    """Test configure_exclude_patterns retry loop on invalid confirmation."""
+def test_configure_exclude_patterns_deduplicates(mocker):
+    """Test configure_exclude_patterns de-duplicates patterns."""
     config = {}
 
     # Mock interactive environment
     mocker.patch("os.environ.get", return_value=None)  # Ensure CI is not set
     mocker.patch("sys.stdin.isatty", return_value=True)
 
-    # Mock input to reject first confirmation, accept second
+    # Mock input to use defaults and provide duplicates
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "n",  # Don't use defaults (first loop)
-            "*.test",  # Custom patterns (first loop)
-            "n",  # Reject first confirmation
-            "n",  # Don't use defaults (second loop)
-            "*.test",  # Custom patterns (second loop)
-            "y",  # Accept second confirmation
+            "y",  # Use defaults
+            "y",  # Add more
+            "*.hex *.custom *.hex",  # Additional patterns (with duplicates)
         ],
     )
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == ["*.test"]
+    assert patterns == [*setup_config.RECOMMENDED_EXCLUDE_PATTERNS, "*.custom"]
 
 
 @pytest.mark.configuration
@@ -466,10 +551,10 @@ def test_configure_exclude_patterns_non_interactive(mocker):
     mocker.patch.dict(os.environ, {"CI": "true"})
     mocker.patch("sys.stdin.isatty", return_value=False)
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
     # Should use recommended defaults in non-interactive mode
-    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
 
 
 @pytest.mark.configuration
@@ -888,7 +973,7 @@ def test_migrate_config_success(mocker, tmp_path):
 
     # Mock file operations
     mocker.patch("os.path.exists", side_effect=lambda path: path == str(old_config))
-    mocker.patch("builtins.open", mock_open(read_data=yaml.dump(test_config_data)))
+    mocker.patch("builtins.open", mock_open(read_data=yaml.safe_dump(test_config_data)))
     mocker.patch("os.makedirs")
     mocker.patch("os.remove")
     mocker.patch("fetchtastic.log_utils.logger")

@@ -5,7 +5,7 @@ import platform
 import shutil
 from typing import Any
 
-from fetchtastic import menu_repo
+from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_NAME,
@@ -253,8 +253,9 @@ def main(config: dict[str, Any]) -> None:  # log_message_func removed
             if platform.system() == "Windows":
                 try:
                     open_folder = (
-                        input(
-                            "\nWould you like to open this folder? [y/n] (default: yes): "
+                        setup_config._safe_input(
+                            "\nWould you like to open this folder? [y/n] (default: yes): ",
+                            default="y",
                         )
                         .strip()
                         .lower()
