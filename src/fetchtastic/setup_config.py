@@ -253,6 +253,8 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
         return value != 0
     if isinstance(value, str):
         normalized = value.strip().lower()
+        if normalized.isdigit():
+            return int(normalized) != 0
         if normalized in {"y", "yes", "true", "t", "1", "on"}:
             return True
         if normalized in {"n", "no", "false", "f", "0", "off"}:
@@ -408,7 +410,10 @@ def migrate_pip_to_pipx() -> bool:
         if not pipx_path:
             print("   Installing pipx...")
             result = subprocess.run(
-                ["pip", "install", "--user", "pipx"], capture_output=True, text=True
+                ["pip", "install", "--user", "pipx"],
+                capture_output=True,
+                text=True,
+                timeout=CRON_COMMAND_TIMEOUT_SECONDS,
             )
             if result.returncode != 0:
                 print(f"   Failed to install pipx: {result.stderr}")
@@ -416,7 +421,10 @@ def migrate_pip_to_pipx() -> bool:
 
             # Ensure pipx path
             result = subprocess.run(
-                ["python", "-m", "pipx", "ensurepath"], capture_output=True, text=True
+                ["python", "-m", "pipx", "ensurepath"],
+                capture_output=True,
+                text=True,
+                timeout=CRON_COMMAND_TIMEOUT_SECONDS,
             )
             print("   pipx installed successfully.")
         else:
@@ -425,7 +433,10 @@ def migrate_pip_to_pipx() -> bool:
         # Step 3: Uninstall from pip
         print("3. Uninstalling fetchtastic from pip...")
         result = subprocess.run(
-            ["pip", "uninstall", "fetchtastic", "-y"], capture_output=True, text=True
+            ["pip", "uninstall", "fetchtastic", "-y"],
+            capture_output=True,
+            text=True,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             print(f"   Warning: Failed to uninstall from pip: {result.stderr}")
@@ -435,13 +446,20 @@ def migrate_pip_to_pipx() -> bool:
         # Step 4: Install with pipx
         print("4. Installing fetchtastic with pipx...")
         result = subprocess.run(
-            ["pipx", "install", "fetchtastic"], capture_output=True, text=True
+            ["pipx", "install", "fetchtastic"],
+            capture_output=True,
+            text=True,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             print(f"   Failed to install with pipx: {result.stderr}")
             # Try to restore pip installation
             print("   Attempting to restore pip installation...")
-            subprocess.run(["pip", "install", "fetchtastic"], check=False)
+            subprocess.run(
+                ["pip", "install", "fetchtastic"],
+                check=False,
+                timeout=CRON_COMMAND_TIMEOUT_SECONDS,
+            )
             return False
         else:
             print("   Installed with pipx successfully.")
@@ -581,6 +599,12 @@ def check_storage_setup() -> bool:
     # Check if the Termux storage directory and Downloads are set up and writable
     storage_dir = os.path.expanduser("~/storage")
     storage_downloads = os.path.expanduser("~/storage/downloads")
+
+    if not sys.stdin.isatty() or os.environ.get("CI"):
+        print(
+            "Termux storage setup requires an interactive terminal; aborting storage setup checks."
+        )
+        return False
 
     while True:
         if (
@@ -751,7 +775,12 @@ def _setup_downloads(
                     rerun_menu = False
         if rerun_menu:
             firmware_selection = menu_firmware.run_menu()
-            if not firmware_selection:
+            selected_assets = (
+                firmware_selection.get("selected_assets")
+                if isinstance(firmware_selection, dict)
+                else None
+            )
+            if not selected_assets:
                 print("No firmware assets selected. Firmware will not be downloaded.")
                 save_firmware = False
                 config["SAVE_FIRMWARE"] = False
@@ -759,9 +788,7 @@ def _setup_downloads(
                 config["CHECK_PRERELEASES"] = False
                 config["SELECTED_PRERELEASE_ASSETS"] = []
             else:
-                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
-                    "selected_assets"
-                ]
+                config["SELECTED_FIRMWARE_ASSETS"] = selected_assets
         elif not config.get("SELECTED_FIRMWARE_ASSETS"):
             print(
                 "No existing firmware selection found. Firmware will not be downloaded."
@@ -803,14 +830,19 @@ def _setup_downloads(
                     rerun_menu = False
         if rerun_menu:
             apk_selection = menu_apk.run_menu()
-            if not apk_selection:
+            selected_assets = (
+                apk_selection.get("selected_assets")
+                if isinstance(apk_selection, dict)
+                else None
+            )
+            if not selected_assets:
                 print("No APK assets selected. APKs will not be downloaded.")
                 save_apks = False
                 config["SAVE_APKS"] = False
                 config["SELECTED_APK_ASSETS"] = []
                 config["CHECK_APK_PRERELEASES"] = False
             else:
-                config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
+                config["SELECTED_APK_ASSETS"] = selected_assets
         elif not config.get("SELECTED_APK_ASSETS"):
             print("No existing APK selection found. APKs will not be downloaded.")
             save_apks = False
@@ -1046,10 +1078,16 @@ def _setup_firmware(
                 "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
             )
 
-            current_patterns = config.get("EXTRACT_PATTERNS", [])
-            if isinstance(current_patterns, str):
+            current_patterns = config.get("EXTRACT_PATTERNS")
+            if current_patterns is None:
+                current_patterns = []
+            elif isinstance(current_patterns, str):
                 current_patterns = current_patterns.split()
-                config["EXTRACT_PATTERNS"] = current_patterns
+            elif isinstance(current_patterns, (list, tuple, set)):
+                current_patterns = [str(item) for item in current_patterns]
+            else:
+                current_patterns = [str(current_patterns)]
+            config["EXTRACT_PATTERNS"] = current_patterns
             if current_patterns:
                 print(f"Current patterns: {' '.join(current_patterns)}")
                 keep_patterns_default = "yes"

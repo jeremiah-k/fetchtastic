@@ -313,6 +313,66 @@ def test_setup_downloads_no_selection(mocker, capsys):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_firmware_empty_selection(mocker):
+    """Empty firmware selections should disable firmware downloads."""
+    config = {}
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "f",  # Choose firmware only
+            "n",  # Check firmware prereleases
+            "n",  # Add channel suffixes
+        ],
+    )
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": []},
+    )
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=False, wants=lambda x: True
+    )
+
+    assert save_apks is False
+    assert save_firmware is False
+    assert result_config["SAVE_FIRMWARE"] is False
+    assert result_config["CHECK_PRERELEASES"] is False
+    assert result_config["SELECTED_FIRMWARE_ASSETS"] == []
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_apk_empty_selection(mocker):
+    """Empty APK selections should disable APK downloads."""
+    config = {}
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "a",  # Choose APK only
+            "y",  # Check APK prereleases
+            "n",  # Add channel suffixes
+        ],
+    )
+    mocker.patch(
+        "fetchtastic.menu_apk.run_menu",
+        return_value={"selected_assets": []},
+    )
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=False, wants=lambda x: True
+    )
+
+    assert save_apks is False
+    assert save_firmware is False
+    assert result_config["SAVE_APKS"] is False
+    assert result_config["CHECK_APK_PRERELEASES"] is False
+    assert result_config["SELECTED_APK_ASSETS"] == []
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_partial_run(mocker):
     """Test _setup_downloads in partial run mode."""
     config = {
@@ -784,6 +844,7 @@ def test_check_storage_setup_already_setup(mocker):
     """Test check_storage_setup when storage is already configured."""
     mocker.patch.dict(os.environ, {"PREFIX": "/data/data/com.termux/files/usr"})
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("sys.stdin.isatty", return_value=True)
     mocker.patch(
         "os.path.exists",
         side_effect=lambda path: {
@@ -814,6 +875,7 @@ def test_check_storage_setup_permission_denied_retry(mocker):
 
     mocker.patch.dict(os.environ, {"PREFIX": "/data/data/com.termux/files/usr"})
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("sys.stdin.isatty", return_value=True)
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.access", side_effect=lambda path, mode: mock_exists_access(path))
     mocker.patch("fetchtastic.setup_config.setup_storage")

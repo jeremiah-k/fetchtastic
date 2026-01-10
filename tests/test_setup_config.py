@@ -77,6 +77,7 @@ def test_is_termux_no_prefix():
         ("no", True, False),
         ("ON", False, True),
         ("off", True, False),
+        ("2", False, True),
         ("maybe", True, True),
         ("", False, False),
         (object(), True, True),
