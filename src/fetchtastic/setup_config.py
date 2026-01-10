@@ -606,8 +606,9 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
 
     Displays the available setup sections with single-letter shortcuts and accepts a comma/space/semicolon-separated
     selection. Pressing ENTER (an empty response) or entering one of the keywords "all", "full", or "everything"
-    signals a full run and the function returns None. Shortcuts defined in SECTION_SHORTCUTS and full section names
-    from SETUP_SECTION_CHOICES are accepted; invalid tokens cause the prompt to repeat until a valid selection is given.
+    signals a full run and the function returns None. Entering "q", "quit", "x", or "exit" returns an empty set to
+    signal cancellation. Shortcuts defined in SECTION_SHORTCUTS and full section names from SETUP_SECTION_CHOICES are
+    accepted; invalid tokens cause the prompt to repeat until a valid selection is given.
 
     Returns:
         Optional[Set[str]]: A set of chosen section names (subset of SETUP_SECTION_CHOICES), or None to indicate
@@ -626,13 +627,19 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
     print("  [n] notifications  — NTFY server/topic settings")
     print("  [m] automation     — scheduled/automatic execution options")
     print("  [g] github         — GitHub API token (rate-limit boost)")
+    print("  [q] quit           — exit setup without changes")
 
     while True:
         response = _safe_input(
-            "Selection (examples: f, android; default: full setup): ", default=""
+            "Selection (examples: f, android; default: full setup, q to quit): ",
+            default="",
         ).strip()
         if not response:
             return None
+
+        lowered_response = response.strip().lower()
+        if lowered_response in {"q", "quit", "x", "exit"}:
+            return set()
 
         tokens = [tok for tok in re.split(r"[\s,;]+", response) if tok]
         selected: Set[str] = set()
@@ -1893,6 +1900,9 @@ def run_setup(
     config_present, _ = config_exists()
     if not partial_sections and config_present:
         user_sections = _prompt_for_setup_sections()
+        if user_sections is not None and not user_sections:
+            print("Setup cancelled.")
+            return
         if user_sections:
             partial_sections = user_sections
 

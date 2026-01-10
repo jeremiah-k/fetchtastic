@@ -597,14 +597,14 @@ def test_cli_version_command_update_available(mocker):
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"
     )
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mock_print = mocker.patch("builtins.print")
 
     with patch("sys.argv", ["fetchtastic", "version"]):
         cli.main()
 
-    # Should log update information
-    mock_logger.info.assert_any_call("A newer version (v0.9.0) is available!")
-    mock_logger.info.assert_any_call("Run 'pipx upgrade fetchtastic' to upgrade.")
+    # Should print update information
+    mock_print.assert_any_call("A newer version (v0.9.0) is available!")
+    mock_print.assert_any_call("Run 'pipx upgrade fetchtastic' to upgrade.")
 
 
 @pytest.mark.user_interface

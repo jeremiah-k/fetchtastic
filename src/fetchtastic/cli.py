@@ -476,16 +476,14 @@ def main():
         # Run the clean process
         run_clean()
     elif args.command == "version":
-        display_banner()
         # Get version information
         current_version, latest_version, update_available = get_version_info()
 
-        # Log version information
-        log_utils.logger.info(f"Fetchtastic v{current_version}")
+        print(f"Fetchtastic v{current_version}")
         if update_available and latest_version:
             upgrade_cmd = get_upgrade_command()
-            log_utils.logger.info(f"A newer version (v{latest_version}) is available!")
-            log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            print(f"A newer version (v{latest_version}) is available!")
+            print(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Handle help command
         help_command = args.help_command

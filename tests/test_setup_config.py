@@ -1867,6 +1867,18 @@ def test_prompt_for_setup_sections_semicolon_separator(mock_input):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_quit(mock_input):
+    """Test _prompt_for_setup_sections returns empty set for quit."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "q"
+    result = _prompt_for_setup_sections()
+    assert result == set()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_run_setup_invalid_sections():
     """Test run_setup raises ValueError for invalid sections."""
     from fetchtastic.setup_config import run_setup
@@ -1950,6 +1962,23 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
                             pass  # We expect exceptions due to incomplete mocking
 
     mock_prompt.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.config_exists")
+@patch("fetchtastic.setup_config._prompt_for_setup_sections")
+def test_run_setup_quits_on_prompt_cancel(mock_prompt, mock_config_exists):
+    """Test run_setup exits when user quits the section prompt."""
+    from fetchtastic.setup_config import run_setup
+
+    mock_config_exists.return_value = (True, "/path/to/config")
+    mock_prompt.return_value = set()
+
+    with patch("builtins.print") as mock_print:
+        run_setup()
+
+    mock_print.assert_any_call("Setup cancelled.")
 
 
 # SELECTED_PRERELEASE_ASSETS setup wizard tests
