@@ -695,6 +695,38 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
             return selected
 
 
+def _disable_asset_downloads(
+    config: Dict[str, Any], asset_type: str
+) -> Tuple[Dict[str, Any], bool]:
+    """
+    Disable downloads for the specified asset type and clear related config keys.
+
+    Parameters:
+        config (dict): Configuration dictionary to update in place.
+        asset_type (str): Asset type name ('firmware' or 'APKs') for the message.
+
+    Returns:
+        tuple[dict, bool]: (updated_config, save_assets) where save_assets is False.
+    """
+    print(
+        f"No {asset_type} selected. {asset_type.capitalize()} will not be downloaded."
+    )
+    config["SAVE_FIRMWARE" if asset_type == "firmware" else "SAVE_APKS"] = False
+    config[
+        (
+            "SELECTED_FIRMWARE_ASSETS"
+            if asset_type == "firmware"
+            else "SELECTED_APK_ASSETS"
+        )
+    ] = []
+    if asset_type == "firmware":
+        config["CHECK_PRERELEASES"] = False
+        config["SELECTED_PRERELEASE_ASSETS"] = []
+    else:
+        config["CHECK_APK_PRERELEASES"] = False
+    return config, False
+
+
 def _setup_downloads(
     config: Dict[str, Any], is_partial_run: bool, wants: Callable[[str], bool]
 ) -> Tuple[Dict[str, Any], bool, bool]:
@@ -779,23 +811,14 @@ def _setup_downloads(
                 else None
             )
             if not selected_assets:
-                print("No firmware assets selected. Firmware will not be downloaded.")
-                save_firmware = False
-                config["SAVE_FIRMWARE"] = False
-                config["SELECTED_FIRMWARE_ASSETS"] = []
-                config["CHECK_PRERELEASES"] = False
-                config["SELECTED_PRERELEASE_ASSETS"] = []
+                config, save_firmware = _disable_asset_downloads(config, "firmware")
             else:
                 config["SELECTED_FIRMWARE_ASSETS"] = selected_assets
         elif not config.get("SELECTED_FIRMWARE_ASSETS"):
             print(
                 "No existing firmware selection found. Firmware will not be downloaded."
             )
-            save_firmware = False
-            config["SAVE_FIRMWARE"] = False
-            config["SELECTED_FIRMWARE_ASSETS"] = []
-            config["CHECK_PRERELEASES"] = False
-            config["SELECTED_PRERELEASE_ASSETS"] = []
+            config, save_firmware = _disable_asset_downloads(config, "firmware")
 
     # --- Firmware Pre-release Configuration ---
     if save_firmware and (not is_partial_run or wants("firmware")):
@@ -825,19 +848,12 @@ def _setup_downloads(
                 else None
             )
             if not selected_assets:
-                print("No APK assets selected. APKs will not be downloaded.")
-                save_apks = False
-                config["SAVE_APKS"] = False
-                config["SELECTED_APK_ASSETS"] = []
-                config["CHECK_APK_PRERELEASES"] = False
+                config, save_apks = _disable_asset_downloads(config, "APKs")
             else:
                 config["SELECTED_APK_ASSETS"] = selected_assets
         elif not config.get("SELECTED_APK_ASSETS"):
             print("No existing APK selection found. APKs will not be downloaded.")
-            save_apks = False
-            config["SAVE_APKS"] = False
-            config["SELECTED_APK_ASSETS"] = []
-            config["CHECK_APK_PRERELEASES"] = False
+            config, save_apks = _disable_asset_downloads(config, "APKs")
 
     # --- APK Pre-release Configuration ---
     if save_apks and (not is_partial_run or wants("android")):
@@ -1514,7 +1530,7 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
             text_to_copy = full_topic_url
 
-        copy_to_clipboard = _safe_input(copy_prompt_text, default="y") or "y"
+        copy_to_clipboard = _safe_input(copy_prompt_text, default="y")
         if _coerce_bool(copy_to_clipboard, default=True):
             success = copy_to_clipboard_func(text_to_copy)
             if success:
@@ -2051,13 +2067,9 @@ def run_setup(
                 _safe_input("")
         else:
             # On other platforms, offer to run it now
-            perform_first_run = (
-                _safe_input(
-                    "Would you like to start first run now? [y/n] (default: yes): ",
-                    default="y",
-                )
-                .strip()
-                .lower()
+            perform_first_run = _safe_input(
+                "Would you like to start first run now? [y/n] (default: yes): ",
+                default="y",
             )
             if _coerce_bool(perform_first_run, default=True):
                 from fetchtastic.download.cli_integration import DownloadCLIIntegration
