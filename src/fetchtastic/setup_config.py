@@ -1496,17 +1496,14 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             ntfy_server = "https://" + ntfy_server
 
         # Get topic name
-        if config.get("NTFY_TOPIC"):
-            current_topic = config.get("NTFY_TOPIC")
-        else:
-            current_topic = "fetchtastic-" + "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=6)
-            )
+        current_topic = config.get("NTFY_TOPIC") or "fetchtastic-" + "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=6)
+        )
 
         topic_name = (
             _safe_input(
                 f"Enter a unique topic name (current: {current_topic}): ",
-                default=current_topic,
+                default=str(current_topic),
             ).strip()
             or current_topic
         )
