@@ -69,7 +69,7 @@ def _safe_input(prompt: str, *, default: str = "") -> str:
     """
     try:
         return input(prompt)
-    except EOFError:
+    except (EOFError, KeyboardInterrupt):
         return default
 
 
@@ -253,7 +253,7 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
         return value != 0
     if isinstance(value, str):
         normalized = value.strip().lower()
-        if normalized.isdigit():
+        if re.fullmatch(r"[+-]?\d+", normalized or ""):
             return int(normalized) != 0
         if normalized in {"y", "yes", "true", "t", "1", "on"}:
             return True
@@ -410,7 +410,7 @@ def migrate_pip_to_pipx() -> bool:
         if not pipx_path:
             print("   Installing pipx...")
             result = subprocess.run(
-                ["pip", "install", "--user", "pipx"],
+                [sys.executable, "-m", "pip", "install", "--user", "pipx"],
                 capture_output=True,
                 text=True,
                 timeout=CRON_COMMAND_TIMEOUT_SECONDS,
@@ -421,19 +421,27 @@ def migrate_pip_to_pipx() -> bool:
 
             # Ensure pipx path
             result = subprocess.run(
-                ["python", "-m", "pipx", "ensurepath"],
+                [sys.executable, "-m", "pipx", "ensurepath"],
                 capture_output=True,
                 text=True,
                 timeout=CRON_COMMAND_TIMEOUT_SECONDS,
             )
             print("   pipx installed successfully.")
+            pipx_path = shutil.which("pipx")
+            if not pipx_path:
+                local_pipx = os.path.expanduser("~/.local/bin/pipx")
+                if os.path.exists(local_pipx):
+                    pipx_path = local_pipx
+            if not pipx_path:
+                print("   pipx executable not found after installation.")
+                return False
         else:
             print("   pipx is already available.")
 
         # Step 3: Uninstall from pip
         print("3. Uninstalling fetchtastic from pip...")
         result = subprocess.run(
-            ["pip", "uninstall", "fetchtastic", "-y"],
+            [sys.executable, "-m", "pip", "uninstall", "fetchtastic", "-y"],
             capture_output=True,
             text=True,
             timeout=CRON_COMMAND_TIMEOUT_SECONDS,
@@ -446,7 +454,7 @@ def migrate_pip_to_pipx() -> bool:
         # Step 4: Install with pipx
         print("4. Installing fetchtastic with pipx...")
         result = subprocess.run(
-            ["pipx", "install", "fetchtastic"],
+            [pipx_path, "install", "fetchtastic"],
             capture_output=True,
             text=True,
             timeout=CRON_COMMAND_TIMEOUT_SECONDS,
@@ -456,8 +464,10 @@ def migrate_pip_to_pipx() -> bool:
             # Try to restore pip installation
             print("   Attempting to restore pip installation...")
             subprocess.run(
-                ["pip", "install", "fetchtastic"],
+                [sys.executable, "-m", "pip", "install", "fetchtastic"],
                 check=False,
+                capture_output=True,
+                text=True,
                 timeout=CRON_COMMAND_TIMEOUT_SECONDS,
             )
             return False
@@ -1086,7 +1096,11 @@ def _setup_firmware(
             elif isinstance(current_patterns, (list, tuple, set)):
                 current_patterns = [str(item) for item in current_patterns]
             else:
-                current_patterns = [str(current_patterns)]
+                logger.warning(
+                    "Unexpected type for EXTRACT_PATTERNS: %s. Treating as empty.",
+                    type(current_patterns).__name__,
+                )
+                current_patterns = []
             config["EXTRACT_PATTERNS"] = current_patterns
             if current_patterns:
                 print(f"Current patterns: {' '.join(current_patterns)}")
@@ -1729,8 +1743,12 @@ def _setup_base(
     if is_termux() and (not is_partial_run or wants("base")):
         install_termux_packages()
         # Check if storage is set up
-        check_storage_setup()
-        print("Termux storage is set up.")
+        if check_storage_setup():
+            print("Termux storage is set up.")
+        else:
+            print(
+                "Termux storage is not set up; skipping Termux storage-dependent steps."
+            )
 
         # Check for pip installation and offer migration to pipx
         if get_fetchtastic_installation_method() == "pip":

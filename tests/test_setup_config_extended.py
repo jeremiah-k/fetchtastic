@@ -842,9 +842,13 @@ def test_copy_to_clipboard_linux_no_tools(mocker):
 @pytest.mark.unit
 def test_check_storage_setup_already_setup(mocker):
     """Test check_storage_setup when storage is already configured."""
-    mocker.patch.dict(os.environ, {"PREFIX": "/data/data/com.termux/files/usr"})
+    mocker.patch.dict(
+        os.environ,
+        {"PREFIX": "/data/data/com.termux/files/usr", "CI": ""},
+        clear=True,
+    )
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mocker.patch("sys.stdin.isatty", return_value=True)
+    mocker.patch("fetchtastic.setup_config.sys.stdin.isatty", return_value=True)
     mocker.patch(
         "os.path.exists",
         side_effect=lambda path: {
@@ -873,9 +877,13 @@ def test_check_storage_setup_permission_denied_retry(mocker):
             return False
         return True  # Third call succeeds
 
-    mocker.patch.dict(os.environ, {"PREFIX": "/data/data/com.termux/files/usr"})
+    mocker.patch.dict(
+        os.environ,
+        {"PREFIX": "/data/data/com.termux/files/usr", "CI": ""},
+        clear=True,
+    )
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mocker.patch("sys.stdin.isatty", return_value=True)
+    mocker.patch("fetchtastic.setup_config.sys.stdin.isatty", return_value=True)
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.access", side_effect=lambda path, mode: mock_exists_access(path))
     mocker.patch("fetchtastic.setup_config.setup_storage")
