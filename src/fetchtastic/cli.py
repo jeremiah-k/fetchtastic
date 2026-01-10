@@ -612,9 +612,16 @@ def run_clean():
     # Load config (if present) before deleting config files so BASE_DIR is accurate.
     loaded_config = setup_config.load_config()
     download_dir_from_config: str | None = None
+    base_dir_from_config: str | None = None
     if loaded_config:
-        candidate = loaded_config.get("DOWNLOAD_DIR") or loaded_config.get("BASE_DIR")
-        download_dir_from_config = candidate if isinstance(candidate, str) else None
+        download_candidate = loaded_config.get("DOWNLOAD_DIR")
+        download_dir_from_config = (
+            download_candidate if isinstance(download_candidate, str) else None
+        )
+        base_candidate = loaded_config.get("BASE_DIR")
+        base_dir_from_config = (
+            base_candidate if isinstance(base_candidate, str) else None
+        )
 
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -742,9 +749,9 @@ def run_clean():
                     f"Failed to remove startup shortcut. Reason: {e}", file=sys.stderr
                 )
 
-            # Remove config shortcut in base directory
-            download_dir = download_dir_from_config or setup_config.BASE_DIR
-            config_shortcut_path = os.path.join(download_dir, WINDOWS_SHORTCUT_FILE)
+            # Remove config shortcut in base directory (where it was created, not in DOWNLOAD_DIR)
+            base_dir = base_dir_from_config or setup_config.BASE_DIR
+            config_shortcut_path = os.path.join(base_dir, WINDOWS_SHORTCUT_FILE)
             if os.path.exists(config_shortcut_path):
                 try:
                     os.remove(config_shortcut_path)

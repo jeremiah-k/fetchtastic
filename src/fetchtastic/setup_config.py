@@ -745,8 +745,6 @@ def _setup_downloads(
                     f"Download Android APKs? [y/n] (current: {current_apk_default}): ",
                     default=current_apk_default,
                 )
-                .strip()
-                .lower()
                 or current_apk_default
             )
             save_apks = _coerce_bool(choice)
@@ -757,8 +755,6 @@ def _setup_downloads(
                     f"Download firmware releases? [y/n] (current: {current_fw_default}): ",
                     default=current_fw_default,
                 )
-                .strip()
-                .lower()
                 or current_fw_default
             )
             save_firmware = _coerce_bool(choice)
@@ -974,7 +970,7 @@ def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
             "If you use any of these variants, answer no. Exclude these patterns? [y/n] "
             f"(default: {use_defaults_default}): ",
             default=use_defaults_default,
-        ).strip()
+        )
         or use_defaults_default,
         default=True,
     )
@@ -1105,13 +1101,9 @@ def _setup_firmware(
             if current_patterns:
                 print(f"Current patterns: {' '.join(current_patterns)}")
                 keep_patterns_default = "yes"
-                keep_patterns_input = (
-                    _safe_input(
-                        f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): ",
-                        default=keep_patterns_default,
-                    )
-                    .strip()
-                    .lower()
+                keep_patterns_input = _safe_input(
+                    f"Do you want to keep current extraction patterns? [y/n] (default: {keep_patterns_default}): ",
+                    default=keep_patterns_default,
                 )
                 if not _coerce_bool(
                     keep_patterns_input or keep_patterns_default,
