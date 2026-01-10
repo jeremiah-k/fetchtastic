@@ -57,18 +57,19 @@ def _safe_input(prompt: str, *, default: str = "") -> str:
     Safely get user input with EOFError handling for non-interactive environments.
 
     Wraps input() to handle EOFError which can occur in non-interactive
-    environments (CI, piped input, etc.). When EOFError is raised,
-    returns the default value instead of crashing.
+    environments (CI, piped input, etc.). When EOFError is raised or when
+    the user provides empty input, returns the default value.
 
     Parameters:
         prompt (str): The prompt string to display to the user.
-        default (str): Default value to return if EOFError is raised.
+        default (str): Default value to return if EOFError is raised or input is empty.
 
     Returns:
-        str: User input or default value if EOFError occurred.
+        str: User input or default value if EOFError occurred or input is empty.
     """
     try:
-        return input(prompt)
+        response = input(prompt)
+        return response or default
     except (EOFError, KeyboardInterrupt):
         return default
 
@@ -710,7 +711,8 @@ def _disable_asset_downloads(
         tuple[dict, bool]: (updated_config, save_assets) where save_assets is False.
     """
     if message is None:
-        message = f"No {asset_type} assets selected. {asset_type.capitalize()}s will not be downloaded."
+        asset_plural = {"firmware": "Firmware", "APK": "APKs"}
+        message = f"No {asset_type} assets selected. {asset_plural.get(asset_type, asset_type)} will not be downloaded."
     print(message)
     config["SAVE_FIRMWARE" if asset_type == "firmware" else "SAVE_APKS"] = False
     config[
@@ -979,8 +981,7 @@ def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
             _safe_input(
                 f"Would you like to add any additional exclude patterns? [y/n] (default: {add_more_default}): ",
                 default=add_more_default,
-            ).strip()
-            or add_more_default,
+            ),
             default=False,
         )
 
