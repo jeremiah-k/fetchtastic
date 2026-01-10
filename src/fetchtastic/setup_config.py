@@ -13,7 +13,7 @@ import subprocess
 import sys
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Callable, Dict, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import platformdirs
 import yaml
