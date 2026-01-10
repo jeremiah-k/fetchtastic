@@ -252,16 +252,11 @@ def main(config: dict[str, Any]) -> None:  # log_message_func removed
             # If on Windows, offer to open the folder
             if platform.system() == "Windows":
                 try:
-                    open_folder = (
-                        setup_config._safe_input(
-                            "\nWould you like to open this folder? [y/n] (default: yes): ",
-                            default="y",
-                        )
-                        .strip()
-                        .lower()
-                        or "y"
+                    resp = setup_config._safe_input(
+                        "\nWould you like to open this folder? [y/n] (default: yes): ",
+                        default="y",
                     )
-                    if open_folder == "y":
+                    if setup_config._coerce_bool(resp, default=True):
                         os.startfile(download_folder)  # type: ignore[attr-defined]  # nosec B606
                 except OSError as e:  # os.startfile can raise OSError
                     logger.error(
