@@ -904,13 +904,13 @@ def _setup_android(
     return config
 
 
-def configure_exclude_patterns(config: Dict[str, Any]) -> List[str]:
+def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
     """
     Configure firmware exclude patterns and return the selected list.
 
     Prompts the user to accept recommended exclude patterns, add additional patterns, or supply a custom space-separated list. In non-interactive environments (CI or when stdin is not a TTY), the recommended patterns are applied automatically. Input is normalized by trimming whitespace, removing empty entries, and deduplicating while preserving order. The resulting list is returned to the caller; the function does not persist or mutate config.
     Parameters:
-        config (dict): Mutable configuration dictionary; reserved for future compatibility.
+        _config (dict): Mutable configuration dictionary; reserved for future compatibility.
     """
     # In non-interactive environments, use recommended defaults
     if not sys.stdin.isatty() or os.environ.get("CI"):
@@ -1078,7 +1078,8 @@ def _setup_firmware(
                     # User entered no patterns, so disable auto-extract
                     config["AUTO_EXTRACT"] = False
                     config["EXTRACT_PATTERNS"] = []
-                    print("No extraction patterns provided; disabling auto-extraction.")
+                    print("No extraction patterns provided; disabling auto-extract.")
+                    break
 
             if config.get("AUTO_EXTRACT") and config.get("EXTRACT_PATTERNS"):
                 exclude_patterns = configure_exclude_patterns(config)

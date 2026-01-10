@@ -538,7 +538,7 @@ def test_configure_exclude_patterns_deduplicates(mocker):
 
     patterns = setup_config.configure_exclude_patterns(config)
 
-    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS + ["*.custom"]
+    assert patterns == [*setup_config.RECOMMENDED_EXCLUDE_PATTERNS, "*.custom"]
 
 
 @pytest.mark.configuration
