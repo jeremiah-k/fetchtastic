@@ -696,21 +696,22 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
 
 
 def _disable_asset_downloads(
-    config: Dict[str, Any], asset_type: str
+    config: Dict[str, Any], asset_type: str, message: Optional[str] = None
 ) -> Tuple[Dict[str, Any], bool]:
     """
-    Disable downloads for the specified asset type and clear related config keys.
+    Disable downloads for specified asset type and clear related config keys.
 
     Parameters:
         config (dict): Configuration dictionary to update in place.
-        asset_type (str): Asset type name ('firmware' or 'APKs') for the message.
+        asset_type (str): Asset type name ('firmware' or 'APKs') for config keys.
+        message (Optional[str]): Custom message to print; defaults to standard message if None.
 
     Returns:
         tuple[dict, bool]: (updated_config, save_assets) where save_assets is False.
     """
-    print(
-        f"No {asset_type} selected. {asset_type.capitalize()} will not be downloaded."
-    )
+    if message is None:
+        message = f"No {asset_type} selected. {asset_type.capitalize()} will not be downloaded."
+    print(message)
     config["SAVE_FIRMWARE" if asset_type == "firmware" else "SAVE_APKS"] = False
     config[
         (
@@ -815,10 +816,11 @@ def _setup_downloads(
             else:
                 config["SELECTED_FIRMWARE_ASSETS"] = selected_assets
         elif not config.get("SELECTED_FIRMWARE_ASSETS"):
-            print(
-                "No existing firmware selection found. Firmware will not be downloaded."
+            config, save_firmware = _disable_asset_downloads(
+                config,
+                "firmware",
+                "No existing firmware selection found. Firmware will not be downloaded.",
             )
-            config, save_firmware = _disable_asset_downloads(config, "firmware")
 
     # --- Firmware Pre-release Configuration ---
     if save_firmware and (not is_partial_run or wants("firmware")):
