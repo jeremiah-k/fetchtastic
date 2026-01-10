@@ -596,16 +596,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         keep_limit_override: Optional[int] = None,
     ) -> None:
         """
-        Ensure APK prerelease directories reside under the dedicated prerelease subdirectory and remove directories that are not expected based on the provided releases.
-
-        Given an optional list of cached releases, this will:
-        - Keep the most recent stable release directories up to the configured ANDROID_VERSIONS_TO_KEEP value in the APK root.
-        - Ensure the APK prerelease subdirectory exists and contains only prerelease directories corresponding to the filtered prereleases.
-        - Remove unexpected entries (except symlinks) from the APK root and the prerelease subdirectory.
-
+        Ensure APK version directories are organized (stable versions in the APK root, prereleases under the prerelease subdirectory) and remove any unexpected entries.
+        
+        Scans the APK root and the prerelease subdirectory and removes filesystem entries that are not part of the expected stable or prerelease sets for the provided releases; symlinks are left untouched. If no cached_releases are provided, the APK root is missing, or there are no stable releases, no action is taken. The number of stable versions retained is determined by keep_limit_override when provided, otherwise by the `ANDROID_VERSIONS_TO_KEEP` configuration value.
+        
         Parameters:
-            cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease
-                directories should be retained; if None or empty, no action is taken.
+            cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease directories should be retained; if None or empty, the method returns without modifying the filesystem.
         """
         try:
             if not cached_releases:
@@ -643,6 +639,16 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             def _build_expected_set(
                 releases: List[Release], release_label: str
             ) -> set[str]:
+                """
+                Builds the set of filesystem-safe release directory names from a list of Release objects.
+                
+                Parameters:
+                    releases (List[Release]): Releases whose tag_name values will be sanitized and included.
+                    release_label (str): Human-readable label used in warning messages when a tag_name is unsafe.
+                
+                Returns:
+                    set[str]: A set of sanitized tag strings suitable as directory names; releases with unsafe tags are skipped and logged.
+                """
                 expected: set[str] = set()
                 for release in releases:
                     safe_tag = _sanitize_path_component(release.tag_name)
@@ -667,16 +673,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 entries: Optional[List[os.DirEntry[str]]] = None,
             ) -> None:
                 """
-                Scan base_dir and remove any filesystem entries whose names are not in `allowed`.
-
+                Remove filesystem entries in base_dir whose names are not in `allowed`.
+                
+                If `entries` is provided, it will be used instead of scanning `base_dir`. Symlinks are skipped. If `base_dir` does not exist the function returns quietly.
+                
                 Parameters:
-                    base_dir (str): Directory path to scan for unexpected entries.
-                    allowed (set[str]): Set of entry names that must be preserved (files or directories).
-
-                Notes:
-                    - Symlinks are skipped and left untouched.
-                    - Removes unexpected entries recursively using a safe removal helper.
-                    - If base_dir does not exist, the function returns quietly.
+                    base_dir (str): Path of the directory to inspect and prune.
+                    allowed (set[str]): Names of entries (files or directories) that must be preserved.
+                    entries (Optional[List[os.DirEntry[str]]]): Optional list of directory entries to use instead of scanning `base_dir`.
                 """
                 try:
                     if entries is None:

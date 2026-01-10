@@ -58,14 +58,12 @@ def _join_text(parts: Iterable[Optional[str]]) -> str:
 
 def detect_release_channel(release: Release) -> str:
     """
-    Determine the release channel from the release's name, tag, and prerelease flag.
-
-    The function checks the combined name and tag, then falls back to defaults.
-    We do NOT use prerelease language for full releases; prereleases are tracked
-    elsewhere and should not leak into the full-release channel labels.
-
+    Infer the release channel ('alpha', 'beta', or 'rc') from a release's name and tag.
+    
+    This function examines the release's name and tag text to decide the channel. Explicit channel keywords in the name or tag take precedence; the word "stable" is treated as "beta"; tags with hash-style suffixes are treated as "alpha"; the release's prerelease flag is ignored. If no condition matches, returns "alpha".
+    
     Returns:
-        One of "alpha", "beta", or "rc" indicating the inferred channel.
+        'alpha', 'beta', or 'rc' indicating the inferred channel.
     """
     # Use only name + tag for channel detection; body text is ignored by design to
     # avoid accidental channel mismatches from release notes.
@@ -96,7 +94,12 @@ def detect_release_channel(release: Release) -> str:
 
 def is_release_revoked(release: Release) -> bool:
     """
-    Determine whether a release is revoked by scanning name and explicit body markers.
+    Detects whether a release has been marked as revoked.
+    
+    Scans the release name for revoked indicators and, if a body exists, inspects up to the first 14 non-empty lines of the body. Each inspected line is unquoted (leading '>' removed), stripped of leading non-alphanumeric punctuation, and ignored if it begins with "previously revoked". A matching revoked pattern in the name or any inspected body line marks the release as revoked.
+    
+    Returns:
+        `true` if the release is revoked, `false` otherwise.
     """
     name_text = release.name if isinstance(release.name, str) else ""
     if _REVOKED_TITLE_RX.search(name_text):
@@ -381,10 +384,13 @@ class ReleaseHistoryManager:
 
     def _log_release_status_entry(self, entry: Dict[str, Any]) -> None:
         """
-        Log a single release history entry as a colored, struck-through tag with optional channel and status.
-
+        Log a single release history entry showing its tag with optional channel and status.
+        
         Parameters:
-            entry (Dict[str, Any]): Release history entry containing `tag_name`, optional `channel`, and optional `status`.
+            entry (Dict[str, Any]): History entry containing:
+                - tag_name (str, optional): Release tag to display; "<unknown>" used if missing.
+                - channel (str, optional): Channel label to include in the display.
+                - status (str, optional): Status label; entries with the revoked status are styled to indicate revocation.
         """
         tag_name = entry.get("tag_name") or "<unknown>"
         channel = entry.get("channel")

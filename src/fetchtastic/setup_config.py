@@ -220,10 +220,12 @@ SECTION_SHORTCUTS = {
 
 def is_termux() -> bool:
     """
-    Determine whether the current process is running under Termux.
-
+    Detect whether the current process is running inside Termux.
+    
+    Checks the `PREFIX` environment variable for the Termux identifier.
+    
     Returns:
-        bool: True if the `PREFIX` environment variable contains "com.termux", False otherwise.
+        True if Termux is detected, False otherwise.
     """
     return "com.termux" in os.environ.get("PREFIX", "")
 
@@ -265,13 +267,15 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
 
 def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
     """
-    Load a YAML file and return a mapping or None when invalid.
-
+    Load a YAML mapping from the given file path.
+    
+    Parses the file as YAML and returns the resulting mapping. Returns None if the file cannot be read, the content cannot be parsed as YAML, or the parsed value is not a mapping.
+    
     Parameters:
-        path (str): Path to the YAML file.
-
+        path (str): Path to the YAML file to load.
+    
     Returns:
-        dict | None: Parsed mapping or None when the file cannot be read or parsed.
+        dict | None: Parsed mapping on success, or `None` on read/parse error or if the YAML root is not a mapping.
     """
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -293,12 +297,12 @@ def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
 
 def is_fetchtastic_installed_via_pip() -> bool:
     """
-    Determine whether Fetchtastic is installed via the `pip` command.
-
-    If the `pip` command is unavailable or the check fails, this function returns False.
-
+    Check whether Fetchtastic appears among the packages reported by the system `pip` command.
+    
+    If the `pip` command is unavailable or the check fails, the function returns `false`.
+    
     Returns:
-        True if 'fetchtastic' appears in `pip list` output, False otherwise.
+        `true` if `fetchtastic` appears in the output of `pip list`, `false` otherwise.
     """
     try:
         # Check if fetchtastic is in pip list
@@ -351,9 +355,9 @@ def get_fetchtastic_installation_method() -> str:
 def migrate_pip_to_pipx() -> bool:
     """
     Migrate a Termux-installed Fetchtastic package from pip to pipx while preserving the user's configuration.
-
-    This is an interactive operation that runs only on Termux. It prompts the user for confirmation, ensures pipx is available, uninstalls the pip-installed Fetchtastic package, installs Fetchtastic with pipx, and restores the backed-up configuration file if present. If Fetchtastic is not installed via pip, the function treats migration as unnecessary and exits successfully.
-
+    
+    This operation is interactive and only runs on Termux. If Fetchtastic is not installed via pip, the function exits successfully without making changes. On success, the user's configuration file is preserved and restored when possible.
+    
     Returns:
         bool: `True` if migration completed successfully, `False` otherwise.
     """
@@ -588,20 +592,16 @@ def config_exists(directory: Optional[str] = None) -> Tuple[bool, Optional[str]]
 
 def check_storage_setup() -> bool:
     """
-    Ensure Termux storage and the Downloads directory are available and writable.
-
-    This function is intended for Termux environments: it verifies that ~/storage and
-    ~/storage/downloads exist and are writable. If they are not, it repeatedly
-    invokes setup_storage() and prompts the user to grant storage permissions,
-    waiting for the user to confirm before re-checking. The function returns only
-    after storage access is confirmed.
-
+    Verify that Termux storage and the Downloads directory exist and are writable.
+    
+    If not running in an interactive terminal or if running under CI, the function will not attempt setup and returns False. In interactive Termux environments, it may invoke setup_storage() and prompt the user to grant storage permissions, waiting for confirmation before re-checking.
+    
     Returns:
-        bool: True when storage access and the Downloads directory are available and writable.
-
+        bool: `True` if storage access and the Downloads directory are available and writable, `False` otherwise.
+    
     Side effects:
-        - May call setup_storage().
-        - Blocks for interactive user input while awaiting permission grant.
+        - May call `setup_storage()`.
+        - May block for interactive user input while awaiting permission grant.
     """
     # Check if the Termux storage directory and Downloads are set up and writable
     storage_dir = os.path.expanduser("~/storage")
@@ -700,15 +700,17 @@ def _disable_asset_downloads(
     config: Dict[str, Any], asset_type: str, message: Optional[str] = None
 ) -> Tuple[Dict[str, Any], bool]:
     """
-    Disable downloads for specified asset type and clear related config keys.
-
+    Disable downloads for the given asset type and clear related configuration keys.
+    
+    Mutates and returns the provided configuration mapping, clears selected-asset lists, and disables related prerelease checks. Prints the provided message or a sensible default.
+    
     Parameters:
-        config (dict): Configuration dictionary to update in place.
-        asset_type (str): Asset type name ('firmware' or 'APK') for config keys.
-        message (Optional[str]): Custom message to print; defaults to standard message if None.
-
+        config (Dict[str, Any]): Configuration dictionary to update in place and return.
+        asset_type (str): Asset type to disable; expected values include "firmware" or "APK".
+        message (Optional[str]): Message to print to the user; if None a default message is printed.
+    
     Returns:
-        tuple[dict, bool]: (updated_config, save_assets) where save_assets is False.
+        Tuple[Dict[str, Any], bool]: The (possibly mutated) configuration dictionary and `False` to indicate asset downloads are disabled.
     """
     if message is None:
         asset_plural = {"firmware": "Firmware", "APK": "APKs"}
@@ -910,15 +912,15 @@ def _setup_android(
     config: Dict[str, Any], is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
-    Prompt the user for how many Android APK versions to keep and store the result in the config.
-
-    Prompts using first-run or regular phrasing based on is_first_run, interprets the user's input as an integer, and updates config["ANDROID_VERSIONS_TO_KEEP"]. If no value exists in config, default_versions is used as the fallback; if the user's input is not a valid integer, the existing value is retained.
-
+    Prompt the user for how many Android APK versions to keep and store that value in the configuration.
+    
+    Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["ANDROID_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
+    
     Parameters:
-        config (dict): Configuration dictionary to read and update; modified in place.
-        is_first_run (bool): When True, use first-run wording in the prompt.
-        default_versions (int): Fallback value used when the config does not already contain a value.
-
+        config (dict): Configuration mapping to read and update; the function sets "ANDROID_VERSIONS_TO_KEEP" in-place.
+        is_first_run (bool): If True, use first-run wording in the prompt.
+        default_versions (int): Fallback number to use when the config does not already contain a value.
+    
     Returns:
         dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set to an integer.
     """
@@ -940,11 +942,19 @@ def _setup_android(
 
 def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
     """
-    Configure firmware exclude patterns and return the selected list.
-
-    Prompts the user to accept recommended exclude patterns, add additional patterns, or supply a custom space-separated list. In non-interactive environments (CI or when stdin is not a TTY), the recommended patterns are applied automatically. Input is normalized by trimming whitespace, removing empty entries, and deduplicating while preserving order. The resulting list is returned to the caller; the function does not persist or mutate config.
+    Prompt the user to select firmware exclude patterns and return the final list.
+    
+    In interactive mode this offers the recommended defaults, allows adding extra patterns,
+    or accepts a custom space-separated list. In non-interactive environments (CI or when
+    stdin is not a TTY) the recommended patterns are returned automatically. Input is
+    normalized by trimming whitespace, removing empty entries, and deduplicating while
+    preserving order. This function does not mutate or persist the provided config.
+    
     Parameters:
-        _config (dict): Mutable configuration dictionary; reserved for future compatibility.
+        _config (dict): Reserved for compatibility; not modified or inspected.
+    
+    Returns:
+        List[str]: The ordered list of exclude patterns selected by the user.
     """
     # In non-interactive environments, use recommended defaults
     if not sys.stdin.isatty() or os.environ.get("CI"):
@@ -1199,11 +1209,11 @@ def _configure_cron_job(install_crond_needed: bool = False) -> None:
 def _prompt_for_cron_frequency() -> str:
     """
     Prompt the user to choose a cron frequency for scheduled checks.
-
-    Accepts short or full inputs: 'h' or 'hourly', 'd' or 'daily', 'n' or 'none'. If the user provides no input the default is hourly.
-
+    
+    Accepts short or full inputs: 'h'/'hourly', 'd'/'daily', 'n'/'none'. Defaults to 'hourly' when no input is provided.
+    
     Returns:
-        'hourly', 'daily', or 'none'.
+        str: One of 'hourly', 'daily', or 'none'.
     """
     choices = {
         "h": "hourly",
@@ -2203,12 +2213,12 @@ def get_version_info() -> tuple[str, str | None, bool]:
 
 def migrate_config() -> bool:
     """
-    Move a legacy configuration file from the old location to the current CONFIG_FILE path and remove the legacy file on success.
-
-    Creates the new config directory if needed, writes the migrated YAML configuration to CONFIG_FILE, and logs errors if migration fails or if the legacy file cannot be removed after a successful migration.
-
+    Migrate the legacy configuration file from OLD_CONFIG_FILE to CONFIG_FILE and remove the legacy file on success.
+    
+    Creates CONFIG_DIR if needed, writes the migrated YAML configuration to CONFIG_FILE, and logs errors encountered during migration or when removing the legacy file.
+    
     Returns:
-        True if migration succeeded and the legacy file was removed or handled, `False` otherwise.
+        `True` if the configuration was successfully written to CONFIG_FILE (the legacy file will have been removed or a removal failure logged), `False` otherwise.
     """
     # Import here to avoid circular imports
     from fetchtastic.log_utils import logger

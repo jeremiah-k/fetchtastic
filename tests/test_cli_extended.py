@@ -590,7 +590,9 @@ def test_cli_topic_command_clipboard_failure(mocker, capsys):
 @pytest.mark.user_interface
 @pytest.mark.unit
 def test_cli_version_command_update_available(mocker):
-    """Test version command when update is available."""
+    """
+    Verify the "version" CLI command prints available update information and the upgrade instruction when a newer version is detected.
+    """
     mocker.patch(
         "fetchtastic.cli.get_version_info", return_value=("0.8.0", "0.9.0", True)
     )
