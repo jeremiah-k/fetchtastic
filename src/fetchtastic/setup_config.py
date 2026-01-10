@@ -221,9 +221,9 @@ SECTION_SHORTCUTS = {
 def is_termux() -> bool:
     """
     Detect whether the current process is running inside Termux.
-    
+
     Checks the `PREFIX` environment variable for the Termux identifier.
-    
+
     Returns:
         True if Termux is detected, False otherwise.
     """
@@ -268,12 +268,12 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
 def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
     """
     Load a YAML mapping from the given file path.
-    
+
     Parses the file as YAML and returns the resulting mapping. Returns None if the file cannot be read, the content cannot be parsed as YAML, or the parsed value is not a mapping.
-    
+
     Parameters:
         path (str): Path to the YAML file to load.
-    
+
     Returns:
         dict | None: Parsed mapping on success, or `None` on read/parse error or if the YAML root is not a mapping.
     """
@@ -298,9 +298,9 @@ def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
 def is_fetchtastic_installed_via_pip() -> bool:
     """
     Check whether Fetchtastic appears among the packages reported by the system `pip` command.
-    
+
     If the `pip` command is unavailable or the check fails, the function returns `false`.
-    
+
     Returns:
         `true` if `fetchtastic` appears in the output of `pip list`, `false` otherwise.
     """
@@ -355,9 +355,9 @@ def get_fetchtastic_installation_method() -> str:
 def migrate_pip_to_pipx() -> bool:
     """
     Migrate a Termux-installed Fetchtastic package from pip to pipx while preserving the user's configuration.
-    
+
     This operation is interactive and only runs on Termux. If Fetchtastic is not installed via pip, the function exits successfully without making changes. On success, the user's configuration file is preserved and restored when possible.
-    
+
     Returns:
         bool: `True` if migration completed successfully, `False` otherwise.
     """
@@ -593,12 +593,12 @@ def config_exists(directory: Optional[str] = None) -> Tuple[bool, Optional[str]]
 def check_storage_setup() -> bool:
     """
     Verify that Termux storage and the Downloads directory exist and are writable.
-    
+
     If not running in an interactive terminal or if running under CI, the function will not attempt setup and returns False. In interactive Termux environments, it may invoke setup_storage() and prompt the user to grant storage permissions, waiting for confirmation before re-checking.
-    
+
     Returns:
         bool: `True` if storage access and the Downloads directory are available and writable, `False` otherwise.
-    
+
     Side effects:
         - May call `setup_storage()`.
         - May block for interactive user input while awaiting permission grant.
@@ -701,14 +701,14 @@ def _disable_asset_downloads(
 ) -> Tuple[Dict[str, Any], bool]:
     """
     Disable downloads for the given asset type and clear related configuration keys.
-    
+
     Mutates and returns the provided configuration mapping, clears selected-asset lists, and disables related prerelease checks. Prints the provided message or a sensible default.
-    
+
     Parameters:
         config (Dict[str, Any]): Configuration dictionary to update in place and return.
         asset_type (str): Asset type to disable; expected values include "firmware" or "APK".
         message (Optional[str]): Message to print to the user; if None a default message is printed.
-    
+
     Returns:
         Tuple[Dict[str, Any], bool]: The (possibly mutated) configuration dictionary and `False` to indicate asset downloads are disabled.
     """
@@ -913,14 +913,14 @@ def _setup_android(
 ) -> Dict[str, Any]:
     """
     Prompt the user for how many Android APK versions to keep and store that value in the configuration.
-    
+
     Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["ANDROID_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
-    
+
     Parameters:
         config (dict): Configuration mapping to read and update; the function sets "ANDROID_VERSIONS_TO_KEEP" in-place.
         is_first_run (bool): If True, use first-run wording in the prompt.
         default_versions (int): Fallback number to use when the config does not already contain a value.
-    
+
     Returns:
         dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set to an integer.
     """
@@ -943,16 +943,16 @@ def _setup_android(
 def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
     """
     Prompt the user to select firmware exclude patterns and return the final list.
-    
+
     In interactive mode this offers the recommended defaults, allows adding extra patterns,
     or accepts a custom space-separated list. In non-interactive environments (CI or when
     stdin is not a TTY) the recommended patterns are returned automatically. Input is
     normalized by trimming whitespace, removing empty entries, and deduplicating while
     preserving order. This function does not mutate or persist the provided config.
-    
+
     Parameters:
         _config (dict): Reserved for compatibility; not modified or inspected.
-    
+
     Returns:
         List[str]: The ordered list of exclude patterns selected by the user.
     """
@@ -1209,9 +1209,9 @@ def _configure_cron_job(install_crond_needed: bool = False) -> None:
 def _prompt_for_cron_frequency() -> str:
     """
     Prompt the user to choose a cron frequency for scheduled checks.
-    
+
     Accepts short or full inputs: 'h'/'hourly', 'd'/'daily', 'n'/'none'. Defaults to 'hourly' when no input is provided.
-    
+
     Returns:
         str: One of 'hourly', 'daily', or 'none'.
     """
@@ -1269,16 +1269,14 @@ def _setup_automation(
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
 
                 if os.path.exists(startup_shortcut_path):
-                    startup_option = (
+                    startup_option = _coerce_bool(
                         _safe_input(
                             "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): ",
                             default="n",
-                        )
-                        .strip()
-                        .lower()
-                        or "n"
+                        ),
+                        default=False,
                     )
-                    if startup_option == "y":
+                    if startup_option:
                         try:
                             # Also remove the batch file if it exists
                             batch_dir = os.path.join(CONFIG_DIR, "batch")
@@ -1301,16 +1299,14 @@ def _setup_automation(
                             "✓ Fetchtastic will continue to run automatically at startup."
                         )
                 else:
-                    startup_option = (
+                    startup_option = _coerce_bool(
                         _safe_input(
                             "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): ",
                             default="y",
-                        )
-                        .strip()
-                        .lower()
-                        or "y"
+                        ),
+                        default=True,
                     )
-                    if startup_option == "y":
+                    if startup_option:
                         if create_startup_shortcut():
                             print(
                                 "✓ Fetchtastic will now run automatically when Windows starts."
@@ -1333,16 +1329,14 @@ def _setup_automation(
             # Check if cron job already exists
             cron_job_exists = check_cron_job_exists()
             if cron_job_exists:
-                cron_prompt = (
+                cron_prompt = _coerce_bool(
                     _safe_input(
                         "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): ",
                         default="n",
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
+                    ),
+                    default=False,
                 )
-                if cron_prompt == "y":
+                if cron_prompt:
                     # First, remove existing cron job
                     remove_cron_job()
                     print("Existing cron job removed for reconfiguration.")
@@ -1358,16 +1352,14 @@ def _setup_automation(
             # Check if boot script already exists
             boot_script_exists = check_boot_script_exists()
             if boot_script_exists:
-                boot_prompt = (
+                boot_prompt = _coerce_bool(
                     _safe_input(
                         "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): ",
                         default="n",
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
+                    ),
+                    default=False,
                 )
-                if boot_prompt == "y":
+                if boot_prompt:
                     # First, remove existing boot script
                     remove_boot_script()
                     print("Existing boot script removed for reconfiguration.")
@@ -1380,16 +1372,14 @@ def _setup_automation(
             else:
                 # Ask if the user wants to set up a boot script
                 boot_default = "yes"
-                setup_boot = (
+                setup_boot = _coerce_bool(
                     _safe_input(
                         f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): ",
-                        default=boot_default[0],
-                    )
-                    .strip()
-                    .lower()
-                    or boot_default[0]
+                        default=boot_default,
+                    ),
+                    default=True,
                 )
-                if setup_boot == "y":
+                if setup_boot:
                     setup_boot_script()
                 else:
                     print("Boot script has not been set up.")
@@ -1404,16 +1394,14 @@ def _setup_automation(
             # Linux/Mac: Check if any Fetchtastic cron jobs exist
             any_cron_jobs_exist = check_cron_job_exists() or check_any_cron_jobs_exist()
             if any_cron_jobs_exist:
-                cron_prompt = (
+                cron_prompt = _coerce_bool(
                     _safe_input(
                         "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): ",
                         default="n",
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
+                    ),
+                    default=False,
                 )
-                if cron_prompt == "y":
+                if cron_prompt:
                     # First, remove existing cron jobs
                     remove_cron_job()
                     remove_reboot_cron_job()
@@ -1424,16 +1412,14 @@ def _setup_automation(
 
                     # Ask if they want to set up a reboot cron job
                     boot_default = "yes"
-                    setup_reboot = (
+                    setup_reboot = _coerce_bool(
                         _safe_input(
                             f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): ",
-                            default=boot_default[0],
-                        )
-                        .strip()
-                        .lower()
-                        or boot_default[0]
+                            default=boot_default,
+                        ),
+                        default=True,
                     )
-                    if setup_reboot == "y":
+                    if setup_reboot:
                         setup_reboot_cron_job()
                         print("Reboot cron job has been set up.")
                     else:
@@ -1447,16 +1433,14 @@ def _setup_automation(
 
                 # Ask if they want to set up a reboot cron job
                 boot_default = "yes"
-                setup_reboot = (
+                setup_reboot = _coerce_bool(
                     _safe_input(
                         f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): ",
-                        default=boot_default[0],
-                    )
-                    .strip()
-                    .lower()
-                    or boot_default[0]
+                        default=boot_default,
+                    ),
+                    default=True,
                 )
-                if setup_reboot == "y":
+                if setup_reboot:
                     setup_reboot_cron_job()
                 else:
                     print("Reboot cron job has not been set up.")
@@ -1480,17 +1464,15 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
     has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
     notifications_default = "yes" if has_ntfy_config else "no"
 
-    notifications = (
+    notifications = _coerce_bool(
         _safe_input(
             f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ",
-            default=notifications_default[0],
-        )
-        .strip()
-        .lower()
-        or notifications_default[0]
+            default=notifications_default,
+        ),
+        default=has_ntfy_config,
     )
 
-    if notifications == "y":
+    if notifications:
         # Get NTFY server
         current_server = config.get("NTFY_SERVER", "ntfy.sh")
         ntfy_server = (
@@ -1558,34 +1540,28 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
         notify_on_download_only_default = (
             "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
         )
-        notify_on_download_only = (
+        notify_on_download_only = _coerce_bool(
             _safe_input(
                 f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): ",
-                default=notify_on_download_only_default[0],
-            )
-            .strip()
-            .lower()
-            or notify_on_download_only_default[0]
+                default=notify_on_download_only_default,
+            ),
+            default=config.get("NOTIFY_ON_DOWNLOAD_ONLY", False),
         )
-        config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
-            True if notify_on_download_only == "y" else False
-        )
+        config["NOTIFY_ON_DOWNLOAD_ONLY"] = notify_on_download_only
 
     else:
         # User chose not to use notifications
         if has_ntfy_config:
             # Ask for confirmation to disable existing notifications
-            disable_confirm = (
+            disable_confirm = _coerce_bool(
                 _safe_input(
                     "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): ",
                     default="n",
-                )
-                .strip()
-                .lower()
-                or "n"
+                ),
+                default=False,
             )
 
-            if disable_confirm == "y":
+            if disable_confirm:
                 config["NTFY_TOPIC"] = ""
                 config["NTFY_SERVER"] = ""
                 config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
@@ -1759,17 +1735,15 @@ def _setup_base(
             print("4. Restart your terminal")
             print("=" * 60)
 
-            migrate_to_pipx = (
+            migrate_to_pipx = _coerce_bool(
                 _safe_input(
                     "Would you like to migrate to pipx now? [y/n] (default: no): ",
                     default="n",
-                )
-                .strip()
-                .lower()
-                or "n"
+                ),
+                default=False,
             )
 
-            if migrate_to_pipx == "y":
+            if migrate_to_pipx:
                 print("Starting migration to pipx...")
                 try:
                     # Install pipx if not already installed
@@ -1904,17 +1878,15 @@ def _setup_base(
                     or "y"
                 )
             else:
-                create_menu = (
+                create_menu = _coerce_bool(
                     _safe_input(
                         "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): ",
                         default="y",
-                    )
-                    .strip()
-                    .lower()
-                    or "y"
+                    ),
+                    default=True,
                 )
 
-            if create_menu == "y":
+            if create_menu:
                 create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
         else:
             print(
@@ -2009,16 +1981,14 @@ def run_setup(
     if is_termux():
         if not is_partial_run or wants("base"):
             wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
-            wifi_only = (
+            wifi_only = _coerce_bool(
                 _safe_input(
                     f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): ",
-                    default=wifi_only_default[0],
-                )
-                .strip()
-                .lower()
-                or wifi_only_default[0]
+                    default=wifi_only_default,
+                ),
+                default=config.get("WIFI_ONLY", True),
             )
-            config["WIFI_ONLY"] = True if wifi_only == "y" else False
+            config["WIFI_ONLY"] = wifi_only
     else:
         if not is_partial_run or wants("base"):
             # For non-Termux environments, remove WIFI_ONLY from config if it exists
@@ -2214,9 +2184,9 @@ def get_version_info() -> tuple[str, str | None, bool]:
 def migrate_config() -> bool:
     """
     Migrate the legacy configuration file from OLD_CONFIG_FILE to CONFIG_FILE and remove the legacy file on success.
-    
+
     Creates CONFIG_DIR if needed, writes the migrated YAML configuration to CONFIG_FILE, and logs errors encountered during migration or when removing the legacy file.
-    
+
     Returns:
         `True` if the configuration was successfully written to CONFIG_FILE (the legacy file will have been removed or a removal failure logged), `False` otherwise.
     """
