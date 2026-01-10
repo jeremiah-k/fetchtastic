@@ -1588,6 +1588,7 @@ def test_run_setup_existing_config(
         "5",  # Keep 5 versions of firmware
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
+        "y",  # Confirm extraction/exclude summary
         "y",  # reconfigure cron
         "n",  # no cron job
         "n",  # no reboot cron
@@ -1992,7 +1993,7 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     config = {"CHECK_PRERELEASES": True}
 
     # Simulate user inputs: 3 versions, yes to auto-extract, device patterns
-    mock_input.side_effect = ["3", "y", "rak4631- tbeam"]
+    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2030,7 +2031,7 @@ def test_setup_firmware_extraction_tips_when_enabled(mock_input, capsys):
     """Extraction tips should appear after auto-extract is enabled."""
     config = {"CHECK_PRERELEASES": False}
 
-    mock_input.side_effect = ["2", "y", ""]
+    mock_input.side_effect = ["2", "y", "", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
@@ -2053,7 +2054,7 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
     }
 
     # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns
-    mock_input.side_effect = ["2", "y", "y"]
+    mock_input.side_effect = ["2", "y", "y", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2083,7 +2084,7 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
     }
 
     # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns
-    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-"]
+    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2134,7 +2135,7 @@ def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
     }
 
     # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns
-    mock_input.side_effect = ["3", "y", "n", "new-pattern device-"]
+    mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2180,7 +2181,7 @@ def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
     config = {"CHECK_PRERELEASES": True}
 
     # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns
-    mock_input.side_effect = ["2", "y", ""]
+    mock_input.side_effect = ["2", "y", "", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2205,7 +2206,7 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
     }
 
     # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input
-    mock_input.side_effect = ["2", "y", "n", ""]
+    mock_input.side_effect = ["2", "y", "n", "", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2228,7 +2229,7 @@ def test_setup_firmware_extract_patterns_string_config(mock_input):
         "EXTRACT_PATTERNS": "tbeam rak4631-",
     }
 
-    mock_input.side_effect = ["2", "y", "y"]
+    mock_input.side_effect = ["2", "y", "y", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
