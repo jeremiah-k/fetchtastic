@@ -627,7 +627,6 @@ def run_clean():
         )
         .strip()
         .lower()
-        or "n"
     )
     if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
@@ -857,7 +856,6 @@ def run_repo_clean(config):
         )
         .strip()
         .lower()
-        or "n"
     )
     if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
