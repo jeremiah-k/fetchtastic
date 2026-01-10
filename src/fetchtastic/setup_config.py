@@ -376,13 +376,9 @@ def migrate_pip_to_pipx() -> bool:
     print("5. Restore your configuration")
     print()
 
-    migrate = (
-        _safe_input(
-            "Do you want to migrate to pipx? [y/n] (default: yes): ",
-            default="y",
-        )
-        .strip()
-        .lower()
+    migrate = _safe_input(
+        "Do you want to migrate to pipx? [y/n] (default: yes): ",
+        default="y",
     )
     if not _coerce_bool(migrate, default=True):
         print("Migration cancelled. You can continue using pip, but we recommend pipx.")
@@ -769,13 +765,9 @@ def _setup_downloads(
         rerun_menu = True
         if is_partial_run:
             if config.get("SELECTED_FIRMWARE_ASSETS"):
-                rerun_menu_choice = (
-                    _safe_input(
-                        "Re-run the firmware asset selection menu? [y/n] (default: yes): ",
-                        default="y",
-                    )
-                    .strip()
-                    .lower()
+                rerun_menu_choice = _safe_input(
+                    "Re-run the firmware asset selection menu? [y/n] (default: yes): ",
+                    default="y",
                 )
                 if not _coerce_bool(rerun_menu_choice, default=True):
                     rerun_menu = False
@@ -809,14 +801,9 @@ def _setup_downloads(
     if save_firmware and (not is_partial_run or wants("firmware")):
         check_prereleases_current = _coerce_bool(config.get("CHECK_PRERELEASES", False))
         check_prereleases_default = "y" if check_prereleases_current else "n"
-        check_prereleases_input = (
-            _safe_input(
-                f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): ",
-                default=check_prereleases_default,
-            )
-            .strip()
-            .lower()
-            or check_prereleases_default
+        check_prereleases_input = _safe_input(
+            f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): ",
+            default=check_prereleases_default,
         )
         config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
 
@@ -824,13 +811,9 @@ def _setup_downloads(
         rerun_menu = True
         if is_partial_run:
             if config.get("SELECTED_APK_ASSETS"):
-                rerun_menu_choice = (
-                    _safe_input(
-                        "Re-run the Android APK selection menu? [y/n] (default: yes): ",
-                        default="y",
-                    )
-                    .strip()
-                    .lower()
+                rerun_menu_choice = _safe_input(
+                    "Re-run the Android APK selection menu? [y/n] (default: yes): ",
+                    default="y",
                 )
                 if not _coerce_bool(rerun_menu_choice, default=True):
                     rerun_menu = False
@@ -862,14 +845,9 @@ def _setup_downloads(
             config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES)
         )  # Default: True. APK prereleases are typically more stable than firmware prereleases and safer to enable by default.
         check_apk_prereleases_default = "yes" if check_apk_prereleases_current else "no"
-        check_apk_prereleases_input = (
-            _safe_input(
-                f"\nWould you like to check for and download pre-release APKs from GitHub? [y/n] (default: {check_apk_prereleases_default}): ",
-                default=check_apk_prereleases_default,
-            )
-            .strip()
-            .lower()
-            or check_apk_prereleases_default
+        check_apk_prereleases_input = _safe_input(
+            f"\nWould you like to check for and download pre-release APKs from GitHub? [y/n] (default: {check_apk_prereleases_default}): ",
+            default=check_apk_prereleases_default,
         )
         config["CHECK_APK_PRERELEASES"] = _coerce_bool(check_apk_prereleases_input)
 
@@ -882,14 +860,9 @@ def _setup_downloads(
             add_channel_suffixes_default = (
                 "yes" if add_channel_suffixes_current else "no"
             )
-            add_channel_suffixes_input = (
-                _safe_input(
-                    f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): ",
-                    default=add_channel_suffixes_default,
-                )
-                .strip()
-                .lower()
-                or add_channel_suffixes_default
+            add_channel_suffixes_input = _safe_input(
+                f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): ",
+                default=add_channel_suffixes_default,
             )
             config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = _coerce_bool(
                 add_channel_suffixes_input
@@ -1139,7 +1112,7 @@ def _setup_firmware(
                 _safe_input(
                     f"Is this correct? [y/n] (default: {confirm_default}): ",
                     default=confirm_default,
-                ).strip()
+                )
                 or confirm_default,
                 default=True,
             )
@@ -1541,9 +1514,7 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
             text_to_copy = full_topic_url
 
-        copy_to_clipboard = (
-            _safe_input(copy_prompt_text, default="y").strip().lower() or "y"
-        )
+        copy_to_clipboard = _safe_input(copy_prompt_text, default="y") or "y"
         if _coerce_bool(copy_to_clipboard, default=True):
             success = copy_to_clipboard_func(text_to_copy)
             if success:
