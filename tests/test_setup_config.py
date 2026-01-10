@@ -1095,7 +1095,7 @@ def test_setup_automation_windows_no_shortcut(mocker, reload_setup_config_module
     mocker.patch("builtins.input", return_value="y")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     assert result == config
 
@@ -1117,7 +1117,7 @@ def test_setup_automation_termux_new_cron_hourly(mocker):
     mock_setup_boot = mocker.patch("fetchtastic.setup_config.setup_boot_script")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     mock_install_crond.assert_called_once()
     mock_setup_cron.assert_called_once_with("hourly")
@@ -1142,7 +1142,7 @@ def test_setup_automation_termux_reconfig_cron(mocker):
     mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     mock_remove_cron.assert_called_once()
     mock_install_crond.assert_called_once()
@@ -1166,7 +1166,7 @@ def test_setup_automation_linux_new_setup(mocker):
     mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     mock_setup_cron.assert_called_once_with("hourly")
     assert result == config

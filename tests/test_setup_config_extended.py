@@ -213,7 +213,7 @@ def test_setup_downloads_apk_only(mocker, capsys):
     mocker.patch("fetchtastic.menu_apk.run_menu", return_value=mock_menu_result)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=False, wants=lambda x: True
+        config, is_partial_run=False, wants=lambda _: True
     )
 
     assert save_apks is True
@@ -244,7 +244,7 @@ def test_setup_downloads_firmware_only(mocker, capsys):
     mocker.patch("fetchtastic.menu_firmware.run_menu", return_value=mock_menu_result)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=False, wants=lambda x: True
+        config, is_partial_run=False, wants=lambda _: True
     )
 
     assert save_apks is False
@@ -279,7 +279,7 @@ def test_setup_downloads_both_selected(mocker, capsys):
     )
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=False, wants=lambda x: True
+        config, is_partial_run=False, wants=lambda _: True
     )
 
     assert save_apks is True
@@ -299,7 +299,7 @@ def test_setup_downloads_no_selection(mocker, capsys):
     mocker.patch("fetchtastic.menu_apk.run_menu", return_value=None)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=False, wants=lambda x: True
+        config, is_partial_run=False, wants=lambda _: True
     )
 
     assert save_apks is False
@@ -331,7 +331,7 @@ def test_setup_downloads_firmware_empty_selection(mocker):
     )
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=False, wants=lambda x: True
+        config, is_partial_run=False, wants=lambda _: True
     )
 
     assert save_apks is False
@@ -361,7 +361,7 @@ def test_setup_downloads_apk_empty_selection(mocker):
     )
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=False, wants=lambda x: True
+        config, is_partial_run=False, wants=lambda _: True
     )
 
     assert save_apks is False
