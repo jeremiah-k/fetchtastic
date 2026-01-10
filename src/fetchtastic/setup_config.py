@@ -897,103 +897,75 @@ def _setup_android(
     return config
 
 
-def configure_exclude_patterns(config: Dict[str, Any]) -> None:
+def configure_exclude_patterns(config: Dict[str, Any]) -> List[str]:
     """
-    Configure firmware exclude patterns and store them in the provided configuration dictionary.
+    Configure firmware exclude patterns and return the selected list.
 
-    Prompts the user to accept recommended exclude patterns, add additional patterns, or supply a custom space-separated list. In non-interactive environments (CI or when stdin is not a TTY), the recommended patterns are applied automatically. Input is normalized by trimming whitespace, removing empty entries, and deduplicating while preserving order. The resulting list is stored in config["EXCLUDE_PATTERNS"]; the function does not persist the configuration to disk.
+    Prompts the user to accept recommended exclude patterns, add additional patterns, or supply a custom space-separated list. In non-interactive environments (CI or when stdin is not a TTY), the recommended patterns are applied automatically. Input is normalized by trimming whitespace, removing empty entries, and deduplicating while preserving order. The resulting list is returned to the caller; the function does not persist or mutate config.
     Parameters:
-        config (dict): Mutable configuration dictionary; this function sets config["EXCLUDE_PATTERNS"] to a list of string patterns.
+        config (dict): Mutable configuration dictionary; reserved for future compatibility.
     """
     # In non-interactive environments, use recommended defaults
     if not sys.stdin.isatty() or os.environ.get("CI"):
-        config["EXCLUDE_PATTERNS"] = RECOMMENDED_EXCLUDE_PATTERNS.copy()
         print("Using recommended exclude patterns (non-interactive mode).")
-        return
-    while True:  # Loop for retry capability
-        print("\n--- Exclude Pattern Configuration ---")
-        print(
-            "Some firmware files are specialized variants (like display-specific versions)"
-        )
-        print("that most users don't need. We can exclude these automatically.")
+        return RECOMMENDED_EXCLUDE_PATTERNS.copy()
 
-        # Offer recommended defaults
-        recommended_str = " ".join(RECOMMENDED_EXCLUDE_PATTERNS)
-        use_defaults_default = "yes"
-        use_defaults = _coerce_bool(
+    print("\n--- Exclude Pattern Configuration ---")
+    print(
+        "Some firmware files are specialized variants (like display-specific variants and debug files)"
+    )
+    print("that most users don't need. We can exclude these automatically.")
+
+    # Offer recommended defaults
+    recommended_str = " ".join(RECOMMENDED_EXCLUDE_PATTERNS)
+    print(f"Recommended exclude patterns: {recommended_str}")
+    use_defaults_default = "yes"
+    use_defaults = _coerce_bool(
+        _safe_input(
+            "If you use any of these variants, answer no. Exclude these patterns? [y/n] "
+            f"(default: {use_defaults_default}): ",
+            default=use_defaults_default,
+        ).strip()
+        or use_defaults_default,
+        default=True,
+    )
+
+    if use_defaults:
+        # Start with recommended patterns
+        exclude_patterns = RECOMMENDED_EXCLUDE_PATTERNS.copy()
+
+        # Ask for additional patterns
+        add_more_default = "no"
+        add_more = _coerce_bool(
             _safe_input(
-                f"Would you like to use our recommended exclude patterns?\n"
-                f"These skip common specialized variants and debug files: [y/n] (default: {use_defaults_default}): ",
-                default=use_defaults_default,
-            ).strip(),
-            default=True,
-        )
-
-        if use_defaults:
-            # Start with recommended patterns
-            exclude_patterns = RECOMMENDED_EXCLUDE_PATTERNS.copy()
-            print(f"Using recommended exclude patterns: {recommended_str}")
-
-            # Ask for additional patterns
-            add_more_default = "no"
-            add_more = _coerce_bool(
-                _safe_input(
-                    f"Would you like to add any additional exclude patterns? [y/n] (default: {add_more_default}): ",
-                    default=add_more_default,
-                ).strip(),
-                default=False,
-            )
-
-            if add_more:
-                additional_patterns = _safe_input(
-                    "Enter additional patterns (space-separated): ", default=""
-                ).strip()
-                if additional_patterns:
-                    exclude_patterns.extend(additional_patterns.split())
-        else:
-            # User doesn't want defaults, get custom patterns
-            custom_patterns = _safe_input(
-                "Enter your exclude patterns (space-separated, or press Enter for none): ",
-                default="",
+                f"Would you like to add any additional exclude patterns? [y/n] (default: {add_more_default}): ",
+                default=add_more_default,
             ).strip()
-            if custom_patterns:
-                exclude_patterns = custom_patterns.split()
-            else:
-                exclude_patterns = []
-
-        # Normalize and de-duplicate while preserving order
-        stripped_patterns = [p.strip() for p in exclude_patterns if p.strip()]
-        exclude_patterns = list(dict.fromkeys(stripped_patterns))
-
-        # Show final list and confirm
-        if exclude_patterns:
-            final_patterns_str = " ".join(exclude_patterns)
-            print(f"\nFinal exclude patterns: {final_patterns_str}")
-        else:
-            print(
-                "\nNo exclude patterns will be used. All matching files will be extracted."
-            )
-
-        confirm_default = "yes"
-        confirm = _coerce_bool(
-            _safe_input(
-                f"Is this correct? [y/n] (default: {confirm_default}): ",
-                default=confirm_default,
-            ).strip(),
-            default=True,
+            or add_more_default,
+            default=False,
         )
 
-        if confirm:
-            # Save the configuration and break the loop
-            config["EXCLUDE_PATTERNS"] = exclude_patterns
-            if exclude_patterns:
-                print(f"Exclude patterns configured: {' '.join(exclude_patterns)}")
-            else:
-                print("No exclude patterns configured.")
-            break
+        if add_more:
+            additional_patterns = _safe_input(
+                "Enter additional patterns (space-separated): ", default=""
+            ).strip()
+            if additional_patterns:
+                exclude_patterns.extend(additional_patterns.split())
+    else:
+        # User doesn't want defaults, get custom patterns
+        custom_patterns = _safe_input(
+            "Enter your exclude patterns (space-separated, or press Enter for none): ",
+            default="",
+        ).strip()
+        if custom_patterns:
+            exclude_patterns = custom_patterns.split()
         else:
-            # User wants to reconfigure, loop will continue
-            print("Let's reconfigure the exclude patterns...")
+            exclude_patterns = []
+
+    # Normalize and de-duplicate while preserving order
+    stripped_patterns = [p.strip() for p in exclude_patterns if p.strip()]
+    exclude_patterns = list(dict.fromkeys(stripped_patterns))
+    return exclude_patterns
 
 
 def _setup_firmware(
@@ -1046,62 +1018,86 @@ def _setup_firmware(
     config["AUTO_EXTRACT"] = auto_extract
 
     if config["AUTO_EXTRACT"]:
-        # --- File Extraction Configuration ---
-        print("\n--- File Extraction Configuration ---")
-        print("Configure which files to extract from downloaded firmware archives.")
-        print("\nTips for precise selection:")
-        print(
-            "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
-        )
-        print(
-            "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...), "
-            "while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...)."
-        )
-        print(f"- Example keywords: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
-        print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
-
-        print(
-            "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
-        )
-
-        current_patterns = config.get("EXTRACT_PATTERNS", [])
-        if isinstance(current_patterns, str):
-            current_patterns = current_patterns.split()
-            config["EXTRACT_PATTERNS"] = current_patterns
-        if current_patterns:
-            print(f"Current patterns: {' '.join(current_patterns)}")
-            keep_patterns_default = "yes"
-            keep_patterns_input = (
-                _safe_input(
-                    f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): ",
-                    default=keep_patterns_default,
-                )
-                .strip()
-                .lower()
+        while True:
+            # --- File Extraction Configuration ---
+            print("\n--- File Extraction Configuration ---")
+            print("Configure which files to extract from downloaded firmware archives.")
+            print("\nTips for precise selection:")
+            print(
+                "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
             )
-            if not _coerce_bool(
-                keep_patterns_input or keep_patterns_default,
-                default=True,
-            ):
-                current_patterns = []  # Clear to prompt for new ones
+            print(
+                "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...), "
+                "while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...)."
+            )
+            print(f"- Example keywords: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
+            print(
+                "- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n"
+            )
 
-        if not current_patterns:
-            extract_patterns_input = _safe_input(
-                "Extraction patterns: ", default=""
-            ).strip()
-            if extract_patterns_input:
-                config["EXTRACT_PATTERNS"] = extract_patterns_input.split()
-                print(f"Extraction patterns set to: {extract_patterns_input}")
+            print(
+                "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
+            )
+
+            current_patterns = config.get("EXTRACT_PATTERNS", [])
+            if isinstance(current_patterns, str):
+                current_patterns = current_patterns.split()
+                config["EXTRACT_PATTERNS"] = current_patterns
+            if current_patterns:
+                print(f"Current patterns: {' '.join(current_patterns)}")
+                keep_patterns_default = "yes"
+                keep_patterns_input = (
+                    _safe_input(
+                        f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): ",
+                        default=keep_patterns_default,
+                    )
+                    .strip()
+                    .lower()
+                )
+                if not _coerce_bool(
+                    keep_patterns_input or keep_patterns_default,
+                    default=True,
+                ):
+                    current_patterns = []  # Clear to prompt for new ones
+
+            if not current_patterns:
+                extract_patterns_input = _safe_input(
+                    "Extraction patterns: ", default=""
+                ).strip()
+                if extract_patterns_input:
+                    config["EXTRACT_PATTERNS"] = extract_patterns_input.split()
+                    print(f"Extraction patterns set to: {extract_patterns_input}")
+                else:
+                    # User entered no patterns, so disable auto-extract
+                    config["AUTO_EXTRACT"] = False
+                    config["EXTRACT_PATTERNS"] = []
+                    print("No extraction patterns provided; disabling auto-extraction.")
+
+            if config.get("AUTO_EXTRACT") and config.get("EXTRACT_PATTERNS"):
+                exclude_patterns = configure_exclude_patterns(config)
             else:
-                # User entered no patterns, so disable auto-extract
-                config["AUTO_EXTRACT"] = False
-                config["EXTRACT_PATTERNS"] = []
-                print("No extraction patterns provided; disabling auto-extraction.")
+                exclude_patterns = []
 
-        # Configure exclude patterns only if extraction is enabled and patterns are set
-        if config.get("AUTO_EXTRACT") and config.get("EXTRACT_PATTERNS"):
-            configure_exclude_patterns(config)
-        else:
+            extraction_str = " ".join(config.get("EXTRACT_PATTERNS", [])) or "(none)"
+            exclude_str = " ".join(exclude_patterns) or "(none)"
+            print(f"\nExtraction patterns: {extraction_str}")
+            print(f"Exclude patterns: {exclude_str}")
+            confirm_default = "yes"
+            confirm = _coerce_bool(
+                _safe_input(
+                    f"Is this correct? [y/n] (default: {confirm_default}): ",
+                    default=confirm_default,
+                ).strip()
+                or confirm_default,
+                default=True,
+            )
+            if confirm:
+                config["EXCLUDE_PATTERNS"] = exclude_patterns
+                break
+
+            print("Let's reconfigure the extraction patterns...")
+            config["AUTO_EXTRACT"] = True
+            config["EXTRACT_PATTERNS"] = []
             config["EXCLUDE_PATTERNS"] = []
     else:
         # If auto-extract is off, clear all related settings

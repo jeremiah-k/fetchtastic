@@ -445,11 +445,11 @@ def test_configure_exclude_patterns_use_defaults(mocker):
     config = {}
 
     # Mock input to accept defaults
-    mocker.patch("builtins.input", side_effect=["y", "n", "y"])
+    mocker.patch("builtins.input", side_effect=["y", "n"])
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
 
 
 @pytest.mark.configuration
@@ -464,18 +464,11 @@ def test_configure_exclude_patterns_custom_patterns(mocker):
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use custom patterns
-    mocker.patch(
-        "builtins.input",
-        side_effect=[
-            "n",  # Don't use defaults
-            " ".join(custom_patterns),  # Custom patterns
-            "y",  # Confirm
-        ],
-    )
+    mocker.patch("builtins.input", side_effect=["n", " ".join(custom_patterns)])
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == custom_patterns
+    assert patterns == custom_patterns
 
 
 @pytest.mark.configuration
@@ -496,14 +489,13 @@ def test_configure_exclude_patterns_add_to_defaults(mocker):
             "y",  # Use defaults
             "y",  # Add more
             " ".join(additional),  # Additional patterns
-            "y",  # Confirm
         ],
     )
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
     expected = setup_config.RECOMMENDED_EXCLUDE_PATTERNS + additional
-    assert config["EXCLUDE_PATTERNS"] == expected
+    assert patterns == expected
 
 
 @pytest.mark.configuration
@@ -517,46 +509,36 @@ def test_configure_exclude_patterns_no_patterns(mocker):
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use no patterns
-    mocker.patch(
-        "builtins.input",
-        side_effect=[
-            "n",  # Don't use defaults
-            "",  # No custom patterns
-            "y",  # Confirm
-        ],
-    )
+    mocker.patch("builtins.input", side_effect=["n", ""])
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == []
+    assert patterns == []
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_configure_exclude_patterns_retry_on_invalid(mocker):
-    """Test configure_exclude_patterns retry loop on invalid confirmation."""
+def test_configure_exclude_patterns_deduplicates(mocker):
+    """Test configure_exclude_patterns de-duplicates patterns."""
     config = {}
 
     # Mock interactive environment
     mocker.patch("os.environ.get", return_value=None)  # Ensure CI is not set
     mocker.patch("sys.stdin.isatty", return_value=True)
 
-    # Mock input to reject first confirmation, accept second
+    # Mock input to use defaults and provide duplicates
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "n",  # Don't use defaults (first loop)
-            "*.test",  # Custom patterns (first loop)
-            "n",  # Reject first confirmation
-            "n",  # Don't use defaults (second loop)
-            "*.test",  # Custom patterns (second loop)
-            "y",  # Accept second confirmation
+            "y",  # Use defaults
+            "y",  # Add more
+            "*.hex *.custom *.hex",  # Additional patterns (with duplicates)
         ],
     )
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
-    assert config["EXCLUDE_PATTERNS"] == ["*.test"]
+    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS + ["*.custom"]
 
 
 @pytest.mark.configuration
@@ -569,10 +551,10 @@ def test_configure_exclude_patterns_non_interactive(mocker):
     mocker.patch.dict(os.environ, {"CI": "true"})
     mocker.patch("sys.stdin.isatty", return_value=False)
 
-    setup_config.configure_exclude_patterns(config)
+    patterns = setup_config.configure_exclude_patterns(config)
 
     # Should use recommended defaults in non-interactive mode
-    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    assert patterns == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
 
 
 @pytest.mark.configuration
