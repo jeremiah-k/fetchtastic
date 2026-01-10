@@ -625,9 +625,10 @@ def run_clean():
         return
     # Load config (if present) before deleting config files so BASE_DIR is accurate.
     loaded_config = setup_config.load_config()
-    download_dir_from_config = None
+    download_dir_from_config: str | None = None
     if loaded_config:
-        download_dir_from_config = loaded_config.get("BASE_DIR")
+        candidate = loaded_config.get("DOWNLOAD_DIR") or loaded_config.get("BASE_DIR")
+        download_dir_from_config = candidate if isinstance(candidate, str) else None
 
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -640,7 +641,7 @@ def run_clean():
         .lower()
         or "n"
     )
-    if confirm != "y":
+    if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 
@@ -870,7 +871,7 @@ def run_repo_clean(config):
         .lower()
         or "n"
     )
-    if confirm != "y":
+    if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 

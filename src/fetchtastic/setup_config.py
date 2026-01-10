@@ -1495,7 +1495,7 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
         copy_to_clipboard = (
             _safe_input(copy_prompt_text, default="y").strip().lower() or "y"
         )
-        if copy_to_clipboard == "y":
+        if _coerce_bool(copy_to_clipboard, default=True):
             success = copy_to_clipboard_func(text_to_copy)
             if success:
                 if is_termux():
