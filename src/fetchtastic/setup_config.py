@@ -703,14 +703,14 @@ def _disable_asset_downloads(
 
     Parameters:
         config (dict): Configuration dictionary to update in place.
-        asset_type (str): Asset type name ('firmware' or 'APKs') for config keys.
+        asset_type (str): Asset type name ('firmware' or 'APK') for config keys.
         message (Optional[str]): Custom message to print; defaults to standard message if None.
 
     Returns:
         tuple[dict, bool]: (updated_config, save_assets) where save_assets is False.
     """
     if message is None:
-        message = f"No {asset_type} selected. {asset_type.capitalize()} will not be downloaded."
+        message = f"No {asset_type} assets selected. {asset_type.capitalize()}s will not be downloaded."
     print(message)
     config["SAVE_FIRMWARE" if asset_type == "firmware" else "SAVE_APKS"] = False
     config[
@@ -850,12 +850,15 @@ def _setup_downloads(
                 else None
             )
             if not selected_assets:
-                config, save_apks = _disable_asset_downloads(config, "APKs")
+                config, save_apks = _disable_asset_downloads(config, "APK")
             else:
                 config["SELECTED_APK_ASSETS"] = selected_assets
         elif not config.get("SELECTED_APK_ASSETS"):
-            print("No existing APK selection found. APKs will not be downloaded.")
-            config, save_apks = _disable_asset_downloads(config, "APKs")
+            config, save_apks = _disable_asset_downloads(
+                config,
+                "APK",
+                "No existing APK selection found. APKs will not be downloaded.",
+            )
 
     # --- APK Pre-release Configuration ---
     if save_apks and (not is_partial_run or wants("android")):
