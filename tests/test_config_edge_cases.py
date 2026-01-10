@@ -73,8 +73,7 @@ class TestConfigEdgeCases:
         mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
         assert setup_config.load_config() is None
-
-    mock_logger.exception.assert_called()
+        mock_logger.exception.assert_called()
 
     def test_load_config_file_not_found(self, tmp_path, mocker):
         """Test load_config when file doesn't exist."""
