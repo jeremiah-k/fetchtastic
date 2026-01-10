@@ -106,6 +106,11 @@ def test_setup_downloads_partial_skips_firmware_menu(mocker):
 
     # Only run the firmware section in this partial pass.
     def wants(section: str) -> bool:
+        """
+        Determine if the requested setup section is the firmware section.
+        
+        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        """
         return section == "firmware"
 
     # Answer prompts: keep firmware enabled, skip rerun, decline prereleases, decline suffixes.
@@ -141,6 +146,15 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
 
     # Only run the Android section in this partial pass.
     def wants(section: str) -> bool:
+        """
+        Check whether the requested setup section is the Android section.
+        
+        Parameters:
+        	section (str): Name of the setup section to test (e.g., "android").
+        
+        Returns:
+        	True if section is "android", False otherwise.
+        """
         return section == "android"
 
     # Answer prompts: keep APKs enabled, skip rerun, decline prereleases, decline suffixes.
@@ -174,6 +188,11 @@ def test_setup_downloads_partial_reruns_firmware_menu(mocker):
     }
 
     def wants(section: str) -> bool:
+        """
+        Determine if the requested setup section is the firmware section.
+        
+        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        """
         return section == "firmware"
 
     mocker.patch(
@@ -209,6 +228,15 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
     }
 
     def wants(section: str) -> bool:
+        """
+        Check whether the requested setup section is the Android section.
+        
+        Parameters:
+        	section (str): Name of the setup section to test (e.g., "android").
+        
+        Returns:
+        	True if section is "android", False otherwise.
+        """
         return section == "android"
 
     mocker.patch(
@@ -242,6 +270,15 @@ def test_setup_downloads_partial_skips_all_prompts(mocker):
     }
 
     def wants(_section: str) -> bool:
+        """
+        Indicates whether the named setup section is requested for this run.
+        
+        Parameters:
+            _section (str): Name of the setup section to check.
+        
+        Returns:
+            bool: `true` if the section is requested, `false` otherwise.
+        """
         return False
 
     mock_input = mocker.patch("builtins.input")
@@ -259,6 +296,15 @@ def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
     config = {}
 
     def wants(_section: str) -> bool:
+        """
+        Indicates that any setup section should be included.
+        
+        Parameters:
+            _section (str): Name of the setup section (ignored).
+        
+        Returns:
+            bool: `True` for all sections.
+        """
         return True
 
     mocker.patch(

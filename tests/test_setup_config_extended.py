@@ -179,7 +179,19 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
 
     # Mock file operations to fail on backup read
     def mock_open_failure(filename, mode="r", *_args, **_kwargs):
-        """Raise PermissionError when reading the test config file."""
+        """
+        A replacement for builtins.open that simulates a permission error when attempting to read the test config file.
+        
+        Parameters:
+            filename: Path or name of the file being opened.
+            mode (str): File mode (e.g., "r", "w", "rb"); defaults to "r".
+        
+        Returns:
+            A file-like object produced by unittest.mock.mock_open() for the given filename and mode when no simulated error occurs.
+        
+        Raises:
+            PermissionError: If the mode includes "r" and the filename matches the test config file, a permission error is raised to simulate a read failure.
+        """
         if "r" in mode and str(mock_config_file) in str(filename):
             raise PermissionError("Permission denied")
         return mock_open()(filename, mode, *_args, **_kwargs)
@@ -871,6 +883,14 @@ def test_check_storage_setup_permission_denied_retry(mocker):
     call_count = 0
 
     def mock_exists_access(path):
+        """
+        Simulates a file-existence/access check that fails twice and then succeeds.
+        
+        Useful for tests that need an existence check to return `False` on the first two invocations and `True` thereafter.
+        
+        Returns:
+            bool: `True` on the third and subsequent calls, `False` for the first two calls.
+        """
         nonlocal call_count
         call_count += 1
         if call_count <= 2:  # First two calls fail

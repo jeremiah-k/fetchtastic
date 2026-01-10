@@ -407,16 +407,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
         self, release: Release, target_tag: str
     ) -> List[str]:
         """
-        Generate alternative storage-tag candidates for an existing release directory by combining possible channel suffixes and revoked states, excluding the provided target tag.
-
-        This method keeps channel suffix candidates for discovery even when suffixes are disabled.
-
+        Builds an ordered list of alternative storage-tag candidates for a release by combining channel suffixes and revoked variants.
+        
+        Includes channel-suffixed and unsuffixed variants (and a revoked variant) to aid discovery of existing directories; excludes the supplied target_tag from the result.
+        
         Parameters:
-            release (Release): Release object to query for channel information.
-            target_tag (str): Storage tag to exclude from the returned list.
-
+            release (Release): Release to derive the base tag and channel from.
+            target_tag (str): Storage tag to omit from the returned candidates.
+        
         Returns:
-            List[str]: Ordered list of distinct candidate storage tags (each a string) excluding `target_tag`.
+            List[str]: Ordered, distinct storage-tag strings (each a filesystem-safe tag) excluding `target_tag`.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_revoked = self.is_release_revoked(release)
