@@ -274,7 +274,7 @@ def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        logger.error("Error loading config %s: %s", path, exc)
+        logger.exception("Error loading config %s: %s", path, exc)
         return None
     if config is None:
         config = {}
@@ -725,6 +725,7 @@ def _setup_downloads(
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
     if not save_firmware and (not is_partial_run or wants("firmware")):
+        config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
 
     if save_firmware and (not is_partial_run or wants("firmware")):
