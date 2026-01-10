@@ -462,7 +462,7 @@ def test_load_config_invalid_yaml(tmp_path, mocker):
     mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     assert setup_config.load_config() is None
-    mock_logger.error.assert_called()
+    mock_logger.exception.assert_called()
 
 
 @pytest.mark.configuration
@@ -715,7 +715,7 @@ def test_migrate_config_handles_load_error(tmp_path, mocker):
     mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     assert setup_config.migrate_config() is False
-    assert mock_logger.error.called
+    assert mock_logger.exception.called
 
 
 @pytest.mark.parametrize(
