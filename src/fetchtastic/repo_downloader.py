@@ -201,10 +201,10 @@ def clean_repo_directory(download_dir: str) -> bool:  # log_message_func removed
 
 def main(config: dict[str, Any]) -> None:  # log_message_func removed
     """
-    Run an interactive repository file browser and download the user's selected files into the configured repository downloads directory.
-
-    Reads the "DOWNLOAD_DIR" value from the provided config; if missing, the function exits without performing downloads. Launches an interactive selection flow to choose repository files, downloads the chosen files into a subdirectory under the configured download directory, and logs the outcomes. If any files are downloaded and the process is running on Windows, prompts the user whether to open the download folder and opens it when the user confirms.
-
+    Run an interactive repository file browser and download the user's selected files into the configured downloads directory.
+    
+    Reads the "DOWNLOAD_DIR" value from the provided config; if missing, the function exits without performing downloads. Launches an interactive selection flow to choose repository files, downloads the chosen files into a subdirectory under the configured download directory, and logs outcomes. If any files are downloaded and the process is running on Windows, prompts the user whether to open the download folder and opens it when the user confirms.
+    
     Parameters:
         config (dict[str, Any]): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
     """

@@ -737,17 +737,17 @@ def _setup_downloads(
     config: Dict[str, Any], is_partial_run: bool, wants: Callable[[str], bool]
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """
-    Configure which asset types (APKs and firmware) should be downloaded and update the provided configuration accordingly.
-
-    Prompts the user (or reuses existing values when is_partial_run is True) to choose APK and/or firmware downloads, optionally re-runs APK/firmware selection menus, and records choices in the config. The function updates the keys "SAVE_APKS" and "SAVE_FIRMWARE", and when menus are run may set "SELECTED_APK_ASSETS", "SELECTED_FIRMWARE_ASSETS", and "CHECK_APK_PRERELEASES". If neither asset type is selected while the run is responsible for download sections, the function returns early so the caller can handle an empty selection.
-
+    Configure which asset types (Android APKs and firmware) should be downloaded and update the provided configuration accordingly.
+    
+    Updates the config in place with keys such as "SAVE_APKS", "SAVE_FIRMWARE", and, when asset selection menus run, "SELECTED_APK_ASSETS", "SELECTED_FIRMWARE_ASSETS", "CHECK_PRERELEASES", "CHECK_APK_PRERELEASES", and "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES". Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
+    
     Parameters:
-        config (dict): Mutable configuration dictionary to update in place.
+        config (dict): Mutable configuration dictionary to update.
         is_partial_run (bool): When True, only prompt sections for which wants(section) is True and prefer existing config defaults.
-        wants (Callable[[str], bool]): Callable that accepts a section name (e.g., "android" or "firmware") and returns True when that section should be processed in this run.
-
+        wants (Callable[[str], bool]): Callable that accepts a section name (for example "android" or "firmware") and returns True when that section should be processed in this run.
+    
     Returns:
-        tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where save_apks and save_firmware reflect the final selection state.
+        tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where `save_apks` and `save_firmware` indicate whether APKs and firmware, respectively, will be downloaded.
     """
     # Prompt to save APKs, firmware, or both
     if not is_partial_run:
@@ -1710,21 +1710,18 @@ def _setup_base(
     wants: Callable[[str], bool],
 ) -> Dict[str, Any]:
     """
-    Configure or confirm the application's base directory and perform platform-specific base setup.
-
-    Performs platform-specific initialization required before other setup sections:
-    - On Termux, ensures required packages are installed, storage is configured, and optionally offers migration from pip to pipx.
-    - Loads an existing configuration if present, prompts the user for a base directory (respecting partial-run behavior), updates the global BASE_DIR, and creates the directory if missing.
-    - On Windows, optionally creates a config shortcut in the base directory and can create/update Start Menu shortcuts when optional Windows integrations are available.
-
+    Ensure and configure the application's BASE_DIR and perform any required platform-specific base setup.
+    
+    Prompts for or confirms the base directory, loads an existing configuration if present, updates the global BASE_DIR, creates the directory if missing, and performs platform-specific initialization (Termux package/storage setup and optional Windows shortcut creation).
+    
     Parameters:
-        config (Dict[str, Any]): Current configuration; may be updated or replaced when an existing config is loaded.
-        is_partial_run (bool): When true, only process base setup if explicitly requested.
-        is_first_run (bool): When true, use first-run defaults for prompts (e.g., default base directory).
-        wants (Callable[[str], bool]): Predicate that returns True if the named setup section should be processed (used when is_partial_run is True).
-
+        config (Dict[str, Any]): Current configuration dictionary; may be replaced by a loaded configuration.
+        is_partial_run (bool): If true, only process this section when requested via `wants`.
+        is_first_run (bool): If true, use first-run defaults for prompts.
+        wants (Callable[[str], bool]): Predicate that returns True if the named setup section should be processed.
+    
     Returns:
-        Dict[str, Any]: The updated configuration dictionary with an ensured and stored "BASE_DIR" value.
+        Dict[str, Any]: The updated configuration dictionary with an ensured "BASE_DIR" value.
     """
     global BASE_DIR
 
@@ -2093,15 +2090,13 @@ def run_setup(
 
 def check_for_updates() -> Tuple[str, Optional[str], bool]:
     """
-    Determine whether a newer release of Fetchtastic is available on PyPI.
-
-    Queries the local installed fetchtastic version and the PyPI package index, then compares the two versions.
-
+    Check whether a newer release of Fetchtastic is available on PyPI.
+    
     Returns:
         tuple: (current_version, latest_version, update_available)
-            - current_version (str): the installed fetchtastic version or "unknown" if it cannot be determined.
-            - latest_version (str|None): the latest version string from PyPI, or None if the lookup failed.
-            - update_available (bool): `true` if a newer release exists on PyPI, `false` otherwise.
+            current_version (str): Installed fetchtastic version or "unknown" if it cannot be determined.
+            latest_version (str|None): Latest version string from PyPI, or `None` if the lookup failed.
+            update_available (bool): `True` if a newer release exists on PyPI, `False` otherwise.
     """
     try:
         # Get current version

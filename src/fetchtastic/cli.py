@@ -82,13 +82,13 @@ def _display_update_reminder(latest_version: str) -> None:
 
 def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
-    Load the Fetchtastic configuration, migrating from the legacy location if necessary.
-
-    If a configuration exists in the legacy location and no configuration file exists at the new location, an automatic migration is attempted before loading. After migration (or if migration is not needed), the configuration is loaded and its file path is returned.
-
+    Load the Fetchtastic configuration, attempting automatic migration from the legacy location if needed.
+    
+    If a configuration file exists at the legacy location and no file exists at the new location, an automatic migration is attempted before loading. After migration (or if migration is not required), the configuration is loaded and the path to the loaded configuration file is returned.
+    
     Returns:
         tuple: (config, config_path)
-            config (dict[str, Any] | None): Loaded configuration mapping, or `None` if no configuration is available.
+            config (dict[str, Any] | None): The loaded configuration mapping, or `None` if no configuration is available.
             config_path (str | None): Filesystem path to the loaded configuration file, or `None` if no configuration was found.
     """
     exists, config_path = setup_config.config_exists()
@@ -849,12 +849,12 @@ def run_clean():
 
 def run_repo_clean(config):
     """
-    Remove repository downloads from the meshtastic.github.io repository after user confirmation.
-
-    Prompts the user to confirm the operation; if confirmed, uses RepositoryDownloader to remove downloaded repository files, prints a concise summary of removed files and directories, and prints any cleanup errors. The function also logs the cleanup summary and errors.
-
+    Prompt for confirmation and remove downloaded files from the meshtastic.github.io repository directory specified in config.
+    
+    Performs an interactive confirmation, deletes repository download files when confirmed, prints a concise summary of removed files and directories, and logs any cleanup errors.
+    
     Parameters:
-        config (dict[str, Any]): Configuration containing repository download directory and related metadata used to locate and clean the repository files.
+        config (dict[str, Any]): Configuration containing the repository download directory and related metadata used to locate and clean the repository files.
     """
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."

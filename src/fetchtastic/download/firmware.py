@@ -702,18 +702,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         exclude_patterns: Optional[List[str]] = None,
     ) -> DownloadResult:
         """
-        Extract specified files from a firmware ZIP release into the release's version directory.
-
-        Validates extraction patterns, skips extraction when files already match the patterns, performs extraction when needed, and returns a DownloadResult describing the outcome.
-
+        Extract specified files from a firmware ZIP into the release's version directory.
+        
+        Validates the provided include/exclude patterns, skips extraction when matching files are already present, performs extraction when needed, and returns a DownloadResult summarizing success, skipped status, extracted file list, or error details.
+        
         Parameters:
-            release (Release): Release that owns the firmware asset.
-            asset (Asset): The firmware ZIP asset to extract.
-            patterns (List[str]): Glob patterns of files to include from the archive.
-            exclude_patterns (Optional[List[str]]): Glob patterns of files to exclude from extraction.
-
+        	release (Release): Release that owns the firmware asset.
+        	asset (Asset): The firmware ZIP asset to extract.
+        	patterns (List[str]): Glob patterns of files to include from the archive.
+        	exclude_patterns (Optional[List[str]]): Glob patterns of files to exclude from extraction.
+        
         Returns:
-            DownloadResult: On success, contains extracted_files and file_path; on failure, contains error_message and error_type describing why extraction did not occur or failed.
+        	DownloadResult: Contains `extracted_files` and `file_path` on success (or empty list with `was_skipped=True` when no files matched); on failure contains `error_message` and `error_type`.
         """
         zip_path: str = ""
         try:
@@ -954,6 +954,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 ]
 
                 def _strip_suffixes(name: str) -> str:
+                    """
+                    Removes channel and revoked suffixes from a directory name.
+                    
+                    Parameters:
+                        name (str): Directory or tag name that may include one or more channel suffixes (e.g., "-beta", "-rc") or "-revoked".
+                    
+                    Returns:
+                        str: The name with all recognized suffixes stripped, iteratively removed until none remain.
+                    """
                     base_name = name
                     stripped = True
                     while stripped:
@@ -1055,10 +1064,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def _get_current_iso_timestamp(self) -> str:
         """
-        Return the current UTC timestamp in ISO 8601 format.
-
+        Get the current UTC timestamp as an ISO 8601 string including the UTC timezone offset.
+        
         Returns:
-            iso_timestamp (str): ISO 8601 formatted UTC timestamp including the UTC timezone offset.
+            str: ISO 8601 formatted UTC timestamp including the UTC timezone offset.
         """
 
         return datetime.now(timezone.utc).isoformat()

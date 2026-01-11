@@ -937,6 +937,18 @@ class TestFirmwareReleaseDownloader:
         )
 
         def _sanitize(tag, _label):
+            """
+            Validate and normalize a release tag.
+            
+            Parameters:
+            	tag (str): Release tag to sanitize. The `_label` parameter is unused.
+            
+            Returns:
+            	str: The sanitized tag (identical to the input on success).
+            
+            Raises:
+            	ValueError: If the tag is "v1.0.0-beta", indicating an unsafe tag.
+            """
             if tag == "v1.0.0-beta":
                 raise ValueError("unsafe")
             return tag
