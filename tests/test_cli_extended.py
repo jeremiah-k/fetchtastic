@@ -144,6 +144,16 @@ def test_run_clean_permission_errors(mocker, capsys):
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/path/to/config")
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old_config")
+    mocker.patch(
+        "fetchtastic.setup_config.load_config",
+        return_value={
+            "DOWNLOAD_DIR": "/tmp/test_base_dir",
+            "BASE_DIR": "/tmp/test_base_dir",
+        },
+    )
+    mocker.patch("fetchtastic.setup_config.BASE_DIR", "/tmp/test_base_dir")
+    mocker.patch("fetchtastic.setup_config.remove_cron_job")
+    mocker.patch("fetchtastic.setup_config.remove_reboot_cron_job")
 
     def mock_remove_with_error(path):
         """Mock remove function that raises PermissionError for paths containing 'config'."""
@@ -154,6 +164,13 @@ def test_run_clean_permission_errors(mocker, capsys):
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.path.isdir", return_value=False)  # No batch dir
     mocker.patch("os.listdir", return_value=[])
+    mocker.patch(
+        "os.scandir",
+        return_value=Mock(
+            __enter__=Mock(return_value=[]), __exit__=Mock(return_value=None)
+        ),
+    )
+    mocker.patch("shutil.rmtree")
     mocker.patch("builtins.input", return_value="y")
 
     cli.run_clean()

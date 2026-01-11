@@ -179,13 +179,16 @@ def _prepare_command_run() -> Tuple[
     if not str(log_level_name).isalpha():
         log_level_name = "INFO"
 
-    try:
-        log_utils.add_file_logging(
-            Path(platformdirs.user_log_dir("fetchtastic")),
-            level_name=log_level_name,
-        )
-    except OSError as exc:
-        log_utils.logger.error("Could not enable file logging: %s", exc)
+    if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get(
+        "FETCHTASTIC_DISABLE_FILE_LOGGING"
+    ):
+        try:
+            log_utils.add_file_logging(
+                Path(platformdirs.user_log_dir("fetchtastic")),
+                level_name=log_level_name,
+            )
+        except OSError as exc:
+            log_utils.logger.error("Could not enable file logging: %s", exc)
 
     integration = download_cli_integration.DownloadCLIIntegration()
     return config, integration
