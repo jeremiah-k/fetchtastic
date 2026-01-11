@@ -108,7 +108,7 @@ def test_setup_downloads_partial_skips_firmware_menu(mocker):
     def wants(section: str) -> bool:
         """
         Determine whether the requested setup section is 'firmware'.
-        
+
         @returns `true` if `section` equals 'firmware', `false` otherwise.
         """
         return section == "firmware"
@@ -190,7 +190,7 @@ def test_setup_downloads_partial_reruns_firmware_menu(mocker):
     def wants(section: str) -> bool:
         """
         Determine whether the requested setup section is 'firmware'.
-        
+
         @returns `true` if `section` equals 'firmware', `false` otherwise.
         """
         return section == "firmware"
@@ -272,10 +272,10 @@ def test_setup_downloads_partial_skips_all_prompts(mocker):
     def wants(_section: str) -> bool:
         """
         Determine whether the named setup section is requested for this run.
-        
+
         Parameters:
             _section (str): Name of the setup section to check.
-        
+
         Returns:
             True if the named section is requested, False otherwise.
         """
@@ -2079,9 +2079,11 @@ def test_setup_firmware_keep_last_beta_interactive(mock_input):
     """Interactive runs should prompt for KEEP_LAST_BETA."""
     config = {"KEEP_LAST_BETA": False}
 
-    mock_input.side_effect = ["2", "y", "y", "device-", "y", "n", "y"]
+    mock_input.side_effect = ["2", "y", "n"]
 
-    with patch("sys.stdin.isatty", return_value=True):
+    with patch("sys.stdin.isatty", return_value=True), patch.dict(
+        os.environ, {"CI": ""}
+    ):
         result = setup_config._setup_firmware(
             config, is_first_run=True, default_versions=2
         )
