@@ -617,15 +617,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 return
 
             prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
-            keep_limit = (
-                int(keep_limit_override)
+            raw_keep_limit = (
+                keep_limit_override
                 if keep_limit_override is not None
-                else int(
-                    self.config.get(
-                        "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
-                    )
+                else self.config.get(
+                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
                 )
             )
+            try:
+                keep_limit = max(0, int(raw_keep_limit))
+            except (TypeError, ValueError):
+                keep_limit = int(DEFAULT_ANDROID_VERSIONS_TO_KEEP)
             stable_releases = sorted(
                 [release for release in cached_releases if not release.prerelease],
                 key=lambda release: self.version_manager.get_release_tuple(

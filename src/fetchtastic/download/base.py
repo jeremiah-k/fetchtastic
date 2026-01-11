@@ -26,9 +26,6 @@ from .version import VersionManager
 if TYPE_CHECKING:
     from .interfaces import Release
 
-if TYPE_CHECKING:
-    from .interfaces import Release
-
 
 _MISSING_HISTORY_MANAGER_MSG = (
     "{cls} does not have a release_history_manager and cannot check revoked status"

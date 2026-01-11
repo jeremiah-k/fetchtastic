@@ -1063,17 +1063,17 @@ def _setup_firmware(
     )
     non_interactive = not sys.stdin.isatty() or os.environ.get("CI")
     if non_interactive:
-        keep_last_beta_default_bool = keep_last_beta_current
+        config["KEEP_LAST_BETA"] = keep_last_beta_current
     else:
         keep_last_beta_default_bool = is_first_run or keep_last_beta_current
-    keep_last_beta_default = "yes" if keep_last_beta_default_bool else "no"
-    keep_last_beta_input = _safe_input(
-        f"Would you like to always keep the most recent beta firmware release? [y/n] (default: {keep_last_beta_default}): ",
-        default=keep_last_beta_default,
-    ).strip()
-    config["KEEP_LAST_BETA"] = _coerce_bool(
-        keep_last_beta_input, default=keep_last_beta_default_bool
-    )
+        keep_last_beta_default = "yes" if keep_last_beta_default_bool else "no"
+        keep_last_beta_input = _safe_input(
+            f"Would you like to always keep the most recent beta firmware release? [y/n] (default: {keep_last_beta_default}): ",
+            default=keep_last_beta_default,
+        ).strip()
+        config["KEEP_LAST_BETA"] = _coerce_bool(
+            keep_last_beta_input, default=keep_last_beta_default_bool
+        )
 
     # Prompt for automatic extraction
     auto_extract_current = _coerce_bool(config.get("AUTO_EXTRACT", False))

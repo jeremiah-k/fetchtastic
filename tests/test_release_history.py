@@ -427,8 +427,7 @@ def test_format_release_label_with_keep_unknown_tag(tmp_path):
         is_kept=True,
     )
 
-    assert label.startswith("[KEEP]")
-    assert "<unknown>" in label
+    assert label == "[KEEP] <unknown>"
 
 
 def test_log_release_channel_summary_negative_keep_limit(tmp_path, monkeypatch):
@@ -445,7 +444,13 @@ def test_log_release_channel_summary_negative_keep_limit(tmp_path, monkeypatch):
     with patch.object(log_utils.logger, "info") as mock_info:
         manager.log_release_channel_summary(releases, label="Firmware", keep_limit=-1)
 
-    assert mock_info.called
+    mock_info.assert_any_call(
+        "%s release channels (keeping %d of %d): %s",
+        "Firmware",
+        0,
+        2,
+        "alpha=2",
+    )
 
 
 def test_log_release_channel_summary_custom_empty_group(tmp_path, monkeypatch):
