@@ -1147,3 +1147,151 @@ def test_get_latest_version_logs_invalid_tracking_version():
     assert version == "bad-version!"
     assert mock_debug.called
     assert "does not match expected pattern" in mock_debug.call_args[0][0]
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_keeps_most_recent_beta(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test that KEEP_LAST_BETA ensures most recent beta is kept."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        # Create mock directory entries
+        mock_v1 = Mock()
+        mock_v1.name = "v2.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v2.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v1.9.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v1.9.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+
+        # Mock releases: one beta, one alpha
+        downloader.get_releases = Mock(
+            side_effect=lambda limit: (
+                [
+                    Release(
+                        tag_name="v2.0.0",
+                        published_at="2025-01-10T00:00:00Z",
+                        name="v2.0.0 beta",
+                    ),
+                    Release(
+                        tag_name="v1.9.0",
+                        published_at="2025-01-05T00:00:00Z",
+                        name="v1.9.0 alpha",
+                    ),
+                ]
+                if limit == 0
+                else [
+                    Release(
+                        tag_name="v2.0.0",
+                        published_at="2025-01-10T00:00:00Z",
+                        name="v2.0.0 beta",
+                    ),
+                ]
+            )
+        )
+
+        downloader.release_history_manager.get_release_channel = Mock(
+            side_effect=lambda r: "beta" if r.tag_name == "v2.0.0" else "alpha"
+        )
+        downloader._sanitize_required = Mock(return_value="v2.0.0")
+
+        # With KEEP_LAST_BETA=True, both should be kept (v2.0.0 is most recent beta)
+        downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=True)
+
+        # v2.0.0 (beta) should be kept, v1.9.0 (alpha) should be removed
+        assert mock_rmtree.call_count == 1
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_without_keep_last_beta(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup without KEEP_LAST_BETA uses normal logic."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        mock_v1 = Mock()
+        mock_v1.name = "v2.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v2.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v1.9.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v1.9.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+
+        # Mock releases
+        downloader.get_releases = Mock(
+            return_value=[
+                Release(
+                    tag_name="v2.0.0",
+                    published_at="2025-01-10T00:00:00Z",
+                    name="v2.0.0",
+                ),
+            ]
+        )
+
+        downloader._sanitize_required = Mock(return_value="v2.0.0")
+
+        # With KEEP_LAST_BETA=False (default), only v2.0.0 should be kept (keep_limit=1)
+        downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=False)
+
+        # v1.9.0 should be removed
+        assert mock_rmtree.call_count == 1
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_without_keep_last_beta(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup without KEEP_LAST_BETA uses normal logic."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        mock_v1 = Mock()
+        mock_v1.name = "v2.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v2.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v1.9.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v1.9.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+
+        # Mock releases
+        downloader.get_releases = Mock(
+            return_value=[
+                Release(
+                    tag_name="v2.0.0",
+                    published_at="2025-01-10T00:00:00Z",
+                    name="v2.0.0",
+                ),
+            ]
+        )
+
+        mocker.patch.object(downloader, "_sanitize_required", return_value="v2.0.0")
+
+        # With KEEP_LAST_BETA=False (default), only v2.0.0 should be kept (keep_limit=1)
+        downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=False)
+
+        # v1.9.0 should be removed
+        assert mock_rmtree.call_count == 1

@@ -1054,6 +1054,18 @@ def _setup_firmware(
         print("Invalid number — keeping current value.")
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
 
+    # Prompt for keeping last beta
+    keep_last_beta_current = _coerce_bool(config.get("KEEP_LAST_BETA", False))
+    keep_last_beta_default = "yes" if keep_last_beta_current else "no"
+    keep_last_beta_input = _safe_input(
+        f"Would you like to always keep the most recent beta firmware release? [y/n] (default: {keep_last_beta_default}): ",
+        default=keep_last_beta_default,
+    ).strip()
+    config["KEEP_LAST_BETA"] = _coerce_bool(
+        keep_last_beta_input or keep_last_beta_default,
+        default=keep_last_beta_current,
+    )
+
     # Prompt for automatic extraction
     auto_extract_current = _coerce_bool(config.get("AUTO_EXTRACT", False))
     auto_extract_default = "yes" if auto_extract_current else "no"

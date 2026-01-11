@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 from fetchtastic.log_utils import logger
 
@@ -59,9 +59,9 @@ def _join_text(parts: Iterable[Optional[str]]) -> str:
 def detect_release_channel(release: Release) -> str:
     """
     Infer the release channel ('alpha', 'beta', or 'rc') from a release's name and tag.
-    
+
     This function examines the release's name and tag text to decide the channel. Explicit channel keywords in the name or tag take precedence; the word "stable" is treated as "beta"; tags with hash-style suffixes are treated as "alpha"; the release's prerelease flag is ignored. If no condition matches, returns "alpha".
-    
+
     Returns:
         'alpha', 'beta', or 'rc' indicating the inferred channel.
     """
@@ -95,9 +95,9 @@ def detect_release_channel(release: Release) -> str:
 def is_release_revoked(release: Release) -> bool:
     """
     Detects whether a release has been marked as revoked.
-    
+
     Scans the release name for revoked indicators and, if a body exists, inspects up to the first 14 non-empty lines of the body. Each inspected line is unquoted (leading '>' removed), stripped of leading non-alphanumeric punctuation, and ignored if it begins with "previously revoked". A matching revoked pattern in the name or any inspected body line marks the release as revoked.
-    
+
     Returns:
         `true` if the release is revoked, `false` otherwise.
     """
@@ -167,6 +167,78 @@ class ReleaseHistoryManager:
             `true` if the release is revoked, `false` otherwise.
         """
         return is_release_revoked(release)
+
+    def _format_release_label_with_keep(
+        self,
+        release: Release,
+        *,
+        include_channel: bool = True,
+        include_status: bool = True,
+        include_stable: bool = False,
+        is_kept: bool = False,
+    ) -> str:
+        """
+        Create a display label for a release with optional keep annotation.
+
+        Parameters:
+            release (Release): The release object whose tag, channel, and status will be used to build the label.
+            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta").
+            include_status (bool): If true, append the revoked status label when the release is detected as revoked.
+            include_stable (bool): Kept for backward compatibility; "stable" is not emitted.
+            is_kept (bool): If true, mark this release as being kept with a visual indicator.
+
+        Returns:
+            label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "[KEEP] v1.2.3 (alpha, revoked)" or "v1.2.3").
+        """
+        label = release.tag_name
+        if is_kept:
+            label = f"[KEEP] {label}"
+        parts: List[str] = []
+        if include_channel:
+            channel = self.get_release_channel(release)
+            if channel:
+                parts.append(channel)
+        if include_status and self.is_release_revoked(release):
+            parts.append(STATUS_REVOKED)
+        if parts:
+            label = f"{label} ({', '.join(parts)})"
+        return label
+
+    def _format_release_label_with_keep(
+        self,
+        release: Release,
+        *,
+        include_channel: bool = True,
+        include_status: bool = True,
+        include_stable: bool = False,
+        is_kept: bool = False,
+    ) -> str:
+        """
+        Create a display label for a release with optional keep annotation.
+
+        Parameters:
+            release (Release): The release object whose tag, channel, and status will be used to build the label.
+            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta").
+            include_status (bool): If true, append the revoked status label when the release is detected as revoked.
+            include_stable (bool): Kept for backward compatibility; "stable" is not emitted.
+            is_kept (bool): If true, mark this release as being kept with a visual indicator.
+
+        Returns:
+            label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "[KEEP] v1.2.3 (alpha, revoked)" or "v1.2.3").
+        """
+        label = release.tag_name
+        if is_kept:
+            label = f"[KEEP] {label}"
+        parts: List[str] = []
+        if include_channel:
+            channel = self.get_release_channel(release)
+            if channel:
+                parts.append(channel)
+        if include_status and self.is_release_revoked(release):
+            parts.append(STATUS_REVOKED)
+        if parts:
+            label = f"{label} ({', '.join(parts)})"
+        return label
 
     def format_release_label(
         self,
@@ -321,16 +393,17 @@ class ReleaseHistoryManager:
                 self._log_release_status_entry(entry)
 
     def log_release_channel_summary(
-        self, releases: List[Release], *, label: str
+        self, releases: List[Release], *, label: str, keep_limit: Optional[int] = None
     ) -> None:
         """
         Log a summary of releases grouped by inferred channel and list releases per channel.
 
-        Groups the provided releases by channel (using get_release_channel), logs a compact count for each channel in a preferred order (alpha, beta, rc, then other channels alphabetically), and logs a per-channel list of release labels for non-empty channels.
+        Groups the provided releases by channel (using get_release_channel), logs a compact count for each channel in a preferred order (alpha, beta, rc, then other channels alphabetically), and logs a per-channel list of release labels for non-empty channels. If keep_limit is provided, indicates which releases are being kept.
 
         Parameters:
             releases (List[Release]): Releases to summarize; releases without entries are ignored.
             label (str): Prefix label used in the logged summary message.
+            keep_limit (Optional[int]): Maximum number of releases that will be kept; if provided, annotations are added to show which releases will be retained.
         """
         if not releases:
             return
@@ -356,27 +429,74 @@ class ReleaseHistoryManager:
         if not summary_parts:
             return
 
-        logger.info("%s release channels: %s", label, ", ".join(summary_parts))
+        releases_to_keep: set[Release] = set()
+        if keep_limit is not None:
+            logger.info(
+                "%s release channels (keeping %d of %d): %s",
+                label,
+                keep_limit,
+                len(releases),
+                ", ".join(summary_parts),
+            )
+            sorted_releases = sorted(
+                [r for r in releases if r.tag_name],
+                key=lambda r: (
+                    parse_iso_datetime_utc(r.published_at)
+                    or datetime.min.replace(tzinfo=timezone.utc),
+                    r.tag_name or "",
+                ),
+                reverse=True,
+            )
+            for i, release in enumerate(sorted_releases):
+                if i < keep_limit:
+                    releases_to_keep.add(release)
+        else:
+            logger.info("%s release channels: %s", label, ", ".join(summary_parts))
 
         for channel in _CHANNEL_ORDER:
             releases_for_channel = channel_map.get(channel)
             if not releases_for_channel:
                 continue
             items = ", ".join(
-                self.format_release_label(
-                    release, include_channel=False, include_status=True
+                self._format_release_label_with_keep(
+                    release,
+                    include_channel=False,
+                    include_status=True,
+                    is_kept=(
+                        release in releases_to_keep if keep_limit is not None else False
+                    ),
                 )
                 for release in releases_for_channel
             )
             logger.info("  - %s: %s", channel, items)
 
         for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
-            releases_for_channel = channel_map.get(channel, [])
+            releases_for_channel = channel_map.get(channel)
             if not releases_for_channel:
                 continue
             items = ", ".join(
-                self.format_release_label(
-                    release, include_channel=False, include_status=True
+                self._format_release_label_with_keep(
+                    release,
+                    include_channel=False,
+                    include_status=True,
+                    is_kept=(
+                        release in releases_to_keep if keep_limit is not None else False
+                    ),
+                )
+                for release in releases_for_channel
+            )
+            logger.info("  - %s: %s", channel, items)
+
+        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
+            releases_for_channel = channel_map.get(channel)
+            if not releases_for_channel:
+                continue
+            items = ", ".join(
+                self._format_release_label_with_keep(
+                    release,
+                    include_channel=False,
+                    include_status=True,
+                    is_kept=keep_limit is not None and release in releases_to_keep,
                 )
                 for release in releases_for_channel
             )
@@ -385,7 +505,7 @@ class ReleaseHistoryManager:
     def _log_release_status_entry(self, entry: Dict[str, Any]) -> None:
         """
         Log a single release history entry showing its tag with optional channel and status.
-        
+
         Parameters:
             entry (Dict[str, Any]): History entry containing:
                 - tag_name (str, optional): Release tag to display; "<unknown>" used if missing.

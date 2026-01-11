@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import zipfile
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
 import requests
@@ -46,7 +47,7 @@ from fetchtastic.utils import (
 )
 
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
@@ -408,13 +409,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> List[str]:
         """
         Builds an ordered list of alternative storage-tag candidates for a release by combining channel suffixes and revoked variants.
-        
+
         Includes channel-suffixed and unsuffixed variants (and a revoked variant) to aid discovery of existing directories; excludes the supplied target_tag from the result.
-        
+
         Parameters:
             release (Release): Release to derive the base tag and channel from.
             target_tag (str): Storage tag to omit from the returned candidates.
-        
+
         Returns:
             List[str]: Ordered, distinct storage-tag strings (each a filesystem-safe tag) excluding `target_tag`.
         """
@@ -800,19 +801,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 error_type=ERROR_TYPE_EXTRACTION,
             )
 
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self, keep_limit: int, keep_last_beta: bool = False
+    ) -> None:
         """
         Remove firmware version directories not present in the latest `keep_limit` releases
         (full releases only).
 
         This mirrors legacy behavior by keeping only the newest release tags (alpha/beta)
-        returned by the GitHub API (bounded by `keep_limit`). Any local version
+        returned by GitHub API (bounded by `keep_limit`). Any local version
         directories not in that set are removed. Special directories "prerelease" and
         "repo-dls" are always preserved.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
                 older directories will be deleted. Pass 0 to delete all version directories.
+            keep_last_beta (bool): If True, always keep the most recent beta release
+                in addition to keep_limit releases. Default is False.
         """
         try:
             if keep_limit < 0:
@@ -863,6 +868,45 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         is_revoked=self.is_release_revoked(release),
                     )
                 )
+
+            # If keep_last_beta is enabled, ensure most recent beta is kept
+            if keep_last_beta:
+                all_releases = self.get_releases(limit=0)
+                beta_releases = [
+                    r
+                    for r in all_releases
+                    if r.tag_name
+                    and self.release_history_manager.get_release_channel(r) == "beta"
+                ]
+                if beta_releases:
+                    most_recent_beta = max(
+                        beta_releases,
+                        key=lambda r: (
+                            parse_iso_datetime_utc(r.published_at)
+                            or datetime.min.replace(tzinfo=timezone.utc),
+                            r.tag_name or "",
+                        ),
+                    )
+                    try:
+                        safe_beta_tag = self._sanitize_required(
+                            most_recent_beta.tag_name, "beta release tag"
+                        )
+                        keep_base_tags.add(safe_beta_tag)
+                        release_tags_to_keep.add(safe_beta_tag)
+                        release_tags_to_keep.add(
+                            build_storage_tag_with_channel(
+                                sanitized_release_tag=safe_beta_tag,
+                                release=most_recent_beta,
+                                release_history_manager=self.release_history_manager,
+                                config=self.config,
+                                is_revoked=self.is_release_revoked(most_recent_beta),
+                            )
+                        )
+                    except ValueError:
+                        logger.warning(
+                            "Skipping unsafe beta release tag during cleanup: %s",
+                            most_recent_beta.tag_name,
+                        )
 
             if not release_tags_to_keep and keep_limit > 0:
                 logger.warning(

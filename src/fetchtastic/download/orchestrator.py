@@ -20,6 +20,7 @@ from fetchtastic.constants import (
     APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEFAULT_KEEP_LAST_BETA,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     ERROR_TYPE_RETRY_FAILURE,
     ERROR_TYPE_UNKNOWN,
@@ -983,7 +984,23 @@ class DownloadOrchestrator:
             return
 
         manager = self.firmware_downloader.release_history_manager
-        manager.log_release_channel_summary(self.firmware_releases, label="Firmware")
+        keep_limit = self.config.get(
+            "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+        )
+        keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+
+        if keep_last_beta:
+            beta_releases = [
+                r
+                for r in self.firmware_releases
+                if manager.get_release_channel(r) == "beta"
+            ]
+            if beta_releases:
+                keep_limit = min(keep_limit + 1, len(self.firmware_releases))
+
+        manager.log_release_channel_summary(
+            self.firmware_releases, label="Firmware", keep_limit=keep_limit
+        )
         manager.log_release_status_summary(
             self.firmware_release_history, label="Firmware"
         )
@@ -1082,7 +1099,10 @@ class DownloadOrchestrator:
 
             # Clean up firmware versions
             firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)
-            self.firmware_downloader.cleanup_old_versions(firmware_keep)
+            keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+            self.firmware_downloader.cleanup_old_versions(
+                firmware_keep, keep_last_beta=keep_last_beta
+            )
             self._cleanup_deleted_prereleases()
 
             logger.info("Old version cleanup completed")
