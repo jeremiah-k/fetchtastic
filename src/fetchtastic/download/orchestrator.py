@@ -996,7 +996,14 @@ class DownloadOrchestrator:
                 if manager.get_release_channel(r) == "beta"
             ]
             if beta_releases:
-                keep_limit = min(keep_limit + 1, len(self.firmware_releases))
+                # Add 1 for beta only if not already in top keep_limit releases
+                top_releases = self.firmware_releases[:keep_limit]
+                most_recent_beta = max(
+                    beta_releases,
+                    key=lambda r: (r.published_at or "", r.tag_name or ""),
+                )
+                if most_recent_beta not in top_releases:
+                    keep_limit = min(keep_limit + 1, len(self.firmware_releases))
 
         manager.log_release_channel_summary(
             self.firmware_releases, label="Firmware", keep_limit=keep_limit

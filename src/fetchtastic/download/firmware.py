@@ -871,7 +871,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # If keep_last_beta is enabled, ensure most recent beta is kept
             if keep_last_beta:
-                all_releases = self.get_releases(limit=0)
+                all_releases = self.get_releases(limit=100)
                 beta_releases = [
                     r
                     for r in all_releases

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional
 
 from fetchtastic.log_utils import logger
 
@@ -174,43 +174,7 @@ class ReleaseHistoryManager:
         *,
         include_channel: bool = True,
         include_status: bool = True,
-        include_stable: bool = False,
-        is_kept: bool = False,
-    ) -> str:
-        """
-        Create a display label for a release with optional keep annotation.
-
-        Parameters:
-            release (Release): The release object whose tag, channel, and status will be used to build the label.
-            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta").
-            include_status (bool): If true, append the revoked status label when the release is detected as revoked.
-            include_stable (bool): Kept for backward compatibility; "stable" is not emitted.
-            is_kept (bool): If true, mark this release as being kept with a visual indicator.
-
-        Returns:
-            label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "[KEEP] v1.2.3 (alpha, revoked)" or "v1.2.3").
-        """
-        label = release.tag_name
-        if is_kept:
-            label = f"[KEEP] {label}"
-        parts: List[str] = []
-        if include_channel:
-            channel = self.get_release_channel(release)
-            if channel:
-                parts.append(channel)
-        if include_status and self.is_release_revoked(release):
-            parts.append(STATUS_REVOKED)
-        if parts:
-            label = f"{label} ({', '.join(parts)})"
-        return label
-
-    def _format_release_label_with_keep(
-        self,
-        release: Release,
-        *,
-        include_channel: bool = True,
-        include_status: bool = True,
-        include_stable: bool = False,
+        _include_stable: bool = False,
         is_kept: bool = False,
     ) -> str:
         """
@@ -246,7 +210,7 @@ class ReleaseHistoryManager:
         *,
         include_channel: bool = True,
         include_status: bool = True,
-        include_stable: bool = False,
+        _include_stable: bool = False,
     ) -> str:
         """
         Create a display label for a release by combining its tag name with optional channel and status annotations.
@@ -482,21 +446,6 @@ class ReleaseHistoryManager:
                     is_kept=(
                         release in releases_to_keep if keep_limit is not None else False
                     ),
-                )
-                for release in releases_for_channel
-            )
-            logger.info("  - %s: %s", channel, items)
-
-        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
-            releases_for_channel = channel_map.get(channel)
-            if not releases_for_channel:
-                continue
-            items = ", ".join(
-                self._format_release_label_with_keep(
-                    release,
-                    include_channel=False,
-                    include_status=True,
-                    is_kept=keep_limit is not None and release in releases_to_keep,
                 )
                 for release in releases_for_channel
             )
