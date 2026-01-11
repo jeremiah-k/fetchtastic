@@ -166,14 +166,12 @@ class BaseDownloader(Downloader, ABC):
         keep_last_beta: bool = False,
     ) -> None:
         """
-        Remove older downloaded versions to enforce a retention limit.
-
-        Concrete downloaders must override this method to remove older version artifacts so that at most `keep_limit` versions remain.
-
+        Remove older downloaded versions so that at most `keep_limit` version directories remain.
+        
         Parameters:
             keep_limit (int): Maximum number of version entries to retain; older versions beyond this limit should be removed.
-            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
-            keep_last_beta (bool): When supported, keep the most recent beta release in addition to the keep_limit set.
+            cached_releases (Optional[List[Release]]): Optional list of releases to consult instead of performing fresh lookups.
+            keep_last_beta (bool): If true and supported by the downloader, preserve the most recent beta release in addition to the retained releases.
         """
         # This will be implemented by specific downloaders
         pass

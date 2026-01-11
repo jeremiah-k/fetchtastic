@@ -264,9 +264,9 @@ class DownloadOrchestrator:
 
     def _process_firmware_downloads(self) -> None:
         """
-        Ensure recent firmware releases and repository prereleases are downloaded and remove unmanaged prerelease directories.
-
-        Scans the configured recent firmware releases, downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Errors encountered during processing are caught and logged.
+        Ensure recent firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
+        
+        Scans configured firmware releases (limited by retention settings), downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, file-system, and parsing errors encountered during processing are caught and logged.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):
@@ -989,7 +989,10 @@ class DownloadOrchestrator:
 
     def log_firmware_release_history_summary(self) -> None:
         """
-        Emit firmware release channel/status summaries near the end of the run.
+        Log firmware release channel and status summaries for the run.
+        
+        If firmware release history and releases are available, emit three reports via the release history manager:
+        a channel summary (respecting FIRMWARE_VERSIONS_TO_KEEP and, when enabled, optionally including the most recent beta in the retained set), a status summary, and a duplicate base-version summary.
         """
         if not self.firmware_release_history or not self.firmware_releases:
             return
@@ -1115,9 +1118,9 @@ class DownloadOrchestrator:
 
     def cleanup_old_versions(self) -> None:
         """
-        Remove older Android and firmware artifact versions and remove prerelease directories marked as deleted.
-
-        Uses configured keep counts (ANDROID_VERSIONS_TO_KEEP, FIRMWARE_VERSIONS_TO_KEEP) to instruct each downloader to prune old releases, then performs cleanup of prerelease directories recorded as deleted.
+        Prune locally stored Android and firmware artifacts according to configured retention settings and remove prerelease directories marked as deleted.
+        
+        This routine reads retention settings (e.g., `ANDROID_VERSIONS_TO_KEEP`, `FIRMWARE_VERSIONS_TO_KEEP`) and instructs the Android and firmware downloaders to remove older releases. When firmware retention is applied, the `KEEP_LAST_BETA` setting is honored if present. After pruning releases, it removes any prerelease directories that have been recorded as deleted. On filesystem or configuration-related errors (`OSError`, `ValueError`, `TypeError`) it logs an error.
         """
         try:
             logger.info("Cleaning up old versions...")

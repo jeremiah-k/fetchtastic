@@ -577,12 +577,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         keep_last_beta: bool = False,
     ) -> None:
         """
-        Remove older Android versions by delegating to prerelease-aware cleanup.
-
+        Remove older Android APK version directories while preserving a configured number of recent versions.
+        
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain.
-            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
-            keep_last_beta (bool): Unused for APK cleanup; retained for signature compatibility.
+            cached_releases (Optional[List[Release]]): Optional list of releases to use instead of fetching current releases.
+            keep_last_beta (bool): Ignored for APK cleanup; present only for signature compatibility.
         """
         try:
             del keep_last_beta  # intentionally unused (signature compatibility)
@@ -601,12 +601,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         keep_limit_override: Optional[int] = None,
     ) -> None:
         """
-        Ensure APK version directories are organized (stable versions in the APK root, prereleases under the prerelease subdirectory) and remove any unexpected entries.
-
-        Scans the APK root and the prerelease subdirectory and removes filesystem entries that are not part of the expected stable or prerelease sets for the provided releases; symlinks are left untouched. If no cached_releases are provided, the APK root is missing, or there are no stable releases, no action is taken. The number of stable versions retained is determined by keep_limit_override when provided, otherwise by the `ANDROID_VERSIONS_TO_KEEP` configuration value.
-
+        Ensure APK version directories are organized and remove filesystem entries that are not part of the expected stable or prerelease sets.
+        
+        Scans the APK root and the prerelease subdirectory, preserving symlinks and any entries whose sanitized tag names match the expected stable or prerelease sets derived from `cached_releases`. No filesystem changes are made if `cached_releases` is None/empty, the APK root is missing, or there are no stable releases. The number of stable versions retained is determined by `keep_limit_override` when provided, otherwise by the `ANDROID_VERSIONS_TO_KEEP` configuration value.
+        
         Parameters:
             cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease directories should be retained; if None or empty, the method returns without modifying the filesystem.
+            keep_limit_override (Optional[int]): If provided, overrides the configured number of stable versions to keep (must be >= 0); non-integer or invalid values fall back to the default keep value.
         """
         try:
             if not cached_releases:

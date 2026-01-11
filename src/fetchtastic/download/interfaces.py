@@ -275,14 +275,14 @@ class Downloader(ABC):
         exclude_patterns: List[str],
     ) -> bool:
         """
-        Decides whether archive extraction is necessary by checking for files matching the provided include and exclude patterns in the extraction directory.
-
+        Determine whether the archive at `file_path` needs extraction by verifying that files matching `patterns` (and not matching `exclude_patterns`) are present and complete in `extract_dir`.
+        
         Parameters:
             file_path (str): Path to the archive file intended for extraction.
-            extract_dir (str): Directory where extracted files are expected to be located.
-            patterns (List[str]): Glob or filename patterns that identify files required from the archive.
+            extract_dir (str): Directory where extracted files are expected to be found; patterns are matched relative to this directory.
+            patterns (List[str]): Glob or filename patterns that identify required files within the extraction directory.
             exclude_patterns (List[str]): Glob or filename patterns to ignore when checking for required files.
-
+        
         Returns:
             `true` if extraction should be performed because required files are missing or incomplete, `false` otherwise.
         """
@@ -295,12 +295,12 @@ class Downloader(ABC):
         keep_last_beta: bool = False,
     ) -> None:
         """
-        Remove older cached or stored versions, retaining only the most recent keep_limit versions.
-
+        Prune cached or stored releases, retaining only the most recent releases defined by keep_limit.
+        
         Parameters:
-            keep_limit (int): Number of most recent versions to retain; versions older than this will be removed.
-            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
-            keep_last_beta (bool): When supported, keep the most recent beta release in addition to the keep_limit set.
+            keep_limit (int): Number of most recent releases to keep; older releases beyond this count will be removed.
+            cached_releases (Optional[List[Release]]): Optional list of releases to use instead of querying the source.
+            keep_last_beta (bool): If True and supported, also retain the most recent beta release in addition to the kept releases.
         """
 
     @abstractmethod

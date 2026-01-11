@@ -35,7 +35,15 @@ def test_config():
 
 @pytest.fixture
 def cache_manager(tmp_path):
-    """Cache manager instance."""
+    """
+    Provide a CacheManager configured to use the given temporary directory.
+    
+    Parameters:
+        tmp_path (pathlib.Path): Temporary directory (pytest fixture) to be used as the on-disk cache directory.
+    
+    Returns:
+        CacheManager: A CacheManager instance with its cache_dir set to the string form of `tmp_path`.
+    """
     return CacheManager(cache_dir=str(tmp_path))
 
 
@@ -53,7 +61,16 @@ def prerelease_manager():
 
 @pytest.fixture
 def firmware_downloader(test_config, tmp_path):
-    """Firmware release downloader instance."""
+    """
+    Create a FirmwareReleaseDownloader configured with the provided test configuration and a temporary cache directory.
+    
+    Parameters:
+        test_config: Test fixture providing downloader configuration (download directory, prerelease checks, selected assets, exclude patterns, token).
+        tmp_path: Temporary filesystem path used as the cache directory.
+    
+    Returns:
+        FirmwareReleaseDownloader: Downloader instance backed by a CacheManager rooted at `tmp_path`.
+    """
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     return FirmwareReleaseDownloader(test_config, cache_manager)
 

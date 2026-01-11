@@ -107,9 +107,9 @@ def test_setup_downloads_partial_skips_firmware_menu(mocker):
     # Only run the firmware section in this partial pass.
     def wants(section: str) -> bool:
         """
-        Determine if the requested setup section is the firmware section.
-
-        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        Determine whether the requested setup section is 'firmware'.
+        
+        @returns `true` if `section` equals 'firmware', `false` otherwise.
         """
         return section == "firmware"
 
@@ -189,9 +189,9 @@ def test_setup_downloads_partial_reruns_firmware_menu(mocker):
 
     def wants(section: str) -> bool:
         """
-        Determine if the requested setup section is the firmware section.
-
-        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        Determine whether the requested setup section is 'firmware'.
+        
+        @returns `true` if `section` equals 'firmware', `false` otherwise.
         """
         return section == "firmware"
 
@@ -271,13 +271,13 @@ def test_setup_downloads_partial_skips_all_prompts(mocker):
 
     def wants(_section: str) -> bool:
         """
-        Indicates whether the named setup section is requested for this run.
-
+        Determine whether the named setup section is requested for this run.
+        
         Parameters:
             _section (str): Name of the setup section to check.
-
+        
         Returns:
-            bool: `true` if the section is requested, `false` otherwise.
+            True if the named section is requested, False otherwise.
         """
         return False
 

@@ -469,6 +469,15 @@ class TestDownloadOrchestrator:
         manager = orchestrator.firmware_downloader.release_history_manager
 
         def _fake_channel(release):
+            """
+            Map a release to its release channel identifier.
+            
+            Parameters:
+                release: An object with a `tag_name` attribute representing the release tag.
+            
+            Returns:
+                The channel name `"beta"` if `release.tag_name` equals `"v1.9.0"`, otherwise `"alpha"`.
+            """
             return "beta" if release.tag_name == "v1.9.0" else "alpha"
 
         with (

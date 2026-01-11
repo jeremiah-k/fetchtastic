@@ -115,10 +115,8 @@ def detect_release_channel(release: Release) -> str:
 
 def is_release_revoked(release: Release) -> bool:
     """
-    Detects whether a release has been marked as revoked.
-
-    Scans the release name for revoked indicators and, if a body exists, inspects up to the first 14 non-empty lines of the body. Each inspected line is unquoted (leading '>' removed), stripped of leading non-alphanumeric punctuation, and ignored if it begins with "previously revoked". A matching revoked pattern in the name or any inspected body line marks the release as revoked.
-
+    Determine whether a release has been marked as revoked by inspecting its title and the first several non-empty lines of its body for revocation indicators.
+    
     Returns:
         `true` if the release is revoked, `false` otherwise.
     """
@@ -180,12 +178,9 @@ class ReleaseHistoryManager:
     def is_release_revoked(self, release: Release) -> bool:
         """
         Determine whether a release has been marked as revoked.
-
-        Parameters:
-            release (Release): The release object to inspect for revoked indicators.
-
+        
         Returns:
-            `true` if the release is revoked, `false` otherwise.
+            True if the release is revoked, False otherwise.
         """
         return is_release_revoked(release)
 
@@ -199,17 +194,17 @@ class ReleaseHistoryManager:
         is_kept: bool = False,
     ) -> str:
         """
-        Create a display label for a release with optional keep annotation.
-
+        Build a display label for a release, optionally prefixing it as kept and appending channel/status annotations.
+        
         Parameters:
-            release (Release): The release object whose tag, channel, and status will be used to build the label.
-            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta").
-            include_status (bool): If true, append the revoked status label when the release is detected as revoked.
-            include_stable (bool): Kept for backward compatibility; "stable" is not emitted.
-            is_kept (bool): If true, mark this release as being kept with a visual indicator.
-
+            release (Release): Release whose tag, channel, and status are used to construct the label.
+            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta") in parentheses.
+            include_status (bool): If true, append "revoked" in parentheses when the release is detected as revoked.
+            _include_stable (bool): Kept for backward compatibility; ignored by the formatter and does not emit "stable".
+            is_kept (bool): If true, prefix the label with "[KEEP] " to indicate this release is being kept.
+        
         Returns:
-            label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "[KEEP] v1.2.3 (alpha, revoked)" or "v1.2.3").
+            label (str): The formatted label containing the tag name (or "<unknown>"), optionally prefixed with "[KEEP]" and followed by parenthesized annotations.
         """
         label = release.tag_name or "<unknown>"
         if is_kept:
@@ -234,16 +229,16 @@ class ReleaseHistoryManager:
         _include_stable: bool = False,
     ) -> str:
         """
-        Create a display label for a release by combining its tag name with optional channel and status annotations.
-
+        Build a human-readable label for a release combining its tag with optional channel and status annotations.
+        
         Parameters:
-            release (Release): The release object whose tag, channel, and status will be used to build the label.
-            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta").
-            include_status (bool): If true, append the revoked status label when the release is detected as revoked.
-            include_stable (bool): Kept for backward compatibility; "stable" is not emitted.
-
+            release: Release object used to obtain tag, channel, and revoked status.
+            include_channel (bool): If true, append the detected release channel (for example, "alpha" or "beta").
+            include_status (bool): If true, append a revoked status annotation when the release is detected as revoked.
+            _include_stable (bool): Deprecated compatibility flag; "stable" annotations are not emitted regardless of this value.
+        
         Returns:
-            label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "v1.2.3 (alpha, revoked)" or "v1.2.3").
+            A string containing the release tag followed by optional parenthesized annotations (for example, "v1.2.3 (alpha, revoked)" or "v1.2.3").
         """
         return self._format_release_label_with_keep(
             release,
@@ -255,13 +250,13 @@ class ReleaseHistoryManager:
 
     def format_release_log_suffix(self, release: Release) -> str:
         """
-        Return the label suffix for a release when the formatted label differs from its tag name.
-
+        Get the formatted label suffix for a release when it differs from the release's tag name.
+        
         Parameters:
-            release (Release): Release object whose label will be formatted.
-
+            release (Release): Release whose formatted label is compared to its tag.
+        
         Returns:
-            str: The substring of the formatted label that follows `release.tag_name`, or an empty string if the formatted label equals the tag name.
+            str: Substring of the formatted label that follows `release.tag_name`, or an empty string if they are equal.
         """
         suffix = self.format_release_label(
             release, include_channel=True, include_status=True
@@ -456,13 +451,16 @@ class ReleaseHistoryManager:
         keep_limit: Optional[int],
     ) -> None:
         """
-        Log the releases for a specific channel.
-
+        Log releases for a given channel, marking kept releases when applicable.
+        
+        Releases are reported newest-first and rendered using the manager's label formatter;
+        releases whose tag is in `releases_to_keep` are annotated when `keep_limit` is provided.
+        
         Parameters:
-            channel (str): The channel to log.
-            releases_for_channel (List[Release]): The releases in the channel.
-            releases_to_keep (set[str]): Set of release tags to keep.
-            keep_limit (Optional[int]): Maximum number of releases to keep.
+            channel (str): Channel name to log (e.g., "alpha", "beta", "rc").
+            releases_for_channel (List[Release]): Releases belonging to the channel.
+            releases_to_keep (set[str]): Set of tag names that should be marked as kept.
+            keep_limit (Optional[int]): If provided, indicates a keep policy is active; when None no releases are marked as kept.
         """
         sorted_releases = sorted(
             [release for release in releases_for_channel if release.tag_name],
@@ -486,13 +484,13 @@ class ReleaseHistoryManager:
 
     def _log_release_status_entry(self, entry: Dict[str, Any]) -> None:
         """
-        Log a single release history entry showing its tag with optional channel and status.
-
+        Log a single release history entry as a formatted status line.
+        
         Parameters:
-            entry (Dict[str, Any]): History entry containing:
-                - tag_name (str, optional): Release tag to display; "<unknown>" used if missing.
-                - channel (str, optional): Channel label to include in the display.
-                - status (str, optional): Status label; entries with the revoked status are styled to indicate revocation.
+            entry (dict): History entry with optional keys:
+                - tag_name (str): Release tag to display; "<unknown>" is used if missing.
+                - channel (str): Channel label to include in the output.
+                - status (str): Status label; entries with the revoked status are rendered with revoked styling.
         """
         tag_name = entry.get("tag_name") or "<unknown>"
         channel = entry.get("channel")
@@ -613,6 +611,15 @@ class ReleaseHistoryManager:
         """
 
         def _sort_key(entry: Dict[str, Any]) -> tuple[datetime, str]:
+            """
+            Produce a sorting key for a history entry using its published timestamp and tag name.
+            
+            Parameters:
+                entry (dict): A history entry dictionary; expected keys include "published_at" (ISO 8601 string) and "tag_name".
+            
+            Returns:
+                tuple(datetime, str): A tuple where the first element is the parsed UTC datetime from "published_at" (or datetime.min with UTC if missing or invalid) and the second element is the "tag_name" (or an empty string).
+            """
             ts = parse_iso_datetime_utc(
                 entry.get("published_at")
             ) or datetime.min.replace(tzinfo=timezone.utc)
