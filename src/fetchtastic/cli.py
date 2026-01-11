@@ -1,11 +1,13 @@
 # src/fetchtastic/cli.py
 
 import argparse
+import logging
 import os
 import platform
 import shutil
 import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import platformdirs
@@ -82,9 +84,9 @@ def _display_update_reminder(latest_version: str) -> None:
 def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Load the Fetchtastic configuration, migrating from the legacy location if necessary.
-    
+
     If a configuration exists in the legacy location and no configuration file exists at the new location, an automatic migration is attempted before loading. After migration (or if migration is not needed), the configuration is loaded and its file path is returned.
-    
+
     Returns:
         tuple: (config, config_path)
             config (dict[str, Any] | None): Loaded configuration mapping, or `None` if no configuration is available.
@@ -171,6 +173,13 @@ def _prepare_command_run() -> Tuple[
     if config and config.get("LOG_LEVEL"):
         log_utils.set_log_level(config["LOG_LEVEL"])
 
+    log_level_name = config.get("LOG_LEVEL") or logging.getLevelName(
+        log_utils.logger.getEffectiveLevel()
+    )
+    log_utils.add_file_logging(
+        Path(platformdirs.user_log_dir("fetchtastic")), level_name=str(log_level_name)
+    )
+
     integration = download_cli_integration.DownloadCLIIntegration()
     return config, integration
 
@@ -245,7 +254,7 @@ def main():
 
     """
     CLI entry point that parses arguments and dispatches Fetchtastic subcommands.
-    
+
     Parses command-line arguments and invokes the requested command behavior such as running setup, performing downloads, showing the NTFY topic, managing caches, cleaning Fetchtastic data, interacting with the repository, or printing version/help information. Subcommands may read, create, migrate, or remove configuration; run interactive setup flows; perform download or repository operations; manage system startup/cron entries; and copy text to the clipboard when configured.
     """
     parser = argparse.ArgumentParser(
@@ -764,9 +773,9 @@ def run_clean():
     def _remove_managed_file(item_path: str) -> None:
         """
         Remove a managed file at the given path and record the result in the application log.
-        
+
         Logs an informational message if the file is removed successfully; logs an error if removal fails and does not raise the exception.
-        
+
         Parameters:
             item_path (str): Filesystem path of the file to remove.
         """
@@ -838,9 +847,9 @@ def run_clean():
 def run_repo_clean(config):
     """
     Remove repository downloads from the meshtastic.github.io repository after user confirmation.
-    
+
     Prompts the user to confirm the operation; if confirmed, uses RepositoryDownloader to remove downloaded repository files, prints a concise summary of removed files and directories, and prints any cleanup errors. The function also logs the cleanup summary and errors.
-    
+
     Parameters:
         config (dict[str, Any]): Configuration containing repository download directory and related metadata used to locate and clean the repository files.
     """

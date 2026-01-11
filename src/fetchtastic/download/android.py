@@ -597,9 +597,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     ) -> None:
         """
         Ensure APK version directories are organized (stable versions in the APK root, prereleases under the prerelease subdirectory) and remove any unexpected entries.
-        
+
         Scans the APK root and the prerelease subdirectory and removes filesystem entries that are not part of the expected stable or prerelease sets for the provided releases; symlinks are left untouched. If no cached_releases are provided, the APK root is missing, or there are no stable releases, no action is taken. The number of stable versions retained is determined by keep_limit_override when provided, otherwise by the `ANDROID_VERSIONS_TO_KEEP` configuration value.
-        
+
         Parameters:
             cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease directories should be retained; if None or empty, the method returns without modifying the filesystem.
         """
@@ -641,11 +641,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             ) -> set[str]:
                 """
                 Builds the set of filesystem-safe release directory names from a list of Release objects.
-                
+
                 Parameters:
                     releases (List[Release]): Releases whose tag_name values will be sanitized and included.
                     release_label (str): Human-readable label used in warning messages when a tag_name is unsafe.
-                
+
                 Returns:
                     set[str]: A set of sanitized tag strings suitable as directory names; releases with unsafe tags are skipped and logged.
                 """
@@ -667,6 +667,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
             expected_prerelease = _build_expected_set(prerelease_releases, "prerelease")
 
+            if not expected_stable and keep_limit > 0:
+                logger.warning(
+                    "Skipping APK cleanup: no safe release tags found to keep."
+                )
+                return
+
             def _remove_unexpected_entries(
                 base_dir: str,
                 allowed: set[str],
@@ -674,9 +680,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             ) -> None:
                 """
                 Remove filesystem entries in base_dir whose names are not in `allowed`.
-                
+
                 If `entries` is provided, it will be used instead of scanning `base_dir`. Symlinks are skipped. If `base_dir` does not exist the function returns quietly.
-                
+
                 Parameters:
                     base_dir (str): Path of the directory to inspect and prune.
                     allowed (set[str]): Names of entries (files or directories) that must be preserved.

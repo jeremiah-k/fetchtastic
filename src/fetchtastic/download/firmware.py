@@ -830,6 +830,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
             firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
+            logger.debug(
+                "Firmware cleanup start: keep_limit=%s, keep_last_beta=%s, firmware_dir=%s",
+                keep_limit,
+                keep_last_beta,
+                firmware_dir,
+            )
 
             # Fetch releases once, using max(keep_limit, 100) to satisfy both needs
             # This avoids a redundant second API call when keep_last_beta is enabled
@@ -955,7 +961,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if (
                     keep_limit > 0
                     and existing_versions
-                    and release_tags_to_keep
                     and keep_base_tags.isdisjoint(existing_base_names)
                 ):
                     logger.warning(
@@ -981,6 +986,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             and base_name not in keep_base_tags
                         ):
                             try:
+                                logger.debug(
+                                    "Removing firmware directory: %s",
+                                    entry.path,
+                                )
                                 shutil.rmtree(entry.path)
                                 logger.info(
                                     "Removed old firmware version: %s", entry.name
