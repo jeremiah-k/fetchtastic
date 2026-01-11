@@ -571,7 +571,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         return True
 
     def cleanup_old_versions(
-        self, keep_limit: int, cached_releases: Optional[List[Release]] = None
+        self,
+        keep_limit: int,
+        cached_releases: Optional[List[Release]] = None,
+        keep_last_beta: bool = False,
     ) -> None:
         """
         Remove older Android versions by delegating to prerelease-aware cleanup.
@@ -579,6 +582,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain.
             cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
+            keep_last_beta (bool): Unused for APK cleanup; retained for signature compatibility.
         """
         try:
             releases = cached_releases or self.get_releases()

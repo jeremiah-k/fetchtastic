@@ -211,7 +211,7 @@ class ReleaseHistoryManager:
         Returns:
             label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "[KEEP] v1.2.3 (alpha, revoked)" or "v1.2.3").
         """
-        label = release.tag_name
+        label = release.tag_name or "<unknown>"
         if is_kept:
             label = f"[KEEP] {label}"
         parts: List[str] = []
@@ -412,6 +412,8 @@ class ReleaseHistoryManager:
 
         releases_to_keep: set[str] = set()
         if keep_limit is not None:
+            if keep_limit < 0:
+                keep_limit = 0
             logger.info(
                 "%s release channels (keeping %d of %d): %s",
                 label,
@@ -462,6 +464,11 @@ class ReleaseHistoryManager:
             releases_to_keep (set[str]): Set of release tags to keep.
             keep_limit (Optional[int]): Maximum number of releases to keep.
         """
+        sorted_releases = sorted(
+            [release for release in releases_for_channel if release.tag_name],
+            key=get_release_sorting_key,
+            reverse=True,
+        )
         items = ", ".join(
             self._format_release_label_with_keep(
                 release,
@@ -473,7 +480,7 @@ class ReleaseHistoryManager:
                     else False
                 ),
             )
-            for release in releases_for_channel
+            for release in sorted_releases
         )
         logger.info("  - %s: %s", channel, items)
 

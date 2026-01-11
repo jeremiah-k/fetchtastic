@@ -29,6 +29,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
+    GITHUB_MAX_PER_PAGE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
@@ -802,7 +803,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
 
     def cleanup_old_versions(
-        self, keep_limit: int, keep_last_beta: bool = False
+        self,
+        keep_limit: int,
+        cached_releases: Optional[List[Release]] = None,
+        keep_last_beta: bool = False,
     ) -> None:
         """
         Remove firmware version directories not present in the latest `keep_limit` releases
@@ -816,6 +820,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
                 older directories will be deleted. Pass 0 to delete all version directories.
+            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
             keep_last_beta (bool): If True, always keep the most recent beta release
                 in addition to keep_limit releases. Default is False.
         """
@@ -837,11 +842,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 firmware_dir,
             )
 
-            # Fetch releases once, using max(keep_limit, 100) to satisfy both needs
+            # Fetch releases once, using max(keep_limit, GITHUB_MAX_PER_PAGE) to satisfy both needs
             # This avoids a redundant second API call when keep_last_beta is enabled
-            fetch_limit = max(keep_limit, 100) if keep_last_beta else keep_limit
-            all_releases = self.get_releases(limit=fetch_limit)
-            if not all_releases and keep_limit > 0:
+            fetch_limit = (
+                max(keep_limit, GITHUB_MAX_PER_PAGE) if keep_last_beta else keep_limit
+            )
+            all_releases = (
+                cached_releases
+                if cached_releases is not None
+                else self.get_releases(limit=fetch_limit)
+            )
+            if not all_releases and (keep_limit > 0 or keep_last_beta):
                 logger.warning(
                     "Skipping firmware cleanup: no releases available to determine keep set."
                 )

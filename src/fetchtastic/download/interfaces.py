@@ -288,12 +288,19 @@ class Downloader(ABC):
         """
 
     @abstractmethod
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self,
+        keep_limit: int,
+        cached_releases: Optional[List["Release"]] = None,
+        keep_last_beta: bool = False,
+    ) -> None:
         """
         Remove older cached or stored versions, retaining only the most recent keep_limit versions.
 
         Parameters:
             keep_limit (int): Number of most recent versions to retain; versions older than this will be removed.
+            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
+            keep_last_beta (bool): When supported, keep the most recent beta release in addition to the keep_limit set.
         """
 
     @abstractmethod

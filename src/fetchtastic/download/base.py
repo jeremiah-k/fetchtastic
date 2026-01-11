@@ -26,6 +26,9 @@ from .version import VersionManager
 if TYPE_CHECKING:
     from .interfaces import Release
 
+if TYPE_CHECKING:
+    from .interfaces import Release
+
 
 _MISSING_HISTORY_MANAGER_MSG = (
     "{cls} does not have a release_history_manager and cannot check revoked status"
@@ -159,7 +162,12 @@ class BaseDownloader(Downloader, ABC):
         )
         return [Path(p) for p in extracted]  # Convert back to Path objects
 
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self,
+        keep_limit: int,
+        cached_releases: Optional[List["Release"]] = None,
+        keep_last_beta: bool = False,
+    ) -> None:
         """
         Remove older downloaded versions to enforce a retention limit.
 
@@ -167,6 +175,8 @@ class BaseDownloader(Downloader, ABC):
 
         Parameters:
             keep_limit (int): Maximum number of version entries to retain; older versions beyond this limit should be removed.
+            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
+            keep_last_beta (bool): When supported, keep the most recent beta release in addition to the keep_limit set.
         """
         # This will be implemented by specific downloaders
         pass

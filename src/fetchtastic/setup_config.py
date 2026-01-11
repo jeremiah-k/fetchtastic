@@ -1056,14 +1056,18 @@ def _setup_firmware(
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
 
     # Prompt for keeping last beta
-    # For non-interactive/CI runs, behavior does not change: existing False configs stay False.
-    # For new interactive setups, we default to True when asked to guide users toward enabling
-    # this useful feature while existing setups are not automatically changed.
+    # For non-interactive/CI runs, keep the existing value/default without auto-enabling.
+    # For new interactive setups, default to yes to nudge users toward this useful feature.
     keep_last_beta_current = _coerce_bool(
         config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
     )
-    # Default to True for first runs (new setups), False for existing setups with False
-    keep_last_beta_default = "yes" if (is_first_run or keep_last_beta_current) else "no"
+    non_interactive = not sys.stdin.isatty() or os.environ.get("CI")
+    if non_interactive:
+        keep_last_beta_default = "yes" if keep_last_beta_current else "no"
+    else:
+        keep_last_beta_default = (
+            "yes" if (is_first_run or keep_last_beta_current) else "no"
+        )
     keep_last_beta_default_bool = _coerce_bool(
         keep_last_beta_default, default=keep_last_beta_current
     )

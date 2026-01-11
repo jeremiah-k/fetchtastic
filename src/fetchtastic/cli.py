@@ -175,9 +175,13 @@ def _prepare_command_run() -> Tuple[
     log_level_name = config.get("LOG_LEVEL") or logging.getLevelName(
         log_utils.logger.getEffectiveLevel()
     )
-    log_utils.add_file_logging(
-        Path(platformdirs.user_log_dir("fetchtastic")), level_name=str(log_level_name)
-    )
+    try:
+        log_utils.add_file_logging(
+            Path(platformdirs.user_log_dir("fetchtastic")),
+            level_name=str(log_level_name),
+        )
+    except OSError as exc:
+        log_utils.logger.error("Could not enable file logging: %s", exc)
 
     integration = download_cli_integration.DownloadCLIIntegration()
     return config, integration

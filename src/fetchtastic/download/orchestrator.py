@@ -33,6 +33,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
+    GITHUB_MAX_PER_PAGE,
     MAX_RETRY_DELAY,
     REPO_DOWNLOADS_DIR,
 )
@@ -274,13 +275,21 @@ class DownloadOrchestrator:
 
             logger.info("Scanning Firmware releases")
             if self.firmware_releases is None:
-                keep_limit = self.config.get(
+                raw_keep_limit = self.config.get(
                     "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
                 )
+                try:
+                    keep_limit = max(0, int(raw_keep_limit))
+                except (TypeError, ValueError):
+                    keep_limit = int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
                 keep_last_beta = self.config.get(
                     "KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA
                 )
-                fetch_limit = max(keep_limit, 100) if keep_last_beta else keep_limit
+                fetch_limit = (
+                    max(keep_limit, GITHUB_MAX_PER_PAGE)
+                    if keep_last_beta
+                    else keep_limit
+                )
                 self.firmware_releases = self.firmware_downloader.get_releases(
                     limit=fetch_limit
                 )
@@ -295,9 +304,13 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
-            keep_count = self.config.get(
+            raw_keep_count = self.config.get(
                 "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
             )
+            try:
+                keep_count = max(0, int(raw_keep_count))
+            except (TypeError, ValueError):
+                keep_count = int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
             releases_to_process = firmware_releases[:keep_count]
 
             releases_to_download = []
@@ -994,9 +1007,13 @@ class DownloadOrchestrator:
             return
 
         manager = self.firmware_downloader.release_history_manager
-        keep_limit = self.config.get(
+        raw_keep_limit = self.config.get(
             "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
         )
+        try:
+            keep_limit = max(0, int(raw_keep_limit))
+        except (TypeError, ValueError):
+            keep_limit = int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
         keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
 
         if keep_last_beta:

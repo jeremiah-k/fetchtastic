@@ -25,7 +25,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 
 from .base import BaseDownloader
-from .interfaces import DownloadResult
+from .interfaces import DownloadResult, Release
 
 
 class RepositoryDownloader(BaseDownloader):
@@ -481,7 +481,12 @@ class RepositoryDownloader(BaseDownloader):
 
         return results
 
-    def cleanup_old_versions(self, _keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self,
+        _keep_limit: int,
+        cached_releases: Optional[List[Release]] = None,
+        keep_last_beta: bool = False,
+    ) -> None:
         """
         Clear the repository downloads directory, ignoring any retention limit.
 
@@ -489,6 +494,8 @@ class RepositoryDownloader(BaseDownloader):
 
         Parameters:
             _keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
+            cached_releases (Optional[List[Release]]): Unused for repository downloads; retained for signature compatibility.
+            keep_last_beta (bool): Unused for repository downloads; retained for signature compatibility.
         """
         # Repository files are stored in a flat structure, so we clean the entire directory
         self.clean_repository_directory()
