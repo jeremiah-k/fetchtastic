@@ -14,7 +14,7 @@ from typing import Optional, Set
 from urllib.parse import urlparse
 
 import platformdirs
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEVICE_HARDWARE_API_URL,

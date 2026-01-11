@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 if TYPE_CHECKING:
     from .version import VersionManager
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,

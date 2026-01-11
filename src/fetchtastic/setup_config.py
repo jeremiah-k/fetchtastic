@@ -16,7 +16,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import platformdirs
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from fetchtastic import menu_apk, menu_firmware
 from fetchtastic.constants import (
@@ -1890,7 +1890,7 @@ def _setup_base(
 
             # Check if Start Menu shortcuts already exist
             if os.path.exists(WINDOWS_START_MENU_FOLDER):
-                create_menu = (
+                create_menu_choice = (
                     _safe_input(
                         "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): ",
                         default="y",
@@ -1899,6 +1899,7 @@ def _setup_base(
                     .lower()
                     or "y"
                 )
+                create_menu = _coerce_bool(create_menu_choice, default=True)
             else:
                 create_menu = _coerce_bool(
                     _safe_input(
@@ -2108,7 +2109,7 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
         current_version = version("fetchtastic")
 
         # Get latest version from PyPI
-        import requests
+        import requests  # type: ignore[import-untyped]
 
         response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
         if response.status_code == 200:

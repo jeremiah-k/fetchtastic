@@ -12,7 +12,7 @@ import shutil
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     ERROR_TYPE_NETWORK,

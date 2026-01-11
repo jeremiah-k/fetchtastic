@@ -12,7 +12,7 @@ from abc import ABC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
-from requests.exceptions import RequestException
+from requests.exceptions import RequestException  # type: ignore[import-untyped]
 
 from fetchtastic import utils
 from fetchtastic.log_utils import logger

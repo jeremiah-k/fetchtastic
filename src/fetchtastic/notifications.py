@@ -8,7 +8,7 @@ when downloads are completed or when new releases are available.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import NTFY_REQUEST_TIMEOUT
 from fetchtastic.log_utils import logger

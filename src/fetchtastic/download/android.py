@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     ANDROID_RELEASE_HISTORY_JSON_FILE,

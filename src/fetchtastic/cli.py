@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import platformdirs
-import yaml
 
 from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (

@@ -12,7 +12,7 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
@@ -1049,7 +1049,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             iso_timestamp (str): ISO 8601 formatted UTC timestamp including the UTC timezone offset.
         """
-        from datetime import datetime, timezone
 
         return datetime.now(timezone.utc).isoformat()
 
@@ -1060,7 +1059,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             iso_timestamp (str): ISO 8601-formatted UTC timestamp representing the current time plus 24 hours.
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta
 
         return (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
