@@ -881,6 +881,7 @@ class TestFirmwareReleaseDownloader:
         assert isinstance(failed, list)
         assert latest is None or isinstance(latest, str)
 
+    @pytest.mark.unit
     @patch("os.path.exists")
     def test_cleanup_old_versions_skips_when_no_releases_with_keep_last_beta(
         self, mock_exists, downloader
@@ -894,6 +895,7 @@ class TestFirmwareReleaseDownloader:
 
         mock_scandir.assert_not_called()
 
+    @pytest.mark.unit
     @patch("os.path.exists")
     @patch("os.scandir")
     @patch("shutil.rmtree")
@@ -945,6 +947,7 @@ class TestFirmwareReleaseDownloader:
 
         mock_rmtree.assert_called_once_with(entry_old.path)
 
+    @pytest.mark.unit
     @patch("os.path.exists")
     @patch("os.scandir")
     def test_cleanup_old_versions_warns_on_unsafe_beta_tag(
@@ -994,6 +997,7 @@ class TestFirmwareReleaseDownloader:
             beta.tag_name,
         )
 
+    @pytest.mark.unit
     @patch("os.path.exists")
     @patch("os.scandir")
     def test_cleanup_old_versions_skips_symlinks(
@@ -1018,6 +1022,7 @@ class TestFirmwareReleaseDownloader:
             entry_symlink.name,
         )
 
+    @pytest.mark.unit
     def test_get_expiry_timestamp_format(self, downloader):
         """Expiry timestamp is returned as an ISO 8601 UTC string."""
         expiry = downloader._get_expiry_timestamp()

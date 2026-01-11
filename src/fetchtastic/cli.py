@@ -169,20 +169,20 @@ def _prepare_command_run() -> Tuple[
         return None, None
 
     configured = config.get("LOG_LEVEL")
-    configured_raw = configured.strip() if isinstance(configured, str) else ""
-    configured_name = configured_raw.upper() if configured_raw else None
-    if configured_raw:
-        log_utils.set_log_level(configured_raw)
+    if isinstance(configured, str) and configured.strip():
+        log_utils.set_log_level(configured.strip())
 
+    # Use the effective level after set_log_level has validated and applied the config
     effective = log_utils.logger.getEffectiveLevel()
-    inferred = logging.getLevelName(effective)
-    log_level_name = configured_name or (
-        inferred if str(inferred).isalpha() else "INFO"
-    )
+    log_level_name = logging.getLevelName(effective)
+    # Handle edge case where getLevelName returns non-standard format
+    if not str(log_level_name).isalpha():
+        log_level_name = "INFO"
+
     try:
         log_utils.add_file_logging(
             Path(platformdirs.user_log_dir("fetchtastic")),
-            level_name=str(log_level_name),
+            level_name=log_level_name,
         )
     except OSError as exc:
         log_utils.logger.error("Could not enable file logging: %s", exc)
