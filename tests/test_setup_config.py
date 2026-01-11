@@ -63,6 +63,275 @@ def test_is_termux_no_prefix():
 @pytest.mark.configuration
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    "value,default,expected",
+    [
+        (True, False, True),
+        (False, True, False),
+        (None, True, True),
+        (None, False, False),
+        (1, False, True),
+        (0, True, False),
+        (float("nan"), True, True),
+        (float("nan"), False, False),
+        ("yes", False, True),
+        ("no", True, False),
+        ("ON", False, True),
+        ("off", True, False),
+        ("2", False, True),
+        ("maybe", True, True),
+        ("", False, False),
+        (object(), True, True),
+    ],
+)
+def test_coerce_bool(value, default, expected):
+    """Test _coerce_bool handles common value types."""
+    from fetchtastic.setup_config import _coerce_bool
+
+    assert _coerce_bool(value, default=default) is expected
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_skips_firmware_menu(mocker):
+    """Partial runs should respect "keep existing" and skip the firmware menu."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    # Preserve existing firmware selections and keep APKs disabled.
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+        "CHECK_PRERELEASES": False,
+    }
+
+    # Only run the firmware section in this partial pass.
+    def wants(section: str) -> bool:
+        """
+        Determine if the requested setup section is the firmware section.
+        
+        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        """
+        return section == "firmware"
+
+    # Answer prompts: keep firmware enabled, skip rerun, decline prereleases, decline suffixes.
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "n", "n", "n"],
+    )
+    mock_menu = mocker.patch("fetchtastic.menu_firmware.run_menu")
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is False
+    assert save_firmware is True
+    assert updated["SELECTED_FIRMWARE_ASSETS"] == ["rak4631"]
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_skips_apk_menu(mocker):
+    """Partial runs should respect "keep existing" and skip the APK menu."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    # Preserve existing APK selections and skip firmware entirely.
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["meshtastic.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    # Only run the Android section in this partial pass.
+    def wants(section: str) -> bool:
+        """
+        Check whether the requested setup section is the Android section.
+        
+        Parameters:
+        	section (str): Name of the setup section to test (e.g., "android").
+        
+        Returns:
+        	True if section is "android", False otherwise.
+        """
+        return section == "android"
+
+    # Answer prompts: keep APKs enabled, skip rerun, decline prereleases, decline suffixes.
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "n", "n", "n"],
+    )
+    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert updated["SELECTED_APK_ASSETS"] == ["meshtastic.apk"]
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_reruns_firmware_menu(mocker):
+    """Partial runs should re-run firmware menu when confirmed."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+        "CHECK_PRERELEASES": False,
+    }
+
+    def wants(section: str) -> bool:
+        """
+        Determine if the requested setup section is the firmware section.
+        
+        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        """
+        return section == "firmware"
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "y", "n", "n"],
+    )
+    mock_menu = mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["tbeam"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is False
+    assert save_firmware is True
+    assert updated["SELECTED_FIRMWARE_ASSETS"] == ["tbeam"]
+    mock_menu.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_reruns_apk_menu(mocker):
+    """Partial runs should re-run APK menu when confirmed."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["meshtastic.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    def wants(section: str) -> bool:
+        """
+        Check whether the requested setup section is the Android section.
+        
+        Parameters:
+        	section (str): Name of the setup section to test (e.g., "android").
+        
+        Returns:
+        	True if section is "android", False otherwise.
+        """
+        return section == "android"
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "y", "n", "n"],
+    )
+    mock_menu = mocker.patch(
+        "fetchtastic.menu_apk.run_menu",
+        return_value={"selected_assets": ["meshtastic-debug.apk"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert updated["SELECTED_APK_ASSETS"] == ["meshtastic-debug.apk"]
+    mock_menu.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_skips_all_prompts(mocker):
+    """No prompts should be shown when no sections are selected."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+    }
+
+    def wants(_section: str) -> bool:
+        """
+        Indicates whether the named setup section is requested for this run.
+        
+        Parameters:
+            _section (str): Name of the setup section to check.
+        
+        Returns:
+            bool: `true` if the section is requested, `false` otherwise.
+        """
+        return False
+
+    mock_input = mocker.patch("builtins.input")
+    _setup_downloads(config, is_partial_run=True, wants=wants)
+
+    mock_input.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
+    """Full runs should prompt for channel suffixes when downloads are enabled."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {}
+
+    def wants(_section: str) -> bool:
+        """
+        Indicates that any setup section should be included.
+        
+        Parameters:
+            _section (str): Name of the setup section (ignored).
+        
+        Returns:
+            bool: `True` for all sections.
+        """
+        return True
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["", "n", "n", "n"],
+    )
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["rak4631"]},
+    )
+    mocker.patch(
+        "fetchtastic.menu_apk.run_menu",
+        return_value={"selected_assets": ["meshtastic.apk"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=wants
+    )
+
+    assert save_apks is True
+    assert save_firmware is True
+    assert updated["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@pytest.mark.parametrize(
     "is_termux_val, platform_system, expected",
     [
         (True, "Linux", "termux"),
@@ -198,7 +467,7 @@ def test_load_config_new_location(tmp_path, mocker):
 
     config_data = {"SAVE_APKS": True}
     with open(new_config_path, "w") as f:
-        yaml.dump(config_data, f)
+        yaml.safe_dump(config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -217,7 +486,7 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
     # Create config in old location
     config_data = TEST_CONFIG.copy()
     with open(old_config_path, "w") as f:
-        yaml.dump(config_data, f)
+        yaml.safe_dump(config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -229,7 +498,7 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_load_config_invalid_yaml(tmp_path, mocker):
-    """Test loading config with invalid YAML raises appropriate error."""
+    """Test loading config with invalid YAML returns None and logs error."""
     new_config_path = tmp_path / "new_config.yaml"
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
 
@@ -237,9 +506,10 @@ def test_load_config_invalid_yaml(tmp_path, mocker):
     with open(new_config_path, "w") as f:
         f.write("invalid: [unclosed")
 
-    # The function should raise a YAML parsing error
-    with pytest.raises(yaml.YAMLError):
-        setup_config.load_config()
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+
+    assert setup_config.load_config() is None
+    mock_logger.exception.assert_called()
 
 
 @pytest.mark.configuration
@@ -252,7 +522,7 @@ def test_config_exists_new_location(tmp_path, mocker):
     mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in new location
-    new_config_path.write_text("test: config")
+    new_config_path.write_text("test: config", encoding="utf-8")
 
     exists, path = setup_config.config_exists()
     assert exists is True
@@ -269,7 +539,7 @@ def test_config_exists_old_location(tmp_path, mocker):
     mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in old location only
-    old_config_path.write_text("test: config")
+    old_config_path.write_text("test: config", encoding="utf-8")
 
     exists, path = setup_config.config_exists()
     assert exists is True
@@ -418,7 +688,7 @@ def test_load_config_old_location(tmp_path, mocker):
 
     config_data = {"SAVE_FIRMWARE": True}
     with open(old_config_path, "w") as f:
-        yaml.dump(config_data, f)
+        yaml.safe_dump(config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -437,9 +707,9 @@ def test_load_config_prefers_new_location(tmp_path, mocker):
     new_config_data = {"key": "new"}
     old_config_data = {"key": "old"}
     with open(new_config_path, "w") as f:
-        yaml.dump(new_config_data, f)
+        yaml.safe_dump(new_config_data, f)
     with open(old_config_path, "w") as f:
-        yaml.dump(old_config_data, f)
+        yaml.safe_dump(old_config_data, f)
 
     config = setup_config.load_config()
     assert config is not None
@@ -457,7 +727,7 @@ def test_migrate_config(tmp_path, mocker):
     # Create an old config file
     old_config_data = {"key": "to_be_migrated"}
     with open(old_config_path, "w") as f:
-        yaml.dump(old_config_data, f)
+        yaml.safe_dump(old_config_data, f)
 
     # Run migration
     assert setup_config.migrate_config() is True
@@ -470,6 +740,29 @@ def test_migrate_config(tmp_path, mocker):
     with open(new_config_path, "r") as f:
         new_config_data = yaml.safe_load(f)
     assert new_config_data["key"] == "to_be_migrated"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_migrate_config_handles_load_error(tmp_path, mocker):
+    """Migration should fail cleanly when loading the old config raises."""
+    new_config_path = tmp_path / "new_config.yaml"
+    old_config_path = tmp_path / "old_config.yaml"
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch("fetchtastic.setup_config.CONFIG_DIR", str(tmp_path))
+
+    # Create a stub old config so the migrate routine attempts to read it.
+    old_config_path.write_text("bad: yaml", encoding="utf-8")
+
+    # Force YAML loading to raise so we cover the error path.
+    mocker.patch(
+        "fetchtastic.setup_config.yaml.safe_load", side_effect=yaml.YAMLError("boom")
+    )
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+
+    assert setup_config.migrate_config() is False
+    assert mock_logger.exception.called
 
 
 @pytest.mark.parametrize(
@@ -672,6 +965,38 @@ def test_config_file_operations(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_load_config_missing_in_explicit_directory(tmp_path):
+    """Explicit directory loads should return None when config is absent."""
+    assert setup_config.load_config(str(tmp_path)) is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_rejects_non_mapping_yaml(tmp_path):
+    """Explicit directory loads should reject non-mapping YAML content."""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    config_path = config_dir / "fetchtastic.yaml"
+    config_path.write_text("- not-a-mapping\n", encoding="utf-8")
+
+    assert setup_config.load_config(str(config_dir)) is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_empty_file_returns_empty_mapping(tmp_path, mocker):
+    """Empty config files should return an empty dict instead of crashing."""
+    config_path = tmp_path / "fetchtastic.yaml"
+    config_path.write_text("", encoding="utf-8")
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(tmp_path / "old.yaml"))
+
+    config = setup_config.load_config()
+    assert config == {}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_get_platform_comprehensive(mocker):
     """Test get_platform function comprehensively."""
     # Test each platform by mocking system()
@@ -816,7 +1141,7 @@ def test_setup_automation_windows_no_shortcut(mocker, reload_setup_config_module
     mocker.patch("builtins.input", return_value="y")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     assert result == config
 
@@ -838,7 +1163,7 @@ def test_setup_automation_termux_new_cron_hourly(mocker):
     mock_setup_boot = mocker.patch("fetchtastic.setup_config.setup_boot_script")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     mock_install_crond.assert_called_once()
     mock_setup_cron.assert_called_once_with("hourly")
@@ -863,7 +1188,7 @@ def test_setup_automation_termux_reconfig_cron(mocker):
     mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     mock_remove_cron.assert_called_once()
     mock_install_crond.assert_called_once()
@@ -876,6 +1201,7 @@ def test_setup_automation_linux_new_setup(mocker):
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
     mocker.patch(
         "fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False
     )
@@ -886,7 +1212,7 @@ def test_setup_automation_linux_new_setup(mocker):
     mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda x: True)
+    result = setup_config._setup_automation(config, False, lambda _: True)
 
     mock_setup_cron.assert_called_once_with("hourly")
     assert result == config
@@ -997,7 +1323,7 @@ def test_windows_shortcut_creation_scandir_fallback(mocker):
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
@@ -1030,18 +1356,17 @@ def test_run_setup_first_run_linux_simple(
     user_inputs = [
         "",  # Use default base directory
         "b",  # Both APKs and firmware
-        "n",  # Add channel suffixes
+        "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
-        "n",  # No pre-releases
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
         "n",  # Don't perform first run now
-        "",  # Extra input buffer
     ]
     mock_input.side_effect = user_inputs
 
@@ -1049,7 +1374,8 @@ def test_run_setup_first_run_linux_simple(
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup()
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup()
 
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
@@ -1079,7 +1405,7 @@ def test_run_setup_first_run_linux_simple(
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
@@ -1115,12 +1441,12 @@ def test_run_setup_first_run_windows(
         "",  # Use default base directory
         "y",  # create menu
         "b",  # Both APKs and firmware
-        "n",  # Add channel suffixes
+        "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
-        "n",  # No pre-releases
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
@@ -1132,7 +1458,8 @@ def test_run_setup_first_run_windows(
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup()
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup()
 
         mock_create_windows_menu_shortcuts.assert_called_once()
         mock_create_config_shortcut.assert_called_once()
@@ -1159,7 +1486,7 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.install_termux_packages")
@@ -1208,18 +1535,17 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
-        "n",  # Add channel suffixes
+        "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Add channel suffixes
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
-        "n",  # No pre-releases
         "n",  # No auto-extract
         "y",  # wifi only
         "h",  # hourly cron job
         "y",  # boot script
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
-        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -1249,7 +1575,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 @patch("fetchtastic.setup_config.is_termux", return_value=False)
 @patch("fetchtastic.setup_config.os.path.exists")
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.yaml.safe_load")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
@@ -1304,13 +1630,14 @@ def test_run_setup_existing_config(
         "",  # choose full setup at the new prompt
         "/new/base/dir",  # New base directory
         "f",  # Only firmware
+        "y",  # Check for pre-releases
         "n",  # Add channel suffixes
         "5",  # Keep 5 versions of firmware
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
-        "y",  # Check for pre-releases
+        "y",  # Confirm extraction/exclude summary
         "y",  # reconfigure cron
-        "n",  # no daily cron
+        "n",  # no cron job
         "n",  # no reboot cron
         "y",  # reconfigure ntfy
         "https://ntfy.sh/new",  # new server
@@ -1325,7 +1652,8 @@ def test_run_setup_existing_config(
     mock_menu_firmware.return_value = {"selected_assets": ["new-firmware"]}
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup()
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup()
 
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
@@ -1357,7 +1685,7 @@ def test_run_setup_existing_config(
 @patch("fetchtastic.setup_config.is_termux", return_value=False)
 @patch("fetchtastic.setup_config.os.path.exists")
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.yaml.safe_load")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
@@ -1415,10 +1743,19 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = ["y", "y", "3", "y", "esp32- rak4631-", "y", "n", "y", "y"]
+    mock_input.side_effect = [
+        "y",  # Download firmware releases
+        "y",  # Re-run firmware menu
+        "y",  # Check for firmware prereleases
+        "n",  # Add channel suffixes
+        "3",  # Keep 3 versions of firmware
+        "y",  # Auto-extract
+        "esp32- rak4631-",  # Extraction patterns
+    ]
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup(sections=["firmware"])
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup(sections=["firmware"])
 
     mock_menu_firmware.assert_called_once()
     mock_menu_apk.assert_not_called()
@@ -1578,6 +1915,18 @@ def test_prompt_for_setup_sections_semicolon_separator(mock_input):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_quit(mock_input):
+    """Test _prompt_for_setup_sections returns empty set for quit."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "q"
+    result = _prompt_for_setup_sections()
+    assert result == set()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_run_setup_invalid_sections():
     """Test run_setup raises ValueError for invalid sections."""
     from fetchtastic.setup_config import run_setup
@@ -1606,7 +1955,7 @@ def test_run_setup_valid_sections():
         ):
             with patch("builtins.input", side_effect=["", "n", "n", "n", "n", "n"]):
                 with patch("builtins.open", mock_open()):
-                    with patch("fetchtastic.setup_config.yaml.dump"):
+                    with patch("fetchtastic.setup_config.yaml.safe_dump"):
                         with patch("os.makedirs"):
                             try:
                                 run_setup(sections=[section])
@@ -1629,7 +1978,7 @@ def test_run_setup_prompts_for_sections_when_config_exists(
 
     with patch("builtins.input", side_effect=["", "n", "n"]):
         with patch("builtins.open", mock_open()):
-            with patch("fetchtastic.setup_config.yaml.dump"):
+            with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
                     with patch("os.makedirs"):
                         try:
@@ -1652,7 +2001,7 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
 
     with patch("builtins.input", side_effect=["", "n", "n"]):
         with patch("builtins.open", mock_open()):
-            with patch("fetchtastic.setup_config.yaml.dump"):
+            with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
                     with patch("os.makedirs"):
                         try:
@@ -1663,6 +2012,23 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
     mock_prompt.assert_not_called()
 
 
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.config_exists")
+@patch("fetchtastic.setup_config._prompt_for_setup_sections")
+def test_run_setup_quits_on_prompt_cancel(mock_prompt, mock_config_exists):
+    """Test run_setup exits when user quits the section prompt."""
+    from fetchtastic.setup_config import run_setup
+
+    mock_config_exists.return_value = (True, "/path/to/config")
+    mock_prompt.return_value = set()
+
+    with patch("builtins.print") as mock_print:
+        run_setup()
+
+    mock_print.assert_any_call("Setup cancelled.")
+
+
 # SELECTED_PRERELEASE_ASSETS setup wizard tests
 
 
@@ -1671,12 +2037,15 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
 @patch("builtins.input")
 def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     """Test setup wizard prompts for SELECTED_PRERELEASE_ASSETS with new configuration."""
-    config = {}
+    config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 3 versions, yes to auto-extract, device patterns, yes to prereleases
-    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "y", "y"]
+    # Simulate user inputs: 3 versions, yes to auto-extract, device patterns
+    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "y"]
 
-    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=True, default_versions=2
+        )
 
     assert result["FIRMWARE_VERSIONS_TO_KEEP"] == 3
     assert result["AUTO_EXTRACT"] is True
@@ -1688,21 +2057,56 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
 @pytest.mark.configuration
 @pytest.mark.unit
 @patch("builtins.input")
+def test_setup_firmware_extraction_tips_only_when_enabled(mock_input, capsys):
+    """Extraction tips should only appear when auto-extract is enabled."""
+    config = {"CHECK_PRERELEASES": False}
+
+    mock_input.side_effect = ["2", "n"]
+
+    with patch("sys.stdin.isatty", return_value=False):
+        setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    captured = capsys.readouterr()
+    assert "File Extraction Configuration" not in captured.out
+    assert "Tips for precise selection" not in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_extraction_tips_when_enabled(mock_input, capsys):
+    """Extraction tips should appear after auto-extract is enabled."""
+    config = {"CHECK_PRERELEASES": False}
+
+    mock_input.side_effect = ["2", "y", "", "y"]
+
+    with patch("sys.stdin.isatty", return_value=False):
+        setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    captured = capsys.readouterr()
+    assert "File Extraction Configuration" in captured.out
+    assert "Tips for precise selection" in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
 def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
     """Test migration from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS when user accepts."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": False,
+        "CHECK_PRERELEASES": True,
         "EXTRACT_PATTERNS": ["station-", "heltec-", "rak4631-"],
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns, enable prereleases
+    # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns
     mock_input.side_effect = ["2", "y", "y", "y"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == [
@@ -1721,17 +2125,18 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
     """Test migration from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS when user declines."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": False,
+        "CHECK_PRERELEASES": True,
         "EXTRACT_PATTERNS": ["station-", "heltec-"],
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns, enable prereleases
+    # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns
     mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-", "y"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["esp32-", "rak4631-"]
@@ -1751,12 +2156,13 @@ def test_setup_firmware_selected_prerelease_assets_existing_keep(mock_input):
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 3 versions, no auto-extract, keep prereleases
-    mock_input.side_effect = ["3", "n", "y"]
+    # Simulate user inputs: keep 3 versions, no auto-extract
+    mock_input.side_effect = ["3", "n"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []
@@ -1775,12 +2181,13 @@ def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
         "EXTRACT_PATTERNS": ["old-pattern"],
     }
 
-    # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns, keep prereleases
+    # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns
     mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "y"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["EXTRACT_PATTERNS"] == ["new-pattern", "device-"]
@@ -1795,17 +2202,18 @@ def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_inp
     """Test that SELECTED_PRERELEASE_ASSETS is cleared when prereleases are disabled."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": True,
+        "CHECK_PRERELEASES": False,
         "SELECTED_PRERELEASE_ASSETS": ["rak4631-", "tbeam"],
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, disable prereleases, no auto-extract
-    mock_input.side_effect = ["2", "n", "n"]
+    # Simulate user inputs: keep 2 versions, no auto-extract
+    mock_input.side_effect = ["2", "n"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is False
     assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Should be cleared
@@ -1817,12 +2225,15 @@ def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_inp
 @patch("builtins.input")
 def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
     """Test handling of empty prerelease asset patterns."""
-    config = {}
+    config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns, yes to prereleases
+    # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns
     mock_input.side_effect = ["2", "y", "", "y"]
 
-    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=True, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []
@@ -1836,21 +2247,44 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
     """Test migration scenario when user provides empty input after declining migration."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": False,
+        "CHECK_PRERELEASES": True,
         "EXTRACT_PATTERNS": ["station-", "heltec-"],
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input, yes to prereleases
+    # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input
     mock_input.side_effect = ["2", "y", "n", "", "y"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty when no input provided
     assert result["AUTO_EXTRACT"] is False  # Should be disabled with empty patterns
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_extract_patterns_string_config(mock_input):
+    """EXTRACT_PATTERNS should be split when provided as a string."""
+    config = {
+        "CHECK_PRERELEASES": True,
+        "AUTO_EXTRACT": True,
+        "EXTRACT_PATTERNS": "tbeam rak4631-",
+    }
+
+    mock_input.side_effect = ["2", "y", "y", "y"]
+
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
+
+    assert result["EXTRACT_PATTERNS"] == ["tbeam", "rak4631-"]
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["tbeam", "rak4631-"]
 
 
 # Test helper functions for configuration handling

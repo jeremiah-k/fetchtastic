@@ -407,24 +407,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
         self, release: Release, target_tag: str
     ) -> List[str]:
         """
-        Generate alternative storage-tag candidates for an existing release directory by combining possible channel suffixes and revoked states, excluding the provided target tag.
-
-        This method respects the ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES config option.
-
+        Builds an ordered list of alternative storage-tag candidates for a release by combining channel suffixes and revoked variants.
+        
+        Includes channel-suffixed and unsuffixed variants (and a revoked variant) to aid discovery of existing directories; excludes the supplied target_tag from the result.
+        
         Parameters:
-            release (Release): Release object to query for channel information.
-            target_tag (str): Storage tag to exclude from the returned list.
-
+            release (Release): Release to derive the base tag and channel from.
+            target_tag (str): Storage tag to omit from the returned candidates.
+        
         Returns:
-            List[str]: Ordered list of distinct candidate storage tags (each a string) excluding `target_tag`.
+            List[str]: Ordered, distinct storage-tag strings (each a filesystem-safe tag) excluding `target_tag`.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_revoked = self.is_release_revoked(release)
-
-        add_channel_suffixes = self.config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
-            DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
-        )
 
         # Determine current channel from release using shared helper
         # Always detect channel for candidate generation (regardless of feature flag)
@@ -438,9 +433,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             current_channel_suffix.lstrip("-") if current_channel_suffix else ""
         )
 
-        # Build list of channel names to try
+        # Build list of channel names to try for discovery even when suffixes are disabled.
         channels_to_try = [current_channel, ""]
-        if not release.prerelease and add_channel_suffixes:
+        if not release.prerelease:
             channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
         channels = list(dict.fromkeys(channels_to_try))
 
@@ -808,10 +803,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
         Remove firmware version directories not present in the latest `keep_limit` releases
-        (including prereleases).
+        (full releases only).
 
-        This mirrors legacy behavior by keeping only the newest release tags (stable and
-        prerelease) returned by the GitHub API (bounded by `keep_limit`). Any local version
+        This mirrors legacy behavior by keeping only the newest release tags (alpha/beta)
+        returned by the GitHub API (bounded by `keep_limit`). Any local version
         directories not in that set are removed. Special directories "prerelease" and
         "repo-dls" are always preserved.
 
@@ -839,16 +834,35 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return
 
             release_tags_to_keep = set()
+            keep_base_tags = set()
             for release in latest_releases:
                 try:
-                    safe_tag = self._get_release_storage_tag(release)
+                    safe_tag = self._sanitize_required(release.tag_name, "release tag")
                 except ValueError:
                     logger.warning(
                         "Skipping unsafe firmware release tag during cleanup: %s",
                         release.tag_name,
                     )
                     continue
+                keep_base_tags.add(safe_tag)
+
+                # Always keep the unsuffixed tag so legacy directories (created
+                # before channel suffixing existed) are never deleted during
+                # cleanup. This keeps the transition from older versions safe.
                 release_tags_to_keep.add(safe_tag)
+
+                # Build the current channel-aware tag and keep it too; this
+                # preserves the preferred directory name without renaming
+                # anything during cleanup.
+                release_tags_to_keep.add(
+                    build_storage_tag_with_channel(
+                        sanitized_release_tag=safe_tag,
+                        release=release,
+                        release_history_manager=self.release_history_manager,
+                        config=self.config,
+                        is_revoked=self.is_release_revoked(release),
+                    )
+                )
 
             if not release_tags_to_keep and keep_limit > 0:
                 logger.warning(
@@ -859,31 +873,70 @@ class FirmwareReleaseDownloader(BaseDownloader):
             # Remove local versions not in the keep set
             try:
                 with os.scandir(firmware_dir) as it:
-                    for entry in it:
-                        if entry.name in {
-                            FIRMWARE_PRERELEASES_DIR_NAME,
-                            REPO_DOWNLOADS_DIR,
-                        }:
-                            continue
-                        if entry.is_symlink():
-                            logger.warning(
-                                "Skipping symlink in firmware directory during cleanup: %s",
-                                entry.name,
-                            )
-                            continue
-                        if entry.is_dir():
-                            if entry.name not in release_tags_to_keep:
-                                try:
-                                    shutil.rmtree(entry.path)
-                                    logger.info(
-                                        "Removed old firmware version: %s", entry.name
-                                    )
-                                except OSError as e:
-                                    logger.error(
-                                        "Error removing old firmware version %s: %s",
-                                        entry.name,
-                                        e,
-                                    )
+                    entries = list(it)
+
+                existing_versions = {
+                    entry.name
+                    for entry in entries
+                    if entry.is_dir()
+                    and not entry.is_symlink()
+                    and entry.name
+                    not in {
+                        FIRMWARE_PRERELEASES_DIR_NAME,
+                        REPO_DOWNLOADS_DIR,
+                    }
+                }
+                if (
+                    keep_limit > 0
+                    and existing_versions
+                    and release_tags_to_keep
+                    and release_tags_to_keep.isdisjoint(existing_versions)
+                ):
+                    logger.warning(
+                        "Skipping firmware cleanup: keep set does not match existing directories."
+                    )
+                    return
+
+                suffixes = ["-revoked"] + [
+                    f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
+                ]
+                for entry in entries:
+                    if entry.name in {
+                        FIRMWARE_PRERELEASES_DIR_NAME,
+                        REPO_DOWNLOADS_DIR,
+                    }:
+                        continue
+                    if entry.is_symlink():
+                        logger.warning(
+                            "Skipping symlink in firmware directory during cleanup: %s",
+                            entry.name,
+                        )
+                        continue
+                    if entry.is_dir():
+                        base_name = entry.name
+                        stripped = True
+                        while stripped:
+                            stripped = False
+                            for suffix in suffixes:
+                                if base_name.endswith(suffix):
+                                    base_name = base_name[: -len(suffix)]
+                                    stripped = True
+                                    break
+                        if (
+                            entry.name not in release_tags_to_keep
+                            and base_name not in keep_base_tags
+                        ):
+                            try:
+                                shutil.rmtree(entry.path)
+                                logger.info(
+                                    "Removed old firmware version: %s", entry.name
+                                )
+                            except OSError as e:
+                                logger.error(
+                                    "Error removing old firmware version %s: %s",
+                                    entry.name,
+                                    e,
+                                )
             except FileNotFoundError:
                 pass
             except OSError as e:

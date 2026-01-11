@@ -75,8 +75,8 @@ class TestChannelSuffixes:
         storage_tag = downloader._get_release_storage_tag(release)
         assert storage_tag == "v2.0.0-beta"
 
-    def test_firmware_prerelease_no_suffix(self, tmp_path):
-        """Firmware prereleases should NOT get channel suffixes."""
+    def test_firmware_prerelease_flag_still_suffix(self, tmp_path):
+        """Firmware releases with the prerelease flag still get channel suffixes."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -92,11 +92,11 @@ class TestChannelSuffixes:
         )
 
         storage_tag = downloader._get_release_storage_tag(release)
-        # Prereleases should not get channel suffixes
-        assert storage_tag == "v1.0.1"
+        # GitHub prerelease flags do not suppress channel suffixing for firmware.
+        assert storage_tag == "v1.0.1-alpha"
 
-    def test_firmware_stable_no_suffix(self, tmp_path):
-        """Firmware stable releases should NOT get suffixes."""
+    def test_firmware_alpha_suffix(self, tmp_path):
+        """Firmware alpha releases should get -alpha suffixes when enabled."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -107,12 +107,12 @@ class TestChannelSuffixes:
         release = Release(
             tag_name="v2.0.0",
             prerelease=False,
-            name="Meshtastic Firmware 2.0.0 Stable",
-            body="This is a stable release",
+            name="Meshtastic Firmware 2.0.0 Alpha",
+            body="This is an alpha release",
         )
 
         storage_tag = downloader._get_release_storage_tag(release)
-        assert storage_tag == "v2.0.0"
+        assert storage_tag == "v2.0.0-alpha"
 
     def test_android_channel_suffix_disabled(self, tmp_path):
         """Android APK should NOT add channel suffixes regardless of ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting."""
@@ -137,7 +137,11 @@ class TestChannelSuffixes:
         assert str(version_dir.name) == "v1.0.0"
 
     def test_android_prerelease_no_suffix(self, tmp_path):
-        """Android prereleases should NOT get channel suffixes."""
+        """
+        Ensure an Android prerelease is placed in the prerelease directory and the version directory uses the release tag without a channel suffix.
+        
+        Asserts that the target path for a prerelease contains a "prerelease" component and that the version directory name equals the release tag (e.g., "v1.0.1-open").
+        """
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -160,8 +164,8 @@ class TestChannelSuffixes:
         assert "prerelease" in str(version_dir)
         assert str(version_dir.name) == "v1.0.1-open"
 
-    def test_android_stable_no_suffix(self, tmp_path):
-        """Android stable releases should NOT get suffixes."""
+    def test_android_full_release_no_suffix(self, tmp_path):
+        """Android full releases should NOT get suffixes."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -172,8 +176,8 @@ class TestChannelSuffixes:
         release = Release(
             tag_name="v2.0.0",
             prerelease=False,
-            name="Meshtastic Android 2.0.0 Stable",
-            body="This is a stable release",
+            name="Meshtastic Android 2.0.0",
+            body="This is a full release",
         )
 
         target_path = downloader.get_target_path_for_release(
@@ -260,8 +264,8 @@ class TestChannelSuffixes:
         storage_tag = downloader._get_release_storage_tag(release)
         assert storage_tag == "v1.0.0-revoked"
 
-    def test_revoked_stable_channel_suffix(self, tmp_path):
-        """Revoked stable releases should produce v1.0.0-revoked (no channel suffix)."""
+    def test_revoked_default_channel_suffix(self, tmp_path):
+        """Revoked releases without explicit channels should produce v1.0.0-revoked."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -272,8 +276,8 @@ class TestChannelSuffixes:
         release = Release(
             tag_name="v1.0.0",
             prerelease=False,
-            name="(Revoked) Meshtastic Firmware 1.0.0 Stable",
-            body="This is a stable release",
+            name="(Revoked) Meshtastic Firmware 1.0.0",
+            body="This is a revoked release",
         )
 
         storage_tag = downloader._get_release_storage_tag(release)

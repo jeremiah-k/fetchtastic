@@ -5,7 +5,7 @@ import platform
 import shutil
 from typing import Any
 
-from fetchtastic import menu_repo
+from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_NAME,
@@ -201,10 +201,10 @@ def clean_repo_directory(download_dir: str) -> bool:  # log_message_func removed
 
 def main(config: dict[str, Any]) -> None:  # log_message_func removed
     """
-    Run the repository downloader flow that lets the user select repository files and downloads them to the configured directory.
-
-    Reads "DOWNLOAD_DIR" from the provided config, launches the interactive repository file browser, downloads the selected files into the repository downloads directory, logs outcomes, and on Windows optionally prompts the user to open the download folder.
-
+    Run an interactive repository file browser and download the user's selected files into the configured repository downloads directory.
+    
+    Reads the "DOWNLOAD_DIR" value from the provided config; if missing, the function exits without performing downloads. Launches an interactive selection flow to choose repository files, downloads the chosen files into a subdirectory under the configured download directory, and logs the outcomes. If any files are downloaded and the process is running on Windows, prompts the user whether to open the download folder and opens it when the user confirms.
+    
     Parameters:
         config (dict[str, Any]): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
     """
@@ -252,15 +252,11 @@ def main(config: dict[str, Any]) -> None:  # log_message_func removed
             # If on Windows, offer to open the folder
             if platform.system() == "Windows":
                 try:
-                    open_folder = (
-                        input(
-                            "\nWould you like to open this folder? [y/n] (default: yes): "
-                        )
-                        .strip()
-                        .lower()
-                        or "y"
+                    resp = setup_config._safe_input(
+                        "\nWould you like to open this folder? [y/n] (default: yes): ",
+                        default="y",
                     )
-                    if open_folder == "y":
+                    if setup_config._coerce_bool(resp, default=True):
                         os.startfile(download_folder)  # type: ignore[attr-defined]  # nosec B606
                 except OSError as e:  # os.startfile can raise OSError
                     logger.error(

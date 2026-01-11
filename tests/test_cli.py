@@ -964,13 +964,13 @@ def test_cli_version_with_update_available_legacy(mocker):
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"
     )
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mock_print = mocker.patch("builtins.print")
 
     cli.main()
 
-    mock_logger.info.assert_any_call("Fetchtastic v1.0.0")
-    mock_logger.info.assert_any_call("A newer version (v1.1.0) is available!")
-    mock_logger.info.assert_any_call("Run 'pipx upgrade fetchtastic' to upgrade.")
+    mock_print.assert_any_call("Fetchtastic v1.0.0")
+    mock_print.assert_any_call("A newer version (v1.1.0) is available!")
+    mock_print.assert_any_call("Run 'pipx upgrade fetchtastic' to upgrade.")
 
 
 def test_cli_repo_help_command(mocker):
@@ -1414,6 +1414,23 @@ def test_run_clean_cancelled(mocker):
     cli.run_clean()
 
     mock_print.assert_any_call("Clean operation cancelled.")
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_run_clean_requires_tty(mocker, monkeypatch):
+    """Non-interactive sessions should abort clean operations."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mock_input = mocker.patch("builtins.input")
+
+    cli.run_clean()
+
+    mock_input.assert_not_called()
+    mock_logger.error.assert_called_once_with(
+        "Clean operation requires an interactive terminal; aborting."
+    )
 
 
 def test_run_clean_user_says_no_explicitly(mocker):

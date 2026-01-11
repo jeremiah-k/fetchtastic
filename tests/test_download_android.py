@@ -547,6 +547,70 @@ class TestMeshtasticAndroidAppDownloader:
         assert expected_dir.exists()
         assert stable_dir.exists()
 
+    def test_cleanup_prerelease_directories_skips_when_keep_set_mismatched(
+        self, tmp_path, mocker
+    ):
+        """Cleanup should skip when expected tags do not match existing entries."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        android_dir = tmp_path / APKS_DIR_NAME
+        android_dir.mkdir(parents=True)
+        mismatched_dir = android_dir / "v1.0.0-alpha"
+        mismatched_dir.mkdir()
+
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+
+        mock_logger = mocker.patch("fetchtastic.download.android.logger")
+        mock_rmtree = mocker.patch("fetchtastic.download.android._safe_rmtree")
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        assert mismatched_dir.exists()
+        mock_rmtree.assert_not_called()
+        assert any(
+            "keep set does not match" in str(call.args[0]).lower()
+            for call in mock_logger.method_calls
+            if call.args
+        )
+
+    def test_cleanup_prerelease_directories_skips_without_stable_releases(
+        self, tmp_path, mocker
+    ):
+        """Cleanup should bail early when only prereleases are present."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        # Ensure the base APK directory exists so cleanup logic proceeds.
+        (tmp_path / APKS_DIR_NAME).mkdir(parents=True)
+
+        # Provide only prerelease entries so the stable list is empty.
+        releases = [
+            Release(tag_name="v2.7.10-open.1", prerelease=True),
+            Release(tag_name="v2.7.10-open.2", prerelease=True),
+        ]
+
+        mock_logger = mocker.patch("fetchtastic.download.android.logger")
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        # Ensure we hit the early-return path and logged the reason.
+        assert any(
+            "no stable releases" in str(call.args[0]).lower()
+            for call in mock_logger.method_calls
+            if call.args
+        )
+
     def test_cleanup_prerelease_directories_removes_superseded_prereleases(
         self, tmp_path
     ):

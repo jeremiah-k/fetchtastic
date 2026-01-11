@@ -21,9 +21,6 @@ STATUS_ACTIVE = "active"
 STATUS_REVOKED = "revoked"
 STATUS_REMOVED = "removed"
 
-CHANNEL_STABLE = "stable"
-CHANNEL_PRERELEASE = "prerelease"
-
 _REVOKED_TITLE_RX = re.compile(r"\brevoked\b", re.IGNORECASE)
 _REVOKED_BODY_LINE_RX = re.compile(
     r"^(this release (has been|was|is) revoked|release (has been|was) revoked|revoked\b)",
@@ -34,7 +31,8 @@ _CHANNEL_RX = {
     "beta": re.compile(r"\bbeta\b", re.IGNORECASE),
     "rc": re.compile(r"\b(?:rc|release candidate)\b", re.IGNORECASE),
 }
-_CHANNEL_ORDER = ("alpha", "beta", "rc", CHANNEL_PRERELEASE, CHANNEL_STABLE)
+_STABLE_RX = re.compile(r"\bstable\b", re.IGNORECASE)
+_CHANNEL_ORDER = ("alpha", "beta", "rc")
 _HASH_TAGGED_RELEASE_RX = re.compile(r"^v?\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECASE)
 
 
@@ -60,36 +58,48 @@ def _join_text(parts: Iterable[Optional[str]]) -> str:
 
 def detect_release_channel(release: Release) -> str:
     """
-    Determine the release channel from the release's name, tag, body, and prerelease flag.
-
-    The function checks, in order: combined name and tag, the release body, and finally the release.prerelease boolean to classify the release.
-
+    Infer the release channel ('alpha', 'beta', or 'rc') from a release's name and tag.
+    
+    This function examines the release's name and tag text to decide the channel. Explicit channel keywords in the name or tag take precedence; the word "stable" is treated as "beta"; tags with hash-style suffixes are treated as "alpha"; the release's prerelease flag is ignored. If no condition matches, returns "alpha".
+    
     Returns:
-        One of "alpha", "beta", "rc", "prerelease", or "stable" indicating the inferred channel.
+        'alpha', 'beta', or 'rc' indicating the inferred channel.
     """
+    # Use only name + tag for channel detection; body text is ignored by design to
+    # avoid accidental channel mismatches from release notes.
     primary_text = _join_text([release.name, release.tag_name])
+
+    # Explicit channel keywords in the title/tag always win.
     for label, rx in _CHANNEL_RX.items():
         if rx.search(primary_text):
             return label
 
-    body_text = _join_text([release.body])
-    for label, rx in _CHANNEL_RX.items():
-        if rx.search(body_text):
-            return label
+    # "Stable" is not a channel label we emit; treat it as "beta" when present
+    # to stay aligned with the alpha/beta terminology used for full releases.
+    if _STABLE_RX.search(primary_text):
+        return "beta"
 
+    # Firmware tags that include a hash suffix are still full releases; default to alpha.
     tag_name = release.tag_name if isinstance(release.tag_name, str) else ""
     if tag_name and _HASH_TAGGED_RELEASE_RX.match(tag_name):
         return "alpha"
 
-    if release.prerelease:
-        return CHANNEL_PRERELEASE
-
-    return CHANNEL_STABLE
+    # NOTE: We intentionally ignore release.prerelease here. GitHub prerelease flags
+    # are not used to label full releases in this project, and prereleases are
+    # tracked in a separate workflow and directory tree.
+    #
+    # Default for full releases is alpha (the most common track).
+    return "alpha"
 
 
 def is_release_revoked(release: Release) -> bool:
     """
-    Determine whether a release is revoked by scanning name and explicit body markers.
+    Detects whether a release has been marked as revoked.
+    
+    Scans the release name for revoked indicators and, if a body exists, inspects up to the first 14 non-empty lines of the body. Each inspected line is unquoted (leading '>' removed), stripped of leading non-alphanumeric punctuation, and ignored if it begins with "previously revoked". A matching revoked pattern in the name or any inspected body line marks the release as revoked.
+    
+    Returns:
+        `true` if the release is revoked, `false` otherwise.
     """
     name_text = release.name if isinstance(release.name, str) else ""
     if _REVOKED_TITLE_RX.search(name_text):
@@ -142,7 +152,7 @@ class ReleaseHistoryManager:
             release (Release): The release object (e.g., GitHub release) to inspect.
 
         Returns:
-            str: The release channel, one of "alpha", "beta", "rc", "prerelease", or "stable".
+            str: The release channel, one of "alpha", "beta", or "rc".
         """
         return detect_release_channel(release)
 
@@ -171,9 +181,9 @@ class ReleaseHistoryManager:
 
         Parameters:
             release (Release): The release object whose tag, channel, and status will be used to build the label.
-            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta") unless it is "stable" and `include_stable` is False.
+            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta").
             include_status (bool): If true, append the revoked status label when the release is detected as revoked.
-            include_stable (bool): If true, include the "stable" channel explicitly when present; otherwise omit stable channel.
+            include_stable (bool): Kept for backward compatibility; "stable" is not emitted.
 
         Returns:
             label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "v1.2.3 (alpha, revoked)" or "v1.2.3").
@@ -182,7 +192,7 @@ class ReleaseHistoryManager:
         parts: List[str] = []
         if include_channel:
             channel = self.get_release_channel(release)
-            if include_stable or channel not in (CHANNEL_STABLE, ""):
+            if channel:
                 parts.append(channel)
         if include_status and self.is_release_revoked(release):
             parts.append(STATUS_REVOKED)
@@ -316,7 +326,7 @@ class ReleaseHistoryManager:
         """
         Log a summary of releases grouped by inferred channel and list releases per channel.
 
-        Groups the provided releases by channel (using get_release_channel), logs a compact count for each channel in a preferred order (alpha, beta, rc, prerelease, stable, then other channels alphabetically), and logs a per-channel list of release labels for non-empty channels.
+        Groups the provided releases by channel (using get_release_channel), logs a compact count for each channel in a preferred order (alpha, beta, rc, then other channels alphabetically), and logs a per-channel list of release labels for non-empty channels.
 
         Parameters:
             releases (List[Release]): Releases to summarize; releases without entries are ignored.
@@ -374,15 +384,18 @@ class ReleaseHistoryManager:
 
     def _log_release_status_entry(self, entry: Dict[str, Any]) -> None:
         """
-        Log a single release history entry as a colored, struck-through tag with optional channel and status.
-
+        Log a single release history entry showing its tag with optional channel and status.
+        
         Parameters:
-            entry (Dict[str, Any]): Release history entry containing `tag_name`, optional `channel`, and optional `status`. The `channel` is omitted from the output when equal to the stable channel.
+            entry (Dict[str, Any]): History entry containing:
+                - tag_name (str, optional): Release tag to display; "<unknown>" used if missing.
+                - channel (str, optional): Channel label to include in the display.
+                - status (str, optional): Status label; entries with the revoked status are styled to indicate revocation.
         """
         tag_name = entry.get("tag_name") or "<unknown>"
         channel = entry.get("channel")
         parts = []
-        if channel and channel != CHANNEL_STABLE:
+        if channel:
             parts.append(channel)
         status = entry.get("status") or ""
         if status:

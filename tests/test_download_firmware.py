@@ -456,57 +456,38 @@ class TestFirmwareReleaseDownloader:
         self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup when release tags contain unsafe characters."""
-        # Mock _get_release_storage_tag to raise for unsafe tags
-        with patch.object(downloader, "_get_release_storage_tag") as mock_storage_tag:
-            mock_exists.return_value = True
+        mock_exists.return_value = True
 
-            # Create mock directory entries for os.scandir
-            mock_v1 = Mock()
-            mock_v1.name = "v1.0.0"
-            mock_v1.is_symlink.return_value = False
-            mock_v1.is_dir.return_value = True
-            mock_v1.path = "/mock/firmware/v1.0.0"
+        # Create mock directory entries for os.scandir
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0"
 
-            mock_v2 = Mock()
-            mock_v2.name = "v2.0.0"
-            mock_v2.is_symlink.return_value = False
-            mock_v2.is_dir.return_value = True
-            mock_v2.path = "/mock/firmware/v2.0.0"
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0"
 
-            mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
 
-            def _storage_tag_side_effect(release):
-                """
-                Map a safe release to its storage tag or raise an error for unsafe tags.
+        downloader.get_releases = Mock(
+            return_value=[
+                Release(tag_name="v1.0.0"),
+                Release(tag_name="../../../unsafe"),
+            ]
+        )
 
-                Parameters:
-                    release: An object with a `tag_name` attribute representing the release tag.
+        downloader.cleanup_old_versions(keep_limit=2)
 
-                Returns:
-                    str: The storage tag corresponding to the provided release.
-
-                Raises:
-                    ValueError: If the release tag is considered unsafe.
-                """
-                if release.tag_name == "v1.0.0":
-                    return "v1.0.0"
-                raise ValueError("Unsafe release tag")
-
-            mock_storage_tag.side_effect = _storage_tag_side_effect
-            downloader.get_releases = Mock(
-                return_value=[
-                    Release(tag_name="v1.0.0"),
-                    Release(tag_name="../../../unsafe"),
-                ]
-            )
-
-            downloader.cleanup_old_versions(keep_limit=2)
-
-            # Should remove v2.0.0 since only v1.0.0 is safe
-            mock_rmtree.assert_called_once()
-            args = mock_rmtree.call_args[0][0]
-            assert "v2.0.0" in args
-            # Warning is logged but caplog testing is optional
+        # Should remove v2.0.0 since only v1.0.0 is safe
+        mock_rmtree.assert_called_once()
+        args = mock_rmtree.call_args[0][0]
+        assert "v2.0.0" in args
+        assert "v1.0.0" not in args
+        # Warning is logged but caplog testing is optional
 
     @patch("os.path.exists")
     @patch("os.scandir")
@@ -582,6 +563,66 @@ class TestFirmwareReleaseDownloader:
         # Should not call get_releases or rmtree for negative keep_limit
         downloader.get_releases.assert_not_called()
         assert mock_rmtree.call_count == 0
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_skips_when_keep_set_mismatched(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Skip cleanup when expected tags do not match existing directories."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0-alpha"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0-alpha"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0-alpha"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0-alpha"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+
+        downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v2.0.0"), Release(tag_name="v1.0.0")]
+        )
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        mock_rmtree.assert_not_called()
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_all_unsafe_tags(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader, mocker
+    ):
+        """Cleanup should bail when no safe tags are available to keep."""
+        # Force the firmware directory to appear present.
+        mock_exists.return_value = True
+
+        # Every release tag should fail sanitization to hit the warning/return path.
+        downloader.get_releases = Mock(
+            return_value=[Release(tag_name="../unsafe"), Release(tag_name="..\\bad")]
+        )
+        mocker.patch.object(
+            downloader, "_sanitize_required", side_effect=ValueError("unsafe")
+        )
+
+        # Capture warnings for the empty keep set scenario.
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        # No filesystem deletion should happen when the keep set is empty.
+        mock_rmtree.assert_not_called()
+        mock_scandir.assert_not_called()
+        assert mock_logger.warning.called
 
     @patch("fetchtastic.download.firmware.make_github_api_request")
     def test_get_releases_negative_limit(self, mock_api_request, downloader):
@@ -1003,17 +1044,17 @@ class TestFirmwareReleaseDownloader:
         assert storage_tag in {"v1.0.1-alpha", "v1.0.1-beta"}
 
     def test_get_storage_tag_candidates_with_suffixes_disabled(self, downloader):
-        """Channel suffixes should not be generated when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
-        # Without ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES enabled, no channel suffixes are added
+        """Suffix candidates should remain discoverable when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
+        # Even with suffixes disabled, discovery should include legacy channel directories.
         downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
         release = Release(tag_name="v1.0.2", prerelease=False)
         candidates = downloader._get_storage_tag_candidates(release, "v1.0.2")
 
-        # Standard suffixes (alpha, beta, rc) should not be present
-        # when feature is disabled
-        assert "v1.0.2-alpha" not in candidates
-        assert "v1.0.2-beta" not in candidates
-        assert "v1.0.2-rc" not in candidates
+        # Standard suffixes (alpha, beta, rc) should remain discoverable.
+        assert "v1.0.2-alpha" in candidates
+        assert "v1.0.2-beta" in candidates
+        assert "v1.0.2-rc" in candidates
+        assert "v1.0.2-revoked" in candidates
 
     def test_is_release_complete_unsafe_tag(self, downloader):
         """Unsafe tags should return False during completeness checks."""
@@ -1026,6 +1067,31 @@ class TestFirmwareReleaseDownloader:
         release = Release(tag_name="v9.9.9", prerelease=False, assets=[])
 
         assert downloader.is_release_complete(release) is False
+
+    def test_is_release_complete_missing_asset_file(self, downloader, tmp_path, mocker):
+        """Missing asset files in an existing release directory should return False."""
+        # Ensure the downloader points at a real temporary directory.
+        downloader.download_dir = str(tmp_path)
+
+        # Use a simple release tag to avoid channel suffix handling in this test.
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        release = Release(tag_name="v1.2.3", prerelease=False)
+        asset = Asset(
+            name="firmware-rak4631-1.2.3.bin",
+            download_url="https://example.com/fw.bin",
+            size=123,
+        )
+        release.assets.append(asset)
+
+        # Create the release directory but intentionally omit the asset file.
+        version_dir = tmp_path / "firmware" / "v1.2.3"
+        version_dir.mkdir(parents=True)
+
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        assert downloader.is_release_complete(release) is False
+        assert mock_logger.debug.called
 
     def test_extract_firmware_missing_zip(self, downloader):
         """Missing ZIP files should return a validation error result."""

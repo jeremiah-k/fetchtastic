@@ -81,15 +81,14 @@ def _display_update_reminder(latest_version: str) -> None:
 
 def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
-    Load the Fetchtastic configuration file, migrating it from the old location if detected.
-
-    Attempts to load the current configuration; if a config exists in the legacy location and no new config file is present,
-    a migration is attempted before loading.
-
+    Load the Fetchtastic configuration, migrating from the legacy location if necessary.
+    
+    If a configuration exists in the legacy location and no configuration file exists at the new location, an automatic migration is attempted before loading. After migration (or if migration is not needed), the configuration is loaded and its file path is returned.
+    
     Returns:
         tuple: (config, config_path)
-            config (dict[str, Any] | None): Loaded configuration mapping, or None if loading failed or no configuration exists.
-            config_path (str | None): Filesystem path to the configuration file used, or None if no configuration was found.
+            config (dict[str, Any] | None): Loaded configuration mapping, or `None` if no configuration is available.
+            config_path (str | None): Filesystem path to the loaded configuration file, or `None` if no configuration was found.
     """
     exists, config_path = setup_config.config_exists()
     if exists and config_path == setup_config.OLD_CONFIG_FILE:
@@ -113,11 +112,7 @@ def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]
             log_utils.logger.info(f"{separator}\n")
 
     if exists:
-        try:
-            config = setup_config.load_config()
-        except (ValueError, OSError, TypeError, yaml.YAMLError) as error:
-            log_utils.logger.error(f"Failed to load configuration: {error}")
-            config = None
+        config = setup_config.load_config()
     else:
         config = None
         config_path = None
@@ -249,12 +244,9 @@ def main():
     # Logging is automatically initialized by importing log_utils
 
     """
-    Entry point for the Fetchtastic command-line interface.
-
-    Parses command-line arguments and dispatches subcommands: setup, download, topic,
-    clean, version, repo, and help. Subcommands may read, create, migrate, or remove
-    configuration; run interactive setup flows; invoke download or repository
-    operations; modify system startup/cron entries; and copy text to the clipboard.
+    CLI entry point that parses arguments and dispatches Fetchtastic subcommands.
+    
+    Parses command-line arguments and invokes the requested command behavior such as running setup, performing downloads, showing the NTFY topic, managing caches, cleaning Fetchtastic data, interacting with the repository, or printing version/help information. Subcommands may read, create, migrate, or remove configuration; run interactive setup flows; perform download or repository operations; manage system startup/cron entries; and copy text to the clipboard when configured.
     """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
@@ -458,12 +450,8 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            try:
-                resp = input(copy_prompt_text)
-            except EOFError:
-                resp = ""
-            resp = (resp or "y").strip().lower()
-            if resp in {"y", "yes"}:
+            resp = setup_config._safe_input(copy_prompt_text, default="y")
+            if setup_config._coerce_bool(resp, default=True):
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
@@ -482,16 +470,14 @@ def main():
         # Run the clean process
         run_clean()
     elif args.command == "version":
-        display_banner()
         # Get version information
         current_version, latest_version, update_available = get_version_info()
 
-        # Log version information
-        log_utils.logger.info(f"Fetchtastic v{current_version}")
+        print(f"Fetchtastic v{current_version}")
         if update_available and latest_version:
             upgrade_cmd = get_upgrade_command()
-            log_utils.logger.info(f"A newer version (v{latest_version}) is available!")
-            log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            print(f"A newer version (v{latest_version}) is available!")
+            print(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Handle help command
         help_command = args.help_command
@@ -614,14 +600,32 @@ def run_clean():
 
     This operation deletes current and legacy configuration files, only Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (for example, Windows Start Menu and startup shortcuts, non-Windows cron entries, and a Termux boot script), and the Fetchtastic log file. The removal is irreversible and requires the user to confirm interactively; non-managed files are preserved.
     """
+    if not sys.stdin.isatty() and not os.environ.get("PYTEST_CURRENT_TEST"):
+        log_utils.logger.error(
+            "Clean operation requires an interactive terminal; aborting."
+        )
+        return
+    # Load config (if present) before deleting config files so BASE_DIR is accurate.
+    loaded_config = setup_config.load_config()
+    download_dir_from_config: str | None = None
+    base_dir_from_config: str | None = None
+    if loaded_config:
+        download_candidate = loaded_config.get("DOWNLOAD_DIR")
+        download_dir_from_config = (
+            download_candidate if isinstance(download_candidate, str) else None
+        )
+        base_candidate = loaded_config.get("BASE_DIR")
+        base_dir_from_config = (
+            base_candidate if isinstance(base_candidate, str) else None
+        )
+
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
-    confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
-        or "n"
+    confirm = setup_config._safe_input(
+        "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
     )
-    if confirm != "y":
+    if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 
@@ -741,9 +745,9 @@ def run_clean():
                     f"Failed to remove startup shortcut. Reason: {e}", file=sys.stderr
                 )
 
-            # Remove config shortcut in base directory
-            download_dir = setup_config.BASE_DIR
-            config_shortcut_path = os.path.join(download_dir, WINDOWS_SHORTCUT_FILE)
+            # Remove config shortcut in base directory (where it was created, not in DOWNLOAD_DIR)
+            base_dir = base_dir_from_config or setup_config.BASE_DIR
+            config_shortcut_path = os.path.join(base_dir, WINDOWS_SHORTCUT_FILE)
             if os.path.exists(config_shortcut_path):
                 try:
                     os.remove(config_shortcut_path)
@@ -755,16 +759,16 @@ def run_clean():
                     )
 
     # Remove only managed directories from download directory
-    download_dir = setup_config.BASE_DIR
+    download_dir = download_dir_from_config or setup_config.BASE_DIR
 
     def _remove_managed_file(item_path: str) -> None:
         """
-        Removes a managed file at the given filesystem path and logs the outcome.
-
-        If removal succeeds, logs an informational message. If removal fails, logs an error and does not raise an exception.
-
+        Remove a managed file at the given path and record the result in the application log.
+        
+        Logs an informational message if the file is removed successfully; logs an error if removal fails and does not raise the exception.
+        
         Parameters:
-            item_path (str): Path of the file to remove.
+            item_path (str): Filesystem path of the file to remove.
         """
         try:
             os.remove(item_path)
@@ -833,21 +837,20 @@ def run_clean():
 
 def run_repo_clean(config):
     """
-    Prompt for confirmation and, if confirmed, remove downloaded files from the meshtastic.github.io repository for the given configuration.
-
-    Prompts the user before proceeding; if the user confirms, invokes RepositoryDownloader to remove repository files, prints success or failure and a summary of removed files and directories, and logs the cleanup summary and any errors. Cleanup errors are written to stderr and recorded in the logger.
-
+    Remove repository downloads from the meshtastic.github.io repository after user confirmation.
+    
+    Prompts the user to confirm the operation; if confirmed, uses RepositoryDownloader to remove downloaded repository files, prints a concise summary of removed files and directories, and prints any cleanup errors. The function also logs the cleanup summary and errors.
+    
     Parameters:
-        config: Configuration object used to locate the repository download directory and associated metadata.
+        config (dict[str, Any]): Configuration containing repository download directory and related metadata used to locate and clean the repository files.
     """
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )
-    confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
-        or "n"
+    confirm = setup_config._safe_input(
+        "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
     )
-    if confirm != "y":
+    if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 
