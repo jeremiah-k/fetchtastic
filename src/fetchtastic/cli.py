@@ -169,13 +169,10 @@ def _prepare_command_run() -> Tuple[
         return None, None
 
     configured = config.get("LOG_LEVEL")
-    configured_name = (
-        configured.strip().upper()
-        if isinstance(configured, str) and configured.strip()
-        else None
-    )
-    if configured_name:
-        log_utils.set_log_level(configured_name)
+    configured_raw = configured.strip() if isinstance(configured, str) else ""
+    configured_name = configured_raw.upper() if configured_raw else None
+    if configured_raw:
+        log_utils.set_log_level(configured_raw)
 
     effective = log_utils.logger.getEffectiveLevel()
     inferred = logging.getLevelName(effective)
