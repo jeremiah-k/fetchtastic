@@ -108,7 +108,7 @@ def test_setup_downloads_partial_skips_firmware_menu(mocker):
     def wants(section: str) -> bool:
         """
         Determine if the requested setup section is the firmware section.
-        
+
         @returns `true` if `section` is exactly "firmware", `false` otherwise.
         """
         return section == "firmware"
@@ -148,12 +148,12 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
     def wants(section: str) -> bool:
         """
         Check whether the requested setup section is the Android section.
-        
+
         Parameters:
-        	section (str): Name of the setup section to test (e.g., "android").
-        
+                section (str): Name of the setup section to test (e.g., "android").
+
         Returns:
-        	True if section is "android", False otherwise.
+                True if section is "android", False otherwise.
         """
         return section == "android"
 
@@ -190,7 +190,7 @@ def test_setup_downloads_partial_reruns_firmware_menu(mocker):
     def wants(section: str) -> bool:
         """
         Determine if the requested setup section is the firmware section.
-        
+
         @returns `true` if `section` is exactly "firmware", `false` otherwise.
         """
         return section == "firmware"
@@ -230,12 +230,12 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
     def wants(section: str) -> bool:
         """
         Check whether the requested setup section is the Android section.
-        
+
         Parameters:
-        	section (str): Name of the setup section to test (e.g., "android").
-        
+                section (str): Name of the setup section to test (e.g., "android").
+
         Returns:
-        	True if section is "android", False otherwise.
+                True if section is "android", False otherwise.
         """
         return section == "android"
 
@@ -272,10 +272,10 @@ def test_setup_downloads_partial_skips_all_prompts(mocker):
     def wants(_section: str) -> bool:
         """
         Indicates whether the named setup section is requested for this run.
-        
+
         Parameters:
             _section (str): Name of the setup section to check.
-        
+
         Returns:
             bool: `true` if the section is requested, `false` otherwise.
         """
@@ -298,10 +298,10 @@ def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
     def wants(_section: str) -> bool:
         """
         Indicates that any setup section should be included.
-        
+
         Parameters:
             _section (str): Name of the setup section (ignored).
-        
+
         Returns:
             bool: `True` for all sections.
         """
@@ -1361,6 +1361,7 @@ def test_run_setup_first_run_linux_simple(
         "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
+        "n",  # No keep last beta
         "n",  # No auto-extract
         "n",  # No cron job
         "n",  # No reboot cron job
@@ -1446,6 +1447,7 @@ def test_run_setup_first_run_windows(
         "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
+        "n",  # No keep last beta
         "n",  # No auto-extract
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
@@ -1540,6 +1542,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # Add channel suffixes
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
+        "n",  # No keep last beta
         "n",  # No auto-extract
         "y",  # wifi only
         "h",  # hourly cron job
@@ -1633,6 +1636,7 @@ def test_run_setup_existing_config(
         "y",  # Check for pre-releases
         "n",  # Add channel suffixes
         "5",  # Keep 5 versions of firmware
+        "n",  # No keep last beta
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
         "y",  # Confirm extraction/exclude summary
@@ -1749,6 +1753,7 @@ def test_run_setup_partial_firmware_section(
         "y",  # Check for firmware prereleases
         "n",  # Add channel suffixes
         "3",  # Keep 3 versions of firmware
+        "n",  # No keep last beta
         "y",  # Auto-extract
         "esp32- rak4631-",  # Extraction patterns
     ]
@@ -2039,8 +2044,8 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     """Test setup wizard prompts for SELECTED_PRERELEASE_ASSETS with new configuration."""
     config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 3 versions, yes to auto-extract, device patterns
-    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "y"]
+    # Simulate user inputs: 3 versions, no keep last beta, yes to auto-extract, device patterns
+    mock_input.side_effect = ["3", "n", "y", "rak4631- tbeam", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2061,7 +2066,7 @@ def test_setup_firmware_extraction_tips_only_when_enabled(mock_input, capsys):
     """Extraction tips should only appear when auto-extract is enabled."""
     config = {"CHECK_PRERELEASES": False}
 
-    mock_input.side_effect = ["2", "n"]
+    mock_input.side_effect = ["2", "n", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
@@ -2078,7 +2083,7 @@ def test_setup_firmware_extraction_tips_when_enabled(mock_input, capsys):
     """Extraction tips should appear after auto-extract is enabled."""
     config = {"CHECK_PRERELEASES": False}
 
-    mock_input.side_effect = ["2", "y", "", "y"]
+    mock_input.side_effect = ["2", "n", "y", "", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
@@ -2100,8 +2105,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns
-    mock_input.side_effect = ["2", "y", "y", "y"]
+    # Simulate user inputs: keep 2 versions, keep last beta disabled, keep auto-extract, keep current extraction patterns
+    mock_input.side_effect = ["2", "n", "y", "y", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2130,8 +2135,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns
-    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-", "y"]
+    # Simulate user inputs: keep 2 versions, keep last beta disabled, keep auto-extract, change extraction patterns, new patterns
+    mock_input.side_effect = ["2", "n", "y", "n", "esp32- rak4631-", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2156,8 +2161,8 @@ def test_setup_firmware_selected_prerelease_assets_existing_keep(mock_input):
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 3 versions, no auto-extract
-    mock_input.side_effect = ["3", "n"]
+    # Simulate user inputs: keep 3 versions, no keep last beta, no auto-extract
+    mock_input.side_effect = ["3", "n", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2181,8 +2186,8 @@ def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
         "EXTRACT_PATTERNS": ["old-pattern"],
     }
 
-    # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns
-    mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "y"]
+    # Simulate user inputs: keep 3 versions, no keep last beta, keep auto-extract, don't keep patterns, new patterns
+    mock_input.side_effect = ["3", "n", "y", "n", "new-pattern device-", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2207,8 +2212,8 @@ def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_inp
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, no auto-extract
-    mock_input.side_effect = ["2", "n"]
+    # Simulate user inputs: keep 2 versions, no keep last beta, no auto-extract
+    mock_input.side_effect = ["2", "n", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2227,8 +2232,8 @@ def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
     """Test handling of empty prerelease asset patterns."""
     config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns
-    mock_input.side_effect = ["2", "y", "", "y"]
+    # Simulate user inputs: 2 versions, no keep last beta, yes to auto-extract, empty patterns
+    mock_input.side_effect = ["2", "n", "y", "", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2252,8 +2257,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input
-    mock_input.side_effect = ["2", "y", "n", "", "y"]
+    # Simulate user inputs: keep 2 versions, no keep last beta, yes to auto-extract, decline to keep patterns, empty input
+    mock_input.side_effect = ["2", "n", "y", "n", "", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2276,7 +2281,7 @@ def test_setup_firmware_extract_patterns_string_config(mock_input):
         "EXTRACT_PATTERNS": "tbeam rak4631-",
     }
 
-    mock_input.side_effect = ["2", "y", "y", "y"]
+    mock_input.side_effect = ["2", "n", "y", "y", "y"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
