@@ -831,12 +831,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if not os.path.exists(firmware_dir):
                 return
 
-            latest_releases = self.get_releases(limit=keep_limit)
-            if not latest_releases and keep_limit > 0:
+            # Fetch releases once, using max(keep_limit, 100) to satisfy both needs
+            # This avoids a redundant second API call when keep_last_beta is enabled
+            fetch_limit = max(keep_limit, 100) if keep_last_beta else keep_limit
+            all_releases = self.get_releases(limit=fetch_limit)
+            if not all_releases and keep_limit > 0:
                 logger.warning(
                     "Skipping firmware cleanup: no releases available to determine keep set."
                 )
                 return
+
+            # Use the first keep_limit releases for the normal keep set
+            latest_releases = all_releases[:keep_limit]
 
             release_tags_to_keep = set()
             keep_base_tags = set()
@@ -871,10 +877,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # If keep_last_beta is enabled, ensure most recent beta is kept
             if keep_last_beta:
-                all_releases = self.get_releases(limit=100)
                 beta_releases = [
                     r
-                    for r in all_releases
+                    for r in all_releases[:100]
                     if r.tag_name
                     and self.release_history_manager.get_release_channel(r) == "beta"
                 ]
@@ -930,20 +935,37 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         REPO_DOWNLOADS_DIR,
                     }
                 }
+
+                suffixes = ["-revoked"] + [
+                    f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
+                ]
+
+                def _strip_suffixes(name: str) -> str:
+                    base_name = name
+                    stripped = True
+                    while stripped:
+                        stripped = False
+                        for suffix in suffixes:
+                            if base_name.endswith(suffix):
+                                base_name = base_name[: -len(suffix)]
+                                stripped = True
+                                break
+                    return base_name
+
+                existing_base_names = {
+                    _strip_suffixes(name) for name in existing_versions
+                }
+
                 if (
                     keep_limit > 0
                     and existing_versions
                     and release_tags_to_keep
-                    and release_tags_to_keep.isdisjoint(existing_versions)
+                    and keep_base_tags.isdisjoint(existing_base_names)
                 ):
                     logger.warning(
                         "Skipping firmware cleanup: keep set does not match existing directories."
                     )
                     return
-
-                suffixes = ["-revoked"] + [
-                    f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
-                ]
                 for entry in entries:
                     if entry.name in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
@@ -957,15 +979,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         )
                         continue
                     if entry.is_dir():
-                        base_name = entry.name
-                        stripped = True
-                        while stripped:
-                            stripped = False
-                            for suffix in suffixes:
-                                if base_name.endswith(suffix):
-                                    base_name = base_name[: -len(suffix)]
-                                    stripped = True
-                                    break
+                        base_name = _strip_suffixes(entry.name)
                         if (
                             entry.name not in release_tags_to_keep
                             and base_name not in keep_base_tags

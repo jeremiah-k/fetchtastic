@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -42,7 +43,7 @@ from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .android import MeshtasticAndroidAppDownloader
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
@@ -1000,7 +1001,11 @@ class DownloadOrchestrator:
                 top_releases = self.firmware_releases[:keep_limit]
                 most_recent_beta = max(
                     beta_releases,
-                    key=lambda r: (r.published_at or "", r.tag_name or ""),
+                    key=lambda r: (
+                        parse_iso_datetime_utc(r.published_at)
+                        or datetime.min.replace(tzinfo=timezone.utc),
+                        r.tag_name or "",
+                    ),
                 )
                 if most_recent_beta not in top_releases:
                     keep_limit = min(keep_limit + 1, len(self.firmware_releases))

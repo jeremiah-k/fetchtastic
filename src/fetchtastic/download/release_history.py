@@ -224,17 +224,13 @@ class ReleaseHistoryManager:
         Returns:
             label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "v1.2.3 (alpha, revoked)" or "v1.2.3").
         """
-        label = release.tag_name
-        parts: List[str] = []
-        if include_channel:
-            channel = self.get_release_channel(release)
-            if channel:
-                parts.append(channel)
-        if include_status and self.is_release_revoked(release):
-            parts.append(STATUS_REVOKED)
-        if parts:
-            label = f"{label} ({', '.join(parts)})"
-        return label
+        return self._format_release_label_with_keep(
+            release,
+            include_channel=include_channel,
+            include_status=include_status,
+            _include_stable=_include_stable,
+            is_kept=False,
+        )
 
     def format_release_log_suffix(self, release: Release) -> str:
         """
@@ -393,7 +389,7 @@ class ReleaseHistoryManager:
         if not summary_parts:
             return
 
-        releases_to_keep: set[Release] = set()
+        releases_to_keep: set[str] = set()
         if keep_limit is not None:
             logger.info(
                 "%s release channels (keeping %d of %d): %s",
@@ -413,7 +409,7 @@ class ReleaseHistoryManager:
             )
             for i, release in enumerate(sorted_releases):
                 if i < keep_limit:
-                    releases_to_keep.add(release)
+                    releases_to_keep.add(release.tag_name)
         else:
             logger.info("%s release channels: %s", label, ", ".join(summary_parts))
 
@@ -421,35 +417,48 @@ class ReleaseHistoryManager:
             releases_for_channel = channel_map.get(channel)
             if not releases_for_channel:
                 continue
-            items = ", ".join(
-                self._format_release_label_with_keep(
-                    release,
-                    include_channel=False,
-                    include_status=True,
-                    is_kept=(
-                        release in releases_to_keep if keep_limit is not None else False
-                    ),
-                )
-                for release in releases_for_channel
+            self._log_channel_releases(
+                channel, releases_for_channel, releases_to_keep, keep_limit
             )
-            logger.info("  - %s: %s", channel, items)
 
         for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
             releases_for_channel = channel_map.get(channel)
             if not releases_for_channel:
                 continue
-            items = ", ".join(
-                self._format_release_label_with_keep(
-                    release,
-                    include_channel=False,
-                    include_status=True,
-                    is_kept=(
-                        release in releases_to_keep if keep_limit is not None else False
-                    ),
-                )
-                for release in releases_for_channel
+            self._log_channel_releases(
+                channel, releases_for_channel, releases_to_keep, keep_limit
             )
-            logger.info("  - %s: %s", channel, items)
+
+    def _log_channel_releases(
+        self,
+        channel: str,
+        releases_for_channel: List[Release],
+        releases_to_keep: set[str],
+        keep_limit: Optional[int],
+    ) -> None:
+        """
+        Log the releases for a specific channel.
+
+        Parameters:
+            channel (str): The channel to log.
+            releases_for_channel (List[Release]): The releases in the channel.
+            releases_to_keep (set[str]): Set of release tags to keep.
+            keep_limit (Optional[int]): Maximum number of releases to keep.
+        """
+        items = ", ".join(
+            self._format_release_label_with_keep(
+                release,
+                include_channel=False,
+                include_status=True,
+                is_kept=(
+                    (release.tag_name in releases_to_keep)
+                    if keep_limit is not None
+                    else False
+                ),
+            )
+            for release in releases_for_channel
+        )
+        logger.info("  - %s: %s", channel, items)
 
     def _log_release_status_entry(self, entry: Dict[str, Any]) -> None:
         """
