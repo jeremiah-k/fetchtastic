@@ -275,13 +275,7 @@ class DownloadOrchestrator:
 
             logger.info("Scanning Firmware releases")
             if self.firmware_releases is None:
-                raw_keep_limit = self.config.get(
-                    "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
-                )
-                try:
-                    keep_limit = max(0, int(raw_keep_limit))
-                except (TypeError, ValueError):
-                    keep_limit = int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
+                keep_limit = self._get_firmware_keep_limit()
                 keep_last_beta = self.config.get(
                     "KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA
                 )
@@ -304,13 +298,7 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
-            raw_keep_count = self.config.get(
-                "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
-            )
-            try:
-                keep_count = max(0, int(raw_keep_count))
-            except (TypeError, ValueError):
-                keep_count = int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
+            keep_count = self._get_firmware_keep_limit()
             releases_to_process = firmware_releases[:keep_count]
 
             releases_to_download = []
@@ -1007,13 +995,7 @@ class DownloadOrchestrator:
             return
 
         manager = self.firmware_downloader.release_history_manager
-        raw_keep_limit = self.config.get(
-            "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
-        )
-        try:
-            keep_limit = max(0, int(raw_keep_limit))
-        except (TypeError, ValueError):
-            keep_limit = int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
+        keep_limit = self._get_firmware_keep_limit()
         keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
 
         if keep_last_beta:
@@ -1039,6 +1021,21 @@ class DownloadOrchestrator:
             self.firmware_release_history, label="Firmware"
         )
         manager.log_duplicate_base_versions(self.firmware_releases, label="Firmware")
+
+    def _get_firmware_keep_limit(self) -> int:
+        """
+        Return the configured firmware keep limit as a non-negative integer.
+
+        Falls back to DEFAULT_FIRMWARE_VERSIONS_TO_KEEP when the config value is missing
+        or invalid.
+        """
+        raw_keep_limit = self.config.get(
+            "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+        )
+        try:
+            return max(0, int(raw_keep_limit))
+        except (TypeError, ValueError):
+            return int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """

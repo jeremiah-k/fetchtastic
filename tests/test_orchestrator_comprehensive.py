@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from fetchtastic.constants import GITHUB_MAX_PER_PAGE
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -419,6 +420,76 @@ class TestDownloadOrchestrator:
             orchestrator.firmware_downloader, "get_releases", return_value=[]
         ):
             orchestrator._process_firmware_downloads()
+
+    def test_process_firmware_downloads_uses_beta_fetch_limit(self, orchestrator):
+        """Firmware releases fetch should use beta-aware fetch limit."""
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.firmware_releases = None
+
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(
+                orchestrator.firmware_downloader, "get_releases", return_value=releases
+            ) as mock_get_releases,
+            patch.object(
+                orchestrator.firmware_downloader, "update_release_history"
+            ) as mock_update_history,
+            patch.object(
+                orchestrator, "_select_latest_release_by_version", return_value=None
+            ),
+            patch.object(
+                orchestrator.firmware_downloader,
+                "format_release_log_suffix",
+                return_value="",
+            ),
+            patch.object(
+                orchestrator.firmware_downloader,
+                "is_release_complete",
+                return_value=True,
+            ),
+            patch.object(orchestrator.firmware_downloader, "ensure_release_notes"),
+        ):
+            mock_update_history.return_value = {"entries": {}}
+            orchestrator._process_firmware_downloads()
+
+        mock_get_releases.assert_called_once()
+        assert mock_get_releases.call_args.kwargs["limit"] == GITHUB_MAX_PER_PAGE
+
+    def test_log_firmware_release_history_summary_with_beta(self, orchestrator):
+        """Latest beta outside keep window should expand summary keep limit."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.firmware_releases = [
+            Release(tag_name="v2.0.0", prerelease=False),
+            Release(tag_name="v1.9.0", prerelease=False),
+        ]
+        orchestrator.firmware_release_history = {"entries": {}}
+        manager = orchestrator.firmware_downloader.release_history_manager
+
+        def _fake_channel(release):
+            return "beta" if release.tag_name == "v1.9.0" else "alpha"
+
+        with (
+            patch.object(manager, "get_release_channel", side_effect=_fake_channel),
+            patch.object(
+                manager, "log_release_channel_summary"
+            ) as mock_channel_summary,
+            patch.object(manager, "log_release_status_summary"),
+            patch.object(manager, "log_duplicate_base_versions"),
+        ):
+            orchestrator.log_firmware_release_history_summary()
+
+        assert mock_channel_summary.called
+        assert mock_channel_summary.call_args.kwargs["keep_limit"] == 2
+
+    def test_get_firmware_keep_limit_invalid_config(self, orchestrator):
+        """Invalid keep limit config should fall back to default."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = "nope"
+        keep_limit = orchestrator._get_firmware_keep_limit()
+        assert isinstance(keep_limit, int)
+        assert keep_limit >= 0
 
     def test_download_android_release(self, orchestrator):
         """

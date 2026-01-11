@@ -879,6 +879,110 @@ class TestFirmwareReleaseDownloader:
         assert isinstance(failed, list)
         assert latest is None or isinstance(latest, str)
 
+    @patch("os.path.exists")
+    def test_cleanup_old_versions_skips_when_no_releases_with_keep_last_beta(
+        self, mock_exists, downloader
+    ):
+        """Skip cleanup when keep_last_beta is enabled but no releases are available."""
+        mock_exists.return_value = True
+        downloader.get_releases = Mock(return_value=[])
+
+        with patch("os.scandir") as mock_scandir:
+            downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=True)
+
+        mock_scandir.assert_not_called()
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_adds_beta_tag(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Most recent beta is kept when keep_last_beta is enabled."""
+        mock_exists.return_value = True
+        mock_scandir.return_value.__enter__.return_value = []
+        mock_scandir.return_value.__exit__.return_value = None
+
+        stable = Release(tag_name="v1.0.1", prerelease=False)
+        beta = Release(tag_name="v1.0.0-beta", prerelease=False)
+        downloader.release_history_manager.get_release_channel = Mock(
+            side_effect=lambda release: (
+                "beta" if release.tag_name == "v1.0.0-beta" else ""
+            )
+        )
+
+        downloader.cleanup_old_versions(
+            keep_limit=1,
+            keep_last_beta=True,
+            cached_releases=[stable, beta],
+        )
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_warns_on_unsafe_beta_tag(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Unsafe beta tag emits a warning during cleanup."""
+        mock_exists.return_value = True
+        mock_scandir.return_value.__enter__.return_value = []
+        mock_scandir.return_value.__exit__.return_value = None
+
+        stable = Release(tag_name="v1.0.1", prerelease=False)
+        beta = Release(tag_name="v1.0.0-beta", prerelease=False)
+        downloader.release_history_manager.get_release_channel = Mock(
+            side_effect=lambda release: (
+                "beta" if release.tag_name == "v1.0.0-beta" else ""
+            )
+        )
+
+        def _sanitize(tag, _label):
+            if tag == "v1.0.0-beta":
+                raise ValueError("unsafe")
+            return tag
+
+        downloader._sanitize_required = Mock(side_effect=_sanitize)
+
+        with patch("fetchtastic.download.firmware.logger.warning") as mock_warning:
+            downloader.cleanup_old_versions(
+                keep_limit=1,
+                keep_last_beta=True,
+                cached_releases=[stable, beta],
+            )
+
+        mock_warning.assert_any_call(
+            "Skipping unsafe beta release tag during cleanup: %s",
+            beta.tag_name,
+        )
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_skips_symlinks(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Symlinks in the firmware directory are skipped during cleanup."""
+        mock_exists.return_value = True
+        entry_symlink = Mock()
+        entry_symlink.name = "v1.0.0"
+        entry_symlink.is_symlink.return_value = True
+        entry_symlink.is_dir.return_value = False
+        entry_symlink.path = "/mock/firmware/v1.0.0"
+
+        mock_scandir.return_value.__enter__.return_value = [entry_symlink]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        with patch("fetchtastic.download.firmware.logger.warning") as mock_warning:
+            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+
+        mock_warning.assert_any_call(
+            "Skipping symlink in firmware directory during cleanup: %s",
+            entry_symlink.name,
+        )
+
+    def test_get_expiry_timestamp_format(self, downloader):
+        """Expiry timestamp is returned as an ISO 8601 UTC string."""
+        expiry = downloader._get_expiry_timestamp()
+        assert "T" in expiry
+        assert "+00:00" in expiry or "Z" in expiry
+
     def test_handle_prereleases_with_repo_download(self, downloader):
         """Test prerelease handling with repo downloads."""
         releases = [

@@ -34,9 +34,9 @@ def test_config():
 
 
 @pytest.fixture
-def cache_manager():
+def cache_manager(tmp_path):
     """Cache manager instance."""
-    return CacheManager()
+    return CacheManager(cache_dir=str(tmp_path))
 
 
 @pytest.fixture
@@ -52,9 +52,9 @@ def prerelease_manager():
 
 
 @pytest.fixture
-def firmware_downloader(test_config):
+def firmware_downloader(test_config, tmp_path):
     """Firmware release downloader instance."""
-    cache_manager = CacheManager()
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
     return FirmwareReleaseDownloader(test_config, cache_manager)
 
 

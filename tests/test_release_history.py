@@ -414,6 +414,40 @@ def test_log_release_channel_summary_all_missing_tags(tmp_path):
     assert not mock_info.called
 
 
+def test_format_release_label_with_keep_unknown_tag(tmp_path):
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_label")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    release = Release(tag_name=None, prerelease=False)
+
+    label = manager._format_release_label_with_keep(
+        release,
+        include_channel=False,
+        include_status=False,
+        is_kept=True,
+    )
+
+    assert label.startswith("[KEEP]")
+    assert "<unknown>" in label
+
+
+def test_log_release_channel_summary_negative_keep_limit(tmp_path, monkeypatch):
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_negative_keep")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    releases = [
+        Release(tag_name="v1.0.0", prerelease=False),
+        Release(tag_name="v1.1.0", prerelease=False),
+    ]
+
+    monkeypatch.setattr(manager, "get_release_channel", lambda _release: "alpha")
+
+    with patch.object(log_utils.logger, "info") as mock_info:
+        manager.log_release_channel_summary(releases, label="Firmware", keep_limit=-1)
+
+    assert mock_info.called
+
+
 def test_log_release_channel_summary_custom_empty_group(tmp_path, monkeypatch):
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     history_path = cache_manager.get_cache_file_path("release_history_custom_empty")

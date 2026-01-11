@@ -2058,7 +2058,7 @@ def run_setup(
 
     # Persist configuration after all interactive sections
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config, f)
+        yaml.safe_dump(config, f, sort_keys=False)
     print(f"Configuration saved to: {CONFIG_FILE}")
 
     if not is_partial_run and perform_initial_download:
@@ -2240,7 +2240,7 @@ def migrate_config() -> bool:
     # Save to new location
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            yaml.safe_dump(config, f)
+            yaml.safe_dump(config, f, sort_keys=False)
 
         # Remove the old file after successful migration
         try:
