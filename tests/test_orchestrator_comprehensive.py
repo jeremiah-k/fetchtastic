@@ -350,11 +350,25 @@ class TestDownloadOrchestrator:
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
         # Method should exist and be callable without raising; exact cleanup depends on filesystem contents
-        orchestrator.cleanup_old_versions()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(orchestrator.firmware_downloader, "cleanup_old_versions"),
+            patch.object(orchestrator, "_cleanup_deleted_prereleases"),
+        ):
+            orchestrator.cleanup_old_versions()
 
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions."""
-        versions = orchestrator.get_latest_versions()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(
+                orchestrator.firmware_downloader,
+                "get_latest_release_tag",
+                return_value=None,
+            ),
+        ):
+            versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
         # Should contain version information for different components
         assert len(versions) >= 0  # May be empty initially
@@ -365,17 +379,30 @@ class TestDownloadOrchestrator:
     def test_update_version_tracking(self, orchestrator):
         """Test updating version tracking."""
         # Method should exist and be callable
-        orchestrator.update_version_tracking()
+        with (
+            patch.object(
+                orchestrator.android_downloader, "get_releases", return_value=[]
+            ),
+            patch.object(
+                orchestrator.firmware_downloader, "get_releases", return_value=[]
+            ),
+            patch.object(orchestrator, "_manage_prerelease_tracking"),
+        ):
+            orchestrator.update_version_tracking()
 
     def test_manage_prerelease_tracking(self, orchestrator):
         """Test managing prerelease tracking."""
         # Method should exist and be callable
-        orchestrator._manage_prerelease_tracking()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with patch.object(orchestrator, "_refresh_commit_history_cache"):
+            orchestrator._manage_prerelease_tracking()
 
     def test_refresh_commit_history_cache(self, orchestrator):
         """Test refreshing commit history cache."""
         # Method should exist and be callable
-        orchestrator._refresh_commit_history_cache()
+        with patch.object(orchestrator.prerelease_manager, "fetch_recent_repo_commits"):
+            orchestrator._refresh_commit_history_cache()
 
     def test_process_android_downloads(self, orchestrator):
         """Test processing Android downloads."""

@@ -861,7 +861,18 @@ class TestFirmwareReleaseDownloader:
 
     def test_download_repo_prerelease_firmware_success(self, downloader):
         """Test repo prerelease firmware download method exists and returns proper types."""
-        results, failed, latest = downloader.download_repo_prerelease_firmware("v1.0.0")
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+            patch.object(
+                downloader.cache_manager, "get_repo_directories", return_value=[]
+            ),
+        ):
+            results, failed, latest = downloader.download_repo_prerelease_firmware(
+                "v1.0.0"
+            )
 
         # Should return proper tuple structure
         assert isinstance(results, list)

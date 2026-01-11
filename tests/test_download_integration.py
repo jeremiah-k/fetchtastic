@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from fetchtastic.download.interfaces import Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
 
@@ -102,7 +103,20 @@ class TestDownloadIntegration:
 
     def test_version_management_integration(self, orchestrator):
         """Test integration with version management."""
-        versions = orchestrator.get_latest_versions()
+        with (
+            patch.object(
+                orchestrator.android_downloader, "get_releases", return_value=[]
+            ),
+            patch.object(
+                orchestrator.firmware_downloader,
+                "get_latest_release_tag",
+                return_value=None,
+            ),
+            patch.object(
+                orchestrator.firmware_downloader, "get_releases", return_value=[]
+            ),
+        ):
+            versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
 
     def test_error_handling_in_pipeline(self, orchestrator):
@@ -159,12 +173,21 @@ class TestDownloadIntegration:
     def test_prerelease_management_integration(self, orchestrator):
         """Test prerelease management integration."""
         # Should not raise exceptions
-        orchestrator._manage_prerelease_tracking()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with patch.object(orchestrator, "_refresh_commit_history_cache"):
+            orchestrator._manage_prerelease_tracking()
 
     def test_cleanup_coordination(self, orchestrator):
         """Test that cleanup is coordinated across components."""
         # Should not raise exceptions
-        orchestrator.cleanup_old_versions()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(orchestrator.firmware_downloader, "cleanup_old_versions"),
+            patch.object(orchestrator, "_cleanup_deleted_prereleases"),
+        ):
+            orchestrator.cleanup_old_versions()
 
     def test_retry_logic_integration(self, orchestrator):
         """Test retry logic integration."""
