@@ -2079,7 +2079,7 @@ def test_setup_firmware_keep_last_beta_interactive(mock_input):
     """Interactive runs should prompt for KEEP_LAST_BETA."""
     config = {"KEEP_LAST_BETA": False}
 
-    mock_input.side_effect = ["2", "y", "n"]
+    mock_input.side_effect = ["2", "y", "y", "device-", "y", "n", "y"]
 
     with patch("sys.stdin.isatty", return_value=True):
         result = setup_config._setup_firmware(
