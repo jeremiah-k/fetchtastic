@@ -497,6 +497,10 @@ class RepositoryDownloader(BaseDownloader):
             cached_releases (Optional[List[Release]]): Unused for repository downloads; retained for signature compatibility.
             keep_last_beta (bool): Unused for repository downloads; retained for signature compatibility.
         """
+        del (
+            cached_releases,
+            keep_last_beta,
+        )  # intentionally unused (signature compatibility)
         # Repository files are stored in a flat structure, so we clean the entire directory
         self.clean_repository_directory()
 

@@ -1129,10 +1129,12 @@ class DownloadOrchestrator:
             )
 
             # Clean up firmware versions
-            firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)
+            firmware_keep = self._get_firmware_keep_limit()
             keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
             self.firmware_downloader.cleanup_old_versions(
-                firmware_keep, keep_last_beta=keep_last_beta
+                firmware_keep,
+                cached_releases=self.firmware_releases,
+                keep_last_beta=keep_last_beta,
             )
             self._cleanup_deleted_prereleases()
 

@@ -585,6 +585,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             keep_last_beta (bool): Unused for APK cleanup; retained for signature compatibility.
         """
         try:
+            del keep_last_beta  # intentionally unused (signature compatibility)
             releases = cached_releases or self.get_releases()
             if not releases:
                 return

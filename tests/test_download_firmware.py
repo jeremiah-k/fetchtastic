@@ -10,7 +10,7 @@ from unittest.mock import ANY, Mock, patch
 import pytest
 
 from fetchtastic import log_utils
-from fetchtastic.constants import FIRMWARE_DIR_NAME
+from fetchtastic.constants import FIRMWARE_DIR_NAME, GITHUB_MAX_PER_PAGE
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
@@ -859,6 +859,8 @@ class TestFirmwareReleaseDownloader:
             # Method should complete without error
             # Note: temp file removal from atomic_write is expected
 
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
     def test_download_repo_prerelease_firmware_success(self, downloader):
         """Test repo prerelease firmware download method exists and returns proper types."""
         with (
@@ -1300,6 +1302,7 @@ class TestFirmwareReleaseDownloader:
         # Only v1.9.0 should be removed
         assert mock_rmtree.call_count == 1
         mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
+        downloader.get_releases.assert_called_once_with(limit=GITHUB_MAX_PER_PAGE)
 
     @pytest.mark.unit
     @pytest.mark.core_downloads
@@ -1347,6 +1350,7 @@ class TestFirmwareReleaseDownloader:
         # v1.9.0 should be removed
         assert mock_rmtree.call_count == 1
         mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
+        downloader.get_releases.assert_called_once_with(limit=1)
 
     def test_download_firmware_exception_uses_firmware_dir(self, downloader, tmp_path):
         """Ensure validation errors fall back to the firmware directory."""
