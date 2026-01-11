@@ -167,7 +167,7 @@ class BaseDownloader(Downloader, ABC):
     ) -> None:
         """
         Remove older downloaded versions so that at most `keep_limit` version directories remain.
-        
+
         Parameters:
             keep_limit (int): Maximum number of version entries to retain; older versions beyond this limit should be removed.
             cached_releases (Optional[List[Release]]): Optional list of releases to consult instead of performing fresh lookups.

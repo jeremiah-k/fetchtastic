@@ -354,6 +354,7 @@ class TestDownloadOrchestrator:
         orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
         orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
         with (
+            patch.object(orchestrator.android_downloader, "cleanup_old_versions"),
             patch.object(orchestrator.firmware_downloader, "cleanup_old_versions"),
             patch.object(orchestrator, "_cleanup_deleted_prereleases"),
         ):
@@ -396,7 +397,15 @@ class TestDownloadOrchestrator:
         # Method should exist and be callable
         orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
         orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
-        with patch.object(orchestrator, "_refresh_commit_history_cache"):
+        with (
+            patch.object(orchestrator, "_refresh_commit_history_cache"),
+            patch.object(
+                orchestrator.android_downloader, "manage_prerelease_tracking_files"
+            ),
+            patch.object(
+                orchestrator.firmware_downloader, "manage_prerelease_tracking_files"
+            ),
+        ):
             orchestrator._manage_prerelease_tracking()
 
     def test_refresh_commit_history_cache(self, orchestrator):
@@ -471,10 +480,10 @@ class TestDownloadOrchestrator:
         def _fake_channel(release):
             """
             Map a release to its release channel identifier.
-            
+
             Parameters:
                 release: An object with a `tag_name` attribute representing the release tag.
-            
+
             Returns:
                 The channel name `"beta"` if `release.tag_name` equals `"v1.9.0"`, otherwise `"alpha"`.
             """

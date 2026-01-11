@@ -896,12 +896,37 @@ class TestFirmwareReleaseDownloader:
 
     @patch("os.path.exists")
     @patch("os.scandir")
+    @patch("shutil.rmtree")
     def test_cleanup_old_versions_adds_beta_tag(
-        self, mock_scandir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Most recent beta is kept when keep_last_beta is enabled."""
         mock_exists.return_value = True
-        mock_scandir.return_value.__enter__.return_value = []
+        firmware_dir = os.path.join("/tmp/test", FIRMWARE_DIR_NAME)
+
+        entry_stable = Mock()
+        entry_stable.name = "v1.0.1"
+        entry_stable.is_symlink.return_value = False
+        entry_stable.is_dir.return_value = True
+        entry_stable.path = os.path.join(firmware_dir, "v1.0.1")
+
+        entry_beta = Mock()
+        entry_beta.name = "v1.0.0-beta"
+        entry_beta.is_symlink.return_value = False
+        entry_beta.is_dir.return_value = True
+        entry_beta.path = os.path.join(firmware_dir, "v1.0.0-beta")
+
+        entry_old = Mock()
+        entry_old.name = "v0.9.0"
+        entry_old.is_symlink.return_value = False
+        entry_old.is_dir.return_value = True
+        entry_old.path = os.path.join(firmware_dir, "v0.9.0")
+
+        mock_scandir.return_value.__enter__.return_value = [
+            entry_stable,
+            entry_beta,
+            entry_old,
+        ]
         mock_scandir.return_value.__exit__.return_value = None
 
         stable = Release(tag_name="v1.0.1", prerelease=False)
@@ -917,6 +942,8 @@ class TestFirmwareReleaseDownloader:
             keep_last_beta=True,
             cached_releases=[stable, beta],
         )
+
+        mock_rmtree.assert_called_once_with(entry_old.path)
 
     @patch("os.path.exists")
     @patch("os.scandir")
@@ -939,15 +966,15 @@ class TestFirmwareReleaseDownloader:
         def _sanitize(tag, _label):
             """
             Validate and normalize a release tag.
-            
+
             Parameters:
-            	tag (str): Release tag to sanitize. The `_label` parameter is unused.
-            
+                tag (str): Release tag to sanitize. The `_label` parameter is unused.
+
             Returns:
-            	str: The sanitized tag (identical to the input on success).
-            
+                str: The sanitized tag (identical to the input on success).
+
             Raises:
-            	ValueError: If the tag is "v1.0.0-beta", indicating an unsafe tag.
+                ValueError: If the tag is "v1.0.0-beta", indicating an unsafe tag.
             """
             if tag == "v1.0.0-beta":
                 raise ValueError("unsafe")

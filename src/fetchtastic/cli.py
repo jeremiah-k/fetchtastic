@@ -83,9 +83,9 @@ def _display_update_reminder(latest_version: str) -> None:
 def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Load the Fetchtastic configuration, attempting automatic migration from the legacy location if needed.
-    
+
     If a configuration file exists at the legacy location and no file exists at the new location, an automatic migration is attempted before loading. After migration (or if migration is not required), the configuration is loaded and the path to the loaded configuration file is returned.
-    
+
     Returns:
         tuple: (config, config_path)
             config (dict[str, Any] | None): The loaded configuration mapping, or `None` if no configuration is available.
@@ -112,8 +112,8 @@ def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]
                 )
             log_utils.logger.info(f"{separator}\n")
 
-    if exists:
-        config = setup_config.load_config()
+    if exists and config_path:
+        config = setup_config.load_config(os.path.dirname(config_path))
     else:
         config = None
         config_path = None
@@ -172,9 +172,10 @@ def _prepare_command_run() -> Tuple[
     if config and config.get("LOG_LEVEL"):
         log_utils.set_log_level(config["LOG_LEVEL"])
 
-    log_level_name = config.get("LOG_LEVEL") or logging.getLevelName(
-        log_utils.logger.getEffectiveLevel()
-    )
+    configured = config.get("LOG_LEVEL")
+    effective = log_utils.logger.getEffectiveLevel()
+    inferred = logging.getLevelName(effective)
+    log_level_name = configured or (inferred if str(inferred).isalpha() else "INFO")
     try:
         log_utils.add_file_logging(
             Path(platformdirs.user_log_dir("fetchtastic")),
@@ -850,12 +851,18 @@ def run_clean():
 def run_repo_clean(config):
     """
     Prompt for confirmation and remove downloaded files from the meshtastic.github.io repository directory specified in config.
-    
+
     Performs an interactive confirmation, deletes repository download files when confirmed, prints a concise summary of removed files and directories, and logs any cleanup errors.
-    
+
     Parameters:
         config (dict[str, Any]): Configuration containing the repository download directory and related metadata used to locate and clean the repository files.
     """
+    if not sys.stdin.isatty() and not os.environ.get("PYTEST_CURRENT_TEST"):
+        log_utils.logger.error(
+            "Repo clean operation requires an interactive terminal; aborting."
+        )
+        return
+
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )

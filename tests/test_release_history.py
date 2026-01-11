@@ -418,7 +418,7 @@ def test_format_release_label_with_keep_unknown_tag(tmp_path):
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     history_path = cache_manager.get_cache_file_path("release_history_label")
     manager = ReleaseHistoryManager(cache_manager, history_path)
-    release = Release(tag_name=None, prerelease=False)
+    release = Release(tag_name="", prerelease=False)
 
     label = manager._format_release_label_with_keep(
         release,
