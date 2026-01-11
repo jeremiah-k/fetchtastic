@@ -276,11 +276,22 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             min_stable_releases = int(
                 self.config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
             )
-            scan_count = (
-                min(max_scan, int(limit))
-                if limit is not None
-                else min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
-            )
+            if limit is not None:
+                try:
+                    parsed_limit = int(limit)
+                except (TypeError, ValueError):
+                    parsed_limit = None
+                if parsed_limit is not None and parsed_limit <= 0:
+                    return []
+                scan_count = (
+                    min(max_scan, parsed_limit)
+                    if parsed_limit is not None
+                    else min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
+                )
+            else:
+                scan_count = min(
+                    max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT)
+                )
 
             while True:
                 params = {"per_page": scan_count}

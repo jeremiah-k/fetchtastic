@@ -168,14 +168,20 @@ def _prepare_command_run() -> Tuple[
         log_utils.logger.error("Configuration file exists but could not be loaded.")
         return None, None
 
-    # Apply configured log level if present and not empty
-    if config and config.get("LOG_LEVEL"):
-        log_utils.set_log_level(config["LOG_LEVEL"])
-
     configured = config.get("LOG_LEVEL")
+    if isinstance(configured, str) and configured.strip():
+        log_utils.set_log_level(configured)
+
     effective = log_utils.logger.getEffectiveLevel()
     inferred = logging.getLevelName(effective)
-    log_level_name = configured or (inferred if str(inferred).isalpha() else "INFO")
+    configured_name = (
+        configured.strip().upper()
+        if isinstance(configured, str) and configured.strip()
+        else None
+    )
+    log_level_name = configured_name or (
+        inferred if str(inferred).isalpha() else "INFO"
+    )
     try:
         log_utils.add_file_logging(
             Path(platformdirs.user_log_dir("fetchtastic")),
@@ -848,7 +854,7 @@ def run_clean():
     )
 
 
-def run_repo_clean(config):
+def run_repo_clean(config: Dict[str, Any]) -> None:
     """
     Prompt for confirmation and remove downloaded files from the meshtastic.github.io repository directory specified in config.
 
@@ -895,7 +901,7 @@ def run_repo_clean(config):
     if cleanup_summary.get("errors"):
         for err in cleanup_summary.get("errors", []):
             print(f"Cleanup error: {err}", file=sys.stderr)
-            log_utils.logger.warning(f"Repository cleanup error: {err}")
+            log_utils.logger.warning("Repository cleanup error: %s", err)
 
 
 if __name__ == "__main__":
