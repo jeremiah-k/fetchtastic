@@ -1056,7 +1056,7 @@ def _setup_firmware(
 
     # Prompt for keeping last beta
     keep_last_beta_current = _coerce_bool(config.get("KEEP_LAST_BETA", False))
-    keep_last_beta_default = "yes" if keep_last_beta_current else "no"
+    keep_last_beta_default = "yes" if (is_first_run or keep_last_beta_current) else "no"
     keep_last_beta_input = _safe_input(
         f"Would you like to always keep the most recent beta firmware release? [y/n] (default: {keep_last_beta_default}): ",
         default=keep_last_beta_default,
