@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     ANDROID_RELEASE_HISTORY_JSON_FILE,
@@ -276,11 +276,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             min_stable_releases = int(
                 self.config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
             )
-            scan_count = (
-                int(limit)
-                if limit
-                else min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
-            )
+            scan_count = min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
+            if limit is not None:
+                if limit <= 0:
+                    return []
+                scan_count = min(max_scan, limit)
 
             while True:
                 params = {"per_page": scan_count}
@@ -355,10 +355,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         stable_count += 1
 
                     # Respect limit if specified
-                    if limit and len(releases) >= limit:
+                    if limit is not None and len(releases) >= limit:
                         break
 
-                if limit:
+                if limit is not None:
                     return releases
 
                 if (
@@ -571,16 +571,21 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         return True
 
     def cleanup_old_versions(
-        self, keep_limit: int, cached_releases: Optional[List[Release]] = None
+        self,
+        keep_limit: int,
+        cached_releases: Optional[List[Release]] = None,
+        keep_last_beta: bool = False,
     ) -> None:
         """
-        Remove older Android versions by delegating to prerelease-aware cleanup.
+        Remove older Android APK version directories while preserving a configured number of recent versions.
 
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain.
-            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
+            cached_releases (Optional[List[Release]]): Optional list of releases to use instead of fetching current releases.
+            keep_last_beta (bool): Ignored for APK cleanup; present only for signature compatibility.
         """
         try:
+            del keep_last_beta  # intentionally unused (signature compatibility)
             releases = cached_releases or self.get_releases()
             if not releases:
                 return
@@ -596,12 +601,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         keep_limit_override: Optional[int] = None,
     ) -> None:
         """
-        Ensure APK version directories are organized (stable versions in the APK root, prereleases under the prerelease subdirectory) and remove any unexpected entries.
-        
-        Scans the APK root and the prerelease subdirectory and removes filesystem entries that are not part of the expected stable or prerelease sets for the provided releases; symlinks are left untouched. If no cached_releases are provided, the APK root is missing, or there are no stable releases, no action is taken. The number of stable versions retained is determined by keep_limit_override when provided, otherwise by the `ANDROID_VERSIONS_TO_KEEP` configuration value.
-        
+        Ensure APK version directories are organized and remove filesystem entries that are not part of the expected stable or prerelease sets.
+
+        Scans the APK root and the prerelease subdirectory, preserving symlinks and any entries whose sanitized tag names match the expected stable or prerelease sets derived from `cached_releases`. No filesystem changes are made if `cached_releases` is None/empty, the APK root is missing, or there are no stable releases. The number of stable versions retained is determined by `keep_limit_override` when provided, otherwise by the `ANDROID_VERSIONS_TO_KEEP` configuration value.
+
         Parameters:
             cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease directories should be retained; if None or empty, the method returns without modifying the filesystem.
+            keep_limit_override (Optional[int]): If provided, overrides the configured number of stable versions to keep (must be >= 0); non-integer or invalid values fall back to the default keep value.
         """
         try:
             if not cached_releases:
@@ -612,15 +618,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 return
 
             prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
-            keep_limit = (
-                int(keep_limit_override)
+            raw_keep_limit = (
+                keep_limit_override
                 if keep_limit_override is not None
-                else int(
-                    self.config.get(
-                        "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
-                    )
+                else self.config.get(
+                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
                 )
             )
+            try:
+                keep_limit = max(0, int(raw_keep_limit))
+            except (TypeError, ValueError):
+                keep_limit = int(DEFAULT_ANDROID_VERSIONS_TO_KEEP)
             stable_releases = sorted(
                 [release for release in cached_releases if not release.prerelease],
                 key=lambda release: self.version_manager.get_release_tuple(
@@ -641,11 +649,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             ) -> set[str]:
                 """
                 Builds the set of filesystem-safe release directory names from a list of Release objects.
-                
+
                 Parameters:
                     releases (List[Release]): Releases whose tag_name values will be sanitized and included.
                     release_label (str): Human-readable label used in warning messages when a tag_name is unsafe.
-                
+
                 Returns:
                     set[str]: A set of sanitized tag strings suitable as directory names; releases with unsafe tags are skipped and logged.
                 """
@@ -667,6 +675,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
             expected_prerelease = _build_expected_set(prerelease_releases, "prerelease")
 
+            if not expected_stable and keep_limit > 0:
+                logger.warning(
+                    "Skipping APK cleanup: no safe release tags found to keep."
+                )
+                return
+
             def _remove_unexpected_entries(
                 base_dir: str,
                 allowed: set[str],
@@ -674,9 +688,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             ) -> None:
                 """
                 Remove filesystem entries in base_dir whose names are not in `allowed`.
-                
+
                 If `entries` is provided, it will be used instead of scanning `base_dir`. Symlinks are skipped. If `base_dir` does not exist the function returns quietly.
-                
+
                 Parameters:
                     base_dir (str): Path of the directory to inspect and prune.
                     allowed (set[str]): Names of entries (files or directories) that must be preserved.

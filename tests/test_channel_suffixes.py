@@ -139,7 +139,7 @@ class TestChannelSuffixes:
     def test_android_prerelease_no_suffix(self, tmp_path):
         """
         Ensure an Android prerelease is placed in the prerelease directory and the version directory uses the release tag without a channel suffix.
-        
+
         Asserts that the target path for a prerelease contains a "prerelease" component and that the version directory name equals the release tag (e.g., "v1.0.1-open").
         """
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))

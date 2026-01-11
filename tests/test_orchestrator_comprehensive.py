@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from fetchtastic.constants import RELEASE_SCAN_COUNT
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -350,11 +351,26 @@ class TestDownloadOrchestrator:
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
         # Method should exist and be callable without raising; exact cleanup depends on filesystem contents
-        orchestrator.cleanup_old_versions()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(orchestrator.android_downloader, "cleanup_old_versions"),
+            patch.object(orchestrator.firmware_downloader, "cleanup_old_versions"),
+            patch.object(orchestrator, "_cleanup_deleted_prereleases"),
+        ):
+            orchestrator.cleanup_old_versions()
 
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions."""
-        versions = orchestrator.get_latest_versions()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(
+                orchestrator.firmware_downloader,
+                "get_latest_release_tag",
+                return_value=None,
+            ),
+        ):
+            versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
         # Should contain version information for different components
         assert len(versions) >= 0  # May be empty initially
@@ -365,17 +381,38 @@ class TestDownloadOrchestrator:
     def test_update_version_tracking(self, orchestrator):
         """Test updating version tracking."""
         # Method should exist and be callable
-        orchestrator.update_version_tracking()
+        with (
+            patch.object(
+                orchestrator.android_downloader, "get_releases", return_value=[]
+            ),
+            patch.object(
+                orchestrator.firmware_downloader, "get_releases", return_value=[]
+            ),
+            patch.object(orchestrator, "_manage_prerelease_tracking"),
+        ):
+            orchestrator.update_version_tracking()
 
     def test_manage_prerelease_tracking(self, orchestrator):
         """Test managing prerelease tracking."""
         # Method should exist and be callable
-        orchestrator._manage_prerelease_tracking()
+        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(orchestrator, "_refresh_commit_history_cache"),
+            patch.object(
+                orchestrator.android_downloader, "manage_prerelease_tracking_files"
+            ),
+            patch.object(
+                orchestrator.firmware_downloader, "manage_prerelease_tracking_files"
+            ),
+        ):
+            orchestrator._manage_prerelease_tracking()
 
     def test_refresh_commit_history_cache(self, orchestrator):
         """Test refreshing commit history cache."""
         # Method should exist and be callable
-        orchestrator._refresh_commit_history_cache()
+        with patch.object(orchestrator.prerelease_manager, "fetch_recent_repo_commits"):
+            orchestrator._refresh_commit_history_cache()
 
     def test_process_android_downloads(self, orchestrator):
         """Test processing Android downloads."""
@@ -392,6 +429,127 @@ class TestDownloadOrchestrator:
             orchestrator.firmware_downloader, "get_releases", return_value=[]
         ):
             orchestrator._process_firmware_downloads()
+
+    def test_process_firmware_downloads_uses_beta_fetch_limit(self, orchestrator):
+        """Firmware releases fetch should use beta-aware fetch limit."""
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.firmware_releases = None
+
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        with (
+            patch.object(
+                orchestrator.firmware_downloader, "get_releases", return_value=releases
+            ) as mock_get_releases,
+            patch.object(
+                orchestrator.firmware_downloader, "update_release_history"
+            ) as mock_update_history,
+            patch.object(
+                orchestrator, "_select_latest_release_by_version", return_value=None
+            ),
+            patch.object(
+                orchestrator.firmware_downloader,
+                "format_release_log_suffix",
+                return_value="",
+            ),
+            patch.object(
+                orchestrator.firmware_downloader,
+                "is_release_complete",
+                return_value=True,
+            ),
+            patch.object(orchestrator.firmware_downloader, "ensure_release_notes"),
+        ):
+            mock_update_history.return_value = {"entries": {}}
+            orchestrator._process_firmware_downloads()
+
+        mock_get_releases.assert_called_once()
+        assert mock_get_releases.call_args.kwargs["limit"] == RELEASE_SCAN_COUNT
+
+    def test_process_firmware_downloads_includes_latest_beta(self, orchestrator):
+        """Latest beta should be included in the processed release list."""
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.firmware_releases = None
+
+        stable = Release(tag_name="v1.0.1", prerelease=False)
+        beta = Release(tag_name="v1.0.0-beta", prerelease=False)
+        releases = [stable, beta]
+
+        orchestrator.firmware_downloader.release_history_manager.get_release_channel = (
+            Mock(side_effect=lambda release: "beta" if release == beta else "")
+        )
+
+        with (
+            patch.object(
+                orchestrator.firmware_downloader, "get_releases", return_value=releases
+            ),
+            patch.object(
+                orchestrator.firmware_downloader, "update_release_history"
+            ) as mock_update_history,
+            patch.object(
+                orchestrator, "_select_latest_release_by_version", return_value=None
+            ),
+            patch.object(
+                orchestrator.firmware_downloader,
+                "format_release_log_suffix",
+                return_value="",
+            ) as mock_format_suffix,
+            patch.object(
+                orchestrator.firmware_downloader,
+                "is_release_complete",
+                return_value=True,
+            ),
+            patch.object(orchestrator.firmware_downloader, "ensure_release_notes"),
+        ):
+            mock_update_history.return_value = {"entries": {}}
+            orchestrator._process_firmware_downloads()
+
+        assert mock_format_suffix.call_count == 2
+
+    def test_log_firmware_release_history_summary_with_beta(self, orchestrator):
+        """Latest beta outside keep window should expand summary keep limit."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.firmware_releases = [
+            Release(tag_name="v2.0.0", prerelease=False),
+            Release(tag_name="v1.9.0", prerelease=False),
+        ]
+        orchestrator.firmware_release_history = {"entries": {}}
+        manager = orchestrator.firmware_downloader.release_history_manager
+
+        def _fake_channel(release):
+            """
+            Map a release to its release channel identifier.
+
+            Parameters:
+                release: An object with a `tag_name` attribute representing the release tag.
+
+            Returns:
+                The channel name `"beta"` if `release.tag_name` equals `"v1.9.0"`, otherwise `"alpha"`.
+            """
+            return "beta" if release.tag_name == "v1.9.0" else "alpha"
+
+        with (
+            patch.object(manager, "get_release_channel", side_effect=_fake_channel),
+            patch.object(
+                manager, "log_release_channel_summary"
+            ) as mock_channel_summary,
+            patch.object(manager, "log_release_status_summary"),
+            patch.object(manager, "log_duplicate_base_versions"),
+        ):
+            orchestrator.log_firmware_release_history_summary()
+
+        assert mock_channel_summary.called
+        assert mock_channel_summary.call_args.kwargs["keep_limit"] == 2
+
+    def test_get_firmware_keep_limit_invalid_config(self, orchestrator):
+        """Invalid keep limit config should fall back to default."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = "nope"
+        keep_limit = orchestrator._get_firmware_keep_limit()
+        assert isinstance(keep_limit, int)
+        assert keep_limit >= 0
 
     def test_download_android_release(self, orchestrator):
         """

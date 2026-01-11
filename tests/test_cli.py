@@ -689,100 +689,102 @@ def test_run_clean(
     _mock_input,
 ):
     """Test the run_clean function."""
-    # Simulate existing files and directories
-    mock_os_path_exists.return_value = True
+    with patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"}):
+        # Simulate existing files and directories
+        mock_os_path_exists.return_value = True
+        # Create mock directory entries for os.scandir
+        mock_some_dir = Mock()
+        mock_some_dir.name = "some_dir"
+        mock_some_dir.is_symlink.return_value = False
+        mock_some_dir.is_file.return_value = False
+        mock_some_dir.is_dir.return_value = True
+        mock_some_dir.path = "/tmp/test_base_dir/some_dir"
 
-    # Create mock directory entries for os.scandir
-    mock_some_dir = Mock()
-    mock_some_dir.name = "some_dir"
-    mock_some_dir.is_symlink.return_value = False
-    mock_some_dir.is_file.return_value = False
-    mock_some_dir.is_dir.return_value = True
-    mock_some_dir.path = "/tmp/test_base_dir/some_dir"
+        mock_repo_dls = Mock()
+        mock_repo_dls.name = "repo-dls"
+        mock_repo_dls.is_symlink.return_value = False
+        mock_repo_dls.is_file.return_value = False
+        mock_repo_dls.is_dir.return_value = True
+        mock_repo_dls.path = "/tmp/test_base_dir/repo-dls"
 
-    mock_repo_dls = Mock()
-    mock_repo_dls.name = "repo-dls"
-    mock_repo_dls.is_symlink.return_value = False
-    mock_repo_dls.is_file.return_value = False
-    mock_repo_dls.is_dir.return_value = True
-    mock_repo_dls.path = "/tmp/test_base_dir/repo-dls"
+        mock_firmware = Mock()
+        mock_firmware.name = "firmware-2.7.4"
+        mock_firmware.is_symlink.return_value = False
+        mock_firmware.is_file.return_value = False
+        mock_firmware.is_dir.return_value = True
+        mock_firmware.path = "/tmp/test_base_dir/firmware-2.7.4"
 
-    mock_firmware = Mock()
-    mock_firmware.name = "firmware-2.7.4"
-    mock_firmware.is_symlink.return_value = False
-    mock_firmware.is_file.return_value = False
-    mock_firmware.is_dir.return_value = True
-    mock_firmware.path = "/tmp/test_base_dir/firmware-2.7.4"
+        mock_yaml_lnk = Mock()
+        mock_yaml_lnk.name = "fetchtastic_yaml.lnk"
+        mock_yaml_lnk.is_symlink.return_value = True
+        mock_yaml_lnk.is_file.return_value = False
+        mock_yaml_lnk.is_dir.return_value = False
+        mock_yaml_lnk.path = "/tmp/test_base_dir/fetchtastic_yaml.lnk"
 
-    mock_yaml_lnk = Mock()
-    mock_yaml_lnk.name = "fetchtastic_yaml.lnk"
-    mock_yaml_lnk.is_symlink.return_value = True
-    mock_yaml_lnk.is_file.return_value = False
-    mock_yaml_lnk.is_dir.return_value = False
-    mock_yaml_lnk.path = "/tmp/test_base_dir/fetchtastic_yaml.lnk"
+        mock_unmanaged = Mock()
+        mock_unmanaged.name = "unmanaged.txt"
+        mock_unmanaged.is_symlink.return_value = False
+        mock_unmanaged.is_file.return_value = True
+        mock_unmanaged.is_dir.return_value = False
+        mock_unmanaged.path = "/tmp/test_base_dir/unmanaged.txt"
 
-    mock_unmanaged = Mock()
-    mock_unmanaged.name = "unmanaged.txt"
-    mock_unmanaged.is_symlink.return_value = False
-    mock_unmanaged.is_file.return_value = True
-    mock_unmanaged.is_dir.return_value = False
-    mock_unmanaged.path = "/tmp/test_base_dir/unmanaged.txt"
-
-    def scandir_side_effect(path):
-        if path == "/tmp/config/fetchtastic":
+        def scandir_side_effect(path):
+            if path == "/tmp/config/fetchtastic":
+                return Mock(
+                    __enter__=Mock(return_value=[]), __exit__=Mock(return_value=None)
+                )
+            if path == "/tmp/test_base_dir":
+                return Mock(
+                    __enter__=Mock(
+                        return_value=[
+                            mock_some_dir,
+                            mock_repo_dls,
+                            mock_firmware,
+                            mock_yaml_lnk,
+                            mock_unmanaged,
+                        ]
+                    ),
+                    __exit__=Mock(return_value=None),
+                )
             return Mock(
                 __enter__=Mock(return_value=[]), __exit__=Mock(return_value=None)
             )
-        if path == "/tmp/test_base_dir":
-            return Mock(
-                __enter__=Mock(
-                    return_value=[
-                        mock_some_dir,
-                        mock_repo_dls,
-                        mock_firmware,
-                        mock_yaml_lnk,
-                        mock_unmanaged,
-                    ]
-                ),
-                __exit__=Mock(return_value=None),
-            )
-        return Mock(__enter__=Mock(return_value=[]), __exit__=Mock(return_value=None))
 
-    mock_scandir.side_effect = scandir_side_effect
+        mock_scandir.side_effect = scandir_side_effect
 
-    def isdir_side_effect(path):
-        """
-        Indicates whether a filesystem path should be treated as a directory for test side effects.
+        def isdir_side_effect(path):
+            """
+            Indicates whether a filesystem path should be treated as a directory for test side effects.
 
-        Parameters:
-            path (str): The filesystem path to evaluate.
+            Parameters:
+                path (str): The filesystem path to evaluate.
 
-        Returns:
-            bool: `True` if the path's basename is one of "some_dir", "repo-dls", or "firmware-2.7.4", `False` otherwise.
-        """
-        return os.path.basename(path) in ["some_dir", "repo-dls", "firmware-2.7.4"]
+            Returns:
+                bool: `True` if the path's basename is one of "some_dir", "repo-dls", or "firmware-2.7.4", `False` otherwise.
+            """
+            return os.path.basename(path) in ["some_dir", "repo-dls", "firmware-2.7.4"]
 
-    def isfile_side_effect(path):
-        """
-        Determine whether a filesystem path should be treated as an existing file for test side effects based on its basename.
+        def isfile_side_effect(path):
+            """
+            Determine whether a filesystem path should be treated as an existing file for test side effects based on its basename.
 
-        Parameters:
-            path (str): Filesystem path to check.
+            Parameters:
+                path (str): Filesystem path to check.
 
-        Returns:
-            True if the path's basename is "fetchtastic_yaml.lnk" or "unmanaged.txt", False otherwise.
-        """
-        return os.path.basename(path) in ["fetchtastic_yaml.lnk", "unmanaged.txt"]
+            Returns:
+                True if the path's basename is "fetchtastic_yaml.lnk" or "unmanaged.txt", False otherwise.
+            """
+            return os.path.basename(path) in ["fetchtastic_yaml.lnk", "unmanaged.txt"]
 
-    mock_isdir.side_effect = isdir_side_effect
-    mock_isfile.side_effect = isfile_side_effect
-    mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
-    mock_subprocess_run.return_value.returncode = 0
-    with patch("subprocess.Popen") as mock_popen:
-        mock_proc = mock_popen.return_value
-        mock_proc.communicate.return_value = (None, None)
-        cli.run_clean()
-        assert mock_popen.call_count == 2
+        mock_isdir.side_effect = isdir_side_effect
+        mock_isfile.side_effect = isfile_side_effect
+        mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
+        mock_subprocess_run.return_value.returncode = 0
+        with patch("subprocess.Popen") as mock_popen:
+            mock_proc = mock_popen.return_value
+            mock_proc.communicate.return_value = (None, None)
+            cli.run_clean()
+            assert mock_popen.call_count == 2
 
     # Check that config files are removed
     mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108
@@ -1411,7 +1413,8 @@ def test_run_clean_cancelled(mocker):
     mocker.patch("builtins.input", return_value="n")
     mock_print = mocker.patch("builtins.print")
 
-    cli.run_clean()
+    with patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"}):
+        cli.run_clean()
 
     mock_print.assert_any_call("Clean operation cancelled.")
 
@@ -1438,7 +1441,8 @@ def test_run_clean_user_says_no_explicitly(mocker):
     mocker.patch("builtins.input", return_value="no")
     mock_print = mocker.patch("builtins.print")
 
-    cli.run_clean()
+    with patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"}):
+        cli.run_clean()
 
     mock_print.assert_any_call("Clean operation cancelled.")
 

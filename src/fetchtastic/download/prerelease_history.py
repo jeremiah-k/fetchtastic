@@ -12,7 +12,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_PRERELEASE_ACTIVE,

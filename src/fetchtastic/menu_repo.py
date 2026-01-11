@@ -2,7 +2,7 @@ import curses
 from datetime import datetime
 from typing import Any, Protocol
 
-import requests
+import requests  # type: ignore[import-untyped]
 from pick import (
     KEYS_DOWN,
     KEYS_ENTER,
@@ -615,7 +615,7 @@ def run_menu(config: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """
     try:
         current_path = ""
-        selected_files = []
+        selected_files: list[dict[str, Any]] = []
         github_token: str | None = None
         allow_env_token = True
         cache_manager: CacheManager | None = None
@@ -665,14 +665,15 @@ def run_menu(config: dict[str, Any] | None = None) -> dict[str, Any] | None:
                 # Show file selection for the current directory
                 files_in_dir = [item for item in items if item["type"] == "file"]
                 if files_in_dir:
-                    selected_files = select_files(files_in_dir)
-                    if isinstance(selected_files, dict):
-                        if selected_files.get("type") == "quit":
+                    selection = select_files(files_in_dir)
+                    if isinstance(selection, dict):
+                        if selection.get("type") == "quit":
                             print("Exiting repository browser.")
                             return None
-                        if selected_files.get("type") == "back":
+                        if selection.get("type") == "back":
                             continue
-                    if selected_files:
+                    elif selection:
+                        selected_files = selection
                         break
                     continue
                 print("No files found in this directory.")

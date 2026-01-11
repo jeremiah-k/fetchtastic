@@ -137,6 +137,7 @@ def test_select_files_user_quits(mocker):
 @pytest.mark.unit
 def test_run_clean_permission_errors(mocker, capsys):
     """Test run_clean with file/directory permission errors."""
+    mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})
 
     # Mock file operations to raise permission errors
     mocker.patch(
@@ -144,6 +145,16 @@ def test_run_clean_permission_errors(mocker, capsys):
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/path/to/config")
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old_config")
+    mocker.patch(
+        "fetchtastic.setup_config.load_config",
+        return_value={
+            "DOWNLOAD_DIR": "/tmp/test_base_dir",
+            "BASE_DIR": "/tmp/test_base_dir",
+        },
+    )
+    mocker.patch("fetchtastic.setup_config.BASE_DIR", "/tmp/test_base_dir")
+    mocker.patch("fetchtastic.setup_config.remove_cron_job")
+    mocker.patch("fetchtastic.setup_config.remove_reboot_cron_job")
 
     def mock_remove_with_error(path):
         """Mock remove function that raises PermissionError for paths containing 'config'."""
@@ -154,6 +165,13 @@ def test_run_clean_permission_errors(mocker, capsys):
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.path.isdir", return_value=False)  # No batch dir
     mocker.patch("os.listdir", return_value=[])
+    mocker.patch(
+        "os.scandir",
+        return_value=Mock(
+            __enter__=Mock(return_value=[]), __exit__=Mock(return_value=None)
+        ),
+    )
+    mocker.patch("shutil.rmtree")
     mocker.patch("builtins.input", return_value="y")
 
     cli.run_clean()
@@ -170,6 +188,7 @@ def test_run_clean_managed_file_filtering(mocker):
 
     Ensures the cleanup routine always removes the active and old config files, removes files and directories identified as managed (e.g., firmware archives and managed folders), and does not remove user personal files or directories.
     """
+    mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})
 
     # Mock directory contents with mix of managed and unmanaged files
     mock_files = [
@@ -416,7 +435,7 @@ def test_run_repo_clean_logs_summary(mocker):
     mock_logger.info.assert_any_call(
         "Repository cleanup summary: %d file(s), %d dir(s) removed", 2, 1
     )
-    mock_logger.warning.assert_any_call("Repository cleanup error: disk full")
+    mock_logger.warning.assert_any_call("Repository cleanup error: %s", "disk full")
 
 
 @pytest.mark.user_interface
@@ -436,6 +455,7 @@ def test_run_repo_clean_confirmation_cancelled(mocker, capsys):
 @pytest.mark.unit
 def test_windows_specific_cleanup_logic(mocker):
     """Test Windows-specific cleanup with winshell available."""
+    mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})
 
     # Mock Windows environment
     mocker.patch("platform.system", return_value="Windows")
@@ -509,6 +529,7 @@ def test_windows_specific_cleanup_logic(mocker):
 @pytest.mark.unit
 def test_cron_job_cleanup_logic(mocker):
     """Test cron job removal on non-Windows platforms."""
+    mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})
 
     # Mock Linux environment
     mocker.patch("platform.system", return_value="Linux")

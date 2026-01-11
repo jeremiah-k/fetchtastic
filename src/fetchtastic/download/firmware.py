@@ -9,9 +9,10 @@ import json
 import os
 import shutil
 import zipfile
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
@@ -31,6 +32,7 @@ from fetchtastic.constants import (
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
+    RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
     REPO_DOWNLOADS_DIR,
     STORAGE_CHANNEL_SUFFIXES,
@@ -50,7 +52,7 @@ from .cache import CacheManager
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .release_history import ReleaseHistoryManager
+from .release_history import ReleaseHistoryManager, get_release_sorting_key
 from .version import VersionManager
 
 
@@ -408,13 +410,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> List[str]:
         """
         Builds an ordered list of alternative storage-tag candidates for a release by combining channel suffixes and revoked variants.
-        
+
         Includes channel-suffixed and unsuffixed variants (and a revoked variant) to aid discovery of existing directories; excludes the supplied target_tag from the result.
-        
+
         Parameters:
             release (Release): Release to derive the base tag and channel from.
             target_tag (str): Storage tag to omit from the returned candidates.
-        
+
         Returns:
             List[str]: Ordered, distinct storage-tag strings (each a filesystem-safe tag) excluding `target_tag`.
         """
@@ -700,18 +702,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         exclude_patterns: Optional[List[str]] = None,
     ) -> DownloadResult:
         """
-        Extract specified files from a firmware ZIP release into the release's version directory.
+        Extract specified files from a firmware ZIP into the release's version directory.
 
-        Validates extraction patterns, skips extraction when files already match the patterns, performs extraction when needed, and returns a DownloadResult describing the outcome.
+        Validates the provided include/exclude patterns, skips extraction when matching files are already present, performs extraction when needed, and returns a DownloadResult summarizing success, skipped status, extracted file list, or error details.
 
         Parameters:
-            release (Release): Release that owns the firmware asset.
-            asset (Asset): The firmware ZIP asset to extract.
-            patterns (List[str]): Glob patterns of files to include from the archive.
-            exclude_patterns (Optional[List[str]]): Glob patterns of files to exclude from extraction.
+                release (Release): Release that owns the firmware asset.
+                asset (Asset): The firmware ZIP asset to extract.
+                patterns (List[str]): Glob patterns of files to include from the archive.
+                exclude_patterns (Optional[List[str]]): Glob patterns of files to exclude from extraction.
 
         Returns:
-            DownloadResult: On success, contains extracted_files and file_path; on failure, contains error_message and error_type describing why extraction did not occur or failed.
+                DownloadResult: Contains `extracted_files` and `file_path` on success (or empty list with `was_skipped=True` when no files matched); on failure contains `error_message` and `error_type`.
         """
         zip_path: str = ""
         try:
@@ -800,19 +802,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 error_type=ERROR_TYPE_EXTRACTION,
             )
 
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self,
+        keep_limit: int,
+        cached_releases: Optional[List[Release]] = None,
+        keep_last_beta: bool = False,
+    ) -> None:
         """
         Remove firmware version directories not present in the latest `keep_limit` releases
         (full releases only).
 
         This mirrors legacy behavior by keeping only the newest release tags (alpha/beta)
-        returned by the GitHub API (bounded by `keep_limit`). Any local version
+        returned by GitHub API (bounded by `keep_limit`). Any local version
         directories not in that set are removed. Special directories "prerelease" and
         "repo-dls" are always preserved.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
                 older directories will be deleted. Pass 0 to delete all version directories.
+            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
+            keep_last_beta (bool): If True, always keep the most recent beta release
+                in addition to keep_limit releases. Default is False.
         """
         try:
             if keep_limit < 0:
@@ -825,13 +835,31 @@ class FirmwareReleaseDownloader(BaseDownloader):
             firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
+            logger.debug(
+                "Firmware cleanup start: keep_limit=%s, keep_last_beta=%s, firmware_dir=%s",
+                keep_limit,
+                keep_last_beta,
+                firmware_dir,
+            )
 
-            latest_releases = self.get_releases(limit=keep_limit)
-            if not latest_releases and keep_limit > 0:
+            # Fetch releases once, using a small scan window to locate the latest beta
+            # This avoids a redundant second API call when keep_last_beta is enabled
+            fetch_limit = (
+                max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
+            )
+            all_releases = (
+                cached_releases
+                if cached_releases is not None
+                else self.get_releases(limit=fetch_limit)
+            )
+            if not all_releases and (keep_limit > 0 or keep_last_beta):
                 logger.warning(
                     "Skipping firmware cleanup: no releases available to determine keep set."
                 )
                 return
+
+            # Use the first keep_limit releases for the normal keep set
+            latest_releases = all_releases[:keep_limit]
 
             release_tags_to_keep = set()
             keep_base_tags = set()
@@ -864,6 +892,40 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     )
                 )
 
+            # If keep_last_beta is enabled, ensure most recent beta is kept
+            if keep_last_beta:
+                beta_releases = [
+                    r
+                    for r in all_releases
+                    if r.tag_name
+                    and self.release_history_manager.get_release_channel(r) == "beta"
+                ]
+                if beta_releases:
+                    most_recent_beta = max(
+                        beta_releases,
+                        key=get_release_sorting_key,
+                    )
+                    try:
+                        safe_beta_tag = self._sanitize_required(
+                            most_recent_beta.tag_name, "beta release tag"
+                        )
+                        keep_base_tags.add(safe_beta_tag)
+                        release_tags_to_keep.add(safe_beta_tag)
+                        release_tags_to_keep.add(
+                            build_storage_tag_with_channel(
+                                sanitized_release_tag=safe_beta_tag,
+                                release=most_recent_beta,
+                                release_history_manager=self.release_history_manager,
+                                config=self.config,
+                                is_revoked=self.is_release_revoked(most_recent_beta),
+                            )
+                        )
+                    except ValueError:
+                        logger.warning(
+                            "Skipping unsafe beta release tag during cleanup: %s",
+                            most_recent_beta.tag_name,
+                        )
+
             if not release_tags_to_keep and keep_limit > 0:
                 logger.warning(
                     "Skipping firmware cleanup: no safe release tags found to keep."
@@ -886,20 +948,45 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         REPO_DOWNLOADS_DIR,
                     }
                 }
+
+                suffixes = ["-revoked"] + [
+                    f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
+                ]
+
+                def _strip_suffixes(name: str) -> str:
+                    """
+                    Removes channel and revoked suffixes from a directory name.
+
+                    Parameters:
+                        name (str): Directory or tag name that may include one or more channel suffixes (e.g., "-beta", "-rc") or "-revoked".
+
+                    Returns:
+                        str: The name with all recognized suffixes stripped, iteratively removed until none remain.
+                    """
+                    base_name = name
+                    stripped = True
+                    while stripped:
+                        stripped = False
+                        for suffix in suffixes:
+                            if base_name.endswith(suffix):
+                                base_name = base_name[: -len(suffix)]
+                                stripped = True
+                                break
+                    return base_name
+
+                existing_base_names = {
+                    _strip_suffixes(name) for name in existing_versions
+                }
+
                 if (
                     keep_limit > 0
                     and existing_versions
-                    and release_tags_to_keep
-                    and release_tags_to_keep.isdisjoint(existing_versions)
+                    and keep_base_tags.isdisjoint(existing_base_names)
                 ):
                     logger.warning(
                         "Skipping firmware cleanup: keep set does not match existing directories."
                     )
                     return
-
-                suffixes = ["-revoked"] + [
-                    f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
-                ]
                 for entry in entries:
                     if entry.name in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
@@ -913,20 +1000,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         )
                         continue
                     if entry.is_dir():
-                        base_name = entry.name
-                        stripped = True
-                        while stripped:
-                            stripped = False
-                            for suffix in suffixes:
-                                if base_name.endswith(suffix):
-                                    base_name = base_name[: -len(suffix)]
-                                    stripped = True
-                                    break
+                        base_name = _strip_suffixes(entry.name)
                         if (
                             entry.name not in release_tags_to_keep
                             and base_name not in keep_base_tags
                         ):
                             try:
+                                logger.debug(
+                                    "Removing firmware directory: %s",
+                                    entry.path,
+                                )
                                 shutil.rmtree(entry.path)
                                 logger.info(
                                     "Removed old firmware version: %s", entry.name
@@ -981,12 +1064,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def _get_current_iso_timestamp(self) -> str:
         """
-        Return the current UTC timestamp in ISO 8601 format.
+        Get the current UTC timestamp as an ISO 8601 string including the UTC timezone offset.
 
         Returns:
-            iso_timestamp (str): ISO 8601 formatted UTC timestamp including the UTC timezone offset.
+            str: ISO 8601 formatted UTC timestamp including the UTC timezone offset.
         """
-        from datetime import datetime, timezone
 
         return datetime.now(timezone.utc).isoformat()
 
@@ -997,7 +1079,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             iso_timestamp (str): ISO 8601-formatted UTC timestamp representing the current time plus 24 hours.
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta
 
         return (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 

@@ -12,7 +12,7 @@ from abc import ABC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
-from requests.exceptions import RequestException
+from requests.exceptions import RequestException  # type: ignore[import-untyped]
 
 from fetchtastic import utils
 from fetchtastic.log_utils import logger
@@ -159,14 +159,19 @@ class BaseDownloader(Downloader, ABC):
         )
         return [Path(p) for p in extracted]  # Convert back to Path objects
 
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self,
+        keep_limit: int,
+        cached_releases: Optional[List["Release"]] = None,
+        keep_last_beta: bool = False,
+    ) -> None:
         """
-        Remove older downloaded versions to enforce a retention limit.
-
-        Concrete downloaders must override this method to remove older version artifacts so that at most `keep_limit` versions remain.
+        Remove older downloaded versions so that at most `keep_limit` version directories remain.
 
         Parameters:
             keep_limit (int): Maximum number of version entries to retain; older versions beyond this limit should be removed.
+            cached_releases (Optional[List[Release]]): Optional list of releases to consult instead of performing fresh lookups.
+            keep_last_beta (bool): If true and supported by the downloader, preserve the most recent beta release in addition to the retained releases.
         """
         # This will be implemented by specific downloaders
         pass
