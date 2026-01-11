@@ -512,6 +512,36 @@ def test_setup_downloads_partial_run_firmware_keep_existing_skips_menu(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_partial_run_firmware_channel_suffix_config(mocker):
+    """Partial firmware run should persist channel suffix selection."""
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["existing-firmware"],
+        "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Download firmware releases
+            "n",  # Don't rerun menu
+            "n",  # Disable firmware prereleases
+            "n",  # Disable channel suffixes
+        ],
+    )
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "firmware"
+    )
+
+    assert save_apks is False
+    assert save_firmware is True
+    assert result_config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_configure_exclude_patterns_use_defaults(mocker):
     """Test configure_exclude_patterns accepting recommended defaults."""
     config = {}
