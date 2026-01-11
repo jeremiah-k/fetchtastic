@@ -902,7 +902,7 @@ class TestFirmwareReleaseDownloader:
     ):
         """Most recent beta is kept when keep_last_beta is enabled."""
         mock_exists.return_value = True
-        firmware_dir = os.path.join("/tmp/test", FIRMWARE_DIR_NAME)
+        firmware_dir = os.path.join(downloader.download_dir, FIRMWARE_DIR_NAME)
 
         entry_stable = Mock()
         entry_stable.name = "v1.0.1"

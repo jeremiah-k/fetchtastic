@@ -169,16 +169,16 @@ def _prepare_command_run() -> Tuple[
         return None, None
 
     configured = config.get("LOG_LEVEL")
-    if isinstance(configured, str) and configured.strip():
-        log_utils.set_log_level(configured)
-
-    effective = log_utils.logger.getEffectiveLevel()
-    inferred = logging.getLevelName(effective)
     configured_name = (
         configured.strip().upper()
         if isinstance(configured, str) and configured.strip()
         else None
     )
+    if configured_name:
+        log_utils.set_log_level(configured_name)
+
+    effective = log_utils.logger.getEffectiveLevel()
+    inferred = logging.getLevelName(effective)
     log_level_name = configured_name or (
         inferred if str(inferred).isalpha() else "INFO"
     )
