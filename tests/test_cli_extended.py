@@ -416,7 +416,7 @@ def test_run_repo_clean_logs_summary(mocker):
     mock_logger.info.assert_any_call(
         "Repository cleanup summary: %d file(s), %d dir(s) removed", 2, 1
     )
-    mock_logger.warning.assert_any_call("Repository cleanup error: disk full")
+    mock_logger.warning.assert_any_call("Repository cleanup error: %s", "disk full")
 
 
 @pytest.mark.user_interface
