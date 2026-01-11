@@ -878,8 +878,8 @@ def _setup_downloads(
         config["CHECK_APK_PRERELEASES"] = _coerce_bool(check_apk_prereleases_input)
 
     # --- Channel Suffix Configuration ---
-    if save_apks or save_firmware:
-        if not is_partial_run or wants("android") or wants("firmware"):
+    if save_firmware:
+        if not is_partial_run or wants("firmware"):
             add_channel_suffixes_current = _coerce_bool(
                 config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True)
             )
