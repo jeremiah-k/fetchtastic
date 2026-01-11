@@ -29,10 +29,10 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
-    GITHUB_MAX_PER_PAGE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
+    RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
     REPO_DOWNLOADS_DIR,
     STORAGE_CHANNEL_SUFFIXES,
@@ -842,10 +842,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 firmware_dir,
             )
 
-            # Fetch releases once, using max(keep_limit, GITHUB_MAX_PER_PAGE) to satisfy both needs
+            # Fetch releases once, using a small scan window to locate the latest beta
             # This avoids a redundant second API call when keep_last_beta is enabled
             fetch_limit = (
-                max(keep_limit, GITHUB_MAX_PER_PAGE) if keep_last_beta else keep_limit
+                max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
             )
             all_releases = (
                 cached_releases

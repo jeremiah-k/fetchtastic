@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import GITHUB_MAX_PER_PAGE
+from fetchtastic.constants import RELEASE_SCAN_COUNT
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -464,7 +464,49 @@ class TestDownloadOrchestrator:
             orchestrator._process_firmware_downloads()
 
         mock_get_releases.assert_called_once()
-        assert mock_get_releases.call_args.kwargs["limit"] == GITHUB_MAX_PER_PAGE
+        assert mock_get_releases.call_args.kwargs["limit"] == RELEASE_SCAN_COUNT
+
+    def test_process_firmware_downloads_includes_latest_beta(self, orchestrator):
+        """Latest beta should be included in the processed release list."""
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.firmware_releases = None
+
+        stable = Release(tag_name="v1.0.1", prerelease=False)
+        beta = Release(tag_name="v1.0.0-beta", prerelease=False)
+        releases = [stable, beta]
+
+        orchestrator.firmware_downloader.release_history_manager.get_release_channel = (
+            Mock(side_effect=lambda release: "beta" if release == beta else "")
+        )
+
+        with (
+            patch.object(
+                orchestrator.firmware_downloader, "get_releases", return_value=releases
+            ),
+            patch.object(
+                orchestrator.firmware_downloader, "update_release_history"
+            ) as mock_update_history,
+            patch.object(
+                orchestrator, "_select_latest_release_by_version", return_value=None
+            ),
+            patch.object(
+                orchestrator.firmware_downloader,
+                "format_release_log_suffix",
+                return_value="",
+            ) as mock_format_suffix,
+            patch.object(
+                orchestrator.firmware_downloader,
+                "is_release_complete",
+                return_value=True,
+            ),
+            patch.object(orchestrator.firmware_downloader, "ensure_release_notes"),
+        ):
+            mock_update_history.return_value = {"entries": {}}
+            orchestrator._process_firmware_downloads()
+
+        assert mock_format_suffix.call_count == 2
 
     def test_log_firmware_release_history_summary_with_beta(self, orchestrator):
         """Latest beta outside keep window should expand summary keep limit."""

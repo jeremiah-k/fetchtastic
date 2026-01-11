@@ -33,8 +33,8 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
-    GITHUB_MAX_PER_PAGE,
     MAX_RETRY_DELAY,
+    RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
@@ -280,7 +280,7 @@ class DownloadOrchestrator:
                     "KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA
                 )
                 fetch_limit = (
-                    max(keep_limit, GITHUB_MAX_PER_PAGE)
+                    max(keep_limit, RELEASE_SCAN_COUNT)
                     if keep_last_beta
                     else keep_limit
                 )
@@ -300,6 +300,20 @@ class DownloadOrchestrator:
             latest_release = self._select_latest_release_by_version(firmware_releases)
             keep_count = self._get_firmware_keep_limit()
             releases_to_process = firmware_releases[:keep_count]
+            if keep_last_beta:
+                manager = self.firmware_downloader.release_history_manager
+                beta_releases = [
+                    r
+                    for r in firmware_releases
+                    if manager.get_release_channel(r) == "beta"
+                ]
+                if beta_releases:
+                    most_recent_beta = max(
+                        beta_releases,
+                        key=get_release_sorting_key,
+                    )
+                    if most_recent_beta not in releases_to_process:
+                        releases_to_process.append(most_recent_beta)
 
             releases_to_download = []
             for release in releases_to_process:

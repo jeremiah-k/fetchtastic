@@ -10,7 +10,7 @@ from unittest.mock import ANY, Mock, patch
 import pytest
 
 from fetchtastic import log_utils
-from fetchtastic.constants import FIRMWARE_DIR_NAME, GITHUB_MAX_PER_PAGE
+from fetchtastic.constants import FIRMWARE_DIR_NAME, RELEASE_SCAN_COUNT
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
@@ -1341,7 +1341,7 @@ class TestFirmwareReleaseDownloader:
         # Only v1.9.0 should be removed
         assert mock_rmtree.call_count == 1
         mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
-        downloader.get_releases.assert_called_once_with(limit=GITHUB_MAX_PER_PAGE)
+        downloader.get_releases.assert_called_once_with(limit=RELEASE_SCAN_COUNT)
 
     @pytest.mark.unit
     @pytest.mark.core_downloads
