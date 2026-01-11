@@ -47,11 +47,11 @@ from fetchtastic.utils import (
 )
 
 from .base import BaseDownloader
-from .cache import CacheManager, parse_iso_datetime_utc
+from .cache import CacheManager
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .release_history import ReleaseHistoryManager
+from .release_history import ReleaseHistoryManager, get_release_sorting_key
 from .version import VersionManager
 
 
@@ -879,18 +879,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if keep_last_beta:
                 beta_releases = [
                     r
-                    for r in all_releases[:100]
+                    for r in all_releases
                     if r.tag_name
                     and self.release_history_manager.get_release_channel(r) == "beta"
                 ]
                 if beta_releases:
                     most_recent_beta = max(
                         beta_releases,
-                        key=lambda r: (
-                            parse_iso_datetime_utc(r.published_at)
-                            or datetime.min.replace(tzinfo=timezone.utc),
-                            r.tag_name or "",
-                        ),
+                        key=get_release_sorting_key,
                     )
                     try:
                         safe_beta_tag = self._sanitize_required(

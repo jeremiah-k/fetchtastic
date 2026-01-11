@@ -43,11 +43,12 @@ from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .android import MeshtasticAndroidAppDownloader
 from .base import BaseDownloader
-from .cache import CacheManager, parse_iso_datetime_utc
+from .cache import CacheManager
 from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
+from .release_history import get_release_sorting_key
 from .version import VersionManager, is_prerelease_directory
 
 
@@ -274,7 +275,16 @@ class DownloadOrchestrator:
 
             logger.info("Scanning Firmware releases")
             if self.firmware_releases is None:
-                self.firmware_releases = self.firmware_downloader.get_releases()
+                keep_limit = self.config.get(
+                    "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+                )
+                keep_last_beta = self.config.get(
+                    "KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA
+                )
+                fetch_limit = max(keep_limit, 100) if keep_last_beta else keep_limit
+                self.firmware_releases = self.firmware_downloader.get_releases(
+                    limit=fetch_limit
+                )
             firmware_releases = self.firmware_releases
             if not firmware_releases:
                 logger.info("No firmware releases found")
@@ -1001,11 +1011,7 @@ class DownloadOrchestrator:
                 top_releases = self.firmware_releases[:keep_limit]
                 most_recent_beta = max(
                     beta_releases,
-                    key=lambda r: (
-                        parse_iso_datetime_utc(r.published_at)
-                        or datetime.min.replace(tzinfo=timezone.utc),
-                        r.tag_name or "",
-                    ),
+                    key=get_release_sorting_key,
                 )
                 if most_recent_beta not in top_releases:
                     keep_limit = min(keep_limit + 1, len(self.firmware_releases))

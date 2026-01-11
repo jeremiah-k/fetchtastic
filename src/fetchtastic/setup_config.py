@@ -1071,10 +1071,8 @@ def _setup_firmware(
         f"Would you like to always keep the most recent beta firmware release? [y/n] (default: {keep_last_beta_default}): ",
         default=keep_last_beta_default,
     ).strip()
-    # The 'or' expression is intentional: _safe_input returns the default for empty input,
-    # and _coerce_bool handles non-interactive runs by falling back to default_bool
     config["KEEP_LAST_BETA"] = _coerce_bool(
-        keep_last_beta_input or keep_last_beta_default,
+        keep_last_beta_input,
         default=keep_last_beta_default_bool,
     )
 

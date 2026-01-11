@@ -56,6 +56,27 @@ def _join_text(parts: Iterable[Optional[str]]) -> str:
     return " ".join(cleaned).lower()
 
 
+def get_release_sorting_key(release: Release) -> tuple[datetime, str]:
+    """
+    Compute sorting key for releases by date and tag name.
+
+    Sorts releases by published_at (chronological order) with tag_name as a
+    secondary key for consistent ordering when dates are equal.
+
+    Parameters:
+        release (Release): Release object to compute sorting key for.
+
+    Returns:
+        tuple[datetime, str]: Tuple of (published_at, tag_name) for sorting.
+            Missing or invalid published_at is replaced with datetime.min.
+    """
+    return (
+        parse_iso_datetime_utc(release.published_at)
+        or datetime.min.replace(tzinfo=timezone.utc),
+        release.tag_name or "",
+    )
+
+
 def detect_release_channel(release: Release) -> str:
     """
     Infer the release channel ('alpha', 'beta', or 'rc') from a release's name and tag.
@@ -400,11 +421,7 @@ class ReleaseHistoryManager:
             )
             sorted_releases = sorted(
                 [r for r in releases if r.tag_name],
-                key=lambda r: (
-                    parse_iso_datetime_utc(r.published_at)
-                    or datetime.min.replace(tzinfo=timezone.utc),
-                    r.tag_name or "",
-                ),
+                key=get_release_sorting_key,
                 reverse=True,
             )
             for i, release in enumerate(sorted_releases):
