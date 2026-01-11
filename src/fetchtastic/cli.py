@@ -624,6 +624,13 @@ def run_clean():
             "Clean operation requires an interactive terminal; aborting."
         )
         return
+    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get(
+        "FETCHTASTIC_ALLOW_TEST_CLEAN"
+    ):
+        log_utils.logger.error(
+            "Clean operation blocked during tests. Set FETCHTASTIC_ALLOW_TEST_CLEAN=1 to override."
+        )
+        return
     # Load config (if present) before deleting config files so BASE_DIR is accurate.
     loaded_config = setup_config.load_config()
     download_dir_from_config: str | None = None

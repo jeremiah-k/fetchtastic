@@ -22,7 +22,7 @@ def _block_network(*_args, **_kwargs):
     raise RuntimeError(_NETWORK_BLOCK_MSG)
 
 
-@pytest.fixture(autouse=True, scope="session")
+@pytest.fixture(autouse=True)
 def _isolate_test_environment(tmp_path_factory, monkeypatch):
     """
     Isolate all Fetchtastic test paths (cache/state/config/log/downloads) to a temp root.
@@ -67,6 +67,7 @@ def _isolate_test_environment(tmp_path_factory, monkeypatch):
     base_dir = Path(downloads_dir) / "Meshtastic"
     base_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(setup_config, "DOWNLOADS_DIR", str(downloads_dir))
+    monkeypatch.setattr(setup_config, "get_downloads_dir", lambda: str(downloads_dir))
     monkeypatch.setattr(setup_config, "DEFAULT_BASE_DIR", str(base_dir))
     monkeypatch.setattr(setup_config, "BASE_DIR", str(base_dir))
     monkeypatch.setattr(setup_config, "CONFIG_DIR", str(config_dir))
