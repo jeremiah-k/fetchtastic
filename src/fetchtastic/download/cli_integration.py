@@ -200,8 +200,8 @@ class DownloadCLIIntegration:
         elapsed_seconds: float,
         downloaded_firmwares: List[str],
         downloaded_apks: List[str],
-        downloaded_firmware_prereleases: List[str] = [],
-        downloaded_apk_prereleases: List[str] = [],
+        downloaded_firmware_prereleases: Optional[List[str]] = None,
+        downloaded_apk_prereleases: Optional[List[str]] = None,
         failed_downloads: List[Dict[str, str]],
         latest_firmware_version: str,
         latest_apk_version: str,
@@ -220,8 +220,8 @@ class DownloadCLIIntegration:
             elapsed_seconds (float): Total time elapsed for the download run.
             downloaded_firmwares (List[str]): Filenames or paths of downloaded firmware assets.
             downloaded_apks (List[str]): Filenames or paths of downloaded APK assets.
-            downloaded_firmware_prereleases (List[str]): Filenames or paths of downloaded firmware prerelease assets.
-            downloaded_apk_prereleases (List[str]): Filenames or paths of downloaded APK prerelease assets.
+            downloaded_firmware_prereleases (Optional[List[str]]): Filenames or paths of downloaded firmware prerelease assets.
+            downloaded_apk_prereleases (Optional[List[str]]): Filenames or paths of downloaded APK prerelease assets.
             failed_downloads (List[Dict[str, str]]): List of failure records; each may include keys like `type`, `release_tag`, `file_name`, `url`, `retryable`, `http_status`, and `error`.
             latest_firmware_version (str): Reported latest firmware release tag (empty if none).
             latest_apk_version (str): Reported latest APK release tag (empty if none).
@@ -235,6 +235,8 @@ class DownloadCLIIntegration:
 
         log.info(f"\nCompleted in {elapsed_seconds:.1f}s")
 
+        downloaded_firmware_prereleases = downloaded_firmware_prereleases or []
+        downloaded_apk_prereleases = downloaded_apk_prereleases or []
         downloaded_count = (
             len(downloaded_firmwares)
             + len(downloaded_apks)

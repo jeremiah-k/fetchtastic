@@ -64,8 +64,8 @@ def send_download_completion_notification(
     config: Dict[str, Any],
     downloaded_firmwares: List[str],
     downloaded_apks: List[str],
-    downloaded_firmware_prereleases: List[str] = [],
-    downloaded_apk_prereleases: List[str] = [],
+    downloaded_firmware_prereleases: Optional[List[str]] = None,
+    downloaded_apk_prereleases: Optional[List[str]] = None,
 ) -> None:
     """
     Send notification when downloads are completed successfully.
@@ -74,14 +74,17 @@ def send_download_completion_notification(
         config (Dict[str, Any]): Configuration containing NTFY settings.
         downloaded_firmwares (List[str]): List of firmware versions that were downloaded.
         downloaded_apks (List[str]): List of APK versions that were downloaded.
-        downloaded_firmware_prereleases (List[str]): List of firmware prerelease versions that were downloaded.
-        downloaded_apk_prereleases (List[str]): List of APK prerelease versions that were downloaded.
+        downloaded_firmware_prereleases (Optional[List[str]]): List of firmware prerelease versions that were downloaded.
+        downloaded_apk_prereleases (Optional[List[str]]): List of APK prerelease versions that were downloaded.
 
     Side effects:
         - Sends notification to configured NTFY server/topic if downloads occurred.
     """
     ntfy_server = config.get("NTFY_SERVER", "")
     ntfy_topic = config.get("NTFY_TOPIC", "")
+
+    downloaded_firmware_prereleases = downloaded_firmware_prereleases or []
+    downloaded_apk_prereleases = downloaded_apk_prereleases or []
 
     if (
         not downloaded_firmwares
