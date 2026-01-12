@@ -1493,16 +1493,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
             force_refresh (bool): When True, bypass cached directory listings and force remote refresh.
 
         Returns:
-            tuple[list[DownloadResult], list[DownloadResult], Optional[str]]: A three-item tuple containing:
+            tuple[list[DownloadResult], list[DownloadResult], Optional[str], Optional[Dict[str, Any]]]:
+            A tuple containing:
                 - successes: list of DownloadResult for assets that were successfully downloaded or skipped,
                 - failures: list of DownloadResult for assets that failed to download,
-                - active_dir: the remote prerelease directory identifier used for the download, or None if no prerelease was found.
+                - active_dir: the remote prerelease directory identifier used for the download, or None if no prerelease was found,
+                - prerelease_summary: Dict with prerelease history details for later reporting, or None when no history was available.
         """
         check_prereleases = self.config.get(
             "CHECK_FIRMWARE_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
         )
         if not check_prereleases:
-            return [], [], None
+            return [], [], None, None
 
         logger.info("Checking for pre-release firmware...")
 
@@ -1516,7 +1518,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             clean_latest_release
         )
         if not expected_version:
-            return [], [], None
+            return [], [], None, None
 
         logger.debug("Expected prerelease version: %s", expected_version)
 
@@ -1568,7 +1570,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         if not active_dir:
             logger.info("No pre-release firmware available")
-            return [], [], None
+            return [], [], None, None
 
         selected_patterns = self._get_prerelease_patterns()
         exclude_patterns = self._get_exclude_patterns()
@@ -1603,18 +1605,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
             )
 
-        # Emit legacy-style history summary when available
+        prerelease_summary = None
         if history_entries:
-            self.log_prerelease_summary(
-                history_entries, clean_latest_release, expected_version
-            )
+            prerelease_summary = {
+                "history_entries": history_entries,
+                "clean_latest_release": clean_latest_release,
+                "expected_version": expected_version,
+            }
 
         # Consolidate skipped messages
         skipped_count = sum(1 for result in successes if result.was_skipped)
         if skipped_count > 0:
             logger.debug(f"Skipped {skipped_count} existing pre-release files.")
 
-        return successes, failures, active_dir
+        return successes, failures, active_dir, prerelease_summary
 
     def log_prerelease_summary(
         self,

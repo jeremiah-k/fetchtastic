@@ -473,6 +473,29 @@ def test_log_release_channel_summary_custom_empty_group(tmp_path, monkeypatch):
     assert mock_info.called
 
 
+def test_get_releases_for_summary_limits_and_sorts(tmp_path):
+    cache_manager = CacheManager(cache_dir=str(tmp_path))
+    history_path = cache_manager.get_cache_file_path("release_history_summary_limit")
+    manager = ReleaseHistoryManager(cache_manager, history_path)
+    releases = [
+        Release(tag_name="v1.0.0", prerelease=False),
+        Release(tag_name="v2.0.0", prerelease=False),
+        Release(tag_name="v1.1.0", prerelease=False),
+    ]
+
+    limited = manager.get_releases_for_summary(releases, keep_limit=2)
+    assert [release.tag_name for release in limited] == ["v2.0.0", "v1.1.0"]
+
+    assert manager.get_releases_for_summary(releases, keep_limit=-1) == []
+    assert [
+        release.tag_name for release in manager.get_releases_for_summary(releases)
+    ] == [
+        "v2.0.0",
+        "v1.1.0",
+        "v1.0.0",
+    ]
+
+
 def test_log_duplicate_base_versions(tmp_path):
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     history_path = cache_manager.get_cache_file_path("release_history_dupes")

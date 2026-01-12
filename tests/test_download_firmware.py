@@ -968,14 +968,15 @@ class TestFirmwareReleaseDownloader:
                 downloader.cache_manager, "get_repo_directories", return_value=[]
             ),
         ):
-            results, failed, latest = downloader.download_repo_prerelease_firmware(
-                "v1.0.0"
+            results, failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v1.0.0")
             )
 
         # Should return proper tuple structure
         assert isinstance(results, list)
         assert isinstance(failed, list)
         assert latest is None or isinstance(latest, str)
+        assert summary is None or isinstance(summary, dict)
 
     @pytest.mark.unit
     @patch("os.path.exists")

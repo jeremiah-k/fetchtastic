@@ -144,6 +144,7 @@ class DownloadOrchestrator:
         self.android_releases: Optional[List[Release]] = None
         self.firmware_releases: Optional[List[Release]] = None
         self.firmware_release_history: Optional[Dict[str, Any]] = None
+        self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
 
     def run_download_pipeline(
         self,
@@ -353,11 +354,16 @@ class DownloadOrchestrator:
                         any_firmware_downloaded = True
 
             if latest_release:
-                successes, failures, _active_dir = (
-                    self.firmware_downloader.download_repo_prerelease_firmware(
-                        latest_release.tag_name, force_refresh=False
-                    )
+                (
+                    successes,
+                    failures,
+                    _active_dir,
+                    prerelease_summary,
+                ) = self.firmware_downloader.download_repo_prerelease_firmware(
+                    latest_release.tag_name, force_refresh=False
                 )
+                if prerelease_summary:
+                    self.firmware_prerelease_summary = prerelease_summary
                 for result in successes:
                     if not result.was_skipped:
                         any_firmware_downloaded = True
@@ -1058,11 +1064,41 @@ class DownloadOrchestrator:
         manager.log_release_channel_summary(
             releases_for_summary, label="Firmware", keep_limit=keep_limit_for_summary
         )
-        manager.log_release_status_summary(
-            self.firmware_release_history, label="Firmware"
+
+        kept_releases = manager.get_releases_for_summary(
+            releases_for_summary, keep_limit=keep_limit_for_summary
         )
-        # Keep duplicate-base reporting unfiltered to surface version collisions even when revoked filtering is enabled.
-        manager.log_duplicate_base_versions(self.firmware_releases, label="Firmware")
+        kept_tags = {release.tag_name for release in kept_releases if release.tag_name}
+        filtered_history: Dict[str, Any] = {"entries": {}}
+        entries = self.firmware_release_history.get("entries") or {}
+        for tag, entry in entries.items():
+            if tag in kept_tags:
+                filtered_history["entries"][tag] = entry
+
+        manager.log_release_status_summary(filtered_history, label="Firmware")
+        manager.log_duplicate_base_versions(kept_releases, label="Firmware")
+        self._log_prerelease_summary()
+
+    def _log_prerelease_summary(self) -> None:
+        """
+        Log prerelease history details that were captured during firmware downloads.
+
+        The summary is emitted near other release history reports so prerelease commit
+        information appears with the final summaries instead of during the download loop.
+        """
+        summary = self.firmware_prerelease_summary
+        if not summary:
+            return
+        history_entries = summary.get("history_entries") or []
+        clean_latest_release = summary.get("clean_latest_release")
+        expected_version = summary.get("expected_version")
+        if not history_entries or not clean_latest_release or not expected_version:
+            self.firmware_prerelease_summary = None
+            return
+        self.firmware_downloader.log_prerelease_summary(
+            history_entries, clean_latest_release, expected_version
+        )
+        self.firmware_prerelease_summary = None
 
     def _get_firmware_keep_limit(self) -> int:
         """
