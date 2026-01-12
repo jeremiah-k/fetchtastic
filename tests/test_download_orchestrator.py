@@ -64,6 +64,7 @@ class TestDownloadOrchestrator:
         orch.android_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
         return orch
 
     def test_init(self, mock_config):
