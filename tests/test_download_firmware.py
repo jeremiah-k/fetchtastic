@@ -83,6 +83,17 @@ class TestFirmwareReleaseDownloader:
     def _expected_cleanup_fetch_limit(
         self, keep_limit: int, keep_last_beta: bool, filter_revoked: bool = True
     ) -> int:
+        """
+        Compute the numeric limit to request from the release API when cleaning up old firmware versions.
+        
+        Parameters:
+            keep_limit (int): Number of releases to keep locally.
+            keep_last_beta (bool): If True, ensure at least RELEASE_SCAN_COUNT releases are considered to retain the most recent beta alongside kept releases.
+            filter_revoked (bool): If True, add an additional RELEASE_SCAN_COUNT to account for revocation filtering.
+        
+        Returns:
+            int: The calculated fetch limit to pass to get_releases.
+        """
         base = max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
         if filter_revoked:
             base += RELEASE_SCAN_COUNT
