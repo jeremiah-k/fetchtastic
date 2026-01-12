@@ -19,7 +19,6 @@ import requests  # type: ignore[import-untyped]
 from fetchtastic.constants import (
     APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
-    DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_KEEP_LAST_BETA,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
@@ -433,16 +432,6 @@ class DownloadOrchestrator:
         Returns:
             `True` if any asset was downloaded, `False` otherwise.
         """
-        filter_revoked = self.config.get(
-            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
-        )
-        if filter_revoked and self.android_downloader.is_release_revoked(release):
-            logger.info(
-                "Skipping revoked Android release %s because revoked filtering is enabled.",
-                release.tag_name,
-            )
-            return False
-
         any_downloaded = False
         try:
             # Download each asset in the release

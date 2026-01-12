@@ -345,20 +345,6 @@ class TestDownloadOrchestrator:
             mock_result, "android"
         )
 
-    def test_download_android_release_skips_revoked(self, orchestrator):
-        """Revoked Android releases are skipped when filtering is enabled."""
-        release = Mock(spec=Release)
-        release.tag_name = "v1.0.0"
-        release.assets = [Mock()]
-
-        orchestrator.config["FILTER_REVOKED_RELEASES"] = True
-        orchestrator.android_downloader.is_release_revoked.return_value = True
-
-        result = orchestrator._download_android_release(release)
-
-        assert result is False
-        orchestrator.android_downloader.download_apk.assert_not_called()
-
     def test_download_firmware_release_success(self, orchestrator):
         """Test successful firmware release download."""
         release = Mock(spec=Release)

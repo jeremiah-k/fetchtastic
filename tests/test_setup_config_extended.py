@@ -248,7 +248,6 @@ def test_setup_downloads_firmware_only(mocker, capsys):
             "f",  # Choose firmware only
             "n",  # Check firmware prereleases
             "n",  # Add channel suffixes
-            "y",  # Filter revoked firmware releases
         ],
     )
 
@@ -280,7 +279,6 @@ def test_setup_downloads_both_selected(mocker, capsys):
             "n",  # Check firmware prereleases
             "y",  # Check APK prereleases
             "n",  # Add channel suffixes
-            "y",  # Filter revoked firmware releases
         ],
     )
 
@@ -337,7 +335,6 @@ def test_setup_downloads_firmware_empty_selection(mocker):
             "f",  # Choose firmware only
             "n",  # Check firmware prereleases
             "n",  # Add channel suffixes
-            "y",  # Filter revoked firmware releases
         ],
     )
     mocker.patch(
@@ -497,7 +494,6 @@ def test_setup_downloads_partial_run_firmware_keep_existing_skips_menu(mocker):
             "n",  # Don't rerun menu
             "n",  # Disable firmware prereleases
             "n",  # Add channel suffixes
-            "y",  # Filter revoked firmware releases
         ],
     )
 
@@ -532,7 +528,6 @@ def test_setup_downloads_partial_run_firmware_channel_suffix_config(mocker):
             "n",  # Don't rerun menu
             "n",  # Disable firmware prereleases
             "n",  # Disable channel suffixes
-            "y",  # Filter revoked firmware releases
         ],
     )
 

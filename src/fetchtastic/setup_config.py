@@ -24,7 +24,6 @@ from fetchtastic.constants import (
     CRON_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_CHECK_APK_PRERELEASES,
     DEFAULT_EXTRACTION_PATTERNS,
-    DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_KEEP_LAST_BETA,
     MESHTASTIC_DIR_NAME,
     NTFY_REQUEST_TIMEOUT,
@@ -893,20 +892,6 @@ def _setup_downloads(
             )
             config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = _coerce_bool(
                 add_channel_suffixes_input
-            )
-
-            filter_revoked_current = _coerce_bool(
-                config.get("FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES)
-            )
-            filter_revoked_default = "y" if filter_revoked_current else "n"
-            filter_revoked_input = _safe_input(
-                "\nWould you like to filter out revoked releases entirely "
-                "(skipping them from download and cleanup)? [y/n] "
-                f"(default: {filter_revoked_default}): ",
-                default=filter_revoked_default,
-            )
-            config["FILTER_REVOKED_RELEASES"] = _coerce_bool(
-                filter_revoked_input, default=filter_revoked_current
             )
 
     # If both save_apks and save_firmware are False, inform the user and exit setup.
