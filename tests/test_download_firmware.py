@@ -81,10 +81,12 @@ class TestFirmwareReleaseDownloader:
         return dl
 
     def _expected_cleanup_fetch_limit(
-        self, keep_limit: int, keep_last_beta: bool
+        self, keep_limit: int, keep_last_beta: bool, filter_revoked: bool = True
     ) -> int:
         base = max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
-        return base + RELEASE_SCAN_COUNT
+        if filter_revoked:
+            base += RELEASE_SCAN_COUNT
+        return base
 
     def test_init(self, mock_config, mock_cache_manager):
         """Test downloader initialization."""

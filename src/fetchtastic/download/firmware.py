@@ -897,16 +897,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 all_releases = cached_releases
             else:
                 cached_len = len(cached_releases) if cached_releases is not None else 0
-                reason = []
-                if cached_releases is not None:
-                    reason.append("cached_releases")
-                if keep_last_beta or filter_revoked:
-                    reason.append("keep_last_beta/filter_revoked")
+                reason_parts = []
+                if keep_last_beta:
+                    reason_parts.append("keep_last_beta")
+                if filter_revoked:
+                    reason_parts.append("filter_revoked")
+                reason_text = (
+                    " and ".join(reason_parts) if reason_parts else "fetch requirements"
+                )
                 logger.debug(
                     "cached_releases contains %d releases but %d are needed to honor %s; refetching",
                     cached_len,
                     fetch_limit,
-                    " or ".join(reason) if reason else "fetch requirements",
+                    reason_text,
                 )
                 all_releases = self.get_releases(limit=fetch_limit)
             if not all_releases and (keep_limit > 0 or keep_last_beta):
