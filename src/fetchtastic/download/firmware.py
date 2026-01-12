@@ -52,7 +52,7 @@ from .cache import CacheManager
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .release_history import ReleaseHistoryManager, get_release_sorting_key
+from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
 
@@ -873,11 +873,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
             fetch_limit = (
                 max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
             )
-            all_releases = (
-                cached_releases
-                if cached_releases is not None
-                else self.get_releases(limit=fetch_limit)
-            )
+            if cached_releases is not None:
+                all_releases = cached_releases
+                if keep_last_beta and len(all_releases) < fetch_limit:
+                    logger.debug(
+                        "cached_releases contains %d releases but %d are needed to honor keep_last_beta; refetching",
+                        len(all_releases),
+                        fetch_limit,
+                    )
+                    all_releases = self.get_releases(limit=fetch_limit)
+            else:
+                all_releases = self.get_releases(limit=fetch_limit)
             if not all_releases and (keep_limit > 0 or keep_last_beta):
                 logger.warning(
                     "Skipping firmware cleanup: no releases available to determine keep set."
@@ -909,9 +915,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 # Build the current channel-aware tag and keep it too; this
                 # preserves the preferred directory name without renaming
                 # anything during cleanup.
+                base_tag = _get_comparable_base_tag(safe_tag)
                 release_tags_to_keep.add(
                     build_storage_tag_with_channel(
-                        sanitized_release_tag=safe_tag,
+                        sanitized_release_tag=base_tag,
                         release=release,
                         release_history_manager=self.release_history_manager,
                         config=self.config,
@@ -932,9 +939,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         keep_base_tags.add(safe_beta_tag)
                         keep_base_tags.add(_get_comparable_base_tag(safe_beta_tag))
                         release_tags_to_keep.add(safe_beta_tag)
+                        beta_base_tag = _get_comparable_base_tag(safe_beta_tag)
                         release_tags_to_keep.add(
                             build_storage_tag_with_channel(
-                                sanitized_release_tag=safe_beta_tag,
+                                sanitized_release_tag=beta_base_tag,
                                 release=most_recent_beta,
                                 release_history_manager=self.release_history_manager,
                                 config=self.config,

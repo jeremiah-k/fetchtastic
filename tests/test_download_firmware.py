@@ -5,6 +5,7 @@
 import json
 import os
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import ANY, Mock, patch
 
 import pytest
@@ -20,7 +21,7 @@ from fetchtastic.download.version import VersionManager
 class TestFirmwareReleaseDownloader:
     """Test suite for FirmwareReleaseDownloader."""
 
-    pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+    pytestmark: ClassVar[list] = [pytest.mark.unit, pytest.mark.core_downloads]
 
     @pytest.fixture
     def mock_config(self):
@@ -813,6 +814,7 @@ class TestFirmwareReleaseDownloader:
     ):
         """Ensure base tags are matched even when releases use channel suffixes."""
         mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
 
         firmware_dir = os.path.join(downloader.download_dir, FIRMWARE_DIR_NAME)
         entry_keep = Mock()
