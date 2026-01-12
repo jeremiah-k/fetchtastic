@@ -368,6 +368,8 @@ def test_cli_download_failed_downloads_reporting(mocker):
         ["v2.0.1"],  # new_firmware_versions
         [],  # downloaded_apks
         ["v1.1.0"],  # new_apk_versions
+        [],  # downloaded_firmware_prereleases
+        [],  # downloaded_apk_prereleases
         failed_downloads,
         "",  # latest_firmware_version
         "",  # latest_apk_version

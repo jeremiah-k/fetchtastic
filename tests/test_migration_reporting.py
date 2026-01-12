@@ -60,7 +60,14 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
         was_skipped=True,
     )
 
-    downloaded, new_fw, apks, new_apks = integration._convert_results_to_legacy_format(
+    (
+        downloaded,
+        new_fw,
+        apks,
+        new_apks,
+        _downloaded_firmware_prereleases,
+        _downloaded_apk_prereleases,
+    ) = integration._convert_results_to_legacy_format(
         [skipped_firmware, skipped_android]
     )
 
