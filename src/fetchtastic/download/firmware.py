@@ -940,7 +940,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         break
                 return selected
 
-            target = keep_limit if keep_limit > 0 else 0
+            target = keep_limit
             latest_releases = (
                 _collect_latest_releases(all_releases, target) if target else []
             )
