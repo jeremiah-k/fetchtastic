@@ -233,8 +233,8 @@ class DownloadOrchestrator:
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading Android release {release.tag_name}")
-            if self._download_android_release(release):
-                any_android_downloaded = True
+                    if self._download_android_release(release):
+                        any_android_downloaded = True
 
             logger.info("Checking for pre-release APK...")
             prereleases = self.android_downloader.handle_prereleases(android_releases)
