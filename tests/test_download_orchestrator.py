@@ -65,6 +65,13 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.firmware_downloader._collect_non_revoked_releases = Mock(
+            side_effect=lambda initial_releases, target_count, current_fetch_limit: (
+                initial_releases,
+                initial_releases,
+                current_fetch_limit,
+            )
+        )
         return orch
 
     def test_init(self, mock_config):

@@ -301,39 +301,16 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
-            releases_for_processing = firmware_releases
-            if filter_revoked:
-                releases_for_processing = [
-                    release
-                    for release in firmware_releases
-                    if not self.firmware_downloader.is_release_revoked(release)
-                ]
-                while (
-                    keep_limit > 0
-                    and len(releases_for_processing) < keep_limit
-                    and fetch_limit < 100
-                    and firmware_releases
-                    and len(firmware_releases) >= fetch_limit
-                ):
-                    next_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
-                    logger.debug(
-                        "Need %d non-revoked releases but have %d; increasing fetch limit to %d",
-                        keep_limit,
-                        len(releases_for_processing),
-                        next_limit,
-                    )
-                    self.firmware_releases = self.firmware_downloader.get_releases(
-                        limit=next_limit
-                    )
-                    firmware_releases = self.firmware_releases
-                    if not firmware_releases:
-                        break
-                    fetch_limit = next_limit
-                    releases_for_processing = [
-                        release
-                        for release in firmware_releases
-                        if not self.firmware_downloader.is_release_revoked(release)
-                    ]
+            (
+                releases_for_processing,
+                firmware_releases,
+                fetch_limit,
+            ) = self.firmware_downloader._collect_non_revoked_releases(
+                initial_releases=firmware_releases,
+                target_count=keep_limit,
+                current_fetch_limit=fetch_limit,
+            )
+            self.firmware_releases = firmware_releases
 
             releases_to_process = releases_for_processing[:keep_limit]
             if keep_last_beta:

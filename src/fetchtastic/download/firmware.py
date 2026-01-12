@@ -11,7 +11,7 @@ import re
 import shutil
 import zipfile
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import requests  # type: ignore[import-untyped]
 
@@ -118,6 +118,44 @@ class FirmwareReleaseDownloader(BaseDownloader):
         return self.config.get(
             "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
         )
+
+    def _collect_non_revoked_releases(
+        self,
+        initial_releases: List[Release],
+        target_count: int,
+        current_fetch_limit: int,
+    ) -> Tuple[List[Release], List[Release], int]:
+        """
+        Collect non-revoked releases and fetch more if needed to satisfy a target count.
+
+        Returns a tuple of (non_revoked_releases, all_releases, fetch_limit).
+        """
+        all_releases = initial_releases
+        fetch_limit = current_fetch_limit
+        if not self._filter_revoked_releases or target_count == 0:
+            return all_releases, all_releases, fetch_limit
+
+        def _filter(releases: List[Release]) -> List[Release]:
+            return [
+                release for release in releases if not self.is_release_revoked(release)
+            ]
+
+        non_revoked_releases = _filter(all_releases)
+        while len(non_revoked_releases) < target_count and fetch_limit < 100:
+            next_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
+            logger.debug(
+                "Need %d non-revoked releases but have %d; increasing fetch limit to %d",
+                target_count,
+                len(non_revoked_releases),
+                next_limit,
+            )
+            all_releases = self.get_releases(limit=next_limit)
+            if not all_releases:
+                break
+            fetch_limit = next_limit
+            non_revoked_releases = _filter(all_releases)
+
+        return non_revoked_releases, all_releases, fetch_limit
 
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
@@ -928,35 +966,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
             )
 
-            def _collect_latest_releases(
-                releases: List[Release], target: int
-            ) -> List[Release]:
-                selected: List[Release] = []
-                for release in releases:
-                    if filter_revoked and self.is_release_revoked(release):
-                        continue
-                    selected.append(release)
-                    if len(selected) >= target:
-                        break
-                return selected
-
-            target = keep_limit
-            latest_releases = (
-                _collect_latest_releases(all_releases, target) if target else []
-            )
-            while target and len(latest_releases) < target and fetch_limit < 100:
-                next_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
-                logger.debug(
-                    "Need %d non-revoked releases but have %d; increasing fetch limit to %d",
-                    target,
-                    len(latest_releases),
-                    next_limit,
+            non_revoked_releases, all_releases, fetch_limit = (
+                self._collect_non_revoked_releases(
+                    initial_releases=all_releases,
+                    target_count=keep_limit,
+                    current_fetch_limit=fetch_limit,
                 )
-                all_releases = self.get_releases(limit=next_limit)
-                if not all_releases:
-                    break
-                fetch_limit = next_limit
-                latest_releases = _collect_latest_releases(all_releases, target)
+            )
+            latest_releases = non_revoked_releases[:keep_limit] if keep_limit else []
 
             release_tags_to_keep = set()
             keep_base_names = set()

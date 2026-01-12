@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import DEFAULT_FILTER_REVOKED_RELEASES, RELEASE_SCAN_COUNT
+from fetchtastic.constants import RELEASE_SCAN_COUNT
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -430,11 +430,15 @@ class TestDownloadOrchestrator:
         ):
             orchestrator._process_firmware_downloads()
 
-    def test_process_firmware_downloads_uses_beta_fetch_limit(self, orchestrator):
+    @pytest.mark.parametrize("filter_revoked", [True, False])
+    def test_process_firmware_downloads_uses_beta_fetch_limit(
+        self, orchestrator, filter_revoked
+    ):
         """Firmware releases fetch should use beta-aware fetch limit."""
         orchestrator.config["SAVE_FIRMWARE"] = True
         orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
         orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = filter_revoked
         orchestrator.firmware_releases = None
 
         releases = [Release(tag_name="v1.0.0", prerelease=False)]
@@ -464,11 +468,9 @@ class TestDownloadOrchestrator:
             orchestrator._process_firmware_downloads()
 
         mock_get_releases.assert_called_once()
-        expected_limit = RELEASE_SCAN_COUNT
-        if orchestrator.config.get(
-            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
-        ):
-            expected_limit += RELEASE_SCAN_COUNT
+        expected_limit = RELEASE_SCAN_COUNT + (
+            RELEASE_SCAN_COUNT if filter_revoked else 0
+        )
         assert mock_get_releases.call_args.kwargs["limit"] == expected_limit
 
     def test_process_firmware_downloads_includes_latest_beta(self, orchestrator):
