@@ -196,6 +196,21 @@ class ReleaseHistoryManager:
         """
         return [r for r in releases if self.get_release_channel(r) == "beta"]
 
+    def find_most_recent_beta(self, releases: List[Release]) -> Optional[Release]:
+        """
+        Find and return the most recent beta release from the given list.
+
+        Parameters:
+            releases: List of releases to filter.
+
+        Returns:
+            The most recent beta release, or None if no beta releases are found.
+        """
+        beta_releases = self.find_beta_releases(releases)
+        if not beta_releases:
+            return None
+        return max(beta_releases, key=get_release_sorting_key)
+
     def _format_release_label_with_keep(
         self,
         release: Release,

@@ -298,18 +298,11 @@ class DownloadOrchestrator:
             latest_release = self._select_latest_release_by_version(firmware_releases)
             releases_to_process = firmware_releases[:keep_limit]
             if keep_last_beta:
-                beta_releases = (
-                    self.firmware_downloader.release_history_manager.find_beta_releases(
-                        firmware_releases
-                    )
+                most_recent_beta = self.firmware_downloader.release_history_manager.find_most_recent_beta(
+                    firmware_releases
                 )
-                if beta_releases:
-                    most_recent_beta = max(
-                        beta_releases,
-                        key=get_release_sorting_key,
-                    )
-                    if most_recent_beta not in releases_to_process:
-                        releases_to_process.append(most_recent_beta)
+                if most_recent_beta and most_recent_beta not in releases_to_process:
+                    releases_to_process.append(most_recent_beta)
 
             releases_to_download = []
             for release in releases_to_process:

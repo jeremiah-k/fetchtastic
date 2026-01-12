@@ -921,14 +921,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # If keep_last_beta is enabled, ensure most recent beta is kept
             if keep_last_beta:
-                beta_releases = self.release_history_manager.find_beta_releases(
+                most_recent_beta = self.release_history_manager.find_most_recent_beta(
                     all_releases
                 )
-                if beta_releases:
-                    most_recent_beta = max(
-                        beta_releases,
-                        key=get_release_sorting_key,
-                    )
+                if most_recent_beta:
                     try:
                         safe_beta_tag = self._sanitize_required(
                             most_recent_beta.tag_name, "beta release tag"
