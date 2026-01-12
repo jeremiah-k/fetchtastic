@@ -307,6 +307,24 @@ class TestFirmwareReleaseDownloader:
         assert "firmware-rak4631.zip" in str(result.file_path)
         mock_download.assert_called_once()
 
+    def test_download_firmware_skips_revoked_when_filtered(self, downloader):
+        """Revoked releases are skipped when revoked filtering is enabled."""
+        downloader.config["FILTER_REVOKED_RELEASES"] = True
+        downloader.is_release_revoked = Mock(return_value=True)
+
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rak4631.zip"
+        asset.download_url = "https://example.com/firmware.zip"
+        asset.size = 1000000
+
+        result = downloader.download_firmware(release, asset)
+
+        assert result.success is True
+        assert result.was_skipped is True
+
     def test_download_firmware_download_failure(self, downloader):
         """Test firmware download failure."""
         # Force the internal download call to report a failure without real I/O

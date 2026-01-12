@@ -17,6 +17,7 @@ import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
@@ -478,6 +479,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was skipped includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
         """
+        filter_revoked = self.config.get(
+            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+        )
+
+        if filter_revoked and self.is_release_revoked(release):
+            logger.info(
+                "Skipping revoked firmware release %s because revoked filtering is enabled.",
+                release.tag_name,
+            )
+            return self.create_download_result(
+                success=True,
+                release_tag=release.tag_name,
+                file_path="",
+                download_url=asset.download_url,
+                file_size=asset.size,
+                file_type=FILE_TYPE_FIRMWARE,
+                was_skipped=True,
+            )
+
         target_path: Optional[str] = None
         try:
             storage_tag = self._get_release_storage_tag(release)
@@ -855,12 +875,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # Fetch releases once, using a small scan window to locate the latest beta
             # This avoids a redundant second API call when keep_last_beta is enabled
+            filter_revoked = self.config.get(
+                "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+            )
             fetch_limit = (
                 max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
             )
+            if filter_revoked:
+                fetch_limit += RELEASE_SCAN_COUNT
             if cached_releases is not None:
                 all_releases = cached_releases
-                if keep_last_beta and len(all_releases) < fetch_limit:
+                if (keep_last_beta or filter_revoked) and len(
+                    all_releases
+                ) < fetch_limit:
                     logger.debug(
                         "cached_releases contains %d releases but %d are needed to honor keep_last_beta; refetching",
                         len(all_releases),
@@ -885,8 +912,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
             )
 
-            # Use the first keep_limit releases for the normal keep set
-            latest_releases = all_releases[:keep_limit]
+            def _collect_latest_releases(
+                releases: List[Release], target: int
+            ) -> List[Release]:
+                selected: List[Release] = []
+                for release in releases:
+                    if filter_revoked and self.is_release_revoked(release):
+                        continue
+                    selected.append(release)
+                    if len(selected) >= target:
+                        break
+                return selected
+
+            latest_releases = (
+                _collect_latest_releases(all_releases, keep_limit)
+                if keep_limit > 0
+                else []
+            )
 
             release_tags_to_keep = set()
             keep_base_names = set()
@@ -925,7 +967,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 most_recent_beta = self.release_history_manager.find_most_recent_beta(
                     all_releases
                 )
-                if most_recent_beta:
+                if most_recent_beta and (
+                    not filter_revoked or not self.is_release_revoked(most_recent_beta)
+                ):
                     try:
                         safe_beta_tag = self._sanitize_required(
                             most_recent_beta.tag_name, "beta release tag"

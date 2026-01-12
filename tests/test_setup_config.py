@@ -116,7 +116,7 @@ def test_setup_downloads_partial_skips_firmware_menu(mocker):
     # Answer prompts: keep firmware enabled, skip rerun, decline prereleases, decline suffixes.
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n", "n"],
+        side_effect=["y", "n", "n", "n", "n"],
     )
     mock_menu = mocker.patch("fetchtastic.menu_firmware.run_menu")
 
@@ -197,7 +197,7 @@ def test_setup_downloads_partial_reruns_firmware_menu(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "y", "n", "n"],
+        side_effect=["y", "y", "n", "n", "n"],
     )
     mock_menu = mocker.patch(
         "fetchtastic.menu_firmware.run_menu",
@@ -309,7 +309,7 @@ def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["", "n", "n", "n"],
+        side_effect=["", "n", "n", "n", "n"],
     )
     mocker.patch(
         "fetchtastic.menu_firmware.run_menu",
@@ -1953,7 +1953,9 @@ def test_run_setup_valid_sections():
         with patch(
             "fetchtastic.setup_config.config_exists", return_value=(False, None)
         ):
-            with patch("builtins.input", side_effect=["", "n", "n", "n", "n", "n"]):
+            with patch(
+                "builtins.input", side_effect=["", "n", "n", "n", "n", "n", "n"]
+            ):
                 with patch("builtins.open", mock_open()):
                     with patch("fetchtastic.setup_config.yaml.safe_dump"):
                         with patch("os.makedirs"):
@@ -1976,7 +1978,7 @@ def test_run_setup_prompts_for_sections_when_config_exists(
     mock_config_exists.return_value = (True, "/path/to/config")
     mock_prompt.return_value = {"firmware"}
 
-    with patch("builtins.input", side_effect=["", "n", "n"]):
+    with patch("builtins.input", side_effect=["", "n", "n", "n"]):
         with patch("builtins.open", mock_open()):
             with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
@@ -1999,7 +2001,7 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
 
     mock_config_exists.return_value = (True, "/path/to/config")
 
-    with patch("builtins.input", side_effect=["", "n", "n"]):
+    with patch("builtins.input", side_effect=["", "n", "n", "n"]):
         with patch("builtins.open", mock_open()):
             with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
