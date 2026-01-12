@@ -836,31 +836,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
-            suffixes = ["-revoked"] + [
-                f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
-            ]
-
-            def _get_comparable_base_tag(name: str) -> str:
-                """
-                Removes channel/revoked suffixes and the 'firmware-' prefix to get a comparable base version tag.
-
-                Parameters:
-                    name (str): Directory or tag name that may include one or more channel suffixes (e.g., "-beta", "-rc") or "-revoked"), and may start with the firmware- prefix.
-
-                Returns:
-                    str: The normalized base version tag suitable for comparison.
-                """
-                base_name = name
-                stripped = True
-                while stripped:
-                    stripped = False
-                    for suffix in suffixes:
-                        if base_name.endswith(suffix):
-                            base_name = base_name[: -len(suffix)]
-                            stripped = True
-                            break
-                base_name = base_name.removeprefix(FIRMWARE_DIR_PREFIX)
-                return base_name
 
             logger.debug(
                 "Firmware cleanup start: keep_limit=%s, keep_last_beta=%s, firmware_dir=%s",
@@ -911,7 +886,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     )
                     continue
                 keep_base_tags.add(safe_tag)
-                base_tag = _get_comparable_base_tag(safe_tag)
+                base_tag = self._get_comparable_base_tag(safe_tag)
                 if preserve_legacy_base_dirs:
                     keep_base_tags.add(base_tag)
 
@@ -944,7 +919,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             most_recent_beta.tag_name, "beta release tag"
                         )
                         keep_base_tags.add(safe_beta_tag)
-                        beta_base_tag = _get_comparable_base_tag(safe_beta_tag)
+                        beta_base_tag = self._get_comparable_base_tag(safe_beta_tag)
                         if preserve_legacy_base_dirs:
                             keep_base_tags.add(beta_base_tag)
                         release_tags_to_keep.add(safe_beta_tag)
@@ -987,7 +962,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 }
 
                 existing_base_names = {
-                    _get_comparable_base_tag(name) for name in existing_versions
+                    self._get_comparable_base_tag(name) for name in existing_versions
                 }
 
                 if (
@@ -1012,7 +987,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         )
                         continue
                     if entry.is_dir():
-                        base_name = _get_comparable_base_tag(entry.name)
+                        base_name = self._get_comparable_base_tag(entry.name)
                         if entry.name in release_tags_to_keep:
                             continue
                         if preserve_legacy_base_dirs and base_name in keep_base_tags:
@@ -1115,6 +1090,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         patterns = self.config.get("SELECTED_PRERELEASE_ASSETS") or []
         return patterns if isinstance(patterns, list) else [str(patterns)]
+
+    def _get_comparable_base_tag(self, name: str) -> str:
+        """
+        Remove channel/revoked suffixes and the firmware- prefix to get a comparable base version tag.
+
+        Parameters:
+            name (str): Directory or tag name that may include channel suffixes (e.g., "-beta", "-rc") or "-revoked", and may start with the firmware- prefix.
+
+        Returns:
+            str: Normalized base version tag suitable for comparison.
+        """
+        suffixes = ["-revoked"] + [
+            f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
+        ]
+        base_name = name
+        stripped = True
+        while stripped:
+            stripped = False
+            for suffix in suffixes:
+                if base_name.endswith(suffix):
+                    base_name = base_name[: -len(suffix)]
+                    stripped = True
+                    break
+        return base_name.removeprefix(FIRMWARE_DIR_PREFIX)
 
     def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
         """

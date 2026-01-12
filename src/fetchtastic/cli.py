@@ -179,7 +179,6 @@ def _prepare_command_run() -> Tuple[
     log_level_name = logging.getLevelName(effective)
     if (
         not isinstance(log_level_name, str)
-        or not log_level_name.isalpha()
         or log_level_name not in _VALID_LOG_LEVEL_NAMES
     ):
         log_level_name = "INFO"
@@ -879,9 +878,19 @@ def run_repo_clean(config: Dict[str, Any]) -> None:
     Parameters:
         config (dict[str, Any]): Configuration containing the repository download directory and related metadata used to locate and clean the repository files.
     """
-    if not sys.stdin.isatty() and not os.environ.get("PYTEST_CURRENT_TEST"):
+    allow_test_clean = os.environ.get("FETCHTASTIC_ALLOW_TEST_CLEAN")
+    if (
+        not sys.stdin.isatty()
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and not allow_test_clean
+    ):
         log_utils.logger.error(
             "Repo clean operation requires an interactive terminal; aborting."
+        )
+        return
+    if os.environ.get("PYTEST_CURRENT_TEST") and not allow_test_clean:
+        log_utils.logger.error(
+            "Repo clean operation blocked during tests. Set FETCHTASTIC_ALLOW_TEST_CLEAN=1 to override."
         )
         return
 
