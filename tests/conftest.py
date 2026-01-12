@@ -6,7 +6,7 @@ import pytest
 import requests
 
 _NETWORK_BLOCK_MSG = (
-    "Network access is blocked during tests. " "Mock requests.* or Session.request."
+    "Network access is blocked during tests. Mock requests.* or Session.request."
 )
 
 
@@ -93,4 +93,6 @@ def pytest_runtest_setup():
     requests.put = _block_network
     requests.delete = _block_network
     requests.head = _block_network
+    requests.patch = _block_network
+    requests.options = _block_network
     requests.Session.request = _block_network

@@ -1005,7 +1005,7 @@ class DownloadOrchestrator:
             return
 
         manager = self.firmware_downloader.release_history_manager
-        keep_limit = self._get_firmware_keep_limit()
+        keep_limit_for_summary = self._get_firmware_keep_limit()
         keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
 
         if keep_last_beta:
@@ -1016,14 +1016,16 @@ class DownloadOrchestrator:
                     key=get_release_sorting_key,
                     reverse=True,
                 )
-                top_releases = sorted_releases[:keep_limit]
+                top_releases = sorted_releases[:keep_limit_for_summary]
                 most_recent_beta = max(beta_releases, key=get_release_sorting_key)
                 if most_recent_beta not in top_releases:
                     beta_index = sorted_releases.index(most_recent_beta)
-                    keep_limit = min(beta_index + 1, len(self.firmware_releases))
+                    keep_limit_for_summary = min(
+                        beta_index + 1, len(self.firmware_releases)
+                    )
 
         manager.log_release_channel_summary(
-            self.firmware_releases, label="Firmware", keep_limit=keep_limit
+            self.firmware_releases, label="Firmware", keep_limit=keep_limit_for_summary
         )
         manager.log_release_status_summary(
             self.firmware_release_history, label="Firmware"
