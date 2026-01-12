@@ -298,7 +298,11 @@ class DownloadOrchestrator:
             latest_release = self._select_latest_release_by_version(firmware_releases)
             releases_to_process = firmware_releases[:keep_limit]
             if keep_last_beta:
-                beta_releases = self._find_beta_releases(firmware_releases)
+                beta_releases = (
+                    self.firmware_downloader.release_history_manager.find_beta_releases(
+                        firmware_releases
+                    )
+                )
                 if beta_releases:
                     most_recent_beta = max(
                         beta_releases,
@@ -1008,7 +1012,7 @@ class DownloadOrchestrator:
         keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
 
         if keep_last_beta:
-            beta_releases = self._find_beta_releases(self.firmware_releases)
+            beta_releases = manager.find_beta_releases(self.firmware_releases)
             if beta_releases:
                 sorted_releases = sorted(
                     self.firmware_releases,
@@ -1045,19 +1049,6 @@ class DownloadOrchestrator:
             return max(0, int(raw_keep_limit))
         except (TypeError, ValueError):
             return int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
-
-    def _find_beta_releases(self, releases: List[Release]) -> List[Release]:
-        """
-        Find and return all beta releases from the given list.
-
-        Parameters:
-            releases: List of releases to filter.
-
-        Returns:
-            List of beta releases (empty list if none found).
-        """
-        manager = self.firmware_downloader.release_history_manager
-        return [r for r in releases if manager.get_release_channel(r) == "beta"]
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """

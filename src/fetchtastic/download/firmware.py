@@ -9,7 +9,7 @@ import json
 import os
 import shutil
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
 
 import requests  # type: ignore[import-untyped]
@@ -894,12 +894,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # If keep_last_beta is enabled, ensure most recent beta is kept
             if keep_last_beta:
-                beta_releases = [
-                    r
-                    for r in all_releases
-                    if r.tag_name
-                    and self.release_history_manager.get_release_channel(r) == "beta"
-                ]
+                beta_releases = self.release_history_manager.find_beta_releases(
+                    all_releases
+                )
                 if beta_releases:
                     most_recent_beta = max(
                         beta_releases,
@@ -1080,8 +1077,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             iso_timestamp (str): ISO 8601-formatted UTC timestamp representing the current time plus 24 hours.
         """
-        from datetime import timedelta
-
         return (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
     def _get_prerelease_base_dir(self) -> str:

@@ -184,6 +184,18 @@ class ReleaseHistoryManager:
         """
         return is_release_revoked(release)
 
+    def find_beta_releases(self, releases: List[Release]) -> List[Release]:
+        """
+        Find and return all beta releases from the given list.
+
+        Parameters:
+            releases: List of releases to filter.
+
+        Returns:
+            List of beta releases (empty list if none found).
+        """
+        return [r for r in releases if self.get_release_channel(r) == "beta"]
+
     def _format_release_label_with_keep(
         self,
         release: Release,
