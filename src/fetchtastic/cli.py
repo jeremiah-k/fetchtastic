@@ -621,26 +621,30 @@ def show_help(
         print("\nFor general help, use: fetchtastic help")
 
 
+def _require_interactive_or_test_clean(operation_name: str) -> bool:
+    allow_test_clean = os.environ.get("FETCHTASTIC_ALLOW_TEST_CLEAN")
+    is_pytest = os.environ.get("PYTEST_CURRENT_TEST")
+
+    if is_pytest and not allow_test_clean:
+        log_utils.logger.error(
+            f"{operation_name} blocked during tests. Set FETCHTASTIC_ALLOW_TEST_CLEAN=1 to override."
+        )
+        return False
+    if not sys.stdin.isatty() and not allow_test_clean:
+        log_utils.logger.error(
+            f"{operation_name} requires an interactive terminal; aborting."
+        )
+        return False
+    return True
+
+
 def run_clean():
     """
     Permanently remove Fetchtastic configuration, Fetchtastic-managed downloads, platform integrations, and logs after explicit interactive confirmation.
 
     This operation deletes current and legacy configuration files, only Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (for example, Windows Start Menu and startup shortcuts, non-Windows cron entries, and a Termux boot script), and the Fetchtastic log file. The removal is irreversible and requires the user to confirm interactively; non-managed files are preserved.
     """
-    allow_test_clean = os.environ.get("FETCHTASTIC_ALLOW_TEST_CLEAN")
-    if (
-        not sys.stdin.isatty()
-        and not os.environ.get("PYTEST_CURRENT_TEST")
-        and not allow_test_clean
-    ):
-        log_utils.logger.error(
-            "Clean operation requires an interactive terminal; aborting."
-        )
-        return
-    if os.environ.get("PYTEST_CURRENT_TEST") and not allow_test_clean:
-        log_utils.logger.error(
-            "Clean operation blocked during tests. Set FETCHTASTIC_ALLOW_TEST_CLEAN=1 to override."
-        )
+    if not _require_interactive_or_test_clean("Clean operation"):
         return
     # Load config (if present) before deleting config files so BASE_DIR is accurate.
     loaded_config = setup_config.load_config()
@@ -881,20 +885,7 @@ def run_repo_clean(config: Dict[str, Any]) -> None:
     Parameters:
         config (dict[str, Any]): Configuration containing the repository download directory and related metadata used to locate and clean the repository files.
     """
-    allow_test_clean = os.environ.get("FETCHTASTIC_ALLOW_TEST_CLEAN")
-    if (
-        not sys.stdin.isatty()
-        and not os.environ.get("PYTEST_CURRENT_TEST")
-        and not allow_test_clean
-    ):
-        log_utils.logger.error(
-            "Repo clean operation requires an interactive terminal; aborting."
-        )
-        return
-    if os.environ.get("PYTEST_CURRENT_TEST") and not allow_test_clean:
-        log_utils.logger.error(
-            "Repo clean operation blocked during tests. Set FETCHTASTIC_ALLOW_TEST_CLEAN=1 to override."
-        )
+    if not _require_interactive_or_test_clean("Repo clean operation"):
         return
 
     print(

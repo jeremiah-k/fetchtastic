@@ -57,6 +57,14 @@ from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
+_FIRMWARE_SUFFIX_PARTS = [
+    "revoked",
+    *sorted(STORAGE_CHANNEL_SUFFIXES, key=len, reverse=True),
+]
+_FIRMWARE_SUFFIX_PATTERN = re.compile(
+    rf"(?:{'|'.join(re.escape(f'-{suffix}') for suffix in _FIRMWARE_SUFFIX_PARTS)})+$"
+)
+
 
 class FirmwareReleaseDownloader(BaseDownloader):
     """
@@ -1113,12 +1121,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             str: Normalized base version tag suitable for comparison.
         """
-        suffix_parts = [
-            "revoked",
-            *sorted(STORAGE_CHANNEL_SUFFIXES, key=len, reverse=True),
-        ]
-        suffix_pattern = "|".join(re.escape(f"-{suffix}") for suffix in suffix_parts)
-        stripped_name = re.sub(f"(?:{suffix_pattern})+$", "", name)
+        stripped_name = _FIRMWARE_SUFFIX_PATTERN.sub("", name)
         return stripped_name.removeprefix(FIRMWARE_DIR_PREFIX)
 
     def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
