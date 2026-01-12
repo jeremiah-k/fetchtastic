@@ -900,8 +900,8 @@ def _setup_downloads(
             )
             filter_revoked_default = "y" if filter_revoked_current else "n"
             filter_revoked_input = _safe_input(
-                "\nWould you like to filter out revoked firmware releases entirely "
-                "(skipping them from the managed firmware directory)? [y/n] "
+                "\nWould you like to filter out revoked releases entirely "
+                "(skipping them from download and cleanup)? [y/n] "
                 f"(default: {filter_revoked_default}): ",
                 default=filter_revoked_default,
             )
