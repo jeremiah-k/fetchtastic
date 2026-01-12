@@ -64,6 +64,8 @@ def send_download_completion_notification(
     config: Dict[str, Any],
     downloaded_firmwares: List[str],
     downloaded_apks: List[str],
+    downloaded_firmware_prereleases: List[str] = [],
+    downloaded_apk_prereleases: List[str] = [],
 ) -> None:
     """
     Send notification when downloads are completed successfully.
@@ -72,6 +74,8 @@ def send_download_completion_notification(
         config (Dict[str, Any]): Configuration containing NTFY settings.
         downloaded_firmwares (List[str]): List of firmware versions that were downloaded.
         downloaded_apks (List[str]): List of APK versions that were downloaded.
+        downloaded_firmware_prereleases (List[str]): List of firmware prerelease versions that were downloaded.
+        downloaded_apk_prereleases (List[str]): List of APK prerelease versions that were downloaded.
 
     Side effects:
         - Sends notification to configured NTFY server/topic if downloads occurred.
@@ -79,7 +83,12 @@ def send_download_completion_notification(
     ntfy_server = config.get("NTFY_SERVER", "")
     ntfy_topic = config.get("NTFY_TOPIC", "")
 
-    if not downloaded_firmwares and not downloaded_apks:
+    if (
+        not downloaded_firmwares
+        and not downloaded_apks
+        and not downloaded_firmware_prereleases
+        and not downloaded_apk_prereleases
+    ):
         return  # No downloads, no notification needed
 
     notification_messages: List[str] = []
@@ -88,8 +97,16 @@ def send_download_completion_notification(
         message = f"Downloaded Firmware versions: {', '.join(downloaded_firmwares)}"
         notification_messages.append(message)
 
+    if downloaded_firmware_prereleases:
+        message = f"Downloaded Firmware prerelease versions: {', '.join(downloaded_firmware_prereleases)}"
+        notification_messages.append(message)
+
     if downloaded_apks:
         message = f"Downloaded Android APK versions: {', '.join(downloaded_apks)}"
+        notification_messages.append(message)
+
+    if downloaded_apk_prereleases:
+        message = f"Downloaded Android APK prerelease versions: {', '.join(downloaded_apk_prereleases)}"
         notification_messages.append(message)
 
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")

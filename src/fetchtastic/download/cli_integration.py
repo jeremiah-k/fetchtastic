@@ -85,7 +85,15 @@ class DownloadCLIIntegration:
     def run_download(
         self, config: Dict[str, Any], force_refresh: bool = False
     ) -> Tuple[
-        List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str
+        List[str],
+        List[str],
+        List[str],
+        List[str],
+        List[str],
+        List[str],
+        List[Dict[str, str]],
+        str,
+        str,
     ]:
         """
         Run the download pipeline using the provided configuration and return results formatted for the legacy CLI.
@@ -97,11 +105,13 @@ class DownloadCLIIntegration:
             force_refresh (bool): If True, clear downloader caches before running the pipeline.
 
         Returns:
-            Tuple[List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str]:
+            Tuple[List[str], List[str], List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str]:
                 - downloaded_firmwares: Paths or identifiers of firmware files that were downloaded.
                 - new_firmware_versions: Firmware release tags that are newer than the currently tracked firmware.
                 - downloaded_apks: Paths or identifiers of Android APK files that were downloaded.
                 - new_apk_versions: Android release tags that are newer than the currently tracked Android version.
+                - downloaded_firmware_prereleases: Paths or identifiers of firmware prerelease files that were downloaded.
+                - downloaded_apk_prereleases: Paths or identifiers of Android APK prerelease files that were downloaded.
                 - failed_downloads: List of failure records; each record includes keys such as `file_name`, `release_tag`, `url`, `type`, `path_to_download`, `error`, `retryable`, and `http_status`.
                 - latest_firmware_version: Latest known firmware version (empty string if unavailable).
                 - latest_apk_version: Latest known Android APK version (empty string if unavailable).
@@ -124,6 +134,8 @@ class DownloadCLIIntegration:
                 new_firmware_versions,
                 downloaded_apks,
                 new_apk_versions,
+                downloaded_firmware_prereleases,
+                downloaded_apk_prereleases,
             ) = self._convert_results_to_legacy_format(success_results)
 
             # Handle cleanup
@@ -147,6 +159,8 @@ class DownloadCLIIntegration:
                 new_firmware_versions,
                 downloaded_apks,
                 new_apk_versions,
+                downloaded_firmware_prereleases,
+                downloaded_apk_prereleases,
                 failed_downloads,
                 latest_firmware_version,
                 latest_apk_version,
@@ -161,7 +175,7 @@ class DownloadCLIIntegration:
         ) as e:
             logger.exception("Error in CLI integration: %s", e)
             # Return empty results and error information
-            return [], [], [], [], [], "", ""
+            return [], [], [], [], [], [], [], "", ""
 
     def _clear_caches(self) -> None:
         """
@@ -186,6 +200,8 @@ class DownloadCLIIntegration:
         elapsed_seconds: float,
         downloaded_firmwares: List[str],
         downloaded_apks: List[str],
+        downloaded_firmware_prereleases: List[str] = [],
+        downloaded_apk_prereleases: List[str] = [],
         failed_downloads: List[Dict[str, str]],
         latest_firmware_version: str,
         latest_apk_version: str,
@@ -204,6 +220,8 @@ class DownloadCLIIntegration:
             elapsed_seconds (float): Total time elapsed for the download run.
             downloaded_firmwares (List[str]): Filenames or paths of downloaded firmware assets.
             downloaded_apks (List[str]): Filenames or paths of downloaded APK assets.
+            downloaded_firmware_prereleases (List[str]): Filenames or paths of downloaded firmware prerelease assets.
+            downloaded_apk_prereleases (List[str]): Filenames or paths of downloaded APK prerelease assets.
             failed_downloads (List[Dict[str, str]]): List of failure records; each may include keys like `type`, `release_tag`, `file_name`, `url`, `retryable`, `http_status`, and `error`.
             latest_firmware_version (str): Reported latest firmware release tag (empty if none).
             latest_apk_version (str): Reported latest APK release tag (empty if none).
@@ -217,7 +235,12 @@ class DownloadCLIIntegration:
 
         log.info(f"\nCompleted in {elapsed_seconds:.1f}s")
 
-        downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
+        downloaded_count = (
+            len(downloaded_firmwares)
+            + len(downloaded_apks)
+            + len(downloaded_firmware_prereleases)
+            + len(downloaded_apk_prereleases)
+        )
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
 
@@ -263,7 +286,11 @@ class DownloadCLIIntegration:
         if self.config:
             if downloaded_count > 0:
                 send_download_completion_notification(
-                    self.config, downloaded_firmwares, downloaded_apks
+                    self.config,
+                    downloaded_firmwares,
+                    downloaded_apks,
+                    downloaded_firmware_prereleases,
+                    downloaded_apk_prereleases,
                 )
             else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
                 send_up_to_date_notification(self.config)
@@ -278,7 +305,7 @@ class DownloadCLIIntegration:
 
     def _convert_results_to_legacy_format(
         self, success_results: List[Any]
-    ) -> Tuple[List[str], List[str], List[str], List[str]]:
+    ) -> Tuple[List[str], List[str], List[str], List[str], List[str], List[str]]:
         """
         Translate new-architecture successful download results into legacy CLI lists.
 
@@ -286,18 +313,24 @@ class DownloadCLIIntegration:
             success_results (List[Any]): Iterable of result objects from the orchestrator; each object may have attributes `release_tag`, `file_path`, and `was_skipped`.
 
         Returns:
-            Tuple[List[str], List[str], List[str], List[str]]:
+            Tuple[List[str], List[str], List[str], List[str], List[str], List[str]]:
                 downloaded_firmwares: Unique firmware release tags that were downloaded (excludes skipped results).
                 new_firmware_versions: Firmware release tags from `downloaded_firmwares` that are newer than the currently known firmware version.
                 downloaded_apks: Unique Android (APK) release tags that were downloaded (excludes skipped results).
                 new_apk_versions: Android release tags from `downloaded_apks` that are newer than the currently known Android version.
+                downloaded_firmware_prereleases: Unique firmware prerelease release tags that were downloaded (excludes skipped results).
+                downloaded_apk_prereleases: Unique Android (APK) prerelease release tags that were downloaded (excludes skipped results).
         """
         downloaded_firmwares: list[str] = []
         new_firmware_versions: list[str] = []
         downloaded_apks: list[str] = []
         new_apk_versions: list[str] = []
+        downloaded_firmware_prereleases: list[str] = []
+        downloaded_apk_prereleases: list[str] = []
         downloaded_firmware_set: set[str] = set()
         downloaded_apk_set: set[str] = set()
+        downloaded_firmware_prerelease_set: set[str] = set()
+        downloaded_apk_prerelease_set: set[str] = set()
         new_firmware_set: set[str] = set()
         new_apk_set: set[str] = set()
 
@@ -360,19 +393,34 @@ class DownloadCLIIntegration:
                 )
 
             if is_firmware:
-                self._add_downloaded_asset(
-                    release_tag, downloaded_firmwares, downloaded_firmware_set
-                )
+                if file_type in {
+                    FILE_TYPE_FIRMWARE_PRERELEASE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                }:
+                    if release_tag not in downloaded_firmware_prerelease_set:
+                        downloaded_firmware_prereleases.append(release_tag)
+                        downloaded_firmware_prerelease_set.add(release_tag)
+                else:
+                    self._add_downloaded_asset(
+                        release_tag, downloaded_firmwares, downloaded_firmware_set
+                    )
             if is_android:
-                self._add_downloaded_asset(
-                    release_tag, downloaded_apks, downloaded_apk_set
-                )
+                if file_type == FILE_TYPE_ANDROID_PRERELEASE:
+                    if release_tag not in downloaded_apk_prerelease_set:
+                        downloaded_apk_prereleases.append(release_tag)
+                        downloaded_apk_prerelease_set.add(release_tag)
+                else:
+                    self._add_downloaded_asset(
+                        release_tag, downloaded_apks, downloaded_apk_set
+                    )
 
         return (
             downloaded_firmwares,
             new_firmware_versions,
             downloaded_apks,
             new_apk_versions,
+            downloaded_firmware_prereleases,
+            downloaded_apk_prereleases,
         )
 
     def _update_new_versions(
@@ -535,7 +583,9 @@ class DownloadCLIIntegration:
         List[str],
         List[str],
         List[str],
-        List[Dict[str, Any]],  # Updated to match actual payload types
+        List[str],
+        List[str],
+        List[Dict[str, Any]],
         str,
         str,
     ]:
@@ -552,6 +602,8 @@ class DownloadCLIIntegration:
                 new_firmware_versions (List[str]): Subset of downloaded_firmwares that are newer than previously known firmware versions.
                 downloaded_apks (List[str]): List of Android APK release tags or identifiers that were downloaded during the run.
                 new_apk_versions (List[str]): Subset of downloaded_apks that are newer than previously known APK versions.
+                downloaded_firmware_prereleases (List[str]): List of firmware prerelease release tags or identifiers that were downloaded during the run.
+                downloaded_apk_prereleases (List[str]): List of Android APK prerelease release tags or identifiers that were downloaded during the run.
                 failed_downloads (List[Dict[str, Any]]): List of failure records formatted for legacy CLI consumption; each record includes keys like file_name, release_tag, url, type, path_to_download, error, retryable, and http_status.
                 latest_firmware_version (str): The latest known firmware version after the run (empty string if unknown).
                 latest_apk_version (str): The latest known Android APK version after the run (empty string if unknown).
@@ -582,7 +634,7 @@ class DownloadCLIIntegration:
             KeyError,
         ) as error:
             self.handle_cli_error(error)
-            return [], [], [], [], [], "", ""
+            return [], [], [], [], [], [], [], "", ""
 
     def update_cache(self, config: Dict[str, Any]) -> bool:
         """

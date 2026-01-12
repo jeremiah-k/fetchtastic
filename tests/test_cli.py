@@ -43,7 +43,17 @@ def mock_cli_dependencies(mocker, tmp_path):
 
     # Create a mock integration instance that prevents real downloads
     mock_integration_instance = mocker.MagicMock()
-    mock_integration_instance.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration_instance.main.return_value = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        "",
+        "",
+    )
     mock_integration_instance.update_cache.return_value = True
     mock_integration_instance.get_latest_versions.return_value = {
         "firmware": "",
@@ -1496,7 +1506,17 @@ def test_cli_download_without_log_level_config(mocker):
 
     # Mock integration
     mock_integration = mocker.MagicMock()
-    mock_integration.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration.main.return_value = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        "",
+        "",
+    )
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
@@ -1546,7 +1566,17 @@ def test_cli_download_with_empty_config(mocker):
 
     # Mock integration
     mock_integration = mocker.MagicMock()
-    mock_integration.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration.main.return_value = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        "",
+        "",
+    )
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
