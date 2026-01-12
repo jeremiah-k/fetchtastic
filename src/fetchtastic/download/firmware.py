@@ -7,6 +7,7 @@ This module implements the specific downloader for Meshtastic firmware releases.
 import fnmatch
 import json
 import os
+import re
 import shutil
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -1101,19 +1102,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             str: Normalized base version tag suitable for comparison.
         """
-        suffixes = ["-revoked"] + [
-            f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
-        ]
-        base_name = name
-        stripped = True
-        while stripped:
-            stripped = False
-            for suffix in suffixes:
-                if base_name.endswith(suffix):
-                    base_name = base_name[: -len(suffix)]
-                    stripped = True
-                    break
-        return base_name.removeprefix(FIRMWARE_DIR_PREFIX)
+        suffix_parts = ["revoked"] + sorted(
+            STORAGE_CHANNEL_SUFFIXES, key=len, reverse=True
+        )
+        suffix_pattern = "|".join(re.escape(f"-{suffix}") for suffix in suffix_parts)
+        stripped_name = re.sub(f"(?:{suffix_pattern})+$", "", name)
+        return stripped_name.removeprefix(FIRMWARE_DIR_PREFIX)
 
     def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
         """
