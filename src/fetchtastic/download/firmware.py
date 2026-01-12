@@ -872,6 +872,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
             )
 
+            add_channel_suffixes = self.config.get(
+                "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
+                DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+            )
+
             # Use the first keep_limit releases for the normal keep set
             latest_releases = all_releases[:keep_limit]
 
@@ -961,11 +966,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 existing_base_names = {
                     self._get_comparable_base_tag(name) for name in existing_versions
                 }
+                unmatched_channel_dirs = []
+                if not add_channel_suffixes:
+                    unmatched_channel_dirs = [
+                        name
+                        for name in existing_versions
+                        if name not in release_tags_to_keep
+                        and name != self._get_comparable_base_tag(name)
+                    ]
 
                 if (
                     keep_limit > 0
                     and existing_versions
-                    and keep_base_names.isdisjoint(existing_base_names)
+                    and (
+                        keep_base_names.isdisjoint(existing_base_names)
+                        or bool(unmatched_channel_dirs)
+                    )
                 ):
                     logger.warning(
                         "Skipping firmware cleanup: keep set does not match existing directories."
