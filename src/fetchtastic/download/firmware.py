@@ -901,7 +901,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 # anything during cleanup.
                 release_tags_to_keep.add(
                     build_storage_tag_with_channel(
-                        sanitized_release_tag=base_tag,
+                        sanitized_release_tag=safe_tag,
                         release=release,
                         release_history_manager=self.release_history_manager,
                         config=self.config,
@@ -926,7 +926,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         release_tags_to_keep.add(safe_beta_tag)
                         release_tags_to_keep.add(
                             build_storage_tag_with_channel(
-                                sanitized_release_tag=beta_base_tag,
+                                sanitized_release_tag=safe_beta_tag,
                                 release=most_recent_beta,
                                 release_history_manager=self.release_history_manager,
                                 config=self.config,
@@ -1102,9 +1102,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             str: Normalized base version tag suitable for comparison.
         """
-        suffix_parts = ["revoked"] + sorted(
-            STORAGE_CHANNEL_SUFFIXES, key=len, reverse=True
-        )
+        suffix_parts = [
+            "revoked",
+            *sorted(STORAGE_CHANNEL_SUFFIXES, key=len, reverse=True),
+        ]
         suffix_pattern = "|".join(re.escape(f"-{suffix}") for suffix in suffix_parts)
         stripped_name = re.sub(f"(?:{suffix_pattern})+$", "", name)
         return stripped_name.removeprefix(FIRMWARE_DIR_PREFIX)
