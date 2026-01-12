@@ -478,9 +478,15 @@ def test_get_releases_for_summary_limits_and_sorts(tmp_path):
     history_path = cache_manager.get_cache_file_path("release_history_summary_limit")
     manager = ReleaseHistoryManager(cache_manager, history_path)
     releases = [
-        Release(tag_name="v1.0.0", prerelease=False),
-        Release(tag_name="v2.0.0", prerelease=False),
-        Release(tag_name="v1.1.0", prerelease=False),
+        Release(
+            tag_name="v1.0.0", prerelease=False, published_at="2024-01-01T00:00:00Z"
+        ),
+        Release(
+            tag_name="v2.0.0", prerelease=False, published_at="2024-03-01T00:00:00Z"
+        ),
+        Release(
+            tag_name="v1.1.0", prerelease=False, published_at="2024-02-01T00:00:00Z"
+        ),
     ]
 
     limited = manager.get_releases_for_summary(releases, keep_limit=2)

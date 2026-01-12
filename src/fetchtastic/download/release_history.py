@@ -231,11 +231,7 @@ class ReleaseHistoryManager:
         if not most_recent_beta:
             return keep_limit
 
-        sorted_releases = sorted(
-            [release for release in releases if release.tag_name],
-            key=get_release_sorting_key,
-            reverse=True,
-        )
+        sorted_releases = self._get_sorted_releases_with_tags(releases)
         if most_recent_beta in sorted_releases[:keep_limit]:
             return keep_limit
 

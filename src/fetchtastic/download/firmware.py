@@ -1484,7 +1484,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         latest_release_tag: str,
         *,
         force_refresh: bool = False,
-    ) -> tuple[list[DownloadResult], list[DownloadResult], Optional[str]]:
+    ) -> tuple[
+        list[DownloadResult],
+        list[DownloadResult],
+        Optional[str],
+        Optional[Dict[str, Any]],
+    ]:
         """
         Check for and download firmware prerelease assets from the Meshtastic site (legacy repo-based workflow), update prerelease tracking, and return results.
 
