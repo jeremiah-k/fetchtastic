@@ -467,16 +467,10 @@ class DownloadOrchestrator:
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
-        Download firmware assets from a release and optionally extract them based on configuration.
-
-        If matching assets are found they are downloaded; extraction is performed only when the `AUTO_EXTRACT`
-        configuration flag is true.
-
-        Parameters:
-            release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
-
+        Download firmware assets from the given release and optionally extract matching files per configuration.
+        
         Returns:
-            bool: `True` if at least one asset was downloaded, `False` otherwise.
+            `True` if at least one asset was downloaded, `False` otherwise.
         """
         any_downloaded = False
         try:
@@ -1016,10 +1010,9 @@ class DownloadOrchestrator:
 
     def log_firmware_release_history_summary(self) -> None:
         """
-        Log firmware release channel and status summaries for the run.
-
-        If firmware release history and releases are available, emit three reports via the release history manager:
-        a channel summary (respecting FIRMWARE_VERSIONS_TO_KEEP and, when enabled, optionally including the most recent beta in the retained set), a status summary, and a duplicate base-version summary.
+        Emit firmware release summaries when firmware release history and releases are available.
+        
+        Logs three reports via the firmware release history manager: a release channel summary, a release status summary, and a duplicate base-version summary. If the `FILTER_REVOKED_RELEASES` config is enabled, revoked firmware releases are excluded from the channel and status summaries. If the `KEEP_LAST_BETA` config is enabled, the channel summary's retention window may be expanded to include the most recent beta release according to the configured firmware keep limit.
         """
         if not self.firmware_release_history or not self.firmware_releases:
             return

@@ -45,14 +45,15 @@ class TestDownloadOrchestrator:
     @pytest.fixture
     def orchestrator(self, mock_config):
         """
-        Create a DownloadOrchestrator configured for tests with key dependencies replaced by mocks.
-
+        Create a DownloadOrchestrator for tests with core managers and downloaders replaced by mocks.
+        
+        The returned orchestrator has its cache_manager, version_manager, and prerelease_manager replaced with Mock objects, and its android_downloader and firmware_downloader replaced with Mock objects whose download_dir is set to "/tmp/test". The firmware_downloader mock is configured so `is_release_revoked()` returns False and `_collect_non_revoked_releases(...)` returns a tuple of (initial_releases, initial_releases, current_fetch_limit) to preserve initial inputs.
+        
         Parameters:
             mock_config (dict): Configuration dictionary passed to the DownloadOrchestrator constructor.
-
+        
         Returns:
-            orchestrator (DownloadOrchestrator): Instance whose cache_manager, version_manager, prerelease_manager,
-            android_downloader, and firmware_downloader are Mock objects and whose downloader download_dir attributes are set to "/tmp/test".
+            DownloadOrchestrator: Test instance with mocked managers and downloaders and deterministic firmware helper behavior.
         """
         orch = DownloadOrchestrator(mock_config)
         # Mock the dependencies that are set in __init__

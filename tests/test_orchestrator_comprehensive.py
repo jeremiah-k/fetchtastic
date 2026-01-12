@@ -434,7 +434,9 @@ class TestDownloadOrchestrator:
     def test_process_firmware_downloads_uses_beta_fetch_limit(
         self, orchestrator, filter_revoked
     ):
-        """Firmware releases fetch should use beta-aware fetch limit."""
+        """
+        Verify the firmware release fetch limit is beta-aware: it requests RELEASE_SCAN_COUNT releases by default and requests an additional RELEASE_SCAN_COUNT when FILTER_REVOKED_RELEASES is enabled.
+        """
         orchestrator.config["SAVE_FIRMWARE"] = True
         orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
         orchestrator.config["KEEP_LAST_BETA"] = True
