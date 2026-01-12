@@ -407,6 +407,7 @@ def test_cli_download_failed_downloads_reporting(mocker):
 @pytest.mark.unit
 def test_run_repo_clean_config_missing(mocker):
     """Test run_repo_clean when config is missing."""
+    mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})
     mocker.patch("builtins.input", return_value="y")
     mock_repo_downloader = mocker.patch("fetchtastic.cli.RepositoryDownloader")
 
@@ -421,6 +422,7 @@ def test_run_repo_clean_config_missing(mocker):
 @pytest.mark.unit
 def test_run_repo_clean_logs_summary(mocker):
     """Test run_repo_clean logs cleanup summary and errors."""
+    mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})
     mocker.patch("builtins.input", return_value="y")
     mock_repo_downloader = mocker.patch("fetchtastic.cli.RepositoryDownloader")
     mock_repo_downloader.return_value.clean_repository_directory.return_value = True
@@ -444,6 +446,7 @@ def test_run_repo_clean_logs_summary(mocker):
 @pytest.mark.unit
 def test_run_repo_clean_confirmation_cancelled(mocker, capsys):
     """Test run_repo_clean when user cancels confirmation."""
+    mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})
     mock_config = {"BASE_DIR": "/tmp/test"}
     mocker.patch("builtins.input", return_value="n")  # Cancel
 
