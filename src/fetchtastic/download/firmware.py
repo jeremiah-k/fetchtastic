@@ -967,9 +967,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if filter_revoked:
                 # Add a buffer of releases to compensate for skipped revoked entries
                 # without increasing the API loop complexity.
-                fetch_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
-            if fetch_limit > 100:
-                fetch_limit = 100
+                fetch_limit += RELEASE_SCAN_COUNT
+            fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
 
             if cached_releases is not None and len(cached_releases) >= fetch_limit:
                 all_releases = cached_releases

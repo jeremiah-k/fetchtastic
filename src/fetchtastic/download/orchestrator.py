@@ -283,7 +283,8 @@ class DownloadOrchestrator:
                 max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
             )
             if filter_revoked and fetch_limit > 0:
-                fetch_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
+                fetch_limit += RELEASE_SCAN_COUNT
+            fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
             if self.firmware_releases is None or (
                 fetch_limit > 0 and len(self.firmware_releases) < fetch_limit
             ):
