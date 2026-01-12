@@ -979,6 +979,7 @@ class TestFirmwareReleaseDownloader:
                 "beta" if release.tag_name == "v1.0.0-beta" else ""
             )
         )
+        downloader.get_releases = Mock(return_value=[stable, beta])
 
         downloader.cleanup_old_versions(
             keep_limit=1,
@@ -1013,6 +1014,7 @@ class TestFirmwareReleaseDownloader:
             return tag
 
         downloader._sanitize_required = Mock(side_effect=_sanitize)
+        downloader.get_releases = Mock(return_value=[stable, beta])
 
         with patch("fetchtastic.download.firmware.logger.warning") as mock_warning:
             downloader.cleanup_old_versions(
