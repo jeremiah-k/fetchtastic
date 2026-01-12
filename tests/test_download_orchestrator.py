@@ -336,6 +336,8 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.should_download_asset.return_value = True
         orchestrator._handle_download_result = Mock()
 
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
         orchestrator._download_android_release(release)
 
         orchestrator.android_downloader.download_apk.assert_called_once()

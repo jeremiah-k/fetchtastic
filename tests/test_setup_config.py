@@ -1359,6 +1359,7 @@ def test_run_setup_first_run_linux_simple(
         "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
         "n",  # Add channel suffixes
+        "y",  # Filter revoked firmware releases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
@@ -1444,6 +1445,7 @@ def test_run_setup_first_run_windows(
         "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
         "n",  # Add channel suffixes
+        "y",  # Filter revoked firmware releases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
@@ -1538,6 +1540,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
         "n",  # Add channel suffixes
+        "y",  # Filter revoked firmware releases
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
         "n",  # No auto-extract
@@ -1632,6 +1635,7 @@ def test_run_setup_existing_config(
         "f",  # Only firmware
         "y",  # Check for pre-releases
         "n",  # Add channel suffixes
+        "y",  # Filter revoked firmware releases
         "5",  # Keep 5 versions of firmware
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
@@ -1748,6 +1752,7 @@ def test_run_setup_partial_firmware_section(
         "y",  # Re-run firmware menu
         "y",  # Check for firmware prereleases
         "n",  # Add channel suffixes
+        "y",  # Filter revoked firmware releases
         "3",  # Keep 3 versions of firmware
         "y",  # Auto-extract
         "esp32- rak4631-",  # Extraction patterns
