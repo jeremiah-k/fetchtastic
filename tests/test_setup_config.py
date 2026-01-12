@@ -107,9 +107,9 @@ def test_setup_downloads_partial_skips_firmware_menu(mocker):
     # Only run the firmware section in this partial pass.
     def wants(section: str) -> bool:
         """
-        Determine if the requested setup section is the firmware section.
-        
-        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        Determine whether the requested setup section is 'firmware'.
+
+        @returns `true` if `section` equals 'firmware', `false` otherwise.
         """
         return section == "firmware"
 
@@ -148,12 +148,12 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
     def wants(section: str) -> bool:
         """
         Check whether the requested setup section is the Android section.
-        
+
         Parameters:
-        	section (str): Name of the setup section to test (e.g., "android").
-        
+                section (str): Name of the setup section to test (e.g., "android").
+
         Returns:
-        	True if section is "android", False otherwise.
+                True if section is "android", False otherwise.
         """
         return section == "android"
 
@@ -189,9 +189,9 @@ def test_setup_downloads_partial_reruns_firmware_menu(mocker):
 
     def wants(section: str) -> bool:
         """
-        Determine if the requested setup section is the firmware section.
-        
-        @returns `true` if `section` is exactly "firmware", `false` otherwise.
+        Determine whether the requested setup section is 'firmware'.
+
+        @returns `true` if `section` equals 'firmware', `false` otherwise.
         """
         return section == "firmware"
 
@@ -230,12 +230,12 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
     def wants(section: str) -> bool:
         """
         Check whether the requested setup section is the Android section.
-        
+
         Parameters:
-        	section (str): Name of the setup section to test (e.g., "android").
-        
+                section (str): Name of the setup section to test (e.g., "android").
+
         Returns:
-        	True if section is "android", False otherwise.
+                True if section is "android", False otherwise.
         """
         return section == "android"
 
@@ -271,13 +271,13 @@ def test_setup_downloads_partial_skips_all_prompts(mocker):
 
     def wants(_section: str) -> bool:
         """
-        Indicates whether the named setup section is requested for this run.
-        
+        Determine whether the named setup section is requested for this run.
+
         Parameters:
             _section (str): Name of the setup section to check.
-        
+
         Returns:
-            bool: `true` if the section is requested, `false` otherwise.
+            True if the named section is requested, False otherwise.
         """
         return False
 
@@ -298,10 +298,10 @@ def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
     def wants(_section: str) -> bool:
         """
         Indicates that any setup section should be included.
-        
+
         Parameters:
             _section (str): Name of the setup section (ignored).
-        
+
         Returns:
             bool: `True` for all sections.
         """
@@ -2057,6 +2057,43 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
 @pytest.mark.configuration
 @pytest.mark.unit
 @patch("builtins.input")
+def test_setup_firmware_keep_last_beta_non_interactive(mock_input):
+    """Non-interactive runs should keep the existing KEEP_LAST_BETA setting."""
+    config = {"KEEP_LAST_BETA": True}
+
+    mock_input.side_effect = ["2", "n"]
+
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=True, default_versions=2
+        )
+
+    assert result["KEEP_LAST_BETA"] is True
+    assert mock_input.call_count == 2
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_keep_last_beta_interactive(mock_input):
+    """Interactive runs should prompt for KEEP_LAST_BETA."""
+    config = {"KEEP_LAST_BETA": False}
+
+    mock_input.side_effect = ["2", "y", "n"]
+
+    with patch("sys.stdin.isatty", return_value=True), patch.dict(
+        os.environ, {"CI": ""}
+    ):
+        result = setup_config._setup_firmware(
+            config, is_first_run=True, default_versions=2
+        )
+
+    assert result["KEEP_LAST_BETA"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
 def test_setup_firmware_extraction_tips_only_when_enabled(mock_input, capsys):
     """Extraction tips should only appear when auto-extract is enabled."""
     config = {"CHECK_PRERELEASES": False}
@@ -2285,6 +2322,35 @@ def test_setup_firmware_extract_patterns_string_config(mock_input):
 
     assert result["EXTRACT_PATTERNS"] == ["tbeam", "rak4631-"]
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["tbeam", "rak4631-"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_base_windows_existing_menu_shortcuts(mocker):
+    """Windows setup should prompt to update existing Start Menu shortcuts."""
+    config = {}
+    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
+    mocker.patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
+    mocker.patch("fetchtastic.setup_config.create_config_shortcut")
+    mocker.patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
+    mocker.patch("fetchtastic.setup_config.os.makedirs")
+    mocker.patch(
+        "fetchtastic.setup_config.os.path.exists",
+        side_effect=lambda path: path == setup_config.WINDOWS_START_MENU_FOLDER,
+    )
+
+    mocker.patch(
+        "fetchtastic.setup_config._safe_input",
+        side_effect=["C:\\Fetchtastic", "y"],
+    )
+
+    setup_config._setup_base(
+        config, is_partial_run=False, is_first_run=True, wants=lambda _: True
+    )
+
+    setup_config.create_windows_menu_shortcuts.assert_called_once_with(
+        setup_config.CONFIG_FILE, setup_config.BASE_DIR
+    )
 
 
 # Test helper functions for configuration handling

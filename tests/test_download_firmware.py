@@ -5,12 +5,13 @@
 import json
 import os
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import ANY, Mock, patch
 
 import pytest
 
 from fetchtastic import log_utils
-from fetchtastic.constants import FIRMWARE_DIR_NAME
+from fetchtastic.constants import FIRMWARE_DIR_NAME, RELEASE_SCAN_COUNT
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
@@ -19,6 +20,8 @@ from fetchtastic.download.version import VersionManager
 
 class TestFirmwareReleaseDownloader:
     """Test suite for FirmwareReleaseDownloader."""
+
+    pytestmark: ClassVar[list] = [pytest.mark.unit, pytest.mark.core_downloads]
 
     @pytest.fixture
     def mock_config(self):
@@ -64,13 +67,16 @@ class TestFirmwareReleaseDownloader:
             FirmwareReleaseDownloader: Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` are replaced with mocks. The `version_manager.get_release_tuple` delegates to a real VersionManager implementation.
         """
         dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
-        # Mock the dependencies that are set in __init__
+        # Mock dependencies that are set in __init__
         dl.cache_manager = mock_cache_manager
         dl.version_manager = Mock()
         dl.file_operations = Mock()
         real_version_manager = VersionManager()
         dl.version_manager.get_release_tuple.side_effect = (
             real_version_manager.get_release_tuple
+        )
+        dl.version_manager.extract_clean_version.side_effect = (
+            real_version_manager.extract_clean_version
         )
         return dl
 
@@ -800,6 +806,41 @@ class TestFirmwareReleaseDownloader:
 
         mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea-alpha")
 
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_matches_channel_suffix_bases(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Ensure base tags are matched even when releases use channel suffixes."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        firmware_dir = os.path.join(downloader.download_dir, FIRMWARE_DIR_NAME)
+        entry_keep = Mock()
+        entry_keep.name = "v1.0.0"
+        entry_keep.is_symlink.return_value = False
+        entry_keep.is_dir.return_value = True
+        entry_keep.path = os.path.join(firmware_dir, "v1.0.0")
+
+        entry_remove = Mock()
+        entry_remove.name = "v0.9.0"
+        entry_remove.is_symlink.return_value = False
+        entry_remove.is_dir.return_value = True
+        entry_remove.path = os.path.join(firmware_dir, "v0.9.0")
+
+        mock_scandir.return_value.__enter__.return_value = [
+            entry_keep,
+            entry_remove,
+        ]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v1.0.0-beta")])
+
+        downloader.cleanup_old_versions(keep_limit=1)
+
+        mock_rmtree.assert_called_once_with(entry_remove.path)
+
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
         path = downloader.get_prerelease_tracking_file()
@@ -859,14 +900,165 @@ class TestFirmwareReleaseDownloader:
             # Method should complete without error
             # Note: temp file removal from atomic_write is expected
 
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
     def test_download_repo_prerelease_firmware_success(self, downloader):
         """Test repo prerelease firmware download method exists and returns proper types."""
-        results, failed, latest = downloader.download_repo_prerelease_firmware("v1.0.0")
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+            patch.object(
+                downloader.cache_manager, "get_repo_directories", return_value=[]
+            ),
+        ):
+            results, failed, latest = downloader.download_repo_prerelease_firmware(
+                "v1.0.0"
+            )
 
         # Should return proper tuple structure
         assert isinstance(results, list)
         assert isinstance(failed, list)
         assert latest is None or isinstance(latest, str)
+
+    @pytest.mark.unit
+    @patch("os.path.exists")
+    def test_cleanup_old_versions_skips_when_no_releases_with_keep_last_beta(
+        self, mock_exists, downloader
+    ):
+        """Skip cleanup when keep_last_beta is enabled but no releases are available."""
+        mock_exists.return_value = True
+        downloader.get_releases = Mock(return_value=[])
+
+        with patch("os.scandir") as mock_scandir:
+            downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=True)
+
+        mock_scandir.assert_not_called()
+
+    @pytest.mark.unit
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_adds_beta_tag(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Most recent beta is kept when keep_last_beta is enabled."""
+        mock_exists.return_value = True
+        firmware_dir = os.path.join(downloader.download_dir, FIRMWARE_DIR_NAME)
+
+        entry_stable = Mock()
+        entry_stable.name = "v1.0.1"
+        entry_stable.is_symlink.return_value = False
+        entry_stable.is_dir.return_value = True
+        entry_stable.path = os.path.join(firmware_dir, "v1.0.1")
+
+        entry_beta = Mock()
+        entry_beta.name = "v1.0.0-beta"
+        entry_beta.is_symlink.return_value = False
+        entry_beta.is_dir.return_value = True
+        entry_beta.path = os.path.join(firmware_dir, "v1.0.0-beta")
+
+        entry_old = Mock()
+        entry_old.name = "v0.9.0"
+        entry_old.is_symlink.return_value = False
+        entry_old.is_dir.return_value = True
+        entry_old.path = os.path.join(firmware_dir, "v0.9.0")
+
+        mock_scandir.return_value.__enter__.return_value = [
+            entry_stable,
+            entry_beta,
+            entry_old,
+        ]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        stable = Release(tag_name="v1.0.1", prerelease=False)
+        beta = Release(tag_name="v1.0.0-beta", prerelease=False)
+        downloader.release_history_manager.get_release_channel = Mock(
+            side_effect=lambda release: (
+                "beta" if release.tag_name == "v1.0.0-beta" else ""
+            )
+        )
+        downloader.get_releases = Mock(return_value=[stable, beta])
+
+        downloader.cleanup_old_versions(
+            keep_limit=1,
+            keep_last_beta=True,
+            cached_releases=[stable, beta],
+        )
+
+        mock_rmtree.assert_called_once_with(entry_old.path)
+
+    @pytest.mark.unit
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_warns_on_unsafe_beta_tag(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Unsafe beta tag emits a warning during cleanup."""
+        mock_exists.return_value = True
+        mock_scandir.return_value.__enter__.return_value = []
+        mock_scandir.return_value.__exit__.return_value = None
+
+        stable = Release(tag_name="v1.0.1", prerelease=False)
+        beta = Release(tag_name="v1.0.0-beta", prerelease=False)
+        downloader.release_history_manager.get_release_channel = Mock(
+            side_effect=lambda release: (
+                "beta" if release.tag_name == "v1.0.0-beta" else ""
+            )
+        )
+
+        def _sanitize(tag, _label):
+            if tag == "v1.0.0-beta":
+                raise ValueError("unsafe")
+            return tag
+
+        downloader._sanitize_required = Mock(side_effect=_sanitize)
+        downloader.get_releases = Mock(return_value=[stable, beta])
+
+        with patch("fetchtastic.download.firmware.logger.warning") as mock_warning:
+            downloader.cleanup_old_versions(
+                keep_limit=1,
+                keep_last_beta=True,
+                cached_releases=[stable, beta],
+            )
+
+        mock_warning.assert_any_call(
+            "Skipping unsafe beta release tag during cleanup: %s",
+            beta.tag_name,
+        )
+
+    @pytest.mark.unit
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_skips_symlinks(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Symlinks in the firmware directory are skipped during cleanup."""
+        mock_exists.return_value = True
+        entry_symlink = Mock()
+        entry_symlink.name = "v1.0.0"
+        entry_symlink.is_symlink.return_value = True
+        entry_symlink.is_dir.return_value = False
+        entry_symlink.path = "/mock/firmware/v1.0.0"
+
+        mock_scandir.return_value.__enter__.return_value = [entry_symlink]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        with patch("fetchtastic.download.firmware.logger.warning") as mock_warning:
+            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+
+        mock_warning.assert_any_call(
+            "Skipping symlink in firmware directory during cleanup: %s",
+            entry_symlink.name,
+        )
+
+    @pytest.mark.unit
+    def test_get_expiry_timestamp_format(self, downloader):
+        """Expiry timestamp is returned as an ISO 8601 UTC string."""
+        expiry = downloader._get_expiry_timestamp()
+        assert "T" in expiry
+        assert "+00:00" in expiry or "Z" in expiry
 
     def test_handle_prereleases_with_repo_download(self, downloader):
         """Test prerelease handling with repo downloads."""
@@ -1111,6 +1303,129 @@ class TestFirmwareReleaseDownloader:
         """Superseded prerelease cleanup should handle version errors."""
         with patch.object(VersionManager, "get_release_tuple", side_effect=ValueError):
             assert downloader.cleanup_superseded_prereleases("v1.2.3") is False
+
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_keeps_most_recent_beta(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test that KEEP_LAST_BETA ensures most recent beta is kept."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        # Create mock directory entries: v3.0.0 (stable, newest), v2.0.0 (beta), v1.9.0 (alpha, oldest)
+        mock_v3 = Mock()
+        mock_v3.name = "v3.0.0"
+        mock_v3.is_symlink.return_value = False
+        mock_v3.is_dir.return_value = True
+        mock_v3.path = "/mock/firmware/v3.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0"
+
+        mock_v1 = Mock()
+        mock_v1.name = "v1.9.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.9.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v3, mock_v2, mock_v1]
+
+        # Mock releases with proper limit behavior (matching the fix in firmware.py)
+        all_releases = [
+            Release(
+                tag_name="v3.0.0",
+                published_at="2025-01-15T00:00:00Z",
+                name="v3.0.0",
+            ),
+            Release(
+                tag_name="v2.0.0",
+                published_at="2025-01-10T00:00:00Z",
+                name="v2.0.0 beta",
+            ),
+            Release(
+                tag_name="v1.9.0",
+                published_at="2025-01-05T00:00:00Z",
+                name="v1.9.0 alpha",
+            ),
+        ]
+        downloader.get_releases = Mock(
+            side_effect=lambda limit: all_releases[:limit] if limit > 0 else []
+        )
+
+        downloader.release_history_manager.get_release_channel = Mock(
+            side_effect=lambda r: (
+                "stable"
+                if r.tag_name == "v3.0.0"
+                else "beta" if r.tag_name == "v2.0.0" else "alpha"
+            )
+        )
+        downloader._sanitize_required = Mock(side_effect=lambda tag, _: tag)
+
+        # With KEEP_LAST_BETA=True and keep_limit=1:
+        # - v3.0.0 (stable, newest) should be kept (within keep_limit)
+        # - v2.0.0 (beta, most recent beta) should be kept (KEEP_LAST_BETA)
+        # - v1.9.0 (alpha, oldest) should be removed
+        downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=True)
+
+        # Only v1.9.0 should be removed
+        assert mock_rmtree.call_count == 1
+        mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
+        downloader.get_releases.assert_called_once_with(limit=RELEASE_SCAN_COUNT)
+
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_without_keep_last_beta(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup without KEEP_LAST_BETA uses normal logic."""
+        mock_exists.return_value = True
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        mock_v1 = Mock()
+        mock_v1.name = "v2.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v2.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v1.9.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v1.9.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+
+        # Mock releases with proper limit behavior
+        all_releases = [
+            Release(
+                tag_name="v2.0.0",
+                published_at="2025-01-10T00:00:00Z",
+                name="v2.0.0",
+            ),
+        ]
+        downloader.get_releases = Mock(
+            side_effect=lambda limit: all_releases[:limit] if limit > 0 else []
+        )
+
+        downloader._sanitize_required = Mock(return_value="v2.0.0")
+
+        # With KEEP_LAST_BETA=False (default), only v2.0.0 should be kept (keep_limit=1)
+        downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=False)
+
+        # v1.9.0 should be removed
+        assert mock_rmtree.call_count == 1
+        mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
+        downloader.get_releases.assert_called_once_with(limit=1)
 
     def test_download_firmware_exception_uses_firmware_dir(self, downloader, tmp_path):
         """Ensure validation errors fall back to the firmware directory."""

@@ -36,14 +36,20 @@ def _call_summary(
     failed=None,
     new_fw=None,
     new_apks=None,
+    downloaded_fw_prereleases=None,
+    downloaded_apk_prereleases=None,
 ):
     failed = failed or []
     new_fw = new_fw or []
     new_apks = new_apks or []
+    downloaded_fw_prereleases = downloaded_fw_prereleases or []
+    downloaded_apk_prereleases = downloaded_apk_prereleases or []
     integration.log_download_results_summary(
         elapsed_seconds=1.2,
         downloaded_firmwares=downloaded_fw,
         downloaded_apks=downloaded_apks,
+        downloaded_firmware_prereleases=downloaded_fw_prereleases,
+        downloaded_apk_prereleases=downloaded_apk_prereleases,
         failed_downloads=failed,
         latest_firmware_version="v2.8.0",
         latest_apk_version="v1.8.0",
@@ -63,7 +69,11 @@ def test_summary_sends_completion_notification(integration):
     ):
         _call_summary(integration, ["v2.8.0"], ["v1.8.1"], [])
         mock_completion.assert_called_once_with(
-            integration.config, ["v2.8.0"], ["v1.8.1"]
+            integration.config,
+            ["v2.8.0"],
+            ["v1.8.1"],
+            [],
+            [],
         )
         mock_up_to_date.assert_not_called()
 

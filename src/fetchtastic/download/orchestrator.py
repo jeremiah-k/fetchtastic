@@ -14,12 +14,13 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEFAULT_KEEP_LAST_BETA,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     ERROR_TYPE_RETRY_FAILURE,
     ERROR_TYPE_UNKNOWN,
@@ -33,6 +34,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
     MAX_RETRY_DELAY,
+    RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
@@ -261,9 +263,9 @@ class DownloadOrchestrator:
 
     def _process_firmware_downloads(self) -> None:
         """
-        Ensure recent firmware releases and repository prereleases are downloaded and remove unmanaged prerelease directories.
+        Ensure recent firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
 
-        Scans the configured recent firmware releases, downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Errors encountered during processing are caught and logged.
+        Scans configured firmware releases (limited by retention settings), downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, file-system, and parsing errors encountered during processing are caught and logged.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):
@@ -271,8 +273,17 @@ class DownloadOrchestrator:
                 return
 
             logger.info("Scanning Firmware releases")
+            keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+            keep_limit = self._get_firmware_keep_limit()
             if self.firmware_releases is None:
-                self.firmware_releases = self.firmware_downloader.get_releases()
+                fetch_limit = (
+                    max(keep_limit, RELEASE_SCAN_COUNT)
+                    if keep_last_beta
+                    else keep_limit
+                )
+                self.firmware_releases = self.firmware_downloader.get_releases(
+                    limit=fetch_limit
+                )
             firmware_releases = self.firmware_releases
             if not firmware_releases:
                 logger.info("No firmware releases found")
@@ -284,10 +295,13 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
-            keep_count = self.config.get(
-                "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
-            )
-            releases_to_process = firmware_releases[:keep_count]
+            releases_to_process = firmware_releases[:keep_limit]
+            if keep_last_beta:
+                most_recent_beta = self.firmware_downloader.release_history_manager.find_most_recent_beta(
+                    firmware_releases
+                )
+                if most_recent_beta and most_recent_beta not in releases_to_process:
+                    releases_to_process.append(most_recent_beta)
 
             releases_to_download = []
             for release in releases_to_process:
@@ -977,17 +991,45 @@ class DownloadOrchestrator:
 
     def log_firmware_release_history_summary(self) -> None:
         """
-        Emit firmware release channel/status summaries near the end of the run.
+        Log firmware release channel and status summaries for the run.
+
+        If firmware release history and releases are available, emit three reports via the release history manager:
+        a channel summary (respecting FIRMWARE_VERSIONS_TO_KEEP and, when enabled, optionally including the most recent beta in the retained set), a status summary, and a duplicate base-version summary.
         """
         if not self.firmware_release_history or not self.firmware_releases:
             return
 
         manager = self.firmware_downloader.release_history_manager
-        manager.log_release_channel_summary(self.firmware_releases, label="Firmware")
+        keep_limit_for_summary = self._get_firmware_keep_limit()
+        keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+
+        if keep_last_beta:
+            keep_limit_for_summary = manager.expand_keep_limit_to_include_beta(
+                self.firmware_releases, keep_limit_for_summary
+            )
+
+        manager.log_release_channel_summary(
+            self.firmware_releases, label="Firmware", keep_limit=keep_limit_for_summary
+        )
         manager.log_release_status_summary(
             self.firmware_release_history, label="Firmware"
         )
         manager.log_duplicate_base_versions(self.firmware_releases, label="Firmware")
+
+    def _get_firmware_keep_limit(self) -> int:
+        """
+        Return the configured firmware keep limit as a non-negative integer.
+
+        Falls back to DEFAULT_FIRMWARE_VERSIONS_TO_KEEP when the config value is missing
+        or invalid.
+        """
+        raw_keep_limit = self.config.get(
+            "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+        )
+        try:
+            return max(0, int(raw_keep_limit))
+        except (TypeError, ValueError):
+            return int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """
@@ -1067,9 +1109,9 @@ class DownloadOrchestrator:
 
     def cleanup_old_versions(self) -> None:
         """
-        Remove older Android and firmware artifact versions and remove prerelease directories marked as deleted.
+        Prune locally stored Android and firmware artifacts according to configured retention settings and remove prerelease directories marked as deleted.
 
-        Uses configured keep counts (ANDROID_VERSIONS_TO_KEEP, FIRMWARE_VERSIONS_TO_KEEP) to instruct each downloader to prune old releases, then performs cleanup of prerelease directories recorded as deleted.
+        This routine reads retention settings (e.g., `ANDROID_VERSIONS_TO_KEEP`, `FIRMWARE_VERSIONS_TO_KEEP`) and instructs the Android and firmware downloaders to remove older releases. When firmware retention is applied, the `KEEP_LAST_BETA` setting is honored if present. After pruning releases, it removes any prerelease directories that have been recorded as deleted. On filesystem or configuration-related errors (`OSError`, `ValueError`, `TypeError`) it logs an error.
         """
         try:
             logger.info("Cleaning up old versions...")
@@ -1081,8 +1123,13 @@ class DownloadOrchestrator:
             )
 
             # Clean up firmware versions
-            firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)
-            self.firmware_downloader.cleanup_old_versions(firmware_keep)
+            firmware_keep = self._get_firmware_keep_limit()
+            keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+            self.firmware_downloader.cleanup_old_versions(
+                firmware_keep,
+                cached_releases=self.firmware_releases,
+                keep_last_beta=keep_last_beta,
+            )
             self._cleanup_deleted_prereleases()
 
             logger.info("Old version cleanup completed")

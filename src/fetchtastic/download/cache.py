@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import IO, Any, Callable, Optional, cast
 from urllib.parse import urlencode
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,

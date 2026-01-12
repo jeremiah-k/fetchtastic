@@ -198,14 +198,16 @@ def test_run_download_successful(mocker):
     mock_orchestrator.get_latest_versions.assert_called()
 
     # Verify conversion logic was exercised and result format
-    assert len(result) == 7
+    assert len(result) == 9
     assert result[0] == ["v1.0.0"]  # downloaded_firmwares (skipped one excluded)
     assert result[1] == ["v1.0.0"]  # new_firmware_versions (newer than v0.9.0)
     assert result[2] == ["v2.0.0"]  # downloaded_apks
     assert result[3] == ["v2.0.0"]  # new_apk_versions (newer than v1.9.0)
-    assert result[4] == []  # failed_downloads
-    assert result[5] == "v0.9.0"  # latest_firmware_version (from orchestrator)
-    assert result[6] == "v1.9.0"  # latest_apk_version (from orchestrator)
+    assert result[4] == []  # downloaded_firmware_prereleases
+    assert result[5] == []  # downloaded_apk_prereleases
+    assert result[6] == []  # failed_downloads
+    assert result[7] == "v0.9.0"  # latest_firmware_version (from orchestrator)
+    assert result[8] == "v1.9.0"  # latest_apk_version (from orchestrator)
 
     # Verify version comparison was called for new version detection
     # Should be called for each downloaded item (2 times in this test)
@@ -283,7 +285,7 @@ def test_run_download_handles_exception(mocker):
     result = integration.run_download(config=config, force_refresh=False)
 
     # Verify empty results are returned on error
-    assert result == ([], [], [], [], [], "", "")
+    assert result == ([], [], [], [], [], [], [], "", "")
 
 
 def test_is_newer_version_equal():
@@ -698,16 +700,21 @@ def test_convert_results_to_legacy_format_with_file_type_categorization():
     ]
 
     # Test the function
-    downloaded_firmwares, _new_firmware_versions, downloaded_apks, _new_apk_versions = (
-        integration._convert_results_to_legacy_format(results)
-    )
+    (
+        downloaded_firmwares,
+        _new_firmware_versions,
+        downloaded_apks,
+        _new_apk_versions,
+        _downloaded_firmware_prereleases,
+        _downloaded_apk_prereleases,
+    ) = integration._convert_results_to_legacy_format(results)
 
     # Verify file type categorization worked correctly
     assert "v1.0" in downloaded_firmwares  # firmware
-    assert "v1.1" in downloaded_firmwares  # firmware_prerelease
-    assert "v1.2" in downloaded_firmwares  # firmware_prerelease_repo
     assert "v2.0" in downloaded_apks  # android
-    assert "v2.1" in downloaded_apks  # android_prerelease
+    assert "v1.1" in _downloaded_firmware_prereleases  # firmware_prerelease
+    assert "v1.2" in _downloaded_firmware_prereleases  # firmware_prerelease_repo
+    assert "v2.1" in _downloaded_apk_prereleases  # android_prerelease
 
 
 def test_convert_results_uses_android_prerelease_for_comparison(mocker):
@@ -764,12 +771,18 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
             self.was_skipped = was_skipped
 
     results = [MockResult("v2.7.10-open.1", "android_prerelease", False)]
-    _downloaded_fw, _new_fw, downloaded_apks, new_apks = (
-        integration._convert_results_to_legacy_format(results)
-    )
+    (
+        _downloaded_fw,
+        _new_fw,
+        downloaded_apks,
+        new_apks,
+        _downloaded_firmware_prereleases,
+        downloaded_apk_prereleases,
+    ) = integration._convert_results_to_legacy_format(results)
 
     assert new_apks == []
-    assert downloaded_apks == ["v2.7.10-open.1"]
+    assert downloaded_apks == []
+    assert downloaded_apk_prereleases == ["v2.7.10-open.1"]
     calls = [call[0] for call in mock_version_manager.compare_versions.call_args_list]
     assert ("v2.7.10-open.1", "v2.7.10-open.1") in calls
     assert ("v2.7.10-open.1", "v2.7.9") not in calls
@@ -826,12 +839,18 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
             self.was_skipped = was_skipped
 
     results = [MockResult("firmware-2.7.10-abcdef", "firmware_prerelease", False)]
-    downloaded_fw, new_fw, _downloaded_apks, _new_apks = (
-        integration._convert_results_to_legacy_format(results)
-    )
+    (
+        downloaded_fw,
+        new_fw,
+        _downloaded_apks,
+        _new_apks,
+        downloaded_firmware_prereleases,
+        _downloaded_apk_prereleases,
+    ) = integration._convert_results_to_legacy_format(results)
 
     assert new_fw == []
-    assert downloaded_fw == ["firmware-2.7.10-abcdef"]
+    assert downloaded_fw == []
+    assert downloaded_firmware_prereleases == ["firmware-2.7.10-abcdef"]
     calls = [call[0] for call in mock_version_manager.compare_versions.call_args_list]
     assert ("2.7.10-abcdef", "2.7.10-abcdef") in calls
     assert ("firmware-2.7.10-abcdef", "2.7.10-abcdef") not in calls
