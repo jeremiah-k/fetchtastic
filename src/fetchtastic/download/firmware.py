@@ -835,6 +835,32 @@ class FirmwareReleaseDownloader(BaseDownloader):
             firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
+            suffixes = ["-revoked"] + [
+                f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
+            ]
+
+            def _get_comparable_base_tag(name: str) -> str:
+                """
+                Removes channel/revoked suffixes and the 'firmware-' prefix to get a comparable base version tag.
+
+                Parameters:
+                    name (str): Directory or tag name that may include one or more channel suffixes (e.g., "-beta", "-rc") or "-revoked"), and may start with the firmware- prefix.
+
+                Returns:
+                    str: The normalized base version tag suitable for comparison.
+                """
+                base_name = name
+                stripped = True
+                while stripped:
+                    stripped = False
+                    for suffix in suffixes:
+                        if base_name.endswith(suffix):
+                            base_name = base_name[: -len(suffix)]
+                            stripped = True
+                            break
+                base_name = base_name.removeprefix(FIRMWARE_DIR_PREFIX)
+                return base_name
+
             logger.debug(
                 "Firmware cleanup start: keep_limit=%s, keep_last_beta=%s, firmware_dir=%s",
                 keep_limit,
@@ -873,6 +899,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     )
                     continue
                 keep_base_tags.add(safe_tag)
+                keep_base_tags.add(_get_comparable_base_tag(safe_tag))
 
                 # Always keep the unsuffixed tag so legacy directories (created
                 # before channel suffixing existed) are never deleted during
@@ -907,6 +934,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             most_recent_beta.tag_name, "beta release tag"
                         )
                         keep_base_tags.add(safe_beta_tag)
+                        keep_base_tags.add(_get_comparable_base_tag(safe_beta_tag))
                         release_tags_to_keep.add(safe_beta_tag)
                         release_tags_to_keep.add(
                             build_storage_tag_with_channel(
@@ -945,32 +973,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         REPO_DOWNLOADS_DIR,
                     }
                 }
-
-                suffixes = ["-revoked"] + [
-                    f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
-                ]
-
-                def _get_comparable_base_tag(name: str) -> str:
-                    """
-                    Removes channel/revoked suffixes and the 'firmware-' prefix to get a comparable base version tag.
-
-                    Parameters:
-                        name (str): Directory or tag name that may include one or more channel suffixes (e.g., "-beta", "-rc") or "-revoked"), and may start with the firmware- prefix.
-
-                    Returns:
-                        str: The normalized base version tag suitable for comparison.
-                    """
-                    base_name = name
-                    stripped = True
-                    while stripped:
-                        stripped = False
-                        for suffix in suffixes:
-                            if base_name.endswith(suffix):
-                                base_name = base_name[: -len(suffix)]
-                                stripped = True
-                                break
-                    base_name = base_name.removeprefix(FIRMWARE_DIR_PREFIX)
-                    return base_name
 
                 existing_base_names = {
                     _get_comparable_base_tag(name) for name in existing_versions

@@ -20,6 +20,8 @@ from fetchtastic.download.version import VersionManager
 class TestFirmwareReleaseDownloader:
     """Test suite for FirmwareReleaseDownloader."""
 
+    pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
     @pytest.fixture
     def mock_config(self):
         """
@@ -802,6 +804,40 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=2)
 
         mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea-alpha")
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_matches_channel_suffix_bases(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Ensure base tags are matched even when releases use channel suffixes."""
+        mock_exists.return_value = True
+
+        firmware_dir = os.path.join(downloader.download_dir, FIRMWARE_DIR_NAME)
+        entry_keep = Mock()
+        entry_keep.name = "v1.0.0"
+        entry_keep.is_symlink.return_value = False
+        entry_keep.is_dir.return_value = True
+        entry_keep.path = os.path.join(firmware_dir, "v1.0.0")
+
+        entry_remove = Mock()
+        entry_remove.name = "v0.9.0"
+        entry_remove.is_symlink.return_value = False
+        entry_remove.is_dir.return_value = True
+        entry_remove.path = os.path.join(firmware_dir, "v0.9.0")
+
+        mock_scandir.return_value.__enter__.return_value = [
+            entry_keep,
+            entry_remove,
+        ]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v1.0.0-beta")])
+
+        downloader.cleanup_old_versions(keep_limit=1)
+
+        mock_rmtree.assert_called_once_with(entry_remove.path)
 
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
