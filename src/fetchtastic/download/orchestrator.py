@@ -493,8 +493,16 @@ class DownloadOrchestrator:
                     any_downloaded = True
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
-                # If download succeeded, extract files if AUTO_EXTRACT is enabled
-                if download_result.success and self.config.get("AUTO_EXTRACT", False):
+                # If download succeeded, extract files if AUTO_EXTRACT is enabled.
+                # Skip extraction when a release is intentionally skipped (e.g., revoked).
+                if (
+                    download_result.success
+                    and self.config.get("AUTO_EXTRACT", False)
+                    and not (
+                        download_result.was_skipped
+                        and download_result.error_type == "revoked_release"
+                    )
+                ):
                     extract_result = self.firmware_downloader.extract_firmware(
                         release, asset, extract_patterns, exclude_patterns
                     )

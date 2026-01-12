@@ -375,6 +375,28 @@ class TestDownloadOrchestrator:
         calls = orchestrator._handle_download_result.call_args_list
         assert any(call[0][0] == mock_result for call in calls)
 
+    def test_download_firmware_release_skips_extract_for_revoked(self, orchestrator):
+        """Revoked firmware skips extraction even when auto-extract is enabled."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware.zip"
+        release.assets = [asset]
+
+        mock_result = Mock(spec=DownloadResult)
+        mock_result.success = True
+        mock_result.was_skipped = True
+        mock_result.error_type = "revoked_release"
+
+        orchestrator.config["AUTO_EXTRACT"] = True
+        orchestrator.firmware_downloader.download_firmware.return_value = mock_result
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        orchestrator._handle_download_result = Mock()
+
+        orchestrator._download_firmware_release(release)
+
+        orchestrator.firmware_downloader.extract_firmware.assert_not_called()
+
     def test_handle_download_result_success(self, orchestrator):
         """Test handling successful download result."""
         result = Mock(spec=DownloadResult)
