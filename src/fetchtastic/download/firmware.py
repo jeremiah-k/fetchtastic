@@ -112,6 +112,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
             api_url=device_api_config.get("api_url", DEVICE_HARDWARE_API_URL),
         )
 
+    @property
+    def _filter_revoked_releases(self) -> bool:
+        """Helper to determine whether revoked firmware releases should be filtered."""
+        return self.config.get(
+            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+        )
+
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
         Compute the sanitized filesystem path for a firmware asset inside the downloader's firmware directory and ensure the version directory exists.
@@ -479,23 +486,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was skipped includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
         """
-        filter_revoked = self.config.get(
-            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
-        )
-
-        if filter_revoked and self.is_release_revoked(release):
+        if self._filter_revoked_releases and self.is_release_revoked(release):
             logger.info(
                 "Skipping revoked firmware release %s because revoked filtering is enabled.",
                 release.tag_name,
             )
+            firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             return self.create_download_result(
                 success=True,
                 release_tag=release.tag_name,
-                file_path="",
+                file_path=firmware_dir,
                 download_url=asset.download_url,
                 file_size=asset.size,
                 file_type=FILE_TYPE_FIRMWARE,
                 was_skipped=True,
+                error_type="revoked_release",
+                error_details={
+                    "revoked": True,
+                    "filter_revoked_releases": True,
+                },
             )
 
         target_path: Optional[str] = None
@@ -875,13 +884,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # Fetch releases once, using a small scan window to locate the latest beta
             # This avoids a redundant second API call when keep_last_beta is enabled
-            filter_revoked = self.config.get(
-                "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
-            )
+            filter_revoked = self._filter_revoked_releases
             fetch_limit = (
                 max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
             )
             if filter_revoked:
+                # Add a buffer of releases to compensate for skipped revoked entries
+                # without introducing an API loop that keeps requesting until success.
                 fetch_limit += RELEASE_SCAN_COUNT
             if cached_releases is not None:
                 all_releases = cached_releases
@@ -889,7 +898,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     all_releases
                 ) < fetch_limit:
                     logger.debug(
-                        "cached_releases contains %d releases but %d are needed to honor keep_last_beta; refetching",
+                        "cached_releases contains %d releases but %d are needed to honor "
+                        "keep_last_beta or filter_revoked; refetching",
                         len(all_releases),
                         fetch_limit,
                     )

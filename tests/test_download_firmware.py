@@ -317,6 +317,8 @@ class TestFirmwareReleaseDownloader:
         """Revoked releases are skipped when revoked filtering is enabled."""
         downloader.config["FILTER_REVOKED_RELEASES"] = True
         downloader.is_release_revoked = Mock(return_value=True)
+        downloader.download = Mock()
+        downloader.verify = Mock(return_value=True)
 
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
@@ -330,6 +332,16 @@ class TestFirmwareReleaseDownloader:
 
         assert result.success is True
         assert result.was_skipped is True
+        assert result.file_path == Path(
+            os.path.join(downloader.download_dir, FIRMWARE_DIR_NAME)
+        )
+        assert result.error_type == "revoked_release"
+        assert result.error_details == {
+            "revoked": True,
+            "filter_revoked_releases": True,
+        }
+        downloader.download.assert_not_called()
+        downloader.verify.assert_not_called()
 
     def test_download_firmware_download_failure(self, downloader):
         """Test firmware download failure."""

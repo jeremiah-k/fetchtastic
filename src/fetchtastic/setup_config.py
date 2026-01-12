@@ -898,7 +898,7 @@ def _setup_downloads(
             filter_revoked_current = _coerce_bool(
                 config.get("FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES)
             )
-            filter_revoked_default = "yes" if filter_revoked_current else "no"
+            filter_revoked_default = "y" if filter_revoked_current else "n"
             filter_revoked_input = _safe_input(
                 "\nWould you like to filter out revoked firmware releases entirely "
                 "(skipping them from the managed firmware directory)? [y/n] "
