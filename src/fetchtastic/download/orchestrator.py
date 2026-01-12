@@ -19,6 +19,7 @@ import requests  # type: ignore[import-untyped]
 from fetchtastic.constants import (
     APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
+    DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_KEEP_LAST_BETA,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
@@ -275,12 +276,18 @@ class DownloadOrchestrator:
             logger.info("Scanning Firmware releases")
             keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
             keep_limit = self._get_firmware_keep_limit()
-            if self.firmware_releases is None:
-                fetch_limit = (
-                    max(keep_limit, RELEASE_SCAN_COUNT)
-                    if keep_last_beta
-                    else keep_limit
-                )
+            filter_revoked = self.config.get(
+                "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+            )
+            fetch_limit = (
+                max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
+            )
+            if filter_revoked and fetch_limit > 0:
+                fetch_limit += RELEASE_SCAN_COUNT
+            fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
+            if self.firmware_releases is None or (
+                fetch_limit > 0 and len(self.firmware_releases) < fetch_limit
+            ):
                 self.firmware_releases = self.firmware_downloader.get_releases(
                     limit=fetch_limit
                 )
@@ -295,10 +302,21 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
-            releases_to_process = firmware_releases[:keep_limit]
+            (
+                releases_for_processing,
+                firmware_releases,
+                fetch_limit,
+            ) = self.firmware_downloader.collect_non_revoked_releases(
+                initial_releases=firmware_releases,
+                target_count=keep_limit,
+                current_fetch_limit=fetch_limit,
+            )
+            self.firmware_releases = firmware_releases
+
+            releases_to_process = releases_for_processing[:keep_limit]
             if keep_last_beta:
                 most_recent_beta = self.firmware_downloader.release_history_manager.find_most_recent_beta(
-                    firmware_releases
+                    releases_for_processing
                 )
                 if most_recent_beta and most_recent_beta not in releases_to_process:
                     releases_to_process.append(most_recent_beta)
@@ -452,8 +470,8 @@ class DownloadOrchestrator:
         """
         Download firmware assets from a release and optionally extract them based on configuration.
 
-        If matching assets are found they are downloaded; extraction is performed only when the `AUTO_EXTRACT`
-        configuration flag is true.
+        If matching assets are found they are downloaded. Extraction is performed only when the
+        `AUTO_EXTRACT` configuration flag is true and the release was not skipped due to being revoked.
 
         Parameters:
             release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
@@ -493,8 +511,16 @@ class DownloadOrchestrator:
                     any_downloaded = True
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
-                # If download succeeded, extract files if AUTO_EXTRACT is enabled
-                if download_result.success and self.config.get("AUTO_EXTRACT", False):
+                # If download succeeded, extract files if AUTO_EXTRACT is enabled.
+                # Skip extraction when a release is intentionally skipped (e.g., revoked).
+                if (
+                    download_result.success
+                    and self.config.get("AUTO_EXTRACT", False)
+                    and not (
+                        download_result.was_skipped
+                        and download_result.error_type == "revoked_release"
+                    )
+                ):
                     extract_result = self.firmware_downloader.extract_firmware(
                         release, asset, extract_patterns, exclude_patterns
                     )
@@ -991,10 +1017,9 @@ class DownloadOrchestrator:
 
     def log_firmware_release_history_summary(self) -> None:
         """
-        Log firmware release channel and status summaries for the run.
+        Emit firmware release summaries when firmware release history and releases are available.
 
-        If firmware release history and releases are available, emit three reports via the release history manager:
-        a channel summary (respecting FIRMWARE_VERSIONS_TO_KEEP and, when enabled, optionally including the most recent beta in the retained set), a status summary, and a duplicate base-version summary.
+        Logs three reports via the firmware release history manager: a release channel summary, a release status summary, and a duplicate base-version summary. If the `FILTER_REVOKED_RELEASES` config is enabled, revoked firmware releases are excluded from the channel and status summaries. If the `KEEP_LAST_BETA` config is enabled, the channel summary's retention window may be expanded to include the most recent beta release according to the configured firmware keep limit.
         """
         if not self.firmware_release_history or not self.firmware_releases:
             return
@@ -1002,18 +1027,30 @@ class DownloadOrchestrator:
         manager = self.firmware_downloader.release_history_manager
         keep_limit_for_summary = self._get_firmware_keep_limit()
         keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+        filter_revoked = self.config.get(
+            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+        )
+
+        releases_for_summary = self.firmware_releases
+        if filter_revoked:
+            releases_for_summary = [
+                release
+                for release in self.firmware_releases
+                if not self.firmware_downloader.is_release_revoked(release)
+            ]
 
         if keep_last_beta:
             keep_limit_for_summary = manager.expand_keep_limit_to_include_beta(
-                self.firmware_releases, keep_limit_for_summary
+                releases_for_summary, keep_limit_for_summary
             )
 
         manager.log_release_channel_summary(
-            self.firmware_releases, label="Firmware", keep_limit=keep_limit_for_summary
+            releases_for_summary, label="Firmware", keep_limit=keep_limit_for_summary
         )
         manager.log_release_status_summary(
             self.firmware_release_history, label="Firmware"
         )
+        # Keep duplicate-base reporting unfiltered to surface version collisions even when revoked filtering is enabled.
         manager.log_duplicate_base_versions(self.firmware_releases, label="Firmware")
 
     def _get_firmware_keep_limit(self) -> int:

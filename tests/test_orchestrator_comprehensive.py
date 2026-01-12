@@ -430,11 +430,17 @@ class TestDownloadOrchestrator:
         ):
             orchestrator._process_firmware_downloads()
 
-    def test_process_firmware_downloads_uses_beta_fetch_limit(self, orchestrator):
-        """Firmware releases fetch should use beta-aware fetch limit."""
+    @pytest.mark.parametrize("filter_revoked", [True, False])
+    def test_process_firmware_downloads_uses_beta_fetch_limit(
+        self, orchestrator, filter_revoked
+    ):
+        """
+        Verify the firmware release fetch limit is beta-aware: it requests RELEASE_SCAN_COUNT releases by default and requests an additional RELEASE_SCAN_COUNT when FILTER_REVOKED_RELEASES is enabled.
+        """
         orchestrator.config["SAVE_FIRMWARE"] = True
         orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
         orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = filter_revoked
         orchestrator.firmware_releases = None
 
         releases = [Release(tag_name="v1.0.0", prerelease=False)]
@@ -464,7 +470,10 @@ class TestDownloadOrchestrator:
             orchestrator._process_firmware_downloads()
 
         mock_get_releases.assert_called_once()
-        assert mock_get_releases.call_args.kwargs["limit"] == RELEASE_SCAN_COUNT
+        expected_limit = RELEASE_SCAN_COUNT + (
+            RELEASE_SCAN_COUNT if filter_revoked else 0
+        )
+        assert mock_get_releases.call_args.kwargs["limit"] == expected_limit
 
     def test_process_firmware_downloads_includes_latest_beta(self, orchestrator):
         """Latest beta should be included in the processed release list."""

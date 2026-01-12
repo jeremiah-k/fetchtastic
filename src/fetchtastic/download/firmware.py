@@ -11,12 +11,13 @@ import re
 import shutil
 import zipfile
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
@@ -111,14 +112,97 @@ class FirmwareReleaseDownloader(BaseDownloader):
             api_url=device_api_config.get("api_url", DEVICE_HARDWARE_API_URL),
         )
 
-    def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
+    @property
+    def _filter_revoked_releases(self) -> bool:
         """
-        Compute the sanitized filesystem path for a firmware asset inside the downloader's firmware directory and ensure the version directory exists.
+        Return whether revoked firmware releases should be filtered.
 
-        Ensures the release tag and file name are sanitized and creates the version subdirectory if missing.
+        Reads the "FILTER_REVOKED_RELEASES" configuration option and falls back to the module default when unset.
 
         Returns:
-            Absolute path to the target location for the firmware asset.
+            bool: True if revoked firmware releases should be filtered, False otherwise.
+        """
+        value = self.config.get(
+            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+        )
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "y", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "n", "off", ""}:
+                return False
+        return bool(value)
+
+    def collect_non_revoked_releases(
+        self,
+        initial_releases: List[Release],
+        target_count: int,
+        current_fetch_limit: int,
+    ) -> Tuple[List[Release], List[Release], int]:
+        """
+        Select non-revoked releases from an initial list and expand the fetched set until a target count of non-revoked releases is met or a hard cap is reached.
+
+        Parameters:
+            initial_releases (List[Release]): Initial list of releases to filter.
+            target_count (int): Desired number of non-revoked releases to obtain; if 0, no additional fetching is performed.
+            current_fetch_limit (int): Current GitHub fetch limit used to retrieve releases; may be increased to find more non-revoked releases.
+
+        Returns:
+            Tuple[List[Release], List[Release], int]: A tuple containing:
+                - non_revoked_releases: list of releases that are not revoked (may be shorter than target_count if no more are available),
+                - all_releases: the most recently fetched full release list used to derive non_revoked_releases,
+                - fetch_limit: the fetch limit used to obtain all_releases (may be increased up to 100).
+        """
+        all_releases = initial_releases
+        fetch_limit = current_fetch_limit
+        if not self._filter_revoked_releases:
+            return all_releases, all_releases, fetch_limit
+
+        def _filter(releases: List[Release]) -> List[Release]:
+            """
+            Filter a list of releases to exclude revoked entries.
+
+            Parameters:
+                releases (List[Release]): Release objects to be filtered.
+
+            Returns:
+                List[Release]: Subset of `releases` containing only releases that are not revoked.
+            """
+            return [
+                release for release in releases if not self.is_release_revoked(release)
+            ]
+
+        non_revoked_releases = _filter(all_releases)
+        if target_count == 0:
+            return non_revoked_releases, all_releases, fetch_limit
+        while len(non_revoked_releases) < target_count and fetch_limit < 100:
+            next_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
+            logger.debug(
+                "Need %d non-revoked releases but have %d; increasing fetch limit to %d",
+                target_count,
+                len(non_revoked_releases),
+                next_limit,
+            )
+            all_releases = self.get_releases(limit=next_limit)
+            if not all_releases:
+                break
+            fetch_limit = next_limit
+            non_revoked_releases = _filter(all_releases)
+
+        return non_revoked_releases, all_releases, fetch_limit
+
+    def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
+        """
+        Compute the filesystem path for a firmware asset and ensure its release version directory exists.
+
+        Sanitizes `release_tag` and `file_name`, and creates the version subdirectory under the downloader's firmware directory if it does not exist.
+
+        Parameters:
+            release_tag (str): Release tag to use for the version subdirectory; will be sanitized.
+            file_name (str): Asset file name; will be sanitized.
+
+        Returns:
+            str: Absolute path to the target location for the firmware asset.
         """
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
@@ -478,6 +562,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was skipped includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
         """
+        if self._filter_revoked_releases and self.is_release_revoked(release):
+            logger.info(
+                "Skipping revoked firmware release %s because revoked filtering is enabled.",
+                release.tag_name,
+            )
+            firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+            return self.create_download_result(
+                success=True,
+                release_tag=release.tag_name,
+                file_path=firmware_dir,
+                download_url=asset.download_url,
+                file_size=asset.size,
+                file_type=FILE_TYPE_FIRMWARE,
+                was_skipped=True,
+                error_type="revoked_release",
+                error_details={
+                    "revoked": True,
+                    "filter_revoked_releases": True,
+                },
+            )
+
         target_path: Optional[str] = None
         try:
             storage_tag = self._get_release_storage_tag(release)
@@ -855,19 +960,34 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # Fetch releases once, using a small scan window to locate the latest beta
             # This avoids a redundant second API call when keep_last_beta is enabled
+            filter_revoked = self._filter_revoked_releases
             fetch_limit = (
                 max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
             )
-            if cached_releases is not None:
+            if filter_revoked:
+                # Add a buffer of releases to compensate for skipped revoked entries
+                # without increasing the API loop complexity.
+                fetch_limit += RELEASE_SCAN_COUNT
+            fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
+
+            if cached_releases is not None and len(cached_releases) >= fetch_limit:
                 all_releases = cached_releases
-                if keep_last_beta and len(all_releases) < fetch_limit:
-                    logger.debug(
-                        "cached_releases contains %d releases but %d are needed to honor keep_last_beta; refetching",
-                        len(all_releases),
-                        fetch_limit,
-                    )
-                    all_releases = self.get_releases(limit=fetch_limit)
             else:
+                cached_len = len(cached_releases) if cached_releases is not None else 0
+                reason_parts = []
+                if keep_last_beta:
+                    reason_parts.append("keep_last_beta")
+                if filter_revoked:
+                    reason_parts.append("filter_revoked")
+                reason_text = (
+                    " and ".join(reason_parts) if reason_parts else "fetch requirements"
+                )
+                logger.debug(
+                    "cached_releases contains %d releases but %d are needed to honor %s; refetching",
+                    cached_len,
+                    fetch_limit,
+                    reason_text,
+                )
                 all_releases = self.get_releases(limit=fetch_limit)
             if not all_releases and (keep_limit > 0 or keep_last_beta):
                 logger.warning(
@@ -885,8 +1005,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
             )
 
-            # Use the first keep_limit releases for the normal keep set
-            latest_releases = all_releases[:keep_limit]
+            non_revoked_releases, all_releases, fetch_limit = (
+                self.collect_non_revoked_releases(
+                    initial_releases=all_releases,
+                    target_count=keep_limit,
+                    current_fetch_limit=fetch_limit,
+                )
+            )
+            latest_releases = non_revoked_releases[:keep_limit] if keep_limit else []
 
             release_tags_to_keep = set()
             keep_base_names = set()
@@ -922,8 +1048,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # If keep_last_beta is enabled, ensure most recent beta is kept
             if keep_last_beta:
+                beta_source = non_revoked_releases if filter_revoked else all_releases
                 most_recent_beta = self.release_history_manager.find_most_recent_beta(
-                    all_releases
+                    beta_source
                 )
                 if most_recent_beta:
                     try:

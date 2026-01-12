@@ -80,6 +80,25 @@ class TestFirmwareReleaseDownloader:
         )
         return dl
 
+    def _expected_cleanup_fetch_limit(
+        self, keep_limit: int, keep_last_beta: bool, filter_revoked: bool = True
+    ) -> int:
+        """
+        Compute the numeric limit to request from the release API when cleaning up old firmware versions.
+
+        Parameters:
+            keep_limit (int): Number of releases to keep locally.
+            keep_last_beta (bool): If True, ensure at least RELEASE_SCAN_COUNT releases are considered to retain the most recent beta alongside kept releases.
+            filter_revoked (bool): If True, add an additional RELEASE_SCAN_COUNT to account for revocation filtering.
+
+        Returns:
+            int: The calculated fetch limit to pass to get_releases.
+        """
+        base = max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
+        if filter_revoked:
+            base += RELEASE_SCAN_COUNT
+        return min(base, 100)
+
     def test_init(self, mock_config, mock_cache_manager):
         """Test downloader initialization."""
         with (
@@ -307,6 +326,36 @@ class TestFirmwareReleaseDownloader:
         assert "firmware-rak4631.zip" in str(result.file_path)
         mock_download.assert_called_once()
 
+    def test_download_firmware_skips_revoked_when_filtered(self, downloader):
+        """Revoked releases are skipped when revoked filtering is enabled."""
+        downloader.config["FILTER_REVOKED_RELEASES"] = True
+        downloader.is_release_revoked = Mock(return_value=True)
+        downloader.download = Mock()
+        downloader.verify = Mock(return_value=True)
+
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rak4631.zip"
+        asset.download_url = "https://example.com/firmware.zip"
+        asset.size = 1000000
+
+        result = downloader.download_firmware(release, asset)
+
+        assert result.success is True
+        assert result.was_skipped is True
+        assert result.file_path == Path(
+            os.path.join(downloader.download_dir, FIRMWARE_DIR_NAME)
+        )
+        assert result.error_type == "revoked_release"
+        assert result.error_details == {
+            "revoked": True,
+            "filter_revoked_releases": True,
+        }
+        downloader.download.assert_not_called()
+        downloader.verify.assert_not_called()
+
     def test_download_firmware_download_failure(self, downloader):
         """Test firmware download failure."""
         # Force the internal download call to report a failure without real I/O
@@ -453,7 +502,10 @@ class TestFirmwareReleaseDownloader:
         mock_rmtree.assert_called_once()
         args = mock_rmtree.call_args[0][0]
         assert "v1.0.0" in args
-        downloader.get_releases.assert_called_once_with(limit=2)
+        expected_limit = self._expected_cleanup_fetch_limit(
+            keep_limit=2, keep_last_beta=False
+        )
+        downloader.get_releases.assert_called_once_with(limit=expected_limit)
 
     @patch("os.path.exists")
     @patch("os.scandir")
@@ -528,7 +580,10 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=0)
 
         # Should remove all versions
-        downloader.get_releases.assert_called_once_with(limit=0)
+        expected_limit = self._expected_cleanup_fetch_limit(
+            keep_limit=0, keep_last_beta=False
+        )
+        downloader.get_releases.assert_called_once_with(limit=expected_limit)
         assert mock_rmtree.call_count == 2
         calls = mock_rmtree.call_args_list
         removed_paths = {call[0][0] for call in calls}
@@ -1036,6 +1091,7 @@ class TestFirmwareReleaseDownloader:
     ):
         """Symlinks in the firmware directory are skipped during cleanup."""
         mock_exists.return_value = True
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
         entry_symlink = Mock()
         entry_symlink.name = "v1.0.0"
         entry_symlink.is_symlink.return_value = True
@@ -1377,7 +1433,10 @@ class TestFirmwareReleaseDownloader:
         # Only v1.9.0 should be removed
         assert mock_rmtree.call_count == 1
         mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
-        downloader.get_releases.assert_called_once_with(limit=RELEASE_SCAN_COUNT)
+        expected_limit = self._expected_cleanup_fetch_limit(
+            keep_limit=1, keep_last_beta=True
+        )
+        downloader.get_releases.assert_called_once_with(limit=expected_limit)
 
     @pytest.mark.unit
     @pytest.mark.core_downloads
@@ -1425,7 +1484,10 @@ class TestFirmwareReleaseDownloader:
         # v1.9.0 should be removed
         assert mock_rmtree.call_count == 1
         mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
-        downloader.get_releases.assert_called_once_with(limit=1)
+        expected_limit = self._expected_cleanup_fetch_limit(
+            keep_limit=1, keep_last_beta=False
+        )
+        downloader.get_releases.assert_called_once_with(limit=expected_limit)
 
     def test_download_firmware_exception_uses_firmware_dir(self, downloader, tmp_path):
         """Ensure validation errors fall back to the firmware directory."""

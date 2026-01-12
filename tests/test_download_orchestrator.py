@@ -45,14 +45,15 @@ class TestDownloadOrchestrator:
     @pytest.fixture
     def orchestrator(self, mock_config):
         """
-        Create a DownloadOrchestrator configured for tests with key dependencies replaced by mocks.
+        Create a DownloadOrchestrator for tests with core managers and downloaders replaced by mocks.
+
+        The returned orchestrator has its cache_manager, version_manager, and prerelease_manager replaced with Mock objects, and its android_downloader and firmware_downloader replaced with Mock objects whose download_dir is set to "/tmp/test". The firmware_downloader mock is configured so `is_release_revoked()` returns False and `collect_non_revoked_releases(...)` returns a tuple of (initial_releases, initial_releases, current_fetch_limit) to preserve initial inputs.
 
         Parameters:
             mock_config (dict): Configuration dictionary passed to the DownloadOrchestrator constructor.
 
         Returns:
-            orchestrator (DownloadOrchestrator): Instance whose cache_manager, version_manager, prerelease_manager,
-            android_downloader, and firmware_downloader are Mock objects and whose downloader download_dir attributes are set to "/tmp/test".
+            DownloadOrchestrator: Test instance with mocked managers and downloaders and deterministic firmware helper behavior.
         """
         orch = DownloadOrchestrator(mock_config)
         # Mock the dependencies that are set in __init__
@@ -64,6 +65,14 @@ class TestDownloadOrchestrator:
         orch.android_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+
+        def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
+            return initial_releases, initial_releases, current_fetch_limit
+
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            side_effect=_collect_non_revoked
+        )
         return orch
 
     def test_init(self, mock_config):
@@ -336,6 +345,8 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.should_download_asset.return_value = True
         orchestrator._handle_download_result = Mock()
 
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
         orchestrator._download_android_release(release)
 
         orchestrator.android_downloader.download_apk.assert_called_once()
@@ -372,6 +383,28 @@ class TestDownloadOrchestrator:
         # Check that it was called with the download result
         calls = orchestrator._handle_download_result.call_args_list
         assert any(call[0][0] == mock_result for call in calls)
+
+    def test_download_firmware_release_skips_extract_for_revoked(self, orchestrator):
+        """Revoked firmware skips extraction even when auto-extract is enabled."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware.zip"
+        release.assets = [asset]
+
+        mock_result = Mock(spec=DownloadResult)
+        mock_result.success = True
+        mock_result.was_skipped = True
+        mock_result.error_type = "revoked_release"
+
+        orchestrator.config["AUTO_EXTRACT"] = True
+        orchestrator.firmware_downloader.download_firmware.return_value = mock_result
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        orchestrator._handle_download_result = Mock()
+
+        orchestrator._download_firmware_release(release)
+
+        orchestrator.firmware_downloader.extract_firmware.assert_not_called()
 
     def test_handle_download_result_success(self, orchestrator):
         """Test handling successful download result."""
@@ -507,6 +540,7 @@ class TestDownloadOrchestrator:
         result.success = False
         result.file_path = "/path/to/file.apk"
         result.file_type = None
+        result.error_type = None
         result.retry_count = None
         orchestrator.download_results = []
         orchestrator.failed_downloads = [result]
@@ -517,4 +551,5 @@ class TestDownloadOrchestrator:
         assert isinstance(result.file_type, str)
         assert result.file_type != ""
         assert result.retry_count == 0
-        assert hasattr(result, "is_retryable")
+        assert isinstance(result.is_retryable, bool)
+        assert result.is_retryable is orchestrator._is_download_retryable(result)
