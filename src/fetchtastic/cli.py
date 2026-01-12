@@ -627,14 +627,17 @@ def run_clean():
 
     This operation deletes current and legacy configuration files, only Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (for example, Windows Start Menu and startup shortcuts, non-Windows cron entries, and a Termux boot script), and the Fetchtastic log file. The removal is irreversible and requires the user to confirm interactively; non-managed files are preserved.
     """
-    if not sys.stdin.isatty() and not os.environ.get("PYTEST_CURRENT_TEST"):
+    allow_test_clean = os.environ.get("FETCHTASTIC_ALLOW_TEST_CLEAN")
+    if (
+        not sys.stdin.isatty()
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and not allow_test_clean
+    ):
         log_utils.logger.error(
             "Clean operation requires an interactive terminal; aborting."
         )
         return
-    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get(
-        "FETCHTASTIC_ALLOW_TEST_CLEAN"
-    ):
+    if os.environ.get("PYTEST_CURRENT_TEST") and not allow_test_clean:
         log_utils.logger.error(
             "Clean operation blocked during tests. Set FETCHTASTIC_ALLOW_TEST_CLEAN=1 to override."
         )
@@ -656,10 +659,14 @@ def run_clean():
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
-    confirm = setup_config._safe_input(
-        "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
-    )
-    if not setup_config._coerce_bool(confirm, default=False):
+    if allow_test_clean:
+        confirmed = True
+    else:
+        confirm = setup_config._safe_input(
+            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
+        )
+        confirmed = setup_config._coerce_bool(confirm, default=False)
+    if not confirmed:
         print("Clean operation cancelled.")
         return
 
@@ -897,10 +904,14 @@ def run_repo_clean(config: Dict[str, Any]) -> None:
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )
-    confirm = setup_config._safe_input(
-        "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
-    )
-    if not setup_config._coerce_bool(confirm, default=False):
+    if allow_test_clean:
+        confirmed = True
+    else:
+        confirm = setup_config._safe_input(
+            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
+        )
+        confirmed = setup_config._coerce_bool(confirm, default=False)
+    if not confirmed:
         print("Clean operation cancelled.")
         return
 
