@@ -275,8 +275,8 @@ class DownloadOrchestrator:
 
             logger.info("Scanning Firmware releases")
             keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+            keep_limit = self._get_firmware_keep_limit()
             if self.firmware_releases is None:
-                keep_limit = self._get_firmware_keep_limit()
                 fetch_limit = (
                     max(keep_limit, RELEASE_SCAN_COUNT)
                     if keep_last_beta
@@ -296,8 +296,7 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
-            keep_count = self._get_firmware_keep_limit()
-            releases_to_process = firmware_releases[:keep_count]
+            releases_to_process = firmware_releases[:keep_limit]
             if keep_last_beta:
                 beta_releases = self._find_beta_releases(firmware_releases)
                 if beta_releases:

@@ -953,15 +953,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     f"-{suffix}" for suffix in sorted(STORAGE_CHANNEL_SUFFIXES)
                 ]
 
-                def _strip_suffixes(name: str) -> str:
+                def _get_comparable_base_tag(name: str) -> str:
                     """
-                    Removes channel and revoked suffixes from a directory name.
+                    Removes channel/revoked suffixes and the 'firmware-' prefix to get a comparable base version tag.
 
                     Parameters:
-                        name (str): Directory or tag name that may include one or more channel suffixes (e.g., "-beta", "-rc") or "-revoked".
+                        name (str): Directory or tag name that may include one or more channel suffixes (e.g., "-beta", "-rc") or "-revoked"), and may start with the firmware- prefix.
 
                     Returns:
-                        str: The name with all recognized suffixes stripped, iteratively removed until none remain.
+                        str: The normalized base version tag suitable for comparison.
                     """
                     base_name = name
                     stripped = True
@@ -972,10 +972,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                 base_name = base_name[: -len(suffix)]
                                 stripped = True
                                 break
+                    base_name = base_name.removeprefix(FIRMWARE_DIR_PREFIX)
                     return base_name
 
                 existing_base_names = {
-                    _strip_suffixes(name) for name in existing_versions
+                    _get_comparable_base_tag(name) for name in existing_versions
                 }
 
                 if (
@@ -1000,7 +1001,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         )
                         continue
                     if entry.is_dir():
-                        base_name = _strip_suffixes(entry.name)
+                        base_name = _get_comparable_base_tag(entry.name)
                         if (
                             entry.name not in release_tags_to_keep
                             and base_name not in keep_base_tags

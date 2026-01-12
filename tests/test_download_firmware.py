@@ -64,13 +64,16 @@ class TestFirmwareReleaseDownloader:
             FirmwareReleaseDownloader: Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` are replaced with mocks. The `version_manager.get_release_tuple` delegates to a real VersionManager implementation.
         """
         dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
-        # Mock the dependencies that are set in __init__
+        # Mock dependencies that are set in __init__
         dl.cache_manager = mock_cache_manager
         dl.version_manager = Mock()
         dl.file_operations = Mock()
         real_version_manager = VersionManager()
         dl.version_manager.get_release_tuple.side_effect = (
             real_version_manager.get_release_tuple
+        )
+        dl.version_manager.extract_clean_version.side_effect = (
+            real_version_manager.extract_clean_version
         )
         return dl
 
