@@ -659,14 +659,10 @@ def run_clean():
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
-    if allow_test_clean:
-        confirmed = True
-    else:
-        confirm = setup_config._safe_input(
-            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
-        )
-        confirmed = setup_config._coerce_bool(confirm, default=False)
-    if not confirmed:
+    confirm = setup_config._safe_input(
+        "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
+    )
+    if not setup_config._coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 

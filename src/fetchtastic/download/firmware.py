@@ -876,8 +876,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             latest_releases = all_releases[:keep_limit]
 
             release_tags_to_keep = set()
-            base_tags_to_keep = set()
-            legacy_dirs_to_keep = set()
+            keep_base_tags = set()
             for release in latest_releases:
                 try:
                     safe_tag = self._sanitize_required(release.tag_name, "release tag")
@@ -887,10 +886,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         release.tag_name,
                     )
                     continue
-                base_tag = self._get_comparable_base_tag(safe_tag)
-                base_tags_to_keep.add(base_tag)
-                if preserve_legacy_base_dirs:
-                    legacy_dirs_to_keep.add(safe_tag)
+                keep_base_tags.add(safe_tag)
+                keep_base_tags.add(self._get_comparable_base_tag(safe_tag))
 
                 # Always keep the unsuffixed tag so legacy directories (created
                 # before channel suffixing existed) are never deleted during
@@ -920,10 +917,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         safe_beta_tag = self._sanitize_required(
                             most_recent_beta.tag_name, "beta release tag"
                         )
-                        beta_base_tag = self._get_comparable_base_tag(safe_beta_tag)
-                        base_tags_to_keep.add(beta_base_tag)
-                        if preserve_legacy_base_dirs:
-                            legacy_dirs_to_keep.add(safe_beta_tag)
+                        keep_base_tags.add(safe_beta_tag)
+                        keep_base_tags.add(self._get_comparable_base_tag(safe_beta_tag))
                         release_tags_to_keep.add(safe_beta_tag)
                         release_tags_to_keep.add(
                             build_storage_tag_with_channel(
@@ -970,7 +965,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if (
                     keep_limit > 0
                     and existing_versions
-                    and base_tags_to_keep.isdisjoint(existing_base_names)
+                    and keep_base_tags.isdisjoint(existing_base_names)
                 ):
                     logger.warning(
                         "Skipping firmware cleanup: keep set does not match existing directories."
@@ -989,13 +984,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         )
                         continue
                     if entry.is_dir():
-                        self._get_comparable_base_tag(entry.name)
+                        base_name = self._get_comparable_base_tag(entry.name)
                         if entry.name in release_tags_to_keep:
                             continue
-                        if (
-                            preserve_legacy_base_dirs
-                            and entry.name in legacy_dirs_to_keep
-                        ):
+                        if preserve_legacy_base_dirs and base_name in keep_base_tags:
                             continue
                         try:
                             logger.debug(
