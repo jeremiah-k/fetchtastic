@@ -232,8 +232,8 @@ class DownloadOrchestrator:
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading Android release {release.tag_name}")
-                    if self._download_android_release(release):
-                        any_android_downloaded = True
+            if self._download_android_release(release):
+                any_android_downloaded = True
 
             logger.info("Checking for pre-release APK...")
             prereleases = self.android_downloader.handle_prereleases(android_releases)
@@ -261,6 +261,17 @@ class DownloadOrchestrator:
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing Android downloads: {e}", exc_info=True)
+
+    def _ensure_android_releases(self, limit: Optional[int] = None) -> List[Release]:
+        """
+        Return cached Android releases, fetching once if necessary.
+
+        Parameters:
+            limit (Optional[int]): Optional fetch limit for the initial API request.
+        """
+        if self.android_releases is None:
+            self.android_releases = self.android_downloader.get_releases(limit=limit)
+        return self.android_releases
 
     def _process_firmware_downloads(self) -> None:
         """
@@ -1280,9 +1291,7 @@ class DownloadOrchestrator:
                 else:
                     firmware_prerelease = active_dir
 
-        android_releases = (
-            self.android_releases or self.android_downloader.get_releases()
-        )
+        android_releases = self._ensure_android_releases()
         latest_android_release = next(
             (
                 release.tag_name
@@ -1310,9 +1319,7 @@ class DownloadOrchestrator:
         """
         try:
             # Use cached releases if available
-            android_releases = (
-                self.android_releases or self.android_downloader.get_releases(limit=1)
-            )
+            android_releases = self._ensure_android_releases(limit=1)
             firmware_releases = (
                 self.firmware_releases or self.firmware_downloader.get_releases(limit=1)
             )
