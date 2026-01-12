@@ -900,13 +900,10 @@ def run_repo_clean(config: Dict[str, Any]) -> None:
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )
-    if allow_test_clean:
-        confirmed = True
-    else:
-        confirm = setup_config._safe_input(
-            "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
-        )
-        confirmed = setup_config._coerce_bool(confirm, default=False)
+    confirm = setup_config._safe_input(
+        "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
+    )
+    confirmed = setup_config._coerce_bool(confirm, default=False)
     if not confirmed:
         print("Clean operation cancelled.")
         return
