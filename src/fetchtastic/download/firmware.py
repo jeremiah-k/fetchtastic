@@ -890,21 +890,24 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
             if filter_revoked:
                 # Add a buffer of releases to compensate for skipped revoked entries
-                # without introducing an API loop that keeps requesting until success.
+                # without increasing the API loop complexity.
                 fetch_limit += RELEASE_SCAN_COUNT
-            if cached_releases is not None:
+
+            if cached_releases is not None and len(cached_releases) >= fetch_limit:
                 all_releases = cached_releases
-                if (keep_last_beta or filter_revoked) and len(
-                    all_releases
-                ) < fetch_limit:
-                    logger.debug(
-                        "cached_releases contains %d releases but %d are needed to honor "
-                        "keep_last_beta or filter_revoked; refetching",
-                        len(all_releases),
-                        fetch_limit,
-                    )
-                    all_releases = self.get_releases(limit=fetch_limit)
             else:
+                cached_len = len(cached_releases) if cached_releases is not None else 0
+                reason = []
+                if cached_releases is not None:
+                    reason.append("cached_releases")
+                if keep_last_beta or filter_revoked:
+                    reason.append("keep_last_beta/filter_revoked")
+                logger.debug(
+                    "cached_releases contains %d releases but %d are needed to honor %s; refetching",
+                    cached_len,
+                    fetch_limit,
+                    " or ".join(reason) if reason else "fetch requirements",
+                )
                 all_releases = self.get_releases(limit=fetch_limit)
             if not all_releases and (keep_limit > 0 or keep_last_beta):
                 logger.warning(
@@ -934,11 +937,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         break
                 return selected
 
+            target = keep_limit if keep_limit > 0 else 0
             latest_releases = (
-                _collect_latest_releases(all_releases, keep_limit)
-                if keep_limit > 0
-                else []
+                _collect_latest_releases(all_releases, target) if target else []
             )
+            while target and len(latest_releases) < target and fetch_limit < 100:
+                next_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
+                logger.debug(
+                    "Need %d non-revoked releases but have %d; increasing fetch limit to %d",
+                    target,
+                    len(latest_releases),
+                    next_limit,
+                )
+                all_releases = self.get_releases(limit=next_limit)
+                if not all_releases:
+                    break
+                fetch_limit = next_limit
+                latest_releases = _collect_latest_releases(all_releases, target)
 
             release_tags_to_keep = set()
             keep_base_names = set()
