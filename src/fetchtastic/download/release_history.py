@@ -211,6 +211,41 @@ class ReleaseHistoryManager:
             return None
         return max(beta_releases, key=get_release_sorting_key)
 
+    def expand_keep_limit_to_include_beta(
+        self, releases: List[Release], keep_limit: int
+    ) -> int:
+        """
+        Adjust keep_limit so that the most recent beta release remains in the retained window.
+
+        Parameters:
+            releases (List[Release]): Available releases to consider.
+            keep_limit (int): Original keep limit.
+
+        Returns:
+            int: Updated keep limit that includes the most recent beta, bounded by the number of releases.
+        """
+        if keep_limit <= 0:
+            return max(keep_limit, 0)
+
+        most_recent_beta = self.find_most_recent_beta(releases)
+        if not most_recent_beta:
+            return keep_limit
+
+        sorted_releases = sorted(
+            [release for release in releases if release.tag_name],
+            key=get_release_sorting_key,
+            reverse=True,
+        )
+        if most_recent_beta in sorted_releases[:keep_limit]:
+            return keep_limit
+
+        try:
+            beta_index = sorted_releases.index(most_recent_beta)
+        except ValueError:
+            return keep_limit
+
+        return min(beta_index + 1, len(sorted_releases))
+
     def _format_release_label_with_keep(
         self,
         release: Release,
@@ -433,20 +468,25 @@ class ReleaseHistoryManager:
             return
 
         releases_to_keep: set[str] = set()
+        releases_with_tags = [
+            release
+            for releases_for_channel in channel_map.values()
+            for release in releases_for_channel
+        ]
         if keep_limit is not None:
             if keep_limit < 0:
                 keep_limit = 0
+            sorted_releases = sorted(
+                releases_with_tags,
+                key=get_release_sorting_key,
+                reverse=True,
+            )
             logger.info(
                 "%s release channels (keeping %d of %d): %s",
                 label,
                 keep_limit,
-                len(releases),
+                len(sorted_releases),
                 ", ".join(summary_parts),
-            )
-            sorted_releases = sorted(
-                [r for r in releases if r.tag_name],
-                key=get_release_sorting_key,
-                reverse=True,
             )
             for i, release in enumerate(sorted_releases):
                 if i < keep_limit:

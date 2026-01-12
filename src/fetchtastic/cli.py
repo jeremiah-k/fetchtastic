@@ -42,6 +42,8 @@ get_api_request_summary = _get_api_request_summary
 # Patch-friendly aliases for CLI tests.
 copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
+_VALID_LOG_LEVEL_NAMES = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
+
 
 def get_version_info() -> tuple[str, str | None, bool]:
     """
@@ -175,8 +177,11 @@ def _prepare_command_run() -> Tuple[
     # Use the effective level after set_log_level has validated and applied the config
     effective = log_utils.logger.getEffectiveLevel()
     log_level_name = logging.getLevelName(effective)
-    # Handle edge case where getLevelName returns non-standard format
-    if not str(log_level_name).isalpha():
+    if (
+        not isinstance(log_level_name, str)
+        or not log_level_name.isalpha()
+        or log_level_name not in _VALID_LOG_LEVEL_NAMES
+    ):
         log_level_name = "INFO"
 
     if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get(

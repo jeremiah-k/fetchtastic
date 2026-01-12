@@ -16,6 +16,7 @@ import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
     ERROR_TYPE_EXTRACTION,
@@ -890,6 +891,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
                 return
 
+            preserve_legacy_base_dirs = self.config.get(
+                "PRESERVE_LEGACY_FIRMWARE_BASE_DIRS",
+                DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
+            )
+
             # Use the first keep_limit releases for the normal keep set
             latest_releases = all_releases[:keep_limit]
 
@@ -905,7 +911,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     )
                     continue
                 keep_base_tags.add(safe_tag)
-                keep_base_tags.add(_get_comparable_base_tag(safe_tag))
+                base_tag = _get_comparable_base_tag(safe_tag)
+                if preserve_legacy_base_dirs:
+                    keep_base_tags.add(base_tag)
 
                 # Always keep the unsuffixed tag so legacy directories (created
                 # before channel suffixing existed) are never deleted during
@@ -915,7 +923,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 # Build the current channel-aware tag and keep it too; this
                 # preserves the preferred directory name without renaming
                 # anything during cleanup.
-                base_tag = _get_comparable_base_tag(safe_tag)
                 release_tags_to_keep.add(
                     build_storage_tag_with_channel(
                         sanitized_release_tag=base_tag,
@@ -937,9 +944,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             most_recent_beta.tag_name, "beta release tag"
                         )
                         keep_base_tags.add(safe_beta_tag)
-                        keep_base_tags.add(_get_comparable_base_tag(safe_beta_tag))
-                        release_tags_to_keep.add(safe_beta_tag)
                         beta_base_tag = _get_comparable_base_tag(safe_beta_tag)
+                        if preserve_legacy_base_dirs:
+                            keep_base_tags.add(beta_base_tag)
+                        release_tags_to_keep.add(safe_beta_tag)
                         release_tags_to_keep.add(
                             build_storage_tag_with_channel(
                                 sanitized_release_tag=beta_base_tag,
@@ -1005,25 +1013,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         continue
                     if entry.is_dir():
                         base_name = _get_comparable_base_tag(entry.name)
-                        if (
-                            entry.name not in release_tags_to_keep
-                            and base_name not in keep_base_tags
-                        ):
-                            try:
-                                logger.debug(
-                                    "Removing firmware directory: %s",
-                                    entry.path,
-                                )
-                                shutil.rmtree(entry.path)
-                                logger.info(
-                                    "Removed old firmware version: %s", entry.name
-                                )
-                            except OSError as e:
-                                logger.error(
-                                    "Error removing old firmware version %s: %s",
-                                    entry.name,
-                                    e,
-                                )
+                        if entry.name in release_tags_to_keep:
+                            continue
+                        if preserve_legacy_base_dirs and base_name in keep_base_tags:
+                            continue
+                        try:
+                            logger.debug(
+                                "Removing firmware directory: %s",
+                                entry.path,
+                            )
+                            shutil.rmtree(entry.path)
+                            logger.info("Removed old firmware version: %s", entry.name)
+                        except OSError as e:
+                            logger.error(
+                                "Error removing old firmware version %s: %s",
+                                entry.name,
+                                e,
+                            )
             except FileNotFoundError:
                 pass
             except OSError as e:

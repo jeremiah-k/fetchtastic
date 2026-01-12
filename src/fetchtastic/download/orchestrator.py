@@ -48,7 +48,6 @@ from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .release_history import get_release_sorting_key
 from .version import VersionManager, is_prerelease_directory
 
 
@@ -1005,20 +1004,9 @@ class DownloadOrchestrator:
         keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
 
         if keep_last_beta:
-            beta_releases = manager.find_beta_releases(self.firmware_releases)
-            if beta_releases:
-                sorted_releases = sorted(
-                    self.firmware_releases,
-                    key=get_release_sorting_key,
-                    reverse=True,
-                )
-                top_releases = sorted_releases[:keep_limit_for_summary]
-                most_recent_beta = max(beta_releases, key=get_release_sorting_key)
-                if most_recent_beta not in top_releases:
-                    beta_index = sorted_releases.index(most_recent_beta)
-                    keep_limit_for_summary = min(
-                        beta_index + 1, len(self.firmware_releases)
-                    )
+            keep_limit_for_summary = manager.expand_keep_limit_to_include_beta(
+                self.firmware_releases, keep_limit_for_summary
+            )
 
         manager.log_release_channel_summary(
             self.firmware_releases, label="Firmware", keep_limit=keep_limit_for_summary
