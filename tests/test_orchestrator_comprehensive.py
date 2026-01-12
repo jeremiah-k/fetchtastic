@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import RELEASE_SCAN_COUNT
+from fetchtastic.constants import DEFAULT_FILTER_REVOKED_RELEASES, RELEASE_SCAN_COUNT
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -464,7 +464,12 @@ class TestDownloadOrchestrator:
             orchestrator._process_firmware_downloads()
 
         mock_get_releases.assert_called_once()
-        assert mock_get_releases.call_args.kwargs["limit"] == RELEASE_SCAN_COUNT
+        expected_limit = RELEASE_SCAN_COUNT
+        if orchestrator.config.get(
+            "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+        ):
+            expected_limit += RELEASE_SCAN_COUNT
+        assert mock_get_releases.call_args.kwargs["limit"] == expected_limit
 
     def test_process_firmware_downloads_includes_latest_beta(self, orchestrator):
         """Latest beta should be included in the processed release list."""
