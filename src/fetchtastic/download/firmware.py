@@ -116,17 +116,24 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def _filter_revoked_releases(self) -> bool:
         """
         Return whether revoked firmware releases should be filtered.
-        
+
         Reads the "FILTER_REVOKED_RELEASES" configuration option and falls back to the module default when unset.
-        
+
         Returns:
             bool: True if revoked firmware releases should be filtered, False otherwise.
         """
-        return self.config.get(
+        value = self.config.get(
             "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
         )
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "y", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "n", "off", ""}:
+                return False
+        return bool(value)
 
-    def _collect_non_revoked_releases(
+    def collect_non_revoked_releases(
         self,
         initial_releases: List[Release],
         target_count: int,
@@ -134,12 +141,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> Tuple[List[Release], List[Release], int]:
         """
         Select non-revoked releases from an initial list and expand the fetched set until a target count of non-revoked releases is met or a hard cap is reached.
-        
+
         Parameters:
             initial_releases (List[Release]): Initial list of releases to filter.
-            target_count (int): Desired number of non-revoked releases to obtain; if 0, no filtering is applied.
+            target_count (int): Desired number of non-revoked releases to obtain; if 0, no additional fetching is performed.
             current_fetch_limit (int): Current GitHub fetch limit used to retrieve releases; may be increased to find more non-revoked releases.
-        
+
         Returns:
             Tuple[List[Release], List[Release], int]: A tuple containing:
                 - non_revoked_releases: list of releases that are not revoked (may be shorter than target_count if no more are available),
@@ -148,16 +155,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         all_releases = initial_releases
         fetch_limit = current_fetch_limit
-        if not self._filter_revoked_releases or target_count == 0:
+        if not self._filter_revoked_releases:
             return all_releases, all_releases, fetch_limit
 
         def _filter(releases: List[Release]) -> List[Release]:
             """
             Filter a list of releases to exclude revoked entries.
-            
+
             Parameters:
                 releases (List[Release]): Release objects to be filtered.
-            
+
             Returns:
                 List[Release]: Subset of `releases` containing only releases that are not revoked.
             """
@@ -166,6 +173,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             ]
 
         non_revoked_releases = _filter(all_releases)
+        if target_count == 0:
+            return non_revoked_releases, all_releases, fetch_limit
         while len(non_revoked_releases) < target_count and fetch_limit < 100:
             next_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
             logger.debug(
@@ -185,13 +194,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
         Compute the filesystem path for a firmware asset and ensure its release version directory exists.
-        
+
         Sanitizes `release_tag` and `file_name`, and creates the version subdirectory under the downloader's firmware directory if it does not exist.
-        
+
         Parameters:
             release_tag (str): Release tag to use for the version subdirectory; will be sanitized.
             file_name (str): Asset file name; will be sanitized.
-        
+
         Returns:
             str: Absolute path to the target location for the firmware asset.
         """
@@ -958,7 +967,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if filter_revoked:
                 # Add a buffer of releases to compensate for skipped revoked entries
                 # without increasing the API loop complexity.
-                fetch_limit += RELEASE_SCAN_COUNT
+                fetch_limit = min(100, fetch_limit + RELEASE_SCAN_COUNT)
+            if fetch_limit > 100:
+                fetch_limit = 100
 
             if cached_releases is not None and len(cached_releases) >= fetch_limit:
                 all_releases = cached_releases
@@ -996,7 +1007,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
 
             non_revoked_releases, all_releases, fetch_limit = (
-                self._collect_non_revoked_releases(
+                self.collect_non_revoked_releases(
                     initial_releases=all_releases,
                     target_count=keep_limit,
                     current_fetch_limit=fetch_limit,
@@ -1038,12 +1049,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # If keep_last_beta is enabled, ensure most recent beta is kept
             if keep_last_beta:
+                beta_source = non_revoked_releases if filter_revoked else all_releases
                 most_recent_beta = self.release_history_manager.find_most_recent_beta(
-                    all_releases
+                    beta_source
                 )
-                if most_recent_beta and (
-                    not filter_revoked or not self.is_release_revoked(most_recent_beta)
-                ):
+                if most_recent_beta:
                     try:
                         safe_beta_tag = self._sanitize_required(
                             most_recent_beta.tag_name, "beta release tag"

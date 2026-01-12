@@ -305,7 +305,7 @@ class DownloadOrchestrator:
                 releases_for_processing,
                 firmware_releases,
                 fetch_limit,
-            ) = self.firmware_downloader._collect_non_revoked_releases(
+            ) = self.firmware_downloader.collect_non_revoked_releases(
                 initial_releases=firmware_releases,
                 target_count=keep_limit,
                 current_fetch_limit=fetch_limit,
@@ -467,10 +467,16 @@ class DownloadOrchestrator:
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
-        Download firmware assets from the given release and optionally extract matching files per configuration.
-        
+        Download firmware assets from a release and optionally extract them based on configuration.
+
+        If matching assets are found they are downloaded. Extraction is performed only when the
+        `AUTO_EXTRACT` configuration flag is true and the release was not skipped due to being revoked.
+
+        Parameters:
+            release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
+
         Returns:
-            `True` if at least one asset was downloaded, `False` otherwise.
+            bool: `True` if at least one asset was downloaded, `False` otherwise.
         """
         any_downloaded = False
         try:
@@ -1011,7 +1017,7 @@ class DownloadOrchestrator:
     def log_firmware_release_history_summary(self) -> None:
         """
         Emit firmware release summaries when firmware release history and releases are available.
-        
+
         Logs three reports via the firmware release history manager: a release channel summary, a release status summary, and a duplicate base-version summary. If the `FILTER_REVOKED_RELEASES` config is enabled, revoked firmware releases are excluded from the channel and status summaries. If the `KEEP_LAST_BETA` config is enabled, the channel summary's retention window may be expanded to include the most recent beta release according to the configured firmware keep limit.
         """
         if not self.firmware_release_history or not self.firmware_releases:
@@ -1043,6 +1049,7 @@ class DownloadOrchestrator:
         manager.log_release_status_summary(
             self.firmware_release_history, label="Firmware"
         )
+        # Keep duplicate-base reporting unfiltered to surface version collisions even when revoked filtering is enabled.
         manager.log_duplicate_base_versions(self.firmware_releases, label="Firmware")
 
     def _get_firmware_keep_limit(self) -> int:

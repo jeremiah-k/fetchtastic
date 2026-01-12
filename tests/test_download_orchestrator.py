@@ -46,12 +46,12 @@ class TestDownloadOrchestrator:
     def orchestrator(self, mock_config):
         """
         Create a DownloadOrchestrator for tests with core managers and downloaders replaced by mocks.
-        
-        The returned orchestrator has its cache_manager, version_manager, and prerelease_manager replaced with Mock objects, and its android_downloader and firmware_downloader replaced with Mock objects whose download_dir is set to "/tmp/test". The firmware_downloader mock is configured so `is_release_revoked()` returns False and `_collect_non_revoked_releases(...)` returns a tuple of (initial_releases, initial_releases, current_fetch_limit) to preserve initial inputs.
-        
+
+        The returned orchestrator has its cache_manager, version_manager, and prerelease_manager replaced with Mock objects, and its android_downloader and firmware_downloader replaced with Mock objects whose download_dir is set to "/tmp/test". The firmware_downloader mock is configured so `is_release_revoked()` returns False and `collect_non_revoked_releases(...)` returns a tuple of (initial_releases, initial_releases, current_fetch_limit) to preserve initial inputs.
+
         Parameters:
             mock_config (dict): Configuration dictionary passed to the DownloadOrchestrator constructor.
-        
+
         Returns:
             DownloadOrchestrator: Test instance with mocked managers and downloaders and deterministic firmware helper behavior.
         """
@@ -66,12 +66,12 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
-        orch.firmware_downloader._collect_non_revoked_releases = Mock(
-            side_effect=lambda initial_releases, target_count, current_fetch_limit: (
-                initial_releases,
-                initial_releases,
-                current_fetch_limit,
-            )
+
+        def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
+            return initial_releases, initial_releases, current_fetch_limit
+
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            side_effect=_collect_non_revoked
         )
         return orch
 
@@ -540,6 +540,7 @@ class TestDownloadOrchestrator:
         result.success = False
         result.file_path = "/path/to/file.apk"
         result.file_type = None
+        result.error_type = None
         result.retry_count = None
         orchestrator.download_results = []
         orchestrator.failed_downloads = [result]
@@ -550,4 +551,5 @@ class TestDownloadOrchestrator:
         assert isinstance(result.file_type, str)
         assert result.file_type != ""
         assert result.retry_count == 0
-        assert hasattr(result, "is_retryable")
+        assert isinstance(result.is_retryable, bool)
+        assert result.is_retryable is orchestrator._is_download_retryable(result)
