@@ -293,7 +293,7 @@ class DownloadOrchestrator:
         Generic helper to fetch and cache releases with partial cache detection.
 
         Parameters:
-            downloader (BaseDownloader): The downloader instance to use for fetching releases.
+            downloader: The downloader instance to use for fetching releases.
             releases_attr (str): Attribute name on self that holds the cached releases list.
             fetch_limit_attr (str): Attribute name on self that holds the fetch limit used for caching.
             limit (Optional[int]): Maximum number of releases to fetch; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
@@ -301,29 +301,31 @@ class DownloadOrchestrator:
         Returns:
             List[Release]: The cached or newly fetched list of releases.
         """
+        if limit == 0:
+            return []
+
         current_releases = getattr(self, releases_attr)
         current_fetch_limit = getattr(self, fetch_limit_attr)
 
         should_fetch = current_releases is None
-        # If we previously fetched with a limit, and now want "full" (limit=None), refetch.
-        if not should_fetch and limit is None and current_fetch_limit is not None:
-            should_fetch = True
-        # If we previously fetched with a smaller limit, and now want more, refetch.
-        if (
-            not should_fetch
-            and limit is not None
-            and current_fetch_limit is not None
-            and current_fetch_limit < limit
-        ):
-            should_fetch = True
+        if not should_fetch and current_fetch_limit is not None:
+            if limit is None or (limit is not None and limit > current_fetch_limit):
+                should_fetch = True
 
         if should_fetch:
-            new_releases = downloader.get_releases(limit=limit) or []
-            setattr(self, releases_attr, new_releases)
-            setattr(self, fetch_limit_attr, limit)
+            try:
+                new_releases = downloader.get_releases(limit=limit) or []
+            except Exception:
+                return current_releases or []
+            if new_releases or limit == 0:
+                setattr(self, releases_attr, new_releases)
+                setattr(self, fetch_limit_attr, limit)
             return new_releases
 
-        return current_releases or []
+        cached = current_releases or []
+        if limit is None:
+            return cached
+        return cached[: max(0, limit)]
 
     def _ensure_firmware_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
@@ -1131,10 +1133,11 @@ class DownloadOrchestrator:
             releases_for_summary, keep_limit=keep_limit_for_summary
         )
         kept_tags = {release.tag_name for release in kept_releases if release.tag_name}
-        entries = self.firmware_release_history.get("entries") or {}
+        entries = self.firmware_release_history.get("entries")
+        entries_dict = entries if isinstance(entries, dict) else {}
         filtered_history: Dict[str, Any] = {
             "entries": {
-                tag: entry for tag, entry in entries.items() if tag in kept_tags
+                tag: entry for tag, entry in entries_dict.items() if tag in kept_tags
             }
         }
 
@@ -1167,6 +1170,9 @@ class DownloadOrchestrator:
                 bool(expected_version),
             )
             return
+
+        assert isinstance(clean_latest_release, str)
+        assert isinstance(expected_version, str)
 
         self.firmware_downloader.log_prerelease_summary(
             history_entries, clean_latest_release, expected_version

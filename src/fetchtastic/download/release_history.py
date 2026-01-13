@@ -576,12 +576,11 @@ class ReleaseHistoryManager:
             channel (str): Channel name to log (e.g., "alpha", "beta", "rc").
             releases_for_channel (List[Release]): Releases belonging to the channel; releases without tags are ignored.
         """
-        sorted_releases = self._get_sorted_releases_with_tags(releases_for_channel)
         items = ", ".join(
             self.format_release_label(
                 release, include_channel=False, include_status=True
             )
-            for release in sorted_releases
+            for release in releases_for_channel
         )
         logger.info("  - %s: %s", channel, items)
 
