@@ -307,10 +307,10 @@ class DownloadOrchestrator:
         current_releases = getattr(self, releases_attr)
         current_fetch_limit = getattr(self, fetch_limit_attr)
 
-        should_fetch = current_releases is None
-        if not should_fetch and current_fetch_limit is not None:
-            if limit is None or limit > current_fetch_limit:
-                should_fetch = True
+        should_fetch = current_releases is None or (
+            current_fetch_limit is not None
+            and (limit is None or limit > current_fetch_limit)
+        )
 
         if should_fetch:
             new_releases = downloader.get_releases(limit=limit) or []
