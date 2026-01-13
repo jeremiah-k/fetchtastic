@@ -1069,11 +1069,12 @@ class DownloadOrchestrator:
             releases_for_summary, keep_limit=keep_limit_for_summary
         )
         kept_tags = {release.tag_name for release in kept_releases if release.tag_name}
-        filtered_history: Dict[str, Any] = {"entries": {}}
         entries = self.firmware_release_history.get("entries") or {}
-        for tag, entry in entries.items():
-            if tag in kept_tags:
-                filtered_history["entries"][tag] = entry
+        filtered_history: Dict[str, Any] = {
+            "entries": {
+                tag: entry for tag, entry in entries.items() if tag in kept_tags
+            }
+        }
 
         manager.log_release_status_summary(filtered_history, label="Firmware")
         manager.log_duplicate_base_versions(kept_releases, label="Firmware")

@@ -253,7 +253,7 @@ class ReleaseHistoryManager:
             Sorted list of releases that include a tag name.
         """
         return sorted(
-            [release for release in releases if release.tag_name],
+            (release for release in releases if release.tag_name),
             key=get_release_sorting_key,
             reverse=True,
         )
@@ -275,7 +275,7 @@ class ReleaseHistoryManager:
         if keep_limit is None:
             return sorted_releases
         limit = max(0, keep_limit)
-        return sorted_releases[: min(limit, len(sorted_releases))]
+        return sorted_releases[:limit]
 
     def _format_release_label_with_keep(
         self,
@@ -556,11 +556,7 @@ class ReleaseHistoryManager:
             channel (str): Channel name to log (e.g., "alpha", "beta", "rc").
             releases_for_channel (List[Release]): Releases belonging to the channel.
         """
-        sorted_releases = sorted(
-            [release for release in releases_for_channel if release.tag_name],
-            key=get_release_sorting_key,
-            reverse=True,
-        )
+        sorted_releases = self._get_sorted_releases_with_tags(releases_for_channel)
         items = ", ".join(
             self.format_release_label(
                 release, include_channel=False, include_status=True
