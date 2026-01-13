@@ -1158,16 +1158,19 @@ class DownloadOrchestrator:
         clean_latest_release = summary.get("clean_latest_release")
         expected_version = summary.get("expected_version")
 
-        if (
-            not history_entries
-            or not isinstance(clean_latest_release, str)
-            or not isinstance(expected_version, str)
-        ):
+        if not history_entries:
+            logger.debug("Skipping prerelease summary: missing history_entries")
+            return
+        if not isinstance(clean_latest_release, str):
             logger.debug(
-                "Skipping prerelease summary: missing required fields (history_entries=%s, clean_latest_release=%s, expected_version=%s)",
-                bool(history_entries),
-                bool(clean_latest_release),
-                bool(expected_version),
+                "Skipping prerelease summary: clean_latest_release is not a string (got %s)",
+                type(clean_latest_release).__name__,
+            )
+            return
+        if not isinstance(expected_version, str):
+            logger.debug(
+                "Skipping prerelease summary: expected_version is not a string (got %s)",
+                type(expected_version).__name__,
             )
             return
 

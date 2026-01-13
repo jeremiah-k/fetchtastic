@@ -581,6 +581,7 @@ class ReleaseHistoryManager:
                 release, include_channel=False, include_status=True
             )
             for release in releases_for_channel
+            if release.tag_name
         )
         logger.info("  - %s: %s", channel, items)
 
