@@ -193,9 +193,9 @@ class DownloadOrchestrator:
 
     def _process_android_downloads(self) -> None:
         """
-        Coordinate discovery and downloading of Android APK releases and prerelease APK assets.
-
-        If APK saving is disabled via configuration, the function returns without action. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APK assets, and records each asset's outcome in the orchestrator's result lists.
+        Coordinate discovery and retrieval of Android APK releases and prerelease APK assets.
+        
+        Checks configuration to determine whether APKs should be saved; if enabled, ensures release metadata is available, considers the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APKs, and records each asset's outcome in the orchestrator's result lists.
         """
         try:
             if not self.config.get("SAVE_APKS", False):
@@ -265,10 +265,13 @@ class DownloadOrchestrator:
 
     def _ensure_android_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Return cached Android releases, fetching once if necessary.
-
+        Return cached Android releases, fetching them once from the downloader if not already cached.
+        
         Parameters:
-            limit (Optional[int]): Optional fetch limit for the initial API request.
+            limit (Optional[int]): Maximum number of releases to fetch on the initial request; ignored if releases are already cached.
+        
+        Returns:
+            List[Release]: The cached list of Android releases.
         """
         if self.android_releases is None:
             self.android_releases = self.android_downloader.get_releases(limit=limit)
@@ -276,9 +279,9 @@ class DownloadOrchestrator:
 
     def _process_firmware_downloads(self) -> None:
         """
-        Ensure recent firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
-
-        Scans configured firmware releases (limited by retention settings), downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, file-system, and parsing errors encountered during processing are caught and logged.
+        Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
+        
+        Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, filesystem, and parsing errors encountered during processing are caught and logged.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):
@@ -1103,10 +1106,13 @@ class DownloadOrchestrator:
 
     def _get_firmware_keep_limit(self) -> int:
         """
-        Return the configured firmware keep limit as a non-negative integer.
-
-        Falls back to DEFAULT_FIRMWARE_VERSIONS_TO_KEEP when the config value is missing
-        or invalid.
+        Get the configured firmware versions-to-keep limit as a non-negative integer.
+        
+        If the configuration value is missing or cannot be converted to an integer, the default
+        DEFAULT_FIRMWARE_VERSIONS_TO_KEEP is returned.
+        
+        Returns:
+            int: The configured limit coerced to an int and clamped to zero or greater.
         """
         raw_keep_limit = self.config.get(
             "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
