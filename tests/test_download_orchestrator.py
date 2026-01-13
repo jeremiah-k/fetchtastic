@@ -150,12 +150,27 @@ class TestDownloadOrchestrator:
         assert selected is not None
         assert selected.tag_name == "v1.0.0"
 
-    def test_log_firmware_release_history_summary(self, orchestrator):
-        """Firmware release history summaries should call the history manager."""
-        orchestrator.firmware_release_history = {"entries": {}}
-        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+    def test_log_firmware_release_history_summary_filters_to_keep_limit(
+        self, orchestrator
+    ):
+        """Summary reporting should use the configured keep limit."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = False
+        orchestrator.firmware_release_history = {
+            "entries": {
+                "v1.0.0": {"tag_name": "v1.0.0", "status": "revoked"},
+                "v0.9.0": {"tag_name": "v0.9.0", "status": "revoked"},
+            }
+        }
+        orchestrator.firmware_releases = [
+            Release(tag_name="v1.0.0", prerelease=False),
+            Release(tag_name="v0.9.0", prerelease=False),
+        ]
 
         manager = Mock()
+        manager.expand_keep_limit_to_include_beta.return_value = 1
+        kept_release = Release(tag_name="v1.0.0", prerelease=False)
+        manager.get_releases_for_summary.return_value = [kept_release]
         orchestrator.firmware_downloader.release_history_manager = manager
 
         orchestrator.log_firmware_release_history_summary()
@@ -163,6 +178,44 @@ class TestDownloadOrchestrator:
         manager.log_release_channel_summary.assert_called_once()
         manager.log_release_status_summary.assert_called_once()
         manager.log_duplicate_base_versions.assert_called_once()
+        status_history = manager.log_release_status_summary.call_args[0][0]
+        assert status_history["entries"] == {
+            "v1.0.0": {"tag_name": "v1.0.0", "status": "revoked"}
+        }
+        duplicate_arg = manager.log_duplicate_base_versions.call_args[0][0]
+        assert len(duplicate_arg) == 1
+        assert duplicate_arg[0].tag_name == "v1.0.0"
+
+    def test_log_firmware_release_history_summary_logs_prerelease_summary(
+        self, orchestrator
+    ):
+        """Prerelease summaries are emitted with the other release history reports."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1
+        orchestrator.config["KEEP_LAST_BETA"] = False
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+
+        manager = Mock()
+        manager.expand_keep_limit_to_include_beta.return_value = 1
+        manager.get_releases_for_summary.return_value = orchestrator.firmware_releases
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        summary_payload = {
+            "history_entries": [{"identifier": "abc", "status": "active"}],
+            "clean_latest_release": "v1.0.0",
+            "expected_version": "1.0.1",
+        }
+        orchestrator.firmware_prerelease_summary = summary_payload
+        orchestrator.firmware_downloader.log_prerelease_summary = Mock()
+
+        orchestrator.log_firmware_release_history_summary()
+
+        orchestrator.firmware_downloader.log_prerelease_summary.assert_called_once_with(
+            summary_payload["history_entries"],
+            "v1.0.0",
+            "1.0.1",
+        )
+        assert orchestrator.firmware_prerelease_summary is None
 
     def test_select_latest_release_by_version_ignores_prerelease_flag(
         self, mock_config
@@ -232,7 +285,7 @@ class TestDownloadOrchestrator:
         )
         orch.firmware_downloader.is_release_complete = Mock(return_value=True)
         orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
-            return_value=([], [], None)
+            return_value=([], [], None, None)
         )
 
         orch._process_firmware_downloads()
@@ -320,6 +373,7 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
             [],
             [],
+            None,
             None,
         )
 

@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests  # type: ignore[import-untyped]
 
@@ -141,9 +141,14 @@ class DownloadOrchestrator:
         self.failed_downloads: List[DownloadResult] = []
 
         # Cache releases to avoid redundant API calls within a single run
+        # None => complete/unbounded fetch; int => fetched with a limit (partial cache)
+        self._android_releases_fetch_limit: Optional[int] = None
         self.android_releases: Optional[List[Release]] = None
+        self._firmware_releases_fetch_limit: Optional[int] = None
         self.firmware_releases: Optional[List[Release]] = None
         self.firmware_release_history: Optional[Dict[str, Any]] = None
+        # Single-run only: cleared by log_firmware_release_history_summary()
+        self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
 
     def run_download_pipeline(
         self,
@@ -192,9 +197,9 @@ class DownloadOrchestrator:
 
     def _process_android_downloads(self) -> None:
         """
-        Coordinate discovery and downloading of Android APK releases and prerelease APK assets.
+        Coordinate discovery and retrieval of Android APK releases and prerelease APK assets.
 
-        If APK saving is disabled via configuration, the function returns without action. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APK assets, and records each asset's outcome in the orchestrator's result lists.
+        Checks configuration to determine whether APKs should be saved; if enabled, ensures release metadata is available, considers the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APKs, and records each asset's outcome in the orchestrator's result lists.
         """
         try:
             if not self.config.get("SAVE_APKS", False):
@@ -202,9 +207,7 @@ class DownloadOrchestrator:
                 return
 
             logger.info("Scanning Android APK releases")
-            if self.android_releases is None:
-                self.android_releases = self.android_downloader.get_releases()
-            android_releases = self.android_releases
+            android_releases = self._ensure_android_releases()
             if not android_releases:
                 logger.info("No Android releases found")
                 return
@@ -262,11 +265,86 @@ class DownloadOrchestrator:
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing Android downloads: {e}", exc_info=True)
 
+    def _ensure_android_releases(self, limit: Optional[int] = None) -> List[Release]:
+        """
+        Return cached Android releases, fetching them once from the downloader if not already cached.
+
+        Parameters:
+            limit (Optional[int]): Maximum number of releases to fetch on the initial request; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
+
+        Returns:
+            List[Release]: The cached list of Android releases.
+        """
+        return self._ensure_releases(
+            downloader=self.android_downloader,
+            releases_attr="android_releases",
+            fetch_limit_attr="_android_releases_fetch_limit",
+            limit=limit,
+        )
+
+    def _ensure_releases(
+        self,
+        downloader: Union[MeshtasticAndroidAppDownloader, FirmwareReleaseDownloader],
+        releases_attr: str,
+        fetch_limit_attr: str,
+        limit: Optional[int] = None,
+    ) -> List[Release]:
+        """
+        Generic helper to fetch and cache releases with partial cache detection.
+
+        Parameters:
+            downloader: The downloader instance to use for fetching releases.
+            releases_attr (str): Attribute name on self that holds the cached releases list.
+            fetch_limit_attr (str): Attribute name on self that holds the fetch limit used for caching.
+            limit (Optional[int]): Maximum number of releases to fetch; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
+
+        Returns:
+            List[Release]: The cached or newly fetched list of releases.
+        """
+        if limit == 0:
+            return []
+
+        current_releases = getattr(self, releases_attr)
+        current_fetch_limit = getattr(self, fetch_limit_attr)
+
+        should_fetch = current_releases is None or (
+            current_fetch_limit is not None
+            and (limit is None or limit > current_fetch_limit)
+        )
+
+        if should_fetch:
+            new_releases = downloader.get_releases(limit=limit) or []
+            setattr(self, releases_attr, new_releases)
+            setattr(self, fetch_limit_attr, limit)
+            return new_releases
+
+        cached = current_releases or []
+        if limit is None:
+            return cached
+        return cached[: max(0, limit)]
+
+    def _ensure_firmware_releases(self, limit: Optional[int] = None) -> List[Release]:
+        """
+        Return cached firmware releases, fetching them once from the downloader if not already cached.
+
+        Parameters:
+            limit (Optional[int]): Maximum number of releases to fetch on the initial request; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
+
+        Returns:
+            List[Release]: The cached list of firmware releases.
+        """
+        return self._ensure_releases(
+            downloader=self.firmware_downloader,
+            releases_attr="firmware_releases",
+            fetch_limit_attr="_firmware_releases_fetch_limit",
+            limit=limit,
+        )
+
     def _process_firmware_downloads(self) -> None:
         """
-        Ensure recent firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
+        Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
 
-        Scans configured firmware releases (limited by retention settings), downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, file-system, and parsing errors encountered during processing are caught and logged.
+        Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, filesystem, and parsing errors encountered during processing are caught and logged.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):
@@ -285,13 +363,7 @@ class DownloadOrchestrator:
             if filter_revoked and fetch_limit > 0:
                 fetch_limit += RELEASE_SCAN_COUNT
             fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
-            if self.firmware_releases is None or (
-                fetch_limit > 0 and len(self.firmware_releases) < fetch_limit
-            ):
-                self.firmware_releases = self.firmware_downloader.get_releases(
-                    limit=fetch_limit
-                )
-            firmware_releases = self.firmware_releases
+            firmware_releases = self._ensure_firmware_releases(limit=fetch_limit)
             if not firmware_releases:
                 logger.info("No firmware releases found")
                 return
@@ -342,11 +414,16 @@ class DownloadOrchestrator:
                         any_firmware_downloaded = True
 
             if latest_release:
-                successes, failures, _active_dir = (
-                    self.firmware_downloader.download_repo_prerelease_firmware(
-                        latest_release.tag_name, force_refresh=False
-                    )
+                (
+                    successes,
+                    failures,
+                    _active_dir,
+                    prerelease_summary,
+                ) = self.firmware_downloader.download_repo_prerelease_firmware(
+                    latest_release.tag_name, force_refresh=False
                 )
+                if prerelease_summary:
+                    self.firmware_prerelease_summary = prerelease_summary
                 for result in successes:
                     if not result.was_skipped:
                         any_firmware_downloaded = True
@@ -1047,18 +1124,69 @@ class DownloadOrchestrator:
         manager.log_release_channel_summary(
             releases_for_summary, label="Firmware", keep_limit=keep_limit_for_summary
         )
-        manager.log_release_status_summary(
-            self.firmware_release_history, label="Firmware"
+
+        kept_releases = manager.get_releases_for_summary(
+            releases_for_summary, keep_limit=keep_limit_for_summary
         )
-        # Keep duplicate-base reporting unfiltered to surface version collisions even when revoked filtering is enabled.
-        manager.log_duplicate_base_versions(self.firmware_releases, label="Firmware")
+        kept_tags = {release.tag_name for release in kept_releases}
+        entries = self.firmware_release_history.get("entries")
+        entries_dict = entries if isinstance(entries, dict) else {}
+        filtered_history: Dict[str, Any] = {
+            "entries": {
+                tag: entry for tag, entry in entries_dict.items() if tag in kept_tags
+            }
+        }
+
+        manager.log_release_status_summary(filtered_history, label="Firmware")
+        manager.log_duplicate_base_versions(kept_releases, label="Firmware")
+        self._log_prerelease_summary()
+
+    def _log_prerelease_summary(self) -> None:
+        """
+        Log prerelease history details that were captured during firmware downloads.
+
+        The summary is emitted near other release history reports so prerelease commit
+        information appears with the final summaries instead of during the download loop.
+        """
+        summary = self.firmware_prerelease_summary
+        if not summary:
+            return
+
+        self.firmware_prerelease_summary = None
+
+        history_entries = summary.get("history_entries") or []
+        clean_latest_release = summary.get("clean_latest_release")
+        expected_version = summary.get("expected_version")
+
+        if not history_entries:
+            logger.debug("Skipping prerelease summary: missing history_entries")
+            return
+        if not isinstance(clean_latest_release, str):
+            logger.debug(
+                "Skipping prerelease summary: clean_latest_release is not a string (got %s)",
+                type(clean_latest_release).__name__,
+            )
+            return
+        if not isinstance(expected_version, str):
+            logger.debug(
+                "Skipping prerelease summary: expected_version is not a string (got %s)",
+                type(expected_version).__name__,
+            )
+            return
+
+        self.firmware_downloader.log_prerelease_summary(
+            history_entries, clean_latest_release, expected_version
+        )
 
     def _get_firmware_keep_limit(self) -> int:
         """
-        Return the configured firmware keep limit as a non-negative integer.
+        Get the configured firmware versions-to-keep limit as a non-negative integer.
 
-        Falls back to DEFAULT_FIRMWARE_VERSIONS_TO_KEEP when the config value is missing
-        or invalid.
+        If the configuration value is missing or cannot be converted to an integer, the default
+        DEFAULT_FIRMWARE_VERSIONS_TO_KEEP is returned.
+
+        Returns:
+            int: The configured limit coerced to an int and clamped to zero or greater.
         """
         raw_keep_limit = self.config.get(
             "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
@@ -1280,9 +1408,7 @@ class DownloadOrchestrator:
                 else:
                     firmware_prerelease = active_dir
 
-        android_releases = (
-            self.android_releases or self.android_downloader.get_releases()
-        )
+        android_releases = self._ensure_android_releases()
         latest_android_release = next(
             (
                 release.tag_name
@@ -1310,12 +1436,8 @@ class DownloadOrchestrator:
         """
         try:
             # Use cached releases if available
-            android_releases = (
-                self.android_releases or self.android_downloader.get_releases(limit=1)
-            )
-            firmware_releases = (
-                self.firmware_releases or self.firmware_downloader.get_releases(limit=1)
-            )
+            android_releases = self._ensure_android_releases(limit=1)
+            firmware_releases = self._ensure_firmware_releases(limit=1)
 
             # Update tracking
             if android_releases:

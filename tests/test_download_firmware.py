@@ -968,14 +968,46 @@ class TestFirmwareReleaseDownloader:
                 downloader.cache_manager, "get_repo_directories", return_value=[]
             ),
         ):
-            results, failed, latest = downloader.download_repo_prerelease_firmware(
-                "v1.0.0"
+            results, failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v1.0.0")
             )
 
         # Should return proper tuple structure
         assert isinstance(results, list)
         assert isinstance(failed, list)
         assert latest is None or isinstance(latest, str)
+        assert summary is None or isinstance(summary, dict)
+
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
+    def test_download_repo_prerelease_firmware_missing_directory(self, downloader):
+        active_dir = "firmware-2.7.18.99d9191"
+        history_entries = [
+            {"identifier": "99d9191", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[],
+            ),
+            patch.object(downloader, "_download_prerelease_assets") as mock_download,
+        ):
+            results, failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.17.9058cce")
+            )
+
+        assert results == []
+        assert failed == []
+        assert latest is None
+        assert summary is not None
+        assert summary["history_entries"] == history_entries
+        mock_download.assert_not_called()
 
     @pytest.mark.unit
     @patch("os.path.exists")

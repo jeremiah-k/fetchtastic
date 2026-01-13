@@ -231,11 +231,7 @@ class ReleaseHistoryManager:
         if not most_recent_beta:
             return keep_limit
 
-        sorted_releases = sorted(
-            [release for release in releases if release.tag_name],
-            key=get_release_sorting_key,
-            reverse=True,
-        )
+        sorted_releases = self._get_sorted_releases_with_tags(releases)
         if most_recent_beta in sorted_releases[:keep_limit]:
             return keep_limit
 
@@ -245,6 +241,41 @@ class ReleaseHistoryManager:
             return keep_limit
 
         return min(beta_index + 1, len(sorted_releases))
+
+    def _get_sorted_releases_with_tags(self, releases: List[Release]) -> List[Release]:
+        """
+        Filter the given releases to those with a `tag_name` and sort them newest-first.
+
+        Parameters:
+            releases (List[Release]): Iterable of release objects to filter and sort.
+
+        Returns:
+            List[Release]: Releases that include a `tag_name`, sorted by newest published first.
+        """
+        return sorted(
+            (release for release in releases if release.tag_name),
+            key=get_release_sorting_key,
+            reverse=True,
+        )
+
+    def get_releases_for_summary(
+        self, releases: List[Release], *, keep_limit: Optional[int] = None
+    ) -> List[Release]:
+        """
+        Determine which releases should appear in summary reports based on the keep limit.
+
+        Parameters:
+            releases: Raw release list to consider.
+            keep_limit: Maximum number of releases to include; when None, all releases are returned.
+
+        Returns:
+            List of releases sorted newest-first and limited to `keep_limit` when provided.
+        """
+        sorted_releases = self._get_sorted_releases_with_tags(releases)
+        if keep_limit is None:
+            return sorted_releases
+        limit = max(0, keep_limit)
+        return sorted_releases[:limit]
 
     def _format_release_label_with_keep(
         self,
@@ -256,17 +287,17 @@ class ReleaseHistoryManager:
         is_kept: bool = False,
     ) -> str:
         """
-        Build a display label for a release, optionally prefixing it as kept and appending channel/status annotations.
+        Create a human-readable label for a release, optionally marking it as kept and appending channel and revoked annotations.
 
         Parameters:
             release (Release): Release whose tag, channel, and status are used to construct the label.
-            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta") in parentheses.
+            include_channel (bool): If true, append the detected release channel (e.g., "alpha", "beta") in parentheses.
             include_status (bool): If true, append "revoked" in parentheses when the release is detected as revoked.
-            _include_stable (bool): Kept for backward compatibility; ignored by the formatter and does not emit "stable".
-            is_kept (bool): If true, prefix the label with "[KEEP] " to indicate this release is being kept.
+            _include_stable (bool): Kept for backward compatibility; ignored by this formatter.
+            is_kept (bool): If true, prefix the label with "[KEEP] " to indicate the release is being retained.
 
         Returns:
-            label (str): The formatted label containing the tag name (or "<unknown>"), optionally prefixed with "[KEEP]" and followed by parenthesized annotations.
+            str: The formatted label containing the release tag (or "<unknown>"), optionally prefixed with "[KEEP]" and followed by parenthesized annotations.
         """
         label = release.tag_name or "<unknown>"
         if is_kept:
@@ -434,118 +465,123 @@ class ReleaseHistoryManager:
         self, releases: List[Release], *, label: str, keep_limit: Optional[int] = None
     ) -> None:
         """
-        Log a summary of releases grouped by inferred channel and list releases per channel.
+        Log a per-channel summary and list releases grouped by their inferred channel.
 
-        Groups the provided releases by channel (using get_release_channel), logs a compact count for each channel in a preferred order (alpha, beta, rc, then other channels alphabetically), and logs a per-channel list of release labels for non-empty channels. If keep_limit is provided, indicates which releases are being kept.
+        Builds a compact channel count string using the preferred order (alpha, beta, rc, then other channels alphabetically) and logs a header plus a per-channel line listing releases for each non-empty channel. If keep_limit is provided it is applied as a cap to the releases considered for the header (the header shows how many of the total are being kept); when keep_limit is provided and results would be empty, a fallback to the full sorted set may be used to produce the summary.
 
         Parameters:
-            releases (List[Release]): Releases to summarize; releases without entries are ignored.
+            releases (List[Release]): Releases to summarize; releases without a tag are ignored by the summary.
             label (str): Prefix label used in the logged summary message.
-            keep_limit (Optional[int]): Maximum number of releases that will be kept; if provided, annotations are added to show which releases will be retained.
+            keep_limit (Optional[int]): Optional cap on how many releases are considered "kept" for the summary header; if None no cap is applied.
         """
         if not releases:
             return
 
-        channel_map: Dict[str, List[Release]] = {}
-        for release in releases:
-            channel = self.get_release_channel(release)
-            channel_map.setdefault(channel, [])
-            if not release.tag_name:
-                continue
-            channel_map[channel].append(release)
+        sorted_releases = self._get_sorted_releases_with_tags(releases)
+        filtered_releases = (
+            sorted_releases
+            if keep_limit is None
+            else sorted_releases[: max(0, keep_limit)]
+        )
 
-        summary_parts = []
-        for channel in _CHANNEL_ORDER:
-            count = len(channel_map.get(channel, []))
-            if count:
-                summary_parts.append(f"{channel}={count}")
-        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
-            count = len(channel_map.get(channel, []))
-            if count:
-                summary_parts.append(f"{channel}={count}")
+        display_channel_map = self._build_channel_map(filtered_releases)
+        summary_parts = self._build_summary_parts(display_channel_map)
+        # Fallback to showing all available channels when keep_limit <= 0 to provide
+        # useful information even though no releases will be retained
+        if (
+            not summary_parts
+            and keep_limit is not None
+            and keep_limit <= 0
+            and sorted_releases
+        ):
+            display_channel_map = self._build_channel_map(sorted_releases)
+            summary_parts = self._build_summary_parts(display_channel_map)
 
         if not summary_parts:
             return
 
-        releases_to_keep: set[str] = set()
-        releases_with_tags = [
-            release
-            for releases_for_channel in channel_map.values()
-            for release in releases_for_channel
-        ]
+        total_releases = len(sorted_releases)
+        kept_count = len(filtered_releases)
         if keep_limit is not None:
-            if keep_limit < 0:
-                keep_limit = 0
-            sorted_releases = sorted(
-                releases_with_tags,
-                key=get_release_sorting_key,
-                reverse=True,
-            )
             logger.info(
                 "%s release channels (keeping %d of %d): %s",
                 label,
-                keep_limit,
-                len(sorted_releases),
+                kept_count,
+                total_releases,
                 ", ".join(summary_parts),
             )
-            for i, release in enumerate(sorted_releases):
-                if i < keep_limit:
-                    releases_to_keep.add(release.tag_name)
         else:
             logger.info("%s release channels: %s", label, ", ".join(summary_parts))
 
         for channel in _CHANNEL_ORDER:
-            releases_for_channel = channel_map.get(channel)
+            releases_for_channel = display_channel_map.get(channel)
             if not releases_for_channel:
                 continue
-            self._log_channel_releases(
-                channel, releases_for_channel, releases_to_keep, keep_limit
-            )
+            self._log_channel_releases(channel, releases_for_channel)
 
-        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
-            releases_for_channel = channel_map.get(channel)
+        for channel in sorted(set(display_channel_map) - set(_CHANNEL_ORDER)):
+            releases_for_channel = display_channel_map.get(channel)
             if not releases_for_channel:
                 continue
-            self._log_channel_releases(
-                channel, releases_for_channel, releases_to_keep, keep_limit
-            )
+            self._log_channel_releases(channel, releases_for_channel)
+
+    def _build_summary_parts(self, channel_map: Dict[str, List[Release]]) -> List[str]:
+        """
+        Build an ordered summary list of channel counts from a mapping of channel names to releases.
+
+        Parameters:
+            channel_map (Dict[str, List[Release]]): Mapping from channel name to list of releases for that channel.
+
+        Returns:
+            List[str]: Ordered list of strings of the form "channel=count". Channels in _CHANNEL_ORDER appear first (in that order), followed by any remaining channels sorted alphabetically; channels with a count of zero are omitted.
+        """
+        parts: List[str] = []
+        for channel in _CHANNEL_ORDER:
+            count = len(channel_map.get(channel, []))
+            if count:
+                parts.append(f"{channel}={count}")
+        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
+            count = len(channel_map.get(channel, []))
+            if count:
+                parts.append(f"{channel}={count}")
+        return parts
+
+    def _build_channel_map(
+        self, releases_to_map: List[Release]
+    ) -> Dict[str, List[Release]]:
+        """
+        Group releases by their detected release channel.
+
+        Parameters:
+            releases_to_map (List[Release]): Releases to group by channel.
+
+        Returns:
+            Dict[str, List[Release]]: Mapping from channel label (e.g., "alpha", "beta", "rc") to list of releases belonging to that channel. The order of releases within each list follows their order in the input.
+        """
+        channel_map: Dict[str, List[Release]] = {}
+        for release in releases_to_map:
+            channel = self.get_release_channel(release)
+            channel_map.setdefault(channel, []).append(release)
+        return channel_map
 
     def _log_channel_releases(
-        self,
-        channel: str,
-        releases_for_channel: List[Release],
-        releases_to_keep: set[str],
-        keep_limit: Optional[int],
+        self, channel: str, releases_for_channel: List[Release]
     ) -> None:
         """
-        Log releases for a given channel, marking kept releases when applicable.
+        Log a comma-separated list of releases for a specific channel, newest first.
 
-        Releases are reported newest-first and rendered using the manager's label formatter;
-        releases whose tag is in `releases_to_keep` are annotated when `keep_limit` is provided.
+        Formats each release using the manager's label formatter (omitting the channel and including status) and emits a single info-level line like "  - {channel}: {label1}, {label2}, …".
 
         Parameters:
             channel (str): Channel name to log (e.g., "alpha", "beta", "rc").
-            releases_for_channel (List[Release]): Releases belonging to the channel.
-            releases_to_keep (set[str]): Set of tag names that should be marked as kept.
-            keep_limit (Optional[int]): If provided, indicates a keep policy is active; when None no releases are marked as kept.
+            releases_for_channel (List[Release]): Releases belonging to the channel; releases without tags are ignored.
         """
-        sorted_releases = sorted(
-            [release for release in releases_for_channel if release.tag_name],
-            key=get_release_sorting_key,
-            reverse=True,
-        )
         items = ", ".join(
-            self._format_release_label_with_keep(
-                release,
-                include_channel=False,
-                include_status=True,
-                is_kept=(
-                    (release.tag_name in releases_to_keep)
-                    if keep_limit is not None
-                    else False
-                ),
+            self.format_release_label(
+                release, include_channel=False, include_status=True
             )
-            for release in sorted_releases
+            for release in releases_for_channel
+            if release.tag_name
         )
         logger.info("  - %s: %s", channel, items)
 
