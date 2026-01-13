@@ -275,30 +275,12 @@ class DownloadOrchestrator:
         Returns:
             List[Release]: The cached list of Android releases.
         """
-        should_fetch = self.android_releases is None
-        # If we previously fetched with a limit, and now want "full" (limit=None), refetch.
-        if (
-            not should_fetch
-            and limit is None
-            and self._android_releases_fetch_limit is not None
-        ):
-            should_fetch = True
-        # If we previously fetched with a smaller limit, and now want more, refetch.
-        if (
-            not should_fetch
-            and limit is not None
-            and self._android_releases_fetch_limit is not None
-            and self._android_releases_fetch_limit < limit
-        ):
-            should_fetch = True
-
-        if should_fetch:
-            self.android_releases = (
-                self.android_downloader.get_releases(limit=limit) or []
-            )
-            self._android_releases_fetch_limit = limit
-
-        return self.android_releases or []
+        return self._ensure_releases(
+            downloader=self.android_downloader,
+            releases_attr="android_releases",
+            fetch_limit_attr="_android_releases_fetch_limit",
+            limit=limit,
+        )
 
     def _ensure_releases(
         self,
@@ -1171,20 +1153,21 @@ class DownloadOrchestrator:
         if not summary:
             return
 
-        history_entries = summary.get("history_entries")
+        self.firmware_prerelease_summary = None
+
+        history_entries = summary.get("history_entries") or []
         clean_latest_release = summary.get("clean_latest_release")
         expected_version = summary.get("expected_version")
-        if not history_entries or not clean_latest_release or not expected_version:
+
+        if not all((history_entries, clean_latest_release, expected_version)):
             logger.debug(
                 "Skipping prerelease summary: missing required fields (history_entries=%s, clean_latest_release=%s, expected_version=%s)",
-                history_entries is not None,
-                clean_latest_release is not None,
-                expected_version is not None,
+                bool(history_entries),
+                bool(clean_latest_release),
+                bool(expected_version),
             )
-            self.firmware_prerelease_summary = None
             return
 
-        self.firmware_prerelease_summary = None
         self.firmware_downloader.log_prerelease_summary(
             history_entries, clean_latest_release, expected_version
         )
