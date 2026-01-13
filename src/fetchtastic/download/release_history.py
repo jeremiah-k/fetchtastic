@@ -486,6 +486,8 @@ class ReleaseHistoryManager:
 
         display_channel_map = self._build_channel_map(filtered_releases)
         summary_parts = self._build_summary_parts(display_channel_map)
+        # Fallback to showing all available channels when keep_limit <= 0 to provide
+        # useful information even though no releases will be retained
         if (
             not summary_parts
             and keep_limit is not None

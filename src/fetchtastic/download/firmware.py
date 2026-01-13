@@ -1492,11 +1492,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ]:
         """
         Check for and download firmware prerelease assets from the legacy repo-based workflow and update prerelease tracking.
-        
+
         Parameters:
             latest_release_tag (str): Tag of the latest official release used to derive the expected prerelease base version.
             force_refresh (bool): When True, bypass cached directory listings and force remote refresh.
-        
+
         Returns:
             tuple[list[DownloadResult], list[DownloadResult], Optional[str], Optional[Dict[str, Any]]]:
             A 4-tuple containing:

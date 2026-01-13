@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests  # type: ignore[import-untyped]
 
@@ -300,6 +300,49 @@ class DownloadOrchestrator:
 
         return self.android_releases or []
 
+    def _ensure_releases(
+        self,
+        downloader: Union[MeshtasticAndroidAppDownloader, FirmwareReleaseDownloader],
+        releases_attr: str,
+        fetch_limit_attr: str,
+        limit: Optional[int] = None,
+    ) -> List[Release]:
+        """
+        Generic helper to fetch and cache releases with partial cache detection.
+
+        Parameters:
+            downloader (BaseDownloader): The downloader instance to use for fetching releases.
+            releases_attr (str): Attribute name on self that holds the cached releases list.
+            fetch_limit_attr (str): Attribute name on self that holds the fetch limit used for caching.
+            limit (Optional[int]): Maximum number of releases to fetch; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
+
+        Returns:
+            List[Release]: The cached or newly fetched list of releases.
+        """
+        current_releases = getattr(self, releases_attr)
+        current_fetch_limit = getattr(self, fetch_limit_attr)
+
+        should_fetch = current_releases is None
+        # If we previously fetched with a limit, and now want "full" (limit=None), refetch.
+        if not should_fetch and limit is None and current_fetch_limit is not None:
+            should_fetch = True
+        # If we previously fetched with a smaller limit, and now want more, refetch.
+        if (
+            not should_fetch
+            and limit is not None
+            and current_fetch_limit is not None
+            and current_fetch_limit < limit
+        ):
+            should_fetch = True
+
+        if should_fetch:
+            new_releases = downloader.get_releases(limit=limit) or []
+            setattr(self, releases_attr, new_releases)
+            setattr(self, fetch_limit_attr, limit)
+            return new_releases
+
+        return current_releases or []
+
     def _ensure_firmware_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Return cached firmware releases, fetching them once from the downloader if not already cached.
@@ -310,30 +353,12 @@ class DownloadOrchestrator:
         Returns:
             List[Release]: The cached list of firmware releases.
         """
-        should_fetch = self.firmware_releases is None
-        # If we previously fetched with a limit, and now want "full" (limit=None), refetch.
-        if (
-            not should_fetch
-            and limit is None
-            and self._firmware_releases_fetch_limit is not None
-        ):
-            should_fetch = True
-        # If we previously fetched with a smaller limit, and now want more, refetch.
-        if (
-            not should_fetch
-            and limit is not None
-            and self._firmware_releases_fetch_limit is not None
-            and self._firmware_releases_fetch_limit < limit
-        ):
-            should_fetch = True
-
-        if should_fetch:
-            self.firmware_releases = (
-                self.firmware_downloader.get_releases(limit=limit) or []
-            )
-            self._firmware_releases_fetch_limit = limit
-
-        return self.firmware_releases or []
+        return self._ensure_releases(
+            downloader=self.firmware_downloader,
+            releases_attr="firmware_releases",
+            fetch_limit_attr="_firmware_releases_fetch_limit",
+            limit=limit,
+        )
 
     def _process_firmware_downloads(self) -> None:
         """
