@@ -1095,11 +1095,10 @@ class DownloadOrchestrator:
             return
         self.firmware_prerelease_summary = None
 
-        history_entries = summary.get("history_entries") or []
+        history_entries = summary.get("history_entries")
         clean_latest_release = summary.get("clean_latest_release")
         expected_version = summary.get("expected_version")
-
-        if not all((history_entries, clean_latest_release, expected_version)):
+        if not history_entries or not clean_latest_release or not expected_version:
             return
 
         self.firmware_downloader.log_prerelease_summary(

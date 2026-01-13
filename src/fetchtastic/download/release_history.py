@@ -245,10 +245,10 @@ class ReleaseHistoryManager:
     def _get_sorted_releases_with_tags(self, releases: List[Release]) -> List[Release]:
         """
         Filter the given releases to those with a `tag_name` and sort them newest-first.
-        
+
         Parameters:
             releases (List[Release]): Iterable of release objects to filter and sort.
-        
+
         Returns:
             List[Release]: Releases that include a `tag_name`, sorted by newest published first.
         """
@@ -288,14 +288,14 @@ class ReleaseHistoryManager:
     ) -> str:
         """
         Create a human-readable label for a release, optionally marking it as kept and appending channel and revoked annotations.
-        
+
         Parameters:
             release (Release): Release whose tag, channel, and status are used to construct the label.
             include_channel (bool): If true, append the detected release channel (e.g., "alpha", "beta") in parentheses.
             include_status (bool): If true, append "revoked" in parentheses when the release is detected as revoked.
             _include_stable (bool): Kept for backward compatibility; ignored by this formatter.
             is_kept (bool): If true, prefix the label with "[KEEP] " to indicate the release is being retained.
-        
+
         Returns:
             str: The formatted label containing the release tag (or "<unknown>"), optionally prefixed with "[KEEP]" and followed by parenthesized annotations.
         """
@@ -466,9 +466,9 @@ class ReleaseHistoryManager:
     ) -> None:
         """
         Log a per-channel summary and list releases grouped by their inferred channel.
-        
+
         Builds a compact channel count string using the preferred order (alpha, beta, rc, then other channels alphabetically) and logs a header plus a per-channel line listing releases for each non-empty channel. If keep_limit is provided it is applied as a cap to the releases considered for the header (the header shows how many of the total are being kept); when keep_limit is provided and results would be empty, a fallback to the full sorted set may be used to produce the summary.
-        
+
         Parameters:
             releases (List[Release]): Releases to summarize; releases without a tag are ignored by the summary.
             label (str): Prefix label used in the logged summary message.
@@ -484,55 +484,16 @@ class ReleaseHistoryManager:
             else sorted_releases[: max(0, keep_limit)]
         )
 
-        def _build_summary_parts(channel_map: Dict[str, List[Release]]) -> List[str]:
-            """
-            Build an ordered summary list of channel counts from a mapping of channel names to releases.
-            
-            Parameters:
-                channel_map (Dict[str, List[Release]]): Mapping from channel name to the list of releases for that channel.
-            
-            Returns:
-                List[str]: Ordered list of strings of the form "channel=count". Channels in _CHANNEL_ORDER appear first (in that order), followed by any remaining channels sorted alphabetically; channels with a count of zero are omitted.
-            """
-            parts: List[str] = []
-            for channel in _CHANNEL_ORDER:
-                count = len(channel_map.get(channel, []))
-                if count:
-                    parts.append(f"{channel}={count}")
-            for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
-                count = len(channel_map.get(channel, []))
-                if count:
-                    parts.append(f"{channel}={count}")
-            return parts
-
-        def _build_channel_map_local(
-            releases_to_map: List[Release],
-        ) -> Dict[str, List[Release]]:
-            """
-            Group releases by their detected release channel.
-            
-            Parameters:
-                releases_to_map (List[Release]): Releases to group by channel.
-            
-            Returns:
-                Dict[str, List[Release]]: Mapping from channel label (e.g., "alpha", "beta", "rc") to the list of releases belonging to that channel. The order of releases within each list follows their order in the input.
-            """
-            channel_map: Dict[str, List[Release]] = {}
-            for release in releases_to_map:
-                channel = self.get_release_channel(release)
-                channel_map.setdefault(channel, []).append(release)
-            return channel_map
-
-        display_channel_map = _build_channel_map_local(filtered_releases)
-        summary_parts = _build_summary_parts(display_channel_map)
+        display_channel_map = self._build_channel_map(filtered_releases)
+        summary_parts = self._build_summary_parts(display_channel_map)
         if (
             not summary_parts
             and keep_limit is not None
             and keep_limit <= 0
             and sorted_releases
         ):
-            fallback_channel_map = _build_channel_map_local(sorted_releases)
-            summary_parts = _build_summary_parts(fallback_channel_map)
+            fallback_channel_map = self._build_channel_map(sorted_releases)
+            summary_parts = self._build_summary_parts(fallback_channel_map)
 
         if not summary_parts:
             return
@@ -562,14 +523,53 @@ class ReleaseHistoryManager:
                 continue
             self._log_channel_releases(channel, releases_for_channel)
 
+    def _build_summary_parts(self, channel_map: Dict[str, List[Release]]) -> List[str]:
+        """
+        Build an ordered summary list of channel counts from a mapping of channel names to releases.
+
+        Parameters:
+            channel_map (Dict[str, List[Release]]): Mapping from channel name to list of releases for that channel.
+
+        Returns:
+            List[str]: Ordered list of strings of the form "channel=count". Channels in _CHANNEL_ORDER appear first (in that order), followed by any remaining channels sorted alphabetically; channels with a count of zero are omitted.
+        """
+        parts: List[str] = []
+        for channel in _CHANNEL_ORDER:
+            count = len(channel_map.get(channel, []))
+            if count:
+                parts.append(f"{channel}={count}")
+        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
+            count = len(channel_map.get(channel, []))
+            if count:
+                parts.append(f"{channel}={count}")
+        return parts
+
+    def _build_channel_map(
+        self, releases_to_map: List[Release]
+    ) -> Dict[str, List[Release]]:
+        """
+        Group releases by their detected release channel.
+
+        Parameters:
+            releases_to_map (List[Release]): Releases to group by channel.
+
+        Returns:
+            Dict[str, List[Release]]: Mapping from channel label (e.g., "alpha", "beta", "rc") to list of releases belonging to that channel. The order of releases within each list follows their order in the input.
+        """
+        channel_map: Dict[str, List[Release]] = {}
+        for release in releases_to_map:
+            channel = self.get_release_channel(release)
+            channel_map.setdefault(channel, []).append(release)
+        return channel_map
+
     def _log_channel_releases(
         self, channel: str, releases_for_channel: List[Release]
     ) -> None:
         """
         Log a comma-separated list of releases for a specific channel, newest first.
-        
+
         Formats each release using the manager's label formatter (omitting the channel and including status) and emits a single info-level line like "  - {channel}: {label1}, {label2}, …".
-        
+
         Parameters:
             channel (str): Channel name to log (e.g., "alpha", "beta", "rc").
             releases_for_channel (List[Release]): Releases belonging to the channel; releases without tags are ignored.
