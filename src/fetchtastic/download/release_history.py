@@ -244,13 +244,13 @@ class ReleaseHistoryManager:
 
     def _get_sorted_releases_with_tags(self, releases: List[Release]) -> List[Release]:
         """
-        Return releases that have a tag name, sorted newest-first.
-
+        Filter the given releases to those with a `tag_name` and sort them newest-first.
+        
         Parameters:
-            releases: Releases to sort.
-
+            releases (List[Release]): Iterable of release objects to filter and sort.
+        
         Returns:
-            Sorted list of releases that include a tag name.
+            List[Release]: Releases that include a `tag_name`, sorted by newest published first.
         """
         return sorted(
             (release for release in releases if release.tag_name),
@@ -287,17 +287,17 @@ class ReleaseHistoryManager:
         is_kept: bool = False,
     ) -> str:
         """
-        Build a display label for a release, optionally prefixing it as kept and appending channel/status annotations.
-
+        Create a human-readable label for a release, optionally marking it as kept and appending channel and revoked annotations.
+        
         Parameters:
             release (Release): Release whose tag, channel, and status are used to construct the label.
-            include_channel (bool): If true, append the release channel (e.g., "alpha", "beta") in parentheses.
+            include_channel (bool): If true, append the detected release channel (e.g., "alpha", "beta") in parentheses.
             include_status (bool): If true, append "revoked" in parentheses when the release is detected as revoked.
-            _include_stable (bool): Kept for backward compatibility; ignored by the formatter and does not emit "stable".
-            is_kept (bool): If true, prefix the label with "[KEEP] " to indicate this release is being kept.
-
+            _include_stable (bool): Kept for backward compatibility; ignored by this formatter.
+            is_kept (bool): If true, prefix the label with "[KEEP] " to indicate the release is being retained.
+        
         Returns:
-            label (str): The formatted label containing the tag name (or "<unknown>"), optionally prefixed with "[KEEP]" and followed by parenthesized annotations.
+            str: The formatted label containing the release tag (or "<unknown>"), optionally prefixed with "[KEEP]" and followed by parenthesized annotations.
         """
         label = release.tag_name or "<unknown>"
         if is_kept:
@@ -465,14 +465,14 @@ class ReleaseHistoryManager:
         self, releases: List[Release], *, label: str, keep_limit: Optional[int] = None
     ) -> None:
         """
-        Log a summary of releases grouped by inferred channel and list releases per channel.
-
-        Groups the provided releases by channel (using get_release_channel), logs a compact count for each channel in a preferred order (alpha, beta, rc, then other channels alphabetically), and logs a per-channel list of release labels for non-empty channels. If keep_limit is provided, indicates which releases are being kept.
-
+        Log a per-channel summary and list releases grouped by their inferred channel.
+        
+        Builds a compact channel count string using the preferred order (alpha, beta, rc, then other channels alphabetically) and logs a header plus a per-channel line listing releases for each non-empty channel. If keep_limit is provided it is applied as a cap to the releases considered for the header (the header shows how many of the total are being kept); when keep_limit is provided and results would be empty, a fallback to the full sorted set may be used to produce the summary.
+        
         Parameters:
-            releases (List[Release]): Releases to summarize; releases without entries are ignored.
+            releases (List[Release]): Releases to summarize; releases without a tag are ignored by the summary.
             label (str): Prefix label used in the logged summary message.
-            keep_limit (Optional[int]): Maximum number of releases that will be kept; if provided, annotations are added to show which releases will be retained.
+            keep_limit (Optional[int]): Optional cap on how many releases are considered "kept" for the summary header; if None no cap is applied.
         """
         if not releases:
             return
@@ -485,6 +485,15 @@ class ReleaseHistoryManager:
         )
 
         def _build_summary_parts(channel_map: Dict[str, List[Release]]) -> List[str]:
+            """
+            Build an ordered summary list of channel counts from a mapping of channel names to releases.
+            
+            Parameters:
+                channel_map (Dict[str, List[Release]]): Mapping from channel name to the list of releases for that channel.
+            
+            Returns:
+                List[str]: Ordered list of strings of the form "channel=count". Channels in _CHANNEL_ORDER appear first (in that order), followed by any remaining channels sorted alphabetically; channels with a count of zero are omitted.
+            """
             parts: List[str] = []
             for channel in _CHANNEL_ORDER:
                 count = len(channel_map.get(channel, []))
@@ -499,6 +508,15 @@ class ReleaseHistoryManager:
         def _build_channel_map_local(
             releases_to_map: List[Release],
         ) -> Dict[str, List[Release]]:
+            """
+            Group releases by their detected release channel.
+            
+            Parameters:
+                releases_to_map (List[Release]): Releases to group by channel.
+            
+            Returns:
+                Dict[str, List[Release]]: Mapping from channel label (e.g., "alpha", "beta", "rc") to the list of releases belonging to that channel. The order of releases within each list follows their order in the input.
+            """
             channel_map: Dict[str, List[Release]] = {}
             for release in releases_to_map:
                 channel = self.get_release_channel(release)
@@ -548,13 +566,13 @@ class ReleaseHistoryManager:
         self, channel: str, releases_for_channel: List[Release]
     ) -> None:
         """
-        Log releases for a given channel.
-
-        Releases are reported newest-first and rendered using the manager's label formatter.
-
+        Log a comma-separated list of releases for a specific channel, newest first.
+        
+        Formats each release using the manager's label formatter (omitting the channel and including status) and emits a single info-level line like "  - {channel}: {label1}, {label2}, …".
+        
         Parameters:
             channel (str): Channel name to log (e.g., "alpha", "beta", "rc").
-            releases_for_channel (List[Release]): Releases belonging to the channel.
+            releases_for_channel (List[Release]): Releases belonging to the channel; releases without tags are ignored.
         """
         sorted_releases = self._get_sorted_releases_with_tags(releases_for_channel)
         items = ", ".join(

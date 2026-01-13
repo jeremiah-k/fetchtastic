@@ -1491,19 +1491,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Optional[Dict[str, Any]],
     ]:
         """
-        Check for and download firmware prerelease assets from the Meshtastic site (legacy repo-based workflow), update prerelease tracking, and return results.
-
+        Check for and download firmware prerelease assets from the legacy repo-based workflow and update prerelease tracking.
+        
         Parameters:
-            latest_release_tag (str): The tag of the latest official release used to determine the expected prerelease base version.
+            latest_release_tag (str): Tag of the latest official release used to derive the expected prerelease base version.
             force_refresh (bool): When True, bypass cached directory listings and force remote refresh.
-
+        
         Returns:
             tuple[list[DownloadResult], list[DownloadResult], Optional[str], Optional[Dict[str, Any]]]:
-            A tuple containing:
-                - successes: list of DownloadResult for assets that were successfully downloaded or skipped,
-                - failures: list of DownloadResult for assets that failed to download,
-                - active_dir: the remote prerelease directory identifier used for the download, or None if no prerelease was found,
-                - prerelease_summary: Dict with prerelease history details for later reporting, or None when no history was available.
+            A 4-tuple containing:
+                - successes: list of DownloadResult for assets that were successfully downloaded or skipped.
+                - failures: list of DownloadResult for assets that failed to download.
+                - active_dir: remote prerelease directory identifier used for the download, or `None` if no prerelease was found.
+                - prerelease_summary: a dict with prerelease history details (keys: `history_entries`, `clean_latest_release`, `expected_version`) for later reporting, or `None` when no history is available.
         """
         check_prereleases = self.config.get(
             "CHECK_FIRMWARE_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
