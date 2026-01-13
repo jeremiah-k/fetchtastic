@@ -313,13 +313,9 @@ class DownloadOrchestrator:
                 should_fetch = True
 
         if should_fetch:
-            try:
-                new_releases = downloader.get_releases(limit=limit) or []
-            except Exception:
-                return current_releases or []
-            if new_releases or limit == 0:
-                setattr(self, releases_attr, new_releases)
-                setattr(self, fetch_limit_attr, limit)
+            new_releases = downloader.get_releases(limit=limit) or []
+            setattr(self, releases_attr, new_releases)
+            setattr(self, fetch_limit_attr, limit)
             return new_releases
 
         cached = current_releases or []
@@ -1162,7 +1158,11 @@ class DownloadOrchestrator:
         clean_latest_release = summary.get("clean_latest_release")
         expected_version = summary.get("expected_version")
 
-        if not all((history_entries, clean_latest_release, expected_version)):
+        if (
+            not history_entries
+            or not isinstance(clean_latest_release, str)
+            or not isinstance(expected_version, str)
+        ):
             logger.debug(
                 "Skipping prerelease summary: missing required fields (history_entries=%s, clean_latest_release=%s, expected_version=%s)",
                 bool(history_entries),
@@ -1170,9 +1170,6 @@ class DownloadOrchestrator:
                 bool(expected_version),
             )
             return
-
-        assert isinstance(clean_latest_release, str)
-        assert isinstance(expected_version, str)
 
         self.firmware_downloader.log_prerelease_summary(
             history_entries, clean_latest_release, expected_version
