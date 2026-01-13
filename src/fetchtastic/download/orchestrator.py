@@ -309,7 +309,7 @@ class DownloadOrchestrator:
 
         should_fetch = current_releases is None
         if not should_fetch and current_fetch_limit is not None:
-            if limit is None or (limit is not None and limit > current_fetch_limit):
+            if limit is None or limit > current_fetch_limit:
                 should_fetch = True
 
         if should_fetch:
@@ -1128,7 +1128,7 @@ class DownloadOrchestrator:
         kept_releases = manager.get_releases_for_summary(
             releases_for_summary, keep_limit=keep_limit_for_summary
         )
-        kept_tags = {release.tag_name for release in kept_releases if release.tag_name}
+        kept_tags = {release.tag_name for release in kept_releases}
         entries = self.firmware_release_history.get("entries")
         entries_dict = entries if isinstance(entries, dict) else {}
         filtered_history: Dict[str, Any] = {
