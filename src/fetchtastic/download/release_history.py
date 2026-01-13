@@ -494,8 +494,8 @@ class ReleaseHistoryManager:
             and keep_limit <= 0
             and sorted_releases
         ):
-            fallback_channel_map = self._build_channel_map(sorted_releases)
-            summary_parts = self._build_summary_parts(fallback_channel_map)
+            display_channel_map = self._build_channel_map(sorted_releases)
+            summary_parts = self._build_summary_parts(display_channel_map)
 
         if not summary_parts:
             return
