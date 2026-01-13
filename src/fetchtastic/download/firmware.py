@@ -1536,6 +1536,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 force_refresh=force_refresh,
             )
         )
+        prerelease_summary = None
+        if history_entries:
+            prerelease_summary = {
+                "history_entries": history_entries,
+                "clean_latest_release": clean_latest_release,
+                "expected_version": expected_version,
+            }
+
         if active_dir:
             logger.info("Using commit history for prerelease detection")
         else:
@@ -1573,9 +1581,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
                 active_dir = None
 
+        if active_dir:
+            repo_dirs = self.cache_manager.get_repo_directories(
+                "",
+                force_refresh=True,
+                github_token=self.config.get("GITHUB_TOKEN"),
+                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
+            )
+            if active_dir not in repo_dirs:
+                logger.info(
+                    "Prerelease directory %s no longer exists; skipping prerelease download",
+                    active_dir,
+                )
+                return [], [], None, prerelease_summary
+
         if not active_dir:
             logger.info("No pre-release firmware available")
-            return [], [], None, None
+            return [], [], None, prerelease_summary
 
         selected_patterns = self._get_prerelease_patterns()
         exclude_patterns = self._get_exclude_patterns()
@@ -1609,14 +1631,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_manager.update_prerelease_tracking(
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
             )
-
-        prerelease_summary = None
-        if history_entries:
-            prerelease_summary = {
-                "history_entries": history_entries,
-                "clean_latest_release": clean_latest_release,
-                "expected_version": expected_version,
-            }
 
         # Consolidate skipped messages
         skipped_count = sum(1 for result in successes if result.was_skipped)
