@@ -496,11 +496,16 @@ class ReleaseHistoryManager:
                     parts.append(f"{channel}={count}")
             return parts
 
-        display_channel_map: Dict[str, List[Release]] = {}
-        for release in filtered_releases:
-            channel = self.get_release_channel(release)
-            display_channel_map.setdefault(channel, []).append(release)
+        def _build_channel_map_local(
+            releases_to_map: List[Release],
+        ) -> Dict[str, List[Release]]:
+            channel_map: Dict[str, List[Release]] = {}
+            for release in releases_to_map:
+                channel = self.get_release_channel(release)
+                channel_map.setdefault(channel, []).append(release)
+            return channel_map
 
+        display_channel_map = _build_channel_map_local(filtered_releases)
         summary_parts = _build_summary_parts(display_channel_map)
         if (
             not summary_parts
@@ -508,10 +513,7 @@ class ReleaseHistoryManager:
             and keep_limit <= 0
             and sorted_releases
         ):
-            fallback_channel_map: Dict[str, List[Release]] = {}
-            for release in sorted_releases:
-                channel = self.get_release_channel(release)
-                fallback_channel_map.setdefault(channel, []).append(release)
+            fallback_channel_map = _build_channel_map_local(sorted_releases)
             summary_parts = _build_summary_parts(fallback_channel_map)
 
         if not summary_parts:
