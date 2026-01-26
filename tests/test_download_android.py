@@ -160,6 +160,25 @@ class TestMeshtasticAndroidAppDownloader:
             [stable_release]
         )
 
+    def test_update_release_history_filters_legacy_prereleases(self, downloader):
+        """Legacy -open/-closed prereleases should be filtered even when prerelease flag is False."""
+        stable_release = Release(tag_name="v2.7.11", prerelease=False)
+        legacy_prerelease1 = Release(tag_name="v2.7.11-open.1", prerelease=False)
+        legacy_prerelease2 = Release(tag_name="v2.7.11-closed.2", prerelease=False)
+
+        downloader.release_history_manager.update_release_history = Mock(
+            return_value={"entries": {}}
+        )
+
+        history = downloader.update_release_history(
+            [stable_release, legacy_prerelease1, legacy_prerelease2]
+        )
+
+        assert history == {"entries": {}}
+        downloader.release_history_manager.update_release_history.assert_called_once_with(
+            [stable_release]
+        )
+
     def test_update_release_history_returns_none_with_only_prereleases(
         self, downloader
     ):
@@ -172,6 +191,24 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         history = downloader.update_release_history([prerelease1, prerelease2])
+
+        assert history is None
+        downloader.release_history_manager.update_release_history.assert_not_called()
+
+    def test_update_release_history_returns_none_with_only_legacy_prereleases(
+        self, downloader
+    ):
+        """Release history should return None when only legacy prereleases are provided."""
+        legacy_prerelease1 = Release(tag_name="v2.7.11-open.1", prerelease=False)
+        legacy_prerelease2 = Release(tag_name="v2.7.11-closed.1", prerelease=False)
+
+        downloader.release_history_manager.update_release_history = Mock(
+            return_value={"entries": {}}
+        )
+
+        history = downloader.update_release_history(
+            [legacy_prerelease1, legacy_prerelease2]
+        )
 
         assert history is None
         downloader.release_history_manager.update_release_history.assert_not_called()

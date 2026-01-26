@@ -181,7 +181,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         if not releases:
             return None
-        stable_releases = [r for r in releases if not r.prerelease]
+        stable_releases = [r for r in releases if not self._is_android_prerelease(r)]
         if not stable_releases:
             return None
         history = self.release_history_manager.update_release_history(stable_releases)
