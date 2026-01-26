@@ -210,9 +210,9 @@ class DownloadCLIIntegration:
     ) -> None:
         """
         Emit a legacy-style summary of download results to the provided logger.
-        
+
         Logs elapsed time, counts of downloaded assets, latest release and prerelease tags, detailed information about any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an up-to-date timestamp. If this instance has a configured `config`, sends notifications for completion or up-to-date state.
-        
+
         Parameters:
             logger_override (logging-like, optional): Logger to use instead of the module logger.
             elapsed_seconds (float): Total time elapsed for the download run.

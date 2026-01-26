@@ -430,12 +430,12 @@ class ReleaseHistoryManager:
     ) -> None:
         """
         Log a concise summary of releases marked revoked or removed from a history dictionary.
-        
+
         Reports revoked entries always and reports removed entries only when an entry's
         `status_updated_at` equals the history's `last_updated` value (to avoid repeating
         stale removals). If `history["entries"]` is missing or not a dict, or if there
         are no revoked/removed entries to report, the function returns without logging.
-        
+
         Parameters:
             history (Dict[str, Any]): History object containing an "entries" mapping of
                 release entries keyed by tag and an optional top-level "last_updated"
