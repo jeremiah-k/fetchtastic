@@ -1,5 +1,4 @@
 # Tests for release history tracking utilities.
-
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -320,6 +319,7 @@ def test_log_release_status_summary_and_entry(tmp_path):
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     history_path = cache_manager.get_cache_file_path("release_history_logs")
     manager = ReleaseHistoryManager(cache_manager, history_path)
+
     history = {
         "entries": {
             "v1.0.0": {
@@ -334,6 +334,12 @@ def test_log_release_status_summary_and_entry(tmp_path):
                 "status": "removed",
                 "published_at": "2024-01-01T00:00:00Z",
             },
+            "v0.8.0": {
+                "tag_name": "v0.8.0",
+                "channel": "beta",
+                "status": "removed",
+                "published_at": "2023-01-01T00:00:00Z",
+            },
         }
     }
 
@@ -341,6 +347,12 @@ def test_log_release_status_summary_and_entry(tmp_path):
         manager.log_release_status_summary(history, label="Firmware")
 
     assert mock_info.called
+
+    logged_calls = [str(call) for call in mock_info.call_args_list]
+    logged_text = " ".join(logged_calls)
+    assert "v1.0.0" in logged_text
+    assert "v0.9.0" in logged_text
+    assert "v0.8.0" in logged_text
 
 
 def test_log_release_status_summary_invalid_entries(tmp_path):

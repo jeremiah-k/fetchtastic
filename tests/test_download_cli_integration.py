@@ -854,3 +854,64 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
     calls = [call[0] for call in mock_version_manager.compare_versions.call_args_list]
     assert ("2.7.10-abcdef", "2.7.10-abcdef") in calls
     assert ("firmware-2.7.10-abcdef", "2.7.10-abcdef") not in calls
+
+
+def test_log_download_results_summary_logging_order(mocker):
+    """log_download_results_summary should log versions in correct order: firmware, firmware prerelease, APK, APK prerelease."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = MagicMock()
+
+    mock_orchestrator = integration.orchestrator
+    mock_orchestrator.log_firmware_release_history_summary = MagicMock()
+    mock_orchestrator.get_latest_versions.return_value = {
+        "firmware": "v2.7.18.fb3bf78",
+        "android": "v2.7.11",
+        "firmware_prerelease": "v2.7.19-prerelease",
+        "android_prerelease": None,
+    }
+
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=19.5,
+        downloaded_firmwares=["firmware.zip"],
+        downloaded_apks=["android.apk"],
+        downloaded_firmware_prereleases=["prerelease.zip"],
+        downloaded_apk_prereleases=[],
+        failed_downloads=[],
+        latest_firmware_version="v2.7.18.fb3bf78",
+        latest_apk_version="v2.7.11",
+        new_firmware_versions=[],
+        new_apk_versions=[],
+    )
+
+    [str(call) for call in mock_logger.info.call_args_list]
+
+    latest_version_calls = []
+    for call_args in mock_logger.info.call_args_list:
+        call_str = str(call_args)
+        if (
+            "Latest firmware:" in call_str
+            or "Latest APK:" in call_str
+            or "firmware prerelease:" in call_str
+            or "APK prerelease:" in call_str
+        ):
+            latest_version_calls.append(call_str)
+
+    joined_calls = " ".join(latest_version_calls)
+
+    assert "Latest firmware: v2.7.18.fb3bf78" in joined_calls
+    assert "Latest firmware prerelease: v2.7.19-prerelease" in joined_calls
+    assert "Latest APK: v2.7.11" in joined_calls
+    assert "Latest APK prerelease: none" in joined_calls
+
+    assert joined_calls.index("Latest firmware: v2.7.18.fb3bf78") < joined_calls.index(
+        "Latest firmware prerelease: v2.7.19-prerelease"
+    )
+    assert joined_calls.index(
+        "Latest firmware prerelease: v2.7.19-prerelease"
+    ) < joined_calls.index("Latest APK: v2.7.11")
+    assert joined_calls.index("Latest APK: v2.7.11") < joined_calls.index(
+        "Latest APK prerelease: none"
+    )

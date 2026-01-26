@@ -429,13 +429,16 @@ class ReleaseHistoryManager:
         self, history: Dict[str, Any], *, label: str
     ) -> None:
         """
-        Log a concise summary of releases marked revoked or removed in the provided history.
+        Log a concise summary of releases marked revoked or removed from a history dictionary.
 
-        Examines history["entries"] (expected to be a dict of release entries keyed by tag) and, if any entries have status "revoked" or "removed", logs a header with counts and then logs each matching entry in sorted order. If "entries" is missing or not a dict, or no revoked/removed entries exist, the function does nothing.
+        Reports revoked entries always and reports removed entries. If `history["entries"]` is missing
+        or not a dict, or if there are no revoked/removed entries to report,
+        the function returns without logging.
 
         Parameters:
-                history (Dict[str, Any]): History object containing an "entries" mapping where each entry is a dict with at least a "status" field.
-                label (str): Prefix label used in log messages (e.g., source or context name).
+            history (Dict[str, Any]): History object containing an "entries" mapping of
+                release entries keyed by tag. Each entry should include a "status" field.
+            label (str): Prefix label used in log messages (e.g., source or context name).
         """
         entries = history.get("entries") or {}
         if not isinstance(entries, dict):
@@ -443,6 +446,7 @@ class ReleaseHistoryManager:
 
         revoked = [e for e in entries.values() if e.get("status") == STATUS_REVOKED]
         removed = [e for e in entries.values() if e.get("status") == STATUS_REMOVED]
+
         if not revoked and not removed:
             return
 
@@ -707,7 +711,7 @@ class ReleaseHistoryManager:
         Sort order: primary key is `published_at` (ISO-8601 datetime); entries without `published_at` are treated as oldest. Ties are broken by `tag_name` in descending lexicographic order.
 
         Parameters:
-            entries (List[Dict[str, Any]]): List of entry objects. Each entry may contain the keys `"published_at"` (ISO-8601 string) and `"tag_name"` (string).
+            entries (List[Dict[str, Any]]): List of entry objects. Each entry may contain keys `"published_at"` (ISO-8601 string) and `"tag_name"` (string).
 
         Returns:
             List[Dict[str, Any]]: The input entries sorted by published date (newest first) and then by tag name.

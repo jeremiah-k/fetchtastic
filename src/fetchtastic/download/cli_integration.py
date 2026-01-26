@@ -211,22 +211,20 @@ class DownloadCLIIntegration:
         """
         Emit a legacy-style summary of download results to the provided logger.
 
-        Logs elapsed time, counts of downloaded firmware and APKs, reported latest release versions (including prereleases), details of any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an "up to date" timestamp. Uses the instance's get_latest_versions() for prerelease info. The new_firmware_versions/new_apk_versions parameters are accepted for backward compatibility but are not currently used.
-
-        Note: self.config must be available for notification functionality to work.
+        Logs elapsed time, counts of downloaded assets, latest release and prerelease tags, detailed information about any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an up-to-date timestamp. If this instance has a configured `config`, sends notifications for completion or up-to-date state.
 
         Parameters:
-            logger_override (logging-like, optional): Logger to use instead of the module logger; if omitted, the module-level `logger` is used.
+            logger_override (logging-like, optional): Logger to use instead of the module logger.
             elapsed_seconds (float): Total time elapsed for the download run.
-            downloaded_firmwares (List[str]): Filenames or paths of downloaded firmware assets.
-            downloaded_apks (List[str]): Filenames or paths of downloaded APK assets.
-            downloaded_firmware_prereleases (Optional[List[str]]): Filenames or paths of downloaded firmware prerelease assets.
-            downloaded_apk_prereleases (Optional[List[str]]): Filenames or paths of downloaded APK prerelease assets.
-            failed_downloads (List[Dict[str, str]]): List of failure records; each may include keys like `type`, `release_tag`, `file_name`, `url`, `retryable`, `http_status`, and `error`.
-            latest_firmware_version (str): Reported latest firmware release tag (empty if none).
-            latest_apk_version (str): Reported latest APK release tag (empty if none).
-            new_firmware_versions (List[str]): Unused; retained for backward compatibility.
-            new_apk_versions (List[str]): Unused; retained for backward compatibility.
+            downloaded_firmwares (List[str]): Downloaded firmware filenames or tags.
+            downloaded_apks (List[str]): Downloaded APK filenames or tags.
+            downloaded_firmware_prereleases (Optional[List[str]]): Downloaded firmware prerelease tags, if any.
+            downloaded_apk_prereleases (Optional[List[str]]): Downloaded APK prerelease tags, if any.
+            failed_downloads (List[Dict[str, str]]): Failure records; expected keys include `type`, `release_tag`, `file_name`, `url`, `retryable`, `http_status`, and `error`.
+            latest_firmware_version (str): Reported latest firmware release tag (empty string if none).
+            latest_apk_version (str): Reported latest APK release tag (empty string if none).
+            new_firmware_versions (List[str]): Retained for backward compatibility; not used by this method.
+            new_apk_versions (List[str]): Retained for backward compatibility; not used by this method.
         """
         log = logger_override or logger
 
@@ -246,18 +244,19 @@ class DownloadCLIIntegration:
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
 
-        if latest_firmware_version:
-            log.info(f"Latest firmware: {latest_firmware_version}")
-        if latest_apk_version:
-            log.info(f"Latest APK: {latest_apk_version}")
-
         latest_versions = self.get_latest_versions()
         latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
         latest_apk_prerelease = latest_versions.get("android_prerelease")
+
+        if latest_firmware_version:
+            log.info(f"Latest firmware: {latest_firmware_version}")
         if latest_firmware_prerelease:
             log.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
         else:
             log.info("Latest firmware prerelease: none")
+
+        if latest_apk_version:
+            log.info(f"Latest APK: {latest_apk_version}")
         if latest_apk_prerelease:
             log.info(f"Latest APK prerelease: {latest_apk_prerelease}")
         else:
