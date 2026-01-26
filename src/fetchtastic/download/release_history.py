@@ -431,10 +431,10 @@ class ReleaseHistoryManager:
         """
         Log a concise summary of releases marked revoked or removed in the provided history.
 
-        Examines history["entries"] (expected to be a dict of release entries keyed by tag) and, if any entries have status "revoked" or "removed", logs a header with counts and then logs each matching entry in sorted order. If "entries" is missing or not a dict, or no revoked/removed entries exist, the function does nothing.
+        Examines history["entries"] (expected to be a dict of release entries keyed by tag) and, if any entries have status "revoked" or "removed", logs a header with counts and then logs each matching entry in sorted order. Removed entries are only reported if they were newly removed in this run (status_updated_at matches history's last_updated timestamp) to avoid repeatedly logging stale cache entries. Revoked entries are always reported. If "entries" is missing or not a dict, or no revoked/removed entries exist, the function does nothing.
 
         Parameters:
-                history (Dict[str, Any]): History object containing an "entries" mapping where each entry is a dict with at least a "status" field.
+                history (Dict[str, Any]): History object containing an "entries" mapping where each entry is a dict with at least a "status" field and a "last_updated" timestamp.
                 label (str): Prefix label used in log messages (e.g., source or context name).
         """
         entries = history.get("entries") or {}
@@ -442,7 +442,16 @@ class ReleaseHistoryManager:
             return
 
         revoked = [e for e in entries.values() if e.get("status") == STATUS_REVOKED]
-        removed = [e for e in entries.values() if e.get("status") == STATUS_REMOVED]
+
+        last_updated = history.get("last_updated")
+
+        removed = [
+            e
+            for e in entries.values()
+            if e.get("status") == STATUS_REMOVED
+            and e.get("status_updated_at") == last_updated
+        ]
+
         if not revoked and not removed:
             return
 
@@ -707,7 +716,7 @@ class ReleaseHistoryManager:
         Sort order: primary key is `published_at` (ISO-8601 datetime); entries without `published_at` are treated as oldest. Ties are broken by `tag_name` in descending lexicographic order.
 
         Parameters:
-            entries (List[Dict[str, Any]]): List of entry objects. Each entry may contain the keys `"published_at"` (ISO-8601 string) and `"tag_name"` (string).
+            entries (List[Dict[str, Any]]): List of entry objects. Each entry may contain keys `"published_at"` (ISO-8601 string) and `"tag_name"` (string).
 
         Returns:
             List[Dict[str, Any]]: The input entries sorted by published date (newest first) and then by tag name.

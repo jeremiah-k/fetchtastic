@@ -246,18 +246,19 @@ class DownloadCLIIntegration:
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
 
-        if latest_firmware_version:
-            log.info(f"Latest firmware: {latest_firmware_version}")
-        if latest_apk_version:
-            log.info(f"Latest APK: {latest_apk_version}")
-
         latest_versions = self.get_latest_versions()
         latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
         latest_apk_prerelease = latest_versions.get("android_prerelease")
+
+        if latest_firmware_version:
+            log.info(f"Latest firmware: {latest_firmware_version}")
         if latest_firmware_prerelease:
             log.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
         else:
             log.info("Latest firmware prerelease: none")
+
+        if latest_apk_version:
+            log.info(f"Latest APK: {latest_apk_version}")
         if latest_apk_prerelease:
             log.info(f"Latest APK prerelease: {latest_apk_prerelease}")
         else:

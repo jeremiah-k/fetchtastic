@@ -1,6 +1,6 @@
 # Tests for release history tracking utilities.
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -320,6 +320,10 @@ def test_log_release_status_summary_and_entry(tmp_path):
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     history_path = cache_manager.get_cache_file_path("release_history_logs")
     manager = ReleaseHistoryManager(cache_manager, history_path)
+
+    now = datetime.now(timezone.utc)
+    last_updated = now.isoformat()
+
     history = {
         "entries": {
             "v1.0.0": {
@@ -333,14 +337,29 @@ def test_log_release_status_summary_and_entry(tmp_path):
                 "channel": "beta",
                 "status": "removed",
                 "published_at": "2024-01-01T00:00:00Z",
+                "status_updated_at": last_updated,
             },
-        }
+            "v0.8.0": {
+                "tag_name": "v0.8.0",
+                "channel": "beta",
+                "status": "removed",
+                "published_at": "2023-01-01T00:00:00Z",
+                "status_updated_at": (now - timedelta(days=2)).isoformat(),
+            },
+        },
+        "last_updated": last_updated,
     }
 
     with patch.object(log_utils.logger, "info") as mock_info:
         manager.log_release_status_summary(history, label="Firmware")
 
     assert mock_info.called
+
+    logged_calls = [str(call) for call in mock_info.call_args_list]
+    logged_text = " ".join(logged_calls)
+    assert "v1.0.0" in logged_text
+    assert "v0.9.0" in logged_text
+    assert "v0.8.0" not in logged_text
 
 
 def test_log_release_status_summary_invalid_entries(tmp_path):
