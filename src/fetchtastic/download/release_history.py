@@ -431,16 +431,13 @@ class ReleaseHistoryManager:
         """
         Log a concise summary of releases marked revoked or removed from a history dictionary.
 
-        Reports revoked entries always and reports removed entries only when an entry's
-        `status_updated_at` equals the history's `last_updated` value (to avoid repeating
-        stale removals). If `history["entries"]` is missing or not a dict, or if there
-        are no revoked/removed entries to report, the function returns without logging.
+        Reports revoked entries always and reports removed entries. If `history["entries"]` is missing
+        or not a dict, or if there are no revoked/removed entries to report,
+        the function returns without logging.
 
         Parameters:
             history (Dict[str, Any]): History object containing an "entries" mapping of
-                release entries keyed by tag and an optional top-level "last_updated"
-                timestamp used to qualify newly removed entries. Each entry should
-                include a "status" field and may include "status_updated_at".
+                release entries keyed by tag. Each entry should include a "status" field.
             label (str): Prefix label used in log messages (e.g., source or context name).
         """
         entries = history.get("entries") or {}
@@ -448,15 +445,7 @@ class ReleaseHistoryManager:
             return
 
         revoked = [e for e in entries.values() if e.get("status") == STATUS_REVOKED]
-
-        last_updated = history.get("last_updated")
-
-        removed = [
-            e
-            for e in entries.values()
-            if e.get("status") == STATUS_REMOVED
-            and e.get("status_updated_at") == last_updated
-        ]
+        removed = [e for e in entries.values() if e.get("status") == STATUS_REMOVED]
 
         if not revoked and not removed:
             return
