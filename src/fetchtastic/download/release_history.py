@@ -429,13 +429,19 @@ class ReleaseHistoryManager:
         self, history: Dict[str, Any], *, label: str
     ) -> None:
         """
-        Log a concise summary of releases marked revoked or removed in the provided history.
-
-        Examines history["entries"] (expected to be a dict of release entries keyed by tag) and, if any entries have status "revoked" or "removed", logs a header with counts and then logs each matching entry in sorted order. Removed entries are only reported if they were newly removed in this run (status_updated_at matches history's last_updated timestamp) to avoid repeatedly logging stale cache entries. Revoked entries are always reported. If "entries" is missing or not a dict, or no revoked/removed entries exist, the function does nothing.
-
+        Log a concise summary of releases marked revoked or removed from a history dictionary.
+        
+        Reports revoked entries always and reports removed entries only when an entry's
+        `status_updated_at` equals the history's `last_updated` value (to avoid repeating
+        stale removals). If `history["entries"]` is missing or not a dict, or if there
+        are no revoked/removed entries to report, the function returns without logging.
+        
         Parameters:
-                history (Dict[str, Any]): History object containing an "entries" mapping where each entry is a dict with at least a "status" field and a "last_updated" timestamp.
-                label (str): Prefix label used in log messages (e.g., source or context name).
+            history (Dict[str, Any]): History object containing an "entries" mapping of
+                release entries keyed by tag and an optional top-level "last_updated"
+                timestamp used to qualify newly removed entries. Each entry should
+                include a "status" field and may include "status_updated_at".
+            label (str): Prefix label used in log messages (e.g., source or context name).
         """
         entries = history.get("entries") or {}
         if not isinstance(entries, dict):
