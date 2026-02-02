@@ -142,8 +142,11 @@ class TestBackwardCompatibility:
         result = cache_manager.read_json_with_backward_compatibility(
             str(test_file), {"old_key": "new_key"}
         )
-        assert result["old_key"] == "value"
-        assert result["new_key"] == "existing"  # Should not overwrite existing
+        assert result is not None
+        assert result["old_key"] == "value"  # type: ignore[index]
+        assert (
+            result["new_key"] == "existing"
+        )  # Should not overwrite existing  # type: ignore[index]
 
     def test_read_json_with_backward_compatibility_no_mapping(self, tmp_path):
         """Test reading JSON without key mapping."""
@@ -332,7 +335,13 @@ class TestReleasesCache:
         now = datetime.now(timezone.utc)
         cache_data = {
             "releases_identifier": {
-                "releases": [{"tag_name": "v1.0.0"}],
+                "releases": [
+                    {
+                        "tag_name": "v1.0.0",
+                        "prerelease": False,
+                        "published_at": now.isoformat(),
+                    }
+                ],
                 "cached_at": now.isoformat(),
             }
         }
@@ -343,7 +352,9 @@ class TestReleasesCache:
         result = cache_manager.read_releases_cache_entry(
             "releases_identifier", expiry_seconds=3600
         )
-        assert result == [{"tag_name": "v1.0.0"}]
+        assert result is not None
+        assert len(result) == 1  # type: ignore[arg-type]
+        assert result[0]["tag_name"] == "v1.0.0"  # type: ignore[index]
 
     def test_read_releases_cache_entry_expired(self, tmp_path):
         """Test reading expired releases cache entry."""
@@ -354,7 +365,13 @@ class TestReleasesCache:
         past = datetime.now(timezone.utc) - timedelta(hours=2)
         cache_data = {
             "releases_identifier": {
-                "releases": [{"tag_name": "v1.0.0"}],
+                "releases": [
+                    {
+                        "tag_name": "v1.0.0",
+                        "prerelease": False,
+                        "published_at": past.isoformat(),
+                    }
+                ],
                 "cached_at": past.isoformat(),
             }
         }
