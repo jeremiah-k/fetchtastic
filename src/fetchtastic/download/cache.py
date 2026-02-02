@@ -19,6 +19,7 @@ from fetchtastic.constants import (
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    RELEASE_CACHE_SCHEMA_VERSION,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -583,8 +584,37 @@ class CacheManager:
             track_api_cache_miss()
             return None
 
+        schema_version = entry.get("schema_version")
+        if (
+            schema_version is not None
+            and schema_version != RELEASE_CACHE_SCHEMA_VERSION
+        ):
+            logger.debug(
+                "Releases cache schema version mismatch for %s: expected %s, got %s",
+                url_cache_key,
+                RELEASE_CACHE_SCHEMA_VERSION,
+                schema_version,
+            )
+            track_api_cache_miss()
+            return None
+
+        valid_releases = []
+        for idx, release in enumerate(releases):
+            if self._validate_release_entry(release, idx, url_cache_key):
+                valid_releases.append(release)
+
+        if len(valid_releases) != len(releases):
+            logger.warning(
+                "Releases cache for %s has %d invalid entries out of %d total; forcing refresh",
+                url_cache_key,
+                len(releases) - len(valid_releases),
+                len(releases),
+            )
+            track_api_cache_miss()
+            return None
+
         track_api_cache_hit()
-        return releases
+        return valid_releases
 
     @staticmethod
     def _normalize_release_for_comparison(release: dict[str, Any]) -> dict[str, Any]:
@@ -611,6 +641,69 @@ class CacheManager:
             "name": release.get("name"),
             "body": release.get("body"),
         }
+
+    def _validate_release_entry(
+        self, release: dict[str, Any], index: int, context: str
+    ) -> bool:
+        """
+        Validate a single release entry from cache has required fields and types.
+
+        Checks for presence and correct types of critical fields. Logs specific
+        validation failures for debugging. This catches structurally valid JSON
+        with missing or corrupt individual entries.
+
+        Parameters:
+            release (dict[str, Any]): The release entry to validate.
+            index (int): Index of the entry in the list (for logging).
+            context (str): Context identifier for logging (e.g., cache key).
+
+        Returns:
+            bool: True if the entry is valid, False otherwise.
+        """
+        if not isinstance(release, dict):
+            logger.debug(
+                "Invalid release entry at index %d in %s: not a dict (%s)",
+                index,
+                context,
+                type(release).__name__,
+            )
+            return False
+
+        tag_name = release.get("tag_name")
+        if not isinstance(tag_name, str) or not tag_name:
+            logger.debug(
+                "Invalid release entry at index %d in %s: missing or invalid tag_name (%s)",
+                index,
+                context,
+                type(tag_name).__name__ if tag_name is not None else "None",
+            )
+            return False
+
+        prerelease = release.get("prerelease")
+        if not isinstance(prerelease, bool):
+            logger.debug(
+                "Invalid release entry at index %d in %s (tag=%s): "
+                "prerelease is not bool (%s)",
+                index,
+                context,
+                tag_name,
+                type(prerelease).__name__ if prerelease is not None else "None",
+            )
+            return False
+
+        published_at = release.get("published_at")
+        if published_at is not None and not isinstance(published_at, str):
+            logger.debug(
+                "Invalid release entry at index %d in %s (tag=%s): "
+                "published_at is not string (%s)",
+                index,
+                context,
+                tag_name,
+                type(published_at).__name__,
+            )
+            return False
+
+        return True
 
     def write_releases_cache_entry(
         self, url_cache_key: str, releases: list[dict[str, Any]]
@@ -676,6 +769,7 @@ class CacheManager:
         cache[url_cache_key] = {
             "releases": releases,
             "cached_at": now.isoformat(),
+            "schema_version": RELEASE_CACHE_SCHEMA_VERSION,
         }
         if self.atomic_write_json(cache_file, cache):
             if is_unchanged:

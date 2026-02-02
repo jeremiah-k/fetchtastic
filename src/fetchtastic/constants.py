@@ -153,6 +153,11 @@ DEVICE_HARDWARE_CACHE_HOURS = 24
 
 # Cache configuration
 COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
+
+# Cache schema versions - bump when cache format changes
+RELEASE_CACHE_SCHEMA_VERSION = "1.0"
+PRERELEASE_HISTORY_SCHEMA_VERSION = "1.0"
+PRERELEASE_COMMITS_SCHEMA_VERSION = "1.0"
 # Releases API responses are cached for 1 minute to avoid burning GitHub API
 # requests unnecessarily while maintaining relatively fresh data.
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)

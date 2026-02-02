@@ -184,6 +184,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         stable_releases = [r for r in releases if not self._is_android_prerelease(r)]
         if not stable_releases:
             return None
+
+        for release in stable_releases:
+            if self._is_android_prerelease(release):
+                logger.error(
+                    "CRITICAL: Prerelease %s slipped through filter; clearing cache",
+                    release.tag_name,
+                )
+                cache_file = self.cache_manager._get_releases_cache_file()
+                self.cache_manager.clear_cache(cache_file)
+                return None
+
         history = self.release_history_manager.update_release_history(stable_releases)
         if log_summary:
             self.release_history_manager.log_release_status_summary(
