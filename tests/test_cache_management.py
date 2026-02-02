@@ -333,6 +333,8 @@ class TestReleasesCache:
         # Create cache file
         cache_file = cache_manager._get_releases_cache_file()
         now = datetime.now(timezone.utc)
+        from fetchtastic.constants import RELEASE_CACHE_SCHEMA_VERSION
+
         cache_data = {
             "releases_identifier": {
                 "releases": [
@@ -343,6 +345,7 @@ class TestReleasesCache:
                     }
                 ],
                 "cached_at": now.isoformat(),
+                "schema_version": RELEASE_CACHE_SCHEMA_VERSION,
             }
         }
 
@@ -401,6 +404,96 @@ class TestReleasesCache:
         assert "releases_identifier" in cache_data
         assert cache_data["releases_identifier"]["releases"] == releases
         assert "cached_at" in cache_data["releases_identifier"]
+
+    def test_read_releases_cache_entry_old_format_no_schema(self, tmp_path):
+        """Test reading cache entry without schema_version (old format)."""
+        cache_manager = CacheManager(str(tmp_path))
+
+        # Create cache file without schema_version (old format)
+        cache_file = cache_manager._get_releases_cache_file()
+        now = datetime.now(timezone.utc)
+        cache_data = {
+            "releases_identifier": {
+                "releases": [
+                    {
+                        "tag_name": "v1.0.0",
+                        "prerelease": False,
+                        "published_at": now.isoformat(),
+                    }
+                ],
+                "cached_at": now.isoformat(),
+            }
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+
+        result = cache_manager.read_releases_cache_entry(
+            "releases_identifier", expiry_seconds=3600
+        )
+        # Should return None because old format is rejected
+        assert result is None
+
+    def test_read_releases_cache_entry_schema_mismatch(self, tmp_path):
+        """Test reading cache entry with mismatched schema version."""
+        cache_manager = CacheManager(str(tmp_path))
+
+        # Create cache file with old schema version
+        cache_file = cache_manager._get_releases_cache_file()
+        now = datetime.now(timezone.utc)
+        cache_data = {
+            "releases_identifier": {
+                "releases": [
+                    {
+                        "tag_name": "v1.0.0",
+                        "prerelease": False,
+                        "published_at": now.isoformat(),
+                    }
+                ],
+                "cached_at": now.isoformat(),
+                "schema_version": "0.9",  # Wrong version
+            }
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+
+        result = cache_manager.read_releases_cache_entry(
+            "releases_identifier", expiry_seconds=3600
+        )
+        # Should return None because schema version mismatch
+        assert result is None
+
+    def test_read_releases_cache_entry_missing_required_fields(self, tmp_path):
+        """Test reading cache entry with missing required fields."""
+        cache_manager = CacheManager(str(tmp_path))
+
+        # Create cache file with missing required fields
+        cache_file = cache_manager._get_releases_cache_file()
+        now = datetime.now(timezone.utc)
+        from fetchtastic.constants import RELEASE_CACHE_SCHEMA_VERSION
+
+        cache_data = {
+            "releases_identifier": {
+                "releases": [
+                    {
+                        "tag_name": "v1.0.0",
+                        # Missing: prerelease and published_at
+                    }
+                ],
+                "cached_at": now.isoformat(),
+                "schema_version": RELEASE_CACHE_SCHEMA_VERSION,
+            }
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+
+        result = cache_manager.read_releases_cache_entry(
+            "releases_identifier", expiry_seconds=3600
+        )
+        # Should return None because of invalid entries
+        assert result is None
 
 
 class TestCommitTimestampCache:

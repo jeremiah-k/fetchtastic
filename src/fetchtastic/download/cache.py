@@ -585,10 +585,7 @@ class CacheManager:
             return None
 
         schema_version = entry.get("schema_version")
-        if (
-            schema_version is not None
-            and schema_version != RELEASE_CACHE_SCHEMA_VERSION
-        ):
+        if schema_version != RELEASE_CACHE_SCHEMA_VERSION:
             logger.debug(
                 "Releases cache schema version mismatch for %s: expected %s, got %s",
                 url_cache_key,

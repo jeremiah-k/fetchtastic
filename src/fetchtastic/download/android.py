@@ -185,14 +185,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not stable_releases:
             return None
 
-        for release in stable_releases:
-            if self._is_android_prerelease(release):
-                logger.error(
-                    "CRITICAL: Prerelease %s slipped through filter; clearing cache",
-                    release.tag_name,
-                )
-                self.cache_manager.clear_releases_cache()
-                return None
+        assert all(
+            not self._is_android_prerelease(r) for r in stable_releases
+        ), "Invariant violation: prerelease in stable_releases after filtering"
 
         history = self.release_history_manager.update_release_history(stable_releases)
         if log_summary:

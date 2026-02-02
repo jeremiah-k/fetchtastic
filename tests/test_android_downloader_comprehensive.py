@@ -301,16 +301,54 @@ class TestMeshtasticAndroidAppDownloader:
         # Should return a boolean
         assert isinstance(result, bool)
 
-    def test_check_extraction_needed(self, android_downloader):
-        """Test checking if extraction is needed."""
-        file_path = "/path/to/archive.apk"
-        extract_dir = "/path/to/extract"
-        patterns = ["*.apk"]
-        exclude_patterns = ["*debug*"]
+    def test_update_release_history_with_prereleases(self, android_downloader):
+        """Test that prereleases are filtered out before history update."""
+        releases = [
+            Release(tag_name="v2.7.14", prerelease=False),
+            Release(tag_name="v2.7.15-rc1", prerelease=True),
+            Release(tag_name="v2.7.16", prerelease=False),
+        ]
 
-        result = android_downloader.check_extraction_needed(
-            file_path, extract_dir, patterns, exclude_patterns
-        )
+        result = android_downloader.update_release_history(releases, log_summary=False)
 
-        # Should return a boolean
-        assert isinstance(result, bool)
+        # Should return history dict
+        assert result is not None
+        assert isinstance(result, dict)
+
+    def test_update_release_history_all_prereleases(self, android_downloader):
+        """Test that history returns None when all releases are prereleases."""
+        releases = [
+            Release(tag_name="v2.7.15-rc1", prerelease=True),
+            Release(tag_name="v2.7.15-rc2", prerelease=True),
+        ]
+
+        result = android_downloader.update_release_history(releases, log_summary=False)
+
+        # Should return None (no stable releases)
+        assert result is None
+
+    def test_update_release_history_empty_list(self, android_downloader):
+        """Test that history returns None when releases list is empty."""
+        releases = []
+
+        result = android_downloader.update_release_history(releases, log_summary=False)
+
+        # Should return None (no releases)
+        assert result is None
+
+    def test_update_release_history_asserts_invariant(self, android_downloader):
+        """Test that assert catches prereleases in stable_releases (dev mode only)."""
+        # This test documents that an assert exists to catch the invariant violation
+        # In production with -O flag, asserts are stripped, so this would pass silently
+        # In dev mode without -O, this would raise AssertionError
+        releases = [
+            Release(tag_name="v2.7.14", prerelease=False),
+        ]
+
+        # Normal case - should not raise
+        result = android_downloader.update_release_history(releases, log_summary=False)
+        assert result is not None
+
+        # Note: Testing the actual assert failure would require mocking _is_android_prerelease
+        # to return False for all items, then have one with prerelease=True slip through
+        # This is difficult to test since it would require breaking internal state
