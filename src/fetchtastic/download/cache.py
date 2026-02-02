@@ -816,17 +816,27 @@ class CacheManager:
         Write JSON data to a file atomically and add a UTC ISO 8601 timestamp under the given key.
 
         Parameters:
-            data (dict[str, Any]): Mapping to serialize into the JSON file; a shallow copy is made before adding the timestamp.
-            timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be inserted.
+            data (dict[str, Any]): Mapping to serialize into JSON file; a shallow copy is made before adding the timestamp.
+            timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be inserted; default is "last_updated".
 
         Returns:
-            bool: True if the file was written successfully, False otherwise.
+            bool: `True` if the file was written and moved into place successfully, `False` otherwise.
         """
         # Add timestamp to data
         data_with_timestamp = data.copy()
         data_with_timestamp[timestamp_key] = datetime.now(timezone.utc).isoformat()
 
         return self.atomic_write_json(file_path, data_with_timestamp)
+
+    def clear_releases_cache(self) -> bool:
+        """
+        Clear releases cache file.
+
+        Returns:
+            bool: `True` if the cache file was removed or did not exist, `False` if the operation failed.
+        """
+        cache_file = self._get_releases_cache_file()
+        return self.clear_cache(cache_file)
 
     def read_with_expiry(
         self, file_path: str, expiry_hours: float

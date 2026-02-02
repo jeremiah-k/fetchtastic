@@ -191,8 +191,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     "CRITICAL: Prerelease %s slipped through filter; clearing cache",
                     release.tag_name,
                 )
-                cache_file = self.cache_manager._get_releases_cache_file()
-                self.cache_manager.clear_cache(cache_file)
+                self.cache_manager.clear_releases_cache()
                 return None
 
         history = self.release_history_manager.update_release_history(stable_releases)
