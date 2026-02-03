@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fetchtastic.constants import RELEASE_CACHE_SCHEMA_VERSION
+from fetchtastic.constants import GITHUB_RELEASES_CACHE_SCHEMA_VERSION
 from fetchtastic.download.cache import (
     CacheManager,
 )
@@ -345,7 +345,7 @@ class TestReleasesCache:
                     }
                 ],
                 "cached_at": now.isoformat(),
-                "schema_version": RELEASE_CACHE_SCHEMA_VERSION,
+                "schema_version": GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
             }
         }
 
@@ -451,7 +451,7 @@ class TestReleasesCache:
                     }
                 ],
                 "cached_at": now.isoformat(),
-                "schema_version": "0.9",  # Wrong version
+                "schema_version": "0.9",  # Wrong version to test mismatch
             }
         }
 
@@ -481,7 +481,7 @@ class TestReleasesCache:
                     }
                 ],
                 "cached_at": now.isoformat(),
-                "schema_version": RELEASE_CACHE_SCHEMA_VERSION,
+                "schema_version": GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
             }
         }
 

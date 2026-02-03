@@ -18,8 +18,8 @@ from fetchtastic.constants import (
     FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
+    GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
-    RELEASE_CACHE_SCHEMA_VERSION,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -585,11 +585,11 @@ class CacheManager:
             return None
 
         schema_version = entry.get("schema_version")
-        if schema_version != RELEASE_CACHE_SCHEMA_VERSION:
+        if schema_version != GITHUB_RELEASES_CACHE_SCHEMA_VERSION:
             logger.debug(
                 "Releases cache schema version mismatch for %s: expected %s, got %s",
                 url_cache_key,
-                RELEASE_CACHE_SCHEMA_VERSION,
+                GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
                 schema_version,
             )
             track_api_cache_miss()
@@ -766,7 +766,7 @@ class CacheManager:
         cache[url_cache_key] = {
             "releases": releases,
             "cached_at": now.isoformat(),
-            "schema_version": RELEASE_CACHE_SCHEMA_VERSION,
+            "schema_version": GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
         }
         if self.atomic_write_json(cache_file, cache):
             if is_unchanged:
