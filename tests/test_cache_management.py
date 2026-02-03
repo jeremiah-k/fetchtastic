@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from fetchtastic.constants import RELEASE_CACHE_SCHEMA_VERSION
 from fetchtastic.download.cache import (
     CacheManager,
 )
@@ -333,7 +334,6 @@ class TestReleasesCache:
         # Create cache file
         cache_file = cache_manager._get_releases_cache_file()
         now = datetime.now(timezone.utc)
-        from fetchtastic.constants import RELEASE_CACHE_SCHEMA_VERSION
 
         cache_data = {
             "releases_identifier": {
@@ -471,7 +471,6 @@ class TestReleasesCache:
         # Create cache file with missing required fields
         cache_file = cache_manager._get_releases_cache_file()
         now = datetime.now(timezone.utc)
-        from fetchtastic.constants import RELEASE_CACHE_SCHEMA_VERSION
 
         cache_data = {
             "releases_identifier": {
