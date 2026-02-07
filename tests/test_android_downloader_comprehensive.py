@@ -349,10 +349,13 @@ class TestMeshtasticAndroidAppDownloader:
         with (
             patch.object(android_downloader, "_is_android_prerelease", return_value=False),
             patch("fetchtastic.download.android.logger") as mock_logger,
+            patch.object(android_downloader.cache_manager, "clear_releases_cache") as mock_clear,
         ):
             result = android_downloader.update_release_history(releases, log_summary=False)
 
             assert result is None
             mock_logger.error.assert_called_with(
-                "Invariant violation: stable_releases contains a prerelease"
+                "Invariant violation: stable_releases contains a prerelease. "
+                "Clearing releases cache."
             )
+            mock_clear.assert_called_once()
