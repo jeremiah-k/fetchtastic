@@ -220,7 +220,7 @@ class CacheManager:
         self, cache_file: str, data: dict[str, Any], expiry_hours: float
     ) -> bool:
         """
-        Store `data` in `cache_file` along with UTC `cached_at` and `expires_at` ISO‑8601 timestamps.
+        Store `data` in `cache_file` along with UTC `cached_at` and `expires_at` ISO-8601 timestamps.
 
         Parameters:
             cache_file (str): Path to the JSON cache file to write.
@@ -646,14 +646,14 @@ class CacheManager:
     ) -> bool:
         """
         Determine whether a cached release entry contains the required fields with the correct types.
-        
+
         Logs a debug message describing the first validation failure encountered to aid debugging.
-        
+
         Parameters:
             release (dict[str, Any]): Release entry to validate.
             index (int): Position of the entry in its container (used in log messages).
             context (str): Context identifier for log messages (e.g., cache key or filename).
-        
+
         Returns:
             True if `release` is a dict containing a non-empty `tag_name` (str), a `prerelease` (bool),
             and an optional `published_at` that is either `None` or a `str`; `False` otherwise.
@@ -708,9 +708,9 @@ class CacheManager:
     ) -> None:
         """
         Store a list of GitHub release objects in the releases cache under a URL-derived key.
-        
+
         Prunes expired or mismatched-schema entries from the releases cache file, then writes the provided list under `url_cache_key`, recording the current UTC timestamp as `cached_at` and the module's `schema_version` for the entry.
-        
+
         Parameters:
             url_cache_key (str): Stable cache key derived from the request URL and parameters.
             releases (list[dict[str, Any]]): List of release objects (GitHub release-like dicts) to persist in the cache.
@@ -847,13 +847,13 @@ class CacheManager:
     ) -> Optional[dict[str, Any]]:
         """
         Validate a JSON cache file against an expiry period and return its parsed contents when valid.
-        
-        If present, one of the keys "last_updated", "timestamp", or "cached_at" is parsed as an ISO‑8601 UTC timestamp; the cache is considered expired when that timestamp is more than expiry_hours in the past. If no timestamp key is present the cache is treated as valid. If the file is missing, unreadable, or the timestamp is missing/malformed or indicates expiry, the function returns None.
-        
+
+        If present, one of the keys "last_updated", "timestamp", or "cached_at" is parsed as an ISO-8601 UTC timestamp; the cache is considered expired when that timestamp is more than expiry_hours in the past. If no timestamp key is present the cache is treated as valid. If the file is missing, unreadable, or the timestamp is missing/malformed or indicates expiry, the function returns None.
+
         Parameters:
             file_path (str): Path to the JSON cache file.
             expiry_hours (float): Age in hours after which the cached entry is considered expired.
-        
+
         Returns:
             Optional[dict[str, Any]]: The parsed cache dictionary if present and not expired, `None` otherwise.
         """
@@ -954,9 +954,9 @@ class CacheManager:
     ) -> bool:
         """
         Ensure a cache mapping contains the specified top-level keys.
-        
+
         Logs a warning for the first missing key encountered.
-        
+
         Returns:
             `True` if every key in `required_keys` exists in `cache_data`, `False` otherwise.
         """
@@ -975,18 +975,18 @@ class CacheManager:
     ) -> dict[str, Any]:
         """
         Prune a cache mapping by removing entries that are expired or have an unexpected schema version.
-        
+
         Supported entry formats:
         - Object form: {"cached_at": "<iso>", "schema_version": "<ver>", ...}
         - List form (legacy): [data, "<cached_at_iso>"]
         - Legacy dict form: {"timestamp": "<iso>", "cached_at": "<iso>"}
-        
+
         Parameters:
             cache (dict[str, Any]): Mapping of cache keys to cache entries.
             expiry_seconds (float): Maximum allowed age of an entry in seconds.
             schema_version (Optional[str]): If provided, only entries whose "schema_version"
                 equals this value are retained; entries missing or mismatched are pruned.
-        
+
         Returns:
             dict[str, Any]: A new mapping containing only entries that are parseable, not older
             than `expiry_seconds`, and that match `schema_version` when it is specified.
@@ -1035,7 +1035,7 @@ class CacheManager:
 
         return keep
 
-    def read_commit_timestamp_cache(self) -> dict[str, Any]:
+    def read_commit_timestamp_cache(self) -> dict[str, list[str]]:
         """
         Load and return non-expired commit timestamp entries from the on-disk cache.
 
@@ -1083,14 +1083,17 @@ class CacheManager:
     ) -> Optional[datetime]:
         """
         Retrieve the committer timestamp for a GitHub commit, using the on-disk cache when possible.
-        
+
         Looks up a cached timestamp in commit_timestamps.json and returns it if present and not expired; otherwise fetches the commit from the GitHub API, caches the ISO timestamp together with the fetch time, and returns the parsed UTC datetime. Cache entries honor COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS; set `force_refresh` to bypass the cache.
-        
+
         Parameters:
-            github_token: Personal access token for the GitHub API; if omitted and `allow_env_token` is True, an environment-provided token may be used.
-            allow_env_token: If True, permit using a token from environment-based configuration when `github_token` is not provided.
-            force_refresh: If True, ignore any valid cached entry and fetch a fresh value from GitHub.
-        
+            owner (str): Repository owner (GitHub user or organization).
+            repo (str): Repository name.
+            commit_hash (str): Full or short commit SHA to query.
+            github_token (Optional[str]): Personal access token to use for the GitHub API request; if omitted and `allow_env_token` is True, an environment token may be used.
+            allow_env_token (bool): If True, allow using a token from environment-based configuration when `github_token` is not provided.
+            force_refresh (bool): If True, ignore any valid cached entry and fetch from the GitHub API.
+
         Returns:
             The commit committer datetime in UTC if available and parseable, `None` otherwise.
         """

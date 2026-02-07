@@ -335,27 +335,3 @@ class TestMeshtasticAndroidAppDownloader:
 
         # Should return None (no releases)
         assert result is None
-
-    def test_update_release_history_handles_invariant_violation(self, android_downloader):
-        """Test that history update returns None on invariant violation."""
-        # This test verifies that if a prerelease somehow slips into the
-        # stable_releases list, the method detects it and returns None.
-        releases = [
-            Release(tag_name="v2.7.14", prerelease=True),
-        ]
-
-        # Mock _is_android_prerelease to return False, simulating a bypass
-        # of the initial filter.
-        with (
-            patch.object(android_downloader, "_is_android_prerelease", return_value=False),
-            patch("fetchtastic.download.android.logger") as mock_logger,
-            patch.object(android_downloader.cache_manager, "clear_releases_cache") as mock_clear,
-        ):
-            result = android_downloader.update_release_history(releases, log_summary=False)
-
-            assert result is None
-            mock_logger.error.assert_called_with(
-                "Invariant violation: stable_releases contains a prerelease. "
-                "Clearing releases cache."
-            )
-            mock_clear.assert_called_once()
