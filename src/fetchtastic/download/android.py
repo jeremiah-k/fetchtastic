@@ -185,6 +185,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not stable_releases:
             return None
 
+        # Ensure no prereleases are in stable_releases list (production-safe check)
+        if any(r.prerelease for r in stable_releases):
+            logger.error("Invariant violation: stable_releases contains a prerelease")
+            return None
+
         history = self.release_history_manager.update_release_history(stable_releases)
         if log_summary:
             self.release_history_manager.log_release_status_summary(

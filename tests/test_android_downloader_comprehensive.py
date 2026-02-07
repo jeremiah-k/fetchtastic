@@ -336,19 +336,23 @@ class TestMeshtasticAndroidAppDownloader:
         # Should return None (no releases)
         assert result is None
 
-    def test_update_release_history_asserts_invariant(self, android_downloader):
-        """Test that assert catches prereleases in stable_releases (dev mode only)."""
-        # This test documents that an assert exists to catch the invariant violation
-        # In production with -O flag, asserts are stripped, so this would pass silently
-        # In dev mode without -O, this would raise AssertionError
+    def test_update_release_history_handles_invariant_violation(self, android_downloader):
+        """Test that history update returns None on invariant violation."""
+        # This test verifies that if a prerelease somehow slips into the
+        # stable_releases list, the method detects it and returns None.
         releases = [
-            Release(tag_name="v2.7.14", prerelease=False),
+            Release(tag_name="v2.7.14", prerelease=True),
         ]
 
-        # Normal case - should not raise
-        result = android_downloader.update_release_history(releases, log_summary=False)
-        assert result is not None
+        # Mock _is_android_prerelease to return False, simulating a bypass
+        # of the initial filter.
+        with (
+            patch.object(android_downloader, "_is_android_prerelease", return_value=False),
+            patch("fetchtastic.download.android.logger") as mock_logger,
+        ):
+            result = android_downloader.update_release_history(releases, log_summary=False)
 
-        # Note: Testing the actual assert failure would require mocking _is_android_prerelease
-        # to return False for all items, then have one with prerelease=True slip through
-        # This is difficult to test since it would require breaking internal state
+            assert result is None
+            mock_logger.error.assert_called_with(
+                "Invariant violation: stable_releases contains a prerelease"
+            )
