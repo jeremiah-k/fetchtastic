@@ -168,8 +168,11 @@ COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
 # - prerelease: boolean, required
 # - published_at: ISO-8601 string or null, optional
 #
-# Bump this version when the release entry structure changes to invalidate
-# old cached data and force a refresh.
+# Schema versioning:
+# - Entries with mismatched schema_version are rejected (cache miss).
+# - No migration is performed; fresh data is automatically fetched from GitHub API.
+# - Given the short cache expiry, users will transparently upgrade.
+# - When bumping version: update this constant and mention in release notes.
 GITHUB_RELEASES_CACHE_SCHEMA_VERSION = "1.0"
 
 # Releases API responses are cached for 1 minute to avoid burning GitHub API

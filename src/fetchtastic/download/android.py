@@ -187,11 +187,16 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         # Ensure no prereleases are in stable_releases list (production-safe check)
         if any(r.prerelease for r in stable_releases):
+            # Aggressive cache clearing is used here as a defensive measure against
+            # potential cache corruption that might have caused the invariant violation.
+            # While this forces a re-fetch of all releases (Firmware + Android), it
+            # ensures we return to a known good state immediately.
             logger.error(
                 "Invariant violation: stable_releases contains a prerelease. "
                 "Clearing releases cache."
             )
-            self.cache_manager.clear_releases_cache()
+            if not self.cache_manager.clear_releases_cache():
+                logger.warning("Failed to clear releases cache after invariant violation")
             return None
 
         history = self.release_history_manager.update_release_history(stable_releases)

@@ -663,6 +663,27 @@ class TestCommitTimestampCache:
         assert result["key_new"] == ["2023-01-01T12:00:00Z", now.isoformat()]
         assert result["key_legacy"] == ["2023-01-01T13:00:00Z", now.isoformat()]
 
+    def test_read_commit_timestamp_cache_malformed_legacy(self, tmp_path):
+        """Test reading commit timestamp cache with malformed legacy entries."""
+        cache_manager = CacheManager(str(tmp_path))
+
+        # Create cache file with a legacy entry missing "timestamp"
+        cache_file = os.path.join(cache_manager.cache_dir, "commit_timestamps.json")
+        now = datetime.now(timezone.utc)
+        cache_data = {
+            "malformed_legacy": {"cached_at": now.isoformat()},  # Missing "timestamp"
+            "valid_new": ["2023-01-01T12:00:00Z", now.isoformat()],
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+
+        result = cache_manager.read_commit_timestamp_cache()
+
+        # Should contain valid_new, but NOT malformed_legacy
+        assert "valid_new" in result
+        assert "malformed_legacy" not in result
+
 
 class TestRepositoryDirectories:
     """Test repository directory caching."""

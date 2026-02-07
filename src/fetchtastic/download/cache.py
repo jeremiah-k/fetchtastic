@@ -536,12 +536,17 @@ class CacheManager:
         """
         Read a cached GitHub releases entry for a specific request key, validating expiry.
 
-        Reads the legacy multi-entry releases cache and returns the stored releases list if the
+        Reads the multi-entry releases cache and returns the stored releases list if the
         entry for `url_cache_key` exists, is well-formed, and its cached timestamp is newer than
         `expiry_seconds` ago.
 
         Cache file schema:
-          { "<url>?per_page=n": { "releases": [...], "cached_at": "<iso-8601 UTC>" }, ... }
+          { "<url>?per_page=n": {
+              "releases": [...],
+              "cached_at": "<iso-8601 UTC>",
+              "schema_version": "1.0"
+            }, ...
+          }
 
         Parameters:
             url_cache_key (str): The stable cache key for the request (typically a URL with query).
@@ -1027,8 +1032,18 @@ class CacheManager:
                 continue
 
             # Check schema version if provided
-            if schema_version is not None and entry_schema != schema_version:
-                continue
+            if schema_version is not None:
+                if entry_schema is None:
+                    logger.debug("Pruning entry without schema_version: %s", key)
+                    continue
+                if entry_schema != schema_version:
+                    logger.debug(
+                        "Pruning entry with mismatched schema %s != %s: %s",
+                        entry_schema,
+                        schema_version,
+                        key,
+                    )
+                    continue
 
             keep[key] = entry
 
@@ -1060,7 +1075,10 @@ class CacheManager:
         for key, value in pruned.items():
             if isinstance(value, dict):
                 # Legacy format: {"timestamp": "...", "cached_at": "..."}
-                normalized[key] = [value.get("timestamp"), value.get("cached_at")]
+                timestamp = value.get("timestamp")
+                cached_at = value.get("cached_at")
+                if timestamp and cached_at:
+                    normalized[key] = [timestamp, cached_at]
             else:
                 # New format: [timestamp_iso, cached_at_iso]
                 normalized[key] = value
