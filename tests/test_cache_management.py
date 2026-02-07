@@ -287,6 +287,59 @@ class TestCacheManagement:
         assert not (tmp_path / "cache2.tmp").exists()
         assert (tmp_path / "not_cache.txt").exists()
 
+    def test_prune_cache_data(self):
+        """Test pruning cache data with different formats and expiry."""
+        cache_manager = CacheManager()
+        now = datetime.now(timezone.utc)
+        past = now - timedelta(hours=2)
+
+        cache_data = {
+            "valid_obj": {
+                "data": "v1",
+                "cached_at": now.isoformat(),
+                "schema_version": "1.0",
+            },
+            "expired_obj": {
+                "data": "v2",
+                "cached_at": past.isoformat(),
+                "schema_version": "1.0",
+            },
+            "wrong_schema": {
+                "data": "v3",
+                "cached_at": now.isoformat(),
+                "schema_version": "0.9",
+            },
+            "valid_list": ["v4", now.isoformat()],
+            "expired_list": ["v5", past.isoformat()],
+            "legacy_dict": {"timestamp": "v6", "cached_at": now.isoformat()},
+            "malformed": {"no_cached_at": "here"},
+        }
+
+        # Prune with 1 hour expiry and 1.0 schema
+        pruned = cache_manager.prune_cache_data(
+            cache_data, expiry_seconds=3600, schema_version="1.0"
+        )
+
+        assert "valid_obj" in pruned
+        assert "expired_obj" not in pruned
+        assert "wrong_schema" not in pruned
+        # valid_list and legacy_dict are pruned because they don't have schema_version
+        # and we provided schema_version="1.0"
+        assert "valid_list" not in pruned
+        assert "expired_list" not in pruned
+        assert "legacy_dict" not in pruned
+
+        # Prune without schema check
+        pruned_no_schema = cache_manager.prune_cache_data(
+            cache_data, expiry_seconds=3600
+        )
+        assert "valid_obj" in pruned_no_schema
+        assert "wrong_schema" in pruned_no_schema
+        assert "valid_list" in pruned_no_schema
+        assert "legacy_dict" in pruned_no_schema
+        assert "expired_obj" not in pruned_no_schema
+        assert "expired_list" not in pruned_no_schema
+
 
 class TestURLCacheKey:
     """Test URL cache key building."""
@@ -390,7 +443,9 @@ class TestReleasesCache:
     def test_write_releases_cache_entry(self, tmp_path):
         """Test writing releases cache entry."""
         cache_manager = CacheManager(str(tmp_path))
-        releases = [{"tag_name": "v1.0.0"}]
+        releases = [
+            {"tag_name": "v1.0.0", "prerelease": False, "published_at": "2023-01-01T00:00:00Z"}
+        ]
 
         cache_manager.write_releases_cache_entry("releases_identifier", releases)
 
@@ -404,6 +459,49 @@ class TestReleasesCache:
         assert "releases_identifier" in cache_data
         assert cache_data["releases_identifier"]["releases"] == releases
         assert "cached_at" in cache_data["releases_identifier"]
+        assert cache_data["releases_identifier"]["schema_version"] == GITHUB_RELEASES_CACHE_SCHEMA_VERSION
+
+    def test_write_releases_cache_entry_prunes_old_data(self, tmp_path):
+        """Test that writing a new entry prunes old/stale data from the file."""
+        cache_manager = CacheManager(str(tmp_path))
+        cache_file = cache_manager._get_releases_cache_file()
+        now = datetime.now(timezone.utc)
+        past = now - timedelta(hours=2)
+
+        # Pre-populate cache with valid, expired, and wrong-schema entries
+        cache_data = {
+            "valid_entry": {
+                "releases": [{"tag_name": "v1.1.0"}],
+                "cached_at": now.isoformat(),
+                "schema_version": GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
+            },
+            "expired_entry": {
+                "releases": [{"tag_name": "v1.0.0"}],
+                "cached_at": past.isoformat(),
+                "schema_version": GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
+            },
+            "old_schema_entry": {
+                "releases": [{"tag_name": "v0.9.0"}],
+                "cached_at": now.isoformat(),
+                "schema_version": "0.9",
+            },
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+
+        # Write a new entry
+        new_releases = [{"tag_name": "v1.2.0", "prerelease": False, "published_at": now.isoformat()}]
+        cache_manager.write_releases_cache_entry("new_entry", new_releases)
+
+        # Verify file content
+        with open(cache_file, "r") as f:
+            updated_cache = json.load(f)
+
+        assert "new_entry" in updated_cache
+        assert "valid_entry" in updated_cache
+        assert "expired_entry" not in updated_cache
+        assert "old_schema_entry" not in updated_cache
 
     def test_read_releases_cache_entry_old_format_no_schema(self, tmp_path):
         """Test reading cache entry without schema_version (old format)."""
@@ -537,14 +635,15 @@ class TestCommitTimestampCache:
         assert result == expected_time
 
     def test_read_commit_timestamp_cache(self, tmp_path):
-        """Test reading commit timestamp cache."""
+        """Test reading commit timestamp cache with mixed formats."""
         cache_manager = CacheManager(str(tmp_path))
 
         # Create cache file
         cache_file = os.path.join(cache_manager.cache_dir, "commit_timestamps.json")
         now = datetime.now(timezone.utc)
         cache_data = {
-            "key1": ["2023-01-01T12:00:00Z", now.isoformat()],
+            "key_new": ["2023-01-01T12:00:00Z", now.isoformat()],
+            "key_legacy": {"timestamp": "2023-01-01T13:00:00Z", "cached_at": now.isoformat()},
             "expired": [
                 "2023-01-01T12:00:00Z",
                 (now - timedelta(hours=25)).isoformat(),
@@ -556,9 +655,13 @@ class TestCommitTimestampCache:
 
         result = cache_manager.read_commit_timestamp_cache()
 
-        # Should contain key1 but not expired
-        assert "key1" in result
+        # Should contain key_new and key_legacy (normalized), but not expired
+        assert "key_new" in result
+        assert "key_legacy" in result
         assert "expired" not in result
+
+        assert result["key_new"] == ["2023-01-01T12:00:00Z", now.isoformat()]
+        assert result["key_legacy"] == ["2023-01-01T13:00:00Z", now.isoformat()]
 
 
 class TestRepositoryDirectories:

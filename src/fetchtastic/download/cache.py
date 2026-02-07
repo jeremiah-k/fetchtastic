@@ -20,6 +20,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -715,9 +716,15 @@ class CacheManager:
             releases (list[dict[str, Any]]): List of release objects to persist in the cache.
         """
         cache_file = self._get_releases_cache_file()
-        cache = self.read_json(cache_file)
-        if not isinstance(cache, dict):
-            cache = {}
+        raw_cache = self.read_json(cache_file) or {}
+
+        # Prune expired entries and outdated schema versions from the entire file
+        # before adding the new entry to keep the cache file clean and compact.
+        cache = self.prune_cache_data(
+            raw_cache,
+            expiry_seconds=RELEASES_CACHE_EXPIRY_HOURS * 3600,
+            schema_version=GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
+        )
 
         old_releases = cache.get(url_cache_key, {}).get("releases")
 
@@ -964,62 +971,101 @@ class CacheManager:
                 return False
         return True
 
+    def prune_cache_data(
+        self,
+        cache: dict[str, Any],
+        expiry_seconds: float,
+        *,
+        schema_version: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """
+        Remove expired entries and outdated schema versions from a cache mapping.
+
+        Supports entries in three formats:
+        1. Object form: {"cached_at": "...", "schema_version": "...", ...}
+        2. List form: [data, cached_at_iso] (legacy-friendly)
+        3. Legacy dict form: {"timestamp": "...", "cached_at": "..."}
+
+        Entries are removed if they:
+        - Are missing a parseable "cached_at" timestamp
+        - Are older than `expiry_seconds`
+        - Have a mismatched "schema_version" (if `schema_version` is provided)
+
+        Parameters:
+            cache (dict[str, Any]): The cache mapping to prune.
+            expiry_seconds (float): Maximum age of entries in seconds.
+            schema_version (Optional[str]): Expected schema version. Entries with a
+                different or missing version will be pruned.
+
+        Returns:
+            dict[str, Any]: A new dictionary containing only valid, non-expired entries.
+        """
+        now = datetime.now(timezone.utc)
+        keep: dict[str, Any] = {}
+
+        for key, entry in cache.items():
+            cached_at_str = None
+            entry_schema = None
+
+            if isinstance(entry, dict):
+                cached_at_str = entry.get("cached_at")
+                entry_schema = entry.get("schema_version")
+            elif isinstance(entry, (list, tuple)) and len(entry) == 2:
+                # [data, cached_at]
+                cached_at_str = entry[1]
+
+            if not cached_at_str:
+                continue
+
+            cached_at = parse_iso_datetime_utc(cached_at_str)
+            if not cached_at:
+                continue
+
+            # Check expiry
+            age_s = (now - cached_at).total_seconds()
+            if age_s >= expiry_seconds:
+                continue
+
+            # Check schema version if provided
+            if schema_version is not None and entry_schema != schema_version:
+                continue
+
+            keep[key] = entry
+
+        return keep
+
     def read_commit_timestamp_cache(self) -> dict[str, Any]:
         """
         Load and return non-expired commit timestamp entries from the on-disk cache.
 
-        Reads commit_timestamps.json, accepts both legacy dict entries (`{"timestamp": "...", "cached_at": "..."}`)
-        and the newer list form (`[timestamp_iso, cached_at_iso]`), filters out entries older than
-        COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and normalizes retained entries to the list format.
+        Reads commit_timestamps.json, filters out entries older than
+        COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and normalizes retained entries to the
+        preferred list format.
 
         Returns:
-            dict[str, list]: Mapping of cache key to `[timestamp_iso, cached_at_iso]` for entries still within the expiry window.
+            dict[str, list]: Mapping of cache key to `[timestamp_iso, cached_at_iso]`
+                for entries still within the expiry window.
         """
         cache_file = os.path.join(self.cache_dir, "commit_timestamps.json")
         cache_data = self.read_json(cache_file)
         if not isinstance(cache_data, dict):
             return {}
 
-        now = datetime.now(timezone.utc)
-        keep: dict[str, Any] = {}
+        pruned = self.prune_cache_data(
+            cache_data, expiry_seconds=COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600
+        )
 
-        for cache_key, cache_value in cache_data.items():
-            # Support both legacy format and new format for backward compatibility
-            if isinstance(cache_value, (list, tuple)) and len(cache_value) == 2:
-                # New format: [timestamp_iso, cached_at_iso]
-                try:
-                    timestamp_str, cached_at_str = cache_value
-                    cached_at = parse_iso_datetime_utc(cached_at_str)
-                    if cached_at is None:
-                        continue
-                    age = now - cached_at
-                    if (
-                        age.total_seconds()
-                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                    ):
-                        keep[cache_key] = cache_value
-                except (ValueError, TypeError):
-                    continue
-            elif isinstance(cache_value, dict):
+        # Normalize to list format for consistency
+        normalized = {}
+        for key, value in pruned.items():
+            if isinstance(value, dict):
                 # Legacy format: {"timestamp": "...", "cached_at": "..."}
-                try:
-                    timestamp_str = cache_value.get("timestamp")
-                    cached_at_str = cache_value.get("cached_at")
-                    if timestamp_str and cached_at_str:
-                        cached_at = parse_iso_datetime_utc(cached_at_str)
-                        if cached_at is None:
-                            continue
-                        age = now - cached_at
-                        if (
-                            age.total_seconds()
-                            < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                        ):
-                            # Convert to new format for consistency
-                            keep[cache_key] = [timestamp_str, cached_at_str]
-                except (ValueError, TypeError):
-                    continue
+                normalized[key] = [value.get("timestamp"), value.get("cached_at")]
+            else:
+                # New format: [timestamp_iso, cached_at_iso]
+                normalized[key] = value
 
-        return keep
+        return normalized
 
     def get_commit_timestamp(
         self,
