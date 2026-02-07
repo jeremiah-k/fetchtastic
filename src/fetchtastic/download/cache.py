@@ -601,21 +601,15 @@ class CacheManager:
             track_api_cache_miss()
             return None
 
-        invalid_count = sum(
-            1
-            for idx, release in enumerate(releases)
-            if not self._validate_release_entry(release, idx, url_cache_key)
-        )
-
-        if invalid_count > 0:
-            logger.warning(
-                "Releases cache for %s has %d invalid entries out of %d total; forcing refresh",
-                url_cache_key,
-                invalid_count,
-                len(releases),
-            )
-            track_api_cache_miss()
-            return None
+        for idx, release in enumerate(releases):
+            if not self._validate_release_entry(release, idx, url_cache_key):
+                logger.warning(
+                    "Releases cache for %s has at least one invalid entry (at index %d); forcing refresh",
+                    url_cache_key,
+                    idx,
+                )
+                track_api_cache_miss()
+                return None
 
         track_api_cache_hit()
         return releases
