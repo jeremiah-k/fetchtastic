@@ -601,23 +601,24 @@ class CacheManager:
             track_api_cache_miss()
             return None
 
-        valid_releases = []
-        for idx, release in enumerate(releases):
-            if self._validate_release_entry(release, idx, url_cache_key):
-                valid_releases.append(release)
+        invalid_count = sum(
+            1
+            for idx, release in enumerate(releases)
+            if not self._validate_release_entry(release, idx, url_cache_key)
+        )
 
-        if len(valid_releases) != len(releases):
+        if invalid_count > 0:
             logger.warning(
                 "Releases cache for %s has %d invalid entries out of %d total; forcing refresh",
                 url_cache_key,
-                len(releases) - len(valid_releases),
+                invalid_count,
                 len(releases),
             )
             track_api_cache_miss()
             return None
 
         track_api_cache_hit()
-        return valid_releases
+        return releases
 
     @staticmethod
     def _normalize_release_for_comparison(release: dict[str, Any]) -> dict[str, Any]:
@@ -645,8 +646,9 @@ class CacheManager:
             "body": release.get("body"),
         }
 
+    @staticmethod
     def _validate_release_entry(
-        self, release: dict[str, Any], index: int, context: str
+        release: dict[str, Any], index: int, context: str
     ) -> bool:
         """
         Validate a single release entry from cache has required fields and types.

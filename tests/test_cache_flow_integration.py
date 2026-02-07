@@ -3,6 +3,7 @@ Integration test for cache flow: mismatch detection and refresh.
 """
 
 import json
+import os
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -13,7 +14,7 @@ from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 @pytest.mark.core_downloads
 def test_cache_schema_mismatch_triggers_refresh(tmp_path):
     """
@@ -27,8 +28,11 @@ def test_cache_schema_mismatch_triggers_refresh(tmp_path):
     config = {"DOWNLOAD_DIR": str(tmp_path)}
     downloader = FirmwareReleaseDownloader(config, cache_manager)
 
-    url_key = cache_manager.build_url_cache_key(downloader.firmware_releases_url, {"per_page": 8})
-    cache_file = cache_manager._get_releases_cache_file()
+    url_key = cache_manager.build_url_cache_key(
+        downloader.firmware_releases_url, {"per_page": 8}
+    )
+    # Target the primary releases cache file
+    cache_file = os.path.join(str(tmp_path), "releases.json")
 
     # 1. Pre-populate with mismatched schema
     old_data = {
