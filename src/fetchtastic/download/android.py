@@ -169,15 +169,22 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self, releases: List[Release], *, log_summary: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
-        Update the on-disk release history cache and optionally log status summaries.
-
+        Update the on-disk Android release history and optionally emit a summary log.
+        
+        Records only stable (non-prerelease) releases from the provided list into the persistent
+        release history. If no releases are provided or no stable releases are present, the
+        function returns None and does not modify history. As a defensive measure, if a
+        production invariant is violated (a prerelease is detected among the stable releases),
+        the function attempts to clear the releases cache and returns None without updating
+        the on-disk history.
+        
         Parameters:
             releases (List[Release]): Releases to record in history.
-            log_summary (bool): When True, emit summary logs for revoked/removed releases.
-
+            log_summary (bool): When True, emit a concise release status summary to the log.
+        
         Returns:
-            Optional[Dict[str, Any]]: The updated history data, or None when no releases
-                were supplied.
+            Optional[Dict[str, Any]]: The updated history data written to disk, or `None` when
+            no update was performed (no releases, no stable releases, or invariant violation).
         """
         if not releases:
             return None
