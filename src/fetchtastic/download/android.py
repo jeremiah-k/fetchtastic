@@ -173,10 +173,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         Records only stable (non-prerelease) releases from the provided list into the persistent
         release history. If no releases are provided or no stable releases are present, the
-        function returns None and does not modify history. As a defensive measure, if a
-        production invariant is violated (a prerelease is detected among the stable releases),
-        the function attempts to clear the releases cache and returns None without updating
-        the on-disk history.
+        function returns None and does not modify history.
 
         Parameters:
             releases (List[Release]): Releases to record in history.
@@ -184,7 +181,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         Returns:
             Optional[Dict[str, Any]]: The updated history data written to disk, or `None` when
-            no update was performed (no releases, no stable releases, or invariant violation).
+            no update was performed (no releases or no stable releases).
         """
         if not releases:
             return None

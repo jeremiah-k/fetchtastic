@@ -1006,10 +1006,12 @@ class CacheManager:
                 cached_at_str = entry[1]
 
             if not cached_at_str:
+                logger.debug("Pruning entry without cached_at timestamp: %s", key)
                 continue
 
             cached_at = parse_iso_datetime_utc(cached_at_str)
             if not cached_at:
+                logger.debug("Pruning entry with unparseable cached_at: %s", key)
                 continue
 
             # Check expiry
@@ -1067,7 +1069,7 @@ class CacheManager:
                     normalized[key] = [timestamp, cached_at]
             else:
                 # New format: [timestamp_iso, cached_at_iso]
-                normalized[key] = value
+                normalized[key] = list(value)
 
         return normalized
 
