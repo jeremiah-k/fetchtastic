@@ -1097,7 +1097,7 @@ class CacheManager:
             force_refresh (bool): If True, ignore any valid cached entry and fetch from the GitHub API.
 
         Returns:
-            The commit committer datetime in UTC if available and parseable, `None` otherwise.
+            Optional[datetime]: The commit committer datetime in UTC if available and parseable, `None` otherwise.
         """
         cache_key = f"{owner}/{repo}/{commit_hash}"
         cache_file = os.path.join(self.cache_dir, "commit_timestamps.json")
