@@ -18,7 +18,9 @@ from fetchtastic.constants import (
     FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
+    GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -218,7 +220,7 @@ class CacheManager:
         self, cache_file: str, data: dict[str, Any], expiry_hours: float
     ) -> bool:
         """
-        Store `data` in `cache_file` along with UTC `cached_at` and `expires_at` ISO‑8601 timestamps.
+        Store `data` in `cache_file` along with UTC `cached_at` and `expires_at` ISO-8601 timestamps.
 
         Parameters:
             cache_file (str): Path to the JSON cache file to write.
@@ -534,12 +536,17 @@ class CacheManager:
         """
         Read a cached GitHub releases entry for a specific request key, validating expiry.
 
-        Reads the legacy multi-entry releases cache and returns the stored releases list if the
+        Reads the multi-entry releases cache and returns the stored releases list if the
         entry for `url_cache_key` exists, is well-formed, and its cached timestamp is newer than
         `expiry_seconds` ago.
 
         Cache file schema:
-          { "<url>?per_page=n": { "releases": [...], "cached_at": "<iso-8601 UTC>" }, ... }
+          { "<url>?per_page=n": {
+              "releases": [...],
+              "cached_at": "<iso-8601 UTC>",
+              "schema_version": "1.0"
+            }, ...
+          }
 
         Parameters:
             url_cache_key (str): The stable cache key for the request (typically a URL with query).
@@ -583,6 +590,27 @@ class CacheManager:
             track_api_cache_miss()
             return None
 
+        schema_version = entry.get("schema_version")
+        if schema_version != GITHUB_RELEASES_CACHE_SCHEMA_VERSION:
+            logger.debug(
+                "Releases cache schema version mismatch for %s: expected %s, got %s",
+                url_cache_key,
+                GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
+                schema_version,
+            )
+            track_api_cache_miss()
+            return None
+
+        for idx, release in enumerate(releases):
+            if not self._validate_release_entry(release, idx, url_cache_key):
+                logger.warning(
+                    "Releases cache for %s has at least one invalid entry (at index %d); forcing refresh",
+                    url_cache_key,
+                    idx,
+                )
+                track_api_cache_miss()
+                return None
+
         track_api_cache_hit()
         return releases
 
@@ -612,22 +640,91 @@ class CacheManager:
             "body": release.get("body"),
         }
 
+    @staticmethod
+    def _validate_release_entry(
+        release: dict[str, Any], index: int, context: str
+    ) -> bool:
+        """
+        Determine whether a cached release entry contains the required fields with the correct types.
+
+        Logs a debug message describing the first validation failure encountered to aid debugging.
+
+        Parameters:
+            release (dict[str, Any]): Release entry to validate.
+            index (int): Position of the entry in its container (used in log messages).
+            context (str): Context identifier for log messages (e.g., cache key or filename).
+
+        Returns:
+            True if `release` is a dict containing a non-empty `tag_name` (str), a `prerelease` (bool),
+            and an optional `published_at` that is either `None` or a `str`; `False` otherwise.
+        """
+        if not isinstance(release, dict):
+            logger.debug(
+                "Invalid release entry at index %d in %s: not a dict (%s)",
+                index,
+                context,
+                type(release).__name__,
+            )
+            return False
+
+        tag_name = release.get("tag_name")
+        if not isinstance(tag_name, str) or not tag_name:
+            logger.debug(
+                "Invalid release entry at index %d in %s: missing or invalid tag_name (%s)",
+                index,
+                context,
+                type(tag_name).__name__ if tag_name is not None else "None",
+            )
+            return False
+
+        prerelease = release.get("prerelease")
+        if not isinstance(prerelease, bool):
+            logger.debug(
+                "Invalid release entry at index %d in %s (tag=%s): "
+                "prerelease is not bool (%s)",
+                index,
+                context,
+                tag_name,
+                type(prerelease).__name__ if prerelease is not None else "None",
+            )
+            return False
+
+        published_at = release.get("published_at")
+        if published_at is not None and not isinstance(published_at, str):
+            logger.debug(
+                "Invalid release entry at index %d in %s (tag=%s): "
+                "published_at is not string (%s)",
+                index,
+                context,
+                tag_name,
+                type(published_at).__name__,
+            )
+            return False
+
+        return True
+
     def write_releases_cache_entry(
         self, url_cache_key: str, releases: list[dict[str, Any]]
     ) -> None:
         """
-        Store a list of release entries under a URL-derived cache key in the releases cache.
+        Store a list of GitHub release objects in the releases cache under a URL-derived key.
 
-        Writes the provided releases list into the releases cache, keyed by `url_cache_key`, and records the current UTC timestamp as `cached_at` to indicate when the entry was saved. Even if the normalized releases data is unchanged, the cache entry is rewritten to update its `cached_at` timestamp and extend its freshness.
+        Prunes expired or mismatched-schema entries from the releases cache file, then writes the provided list under `url_cache_key`, recording the current UTC timestamp as `cached_at` and the module's `schema_version` for the entry.
 
         Parameters:
-            url_cache_key (str): Stable cache key derived from a request URL and parameters.
-            releases (list[dict[str, Any]]): List of release objects to persist in the cache.
+            url_cache_key (str): Stable cache key derived from the request URL and parameters.
+            releases (list[dict[str, Any]]): List of release objects (GitHub release-like dicts) to persist in the cache.
         """
         cache_file = self._get_releases_cache_file()
-        cache = self.read_json(cache_file)
-        if not isinstance(cache, dict):
-            cache = {}
+        raw_cache = self.read_json(cache_file) or {}
+
+        # Prune expired entries and outdated schema versions from the entire file
+        # before adding the new entry to keep the cache file clean and compact.
+        cache = self.prune_cache_data(
+            raw_cache,
+            expiry_seconds=RELEASES_CACHE_EXPIRY_HOURS * 3600,
+            schema_version=GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
+        )
 
         old_releases = cache.get(url_cache_key, {}).get("releases")
 
@@ -676,6 +773,7 @@ class CacheManager:
         cache[url_cache_key] = {
             "releases": releases,
             "cached_at": now.isoformat(),
+            "schema_version": GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
         }
         if self.atomic_write_json(cache_file, cache):
             if is_unchanged:
@@ -722,11 +820,11 @@ class CacheManager:
         Write JSON data to a file atomically and add a UTC ISO 8601 timestamp under the given key.
 
         Parameters:
-            data (dict[str, Any]): Mapping to serialize into the JSON file; a shallow copy is made before adding the timestamp.
-            timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be inserted.
+            data (dict[str, Any]): Mapping to serialize into JSON file; a shallow copy is made before adding the timestamp.
+            timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be inserted; default is "last_updated".
 
         Returns:
-            bool: True if the file was written successfully, False otherwise.
+            bool: `True` if the file was written and moved into place successfully, `False` otherwise.
         """
         # Add timestamp to data
         data_with_timestamp = data.copy()
@@ -734,20 +832,30 @@ class CacheManager:
 
         return self.atomic_write_json(file_path, data_with_timestamp)
 
+    def clear_releases_cache(self) -> bool:
+        """
+        Clear releases cache file.
+
+        Returns:
+            bool: `True` if the cache file was removed or did not exist, `False` if the operation failed.
+        """
+        cache_file = self._get_releases_cache_file()
+        return self.clear_cache(cache_file)
+
     def read_with_expiry(
         self, file_path: str, expiry_hours: float
     ) -> Optional[dict[str, Any]]:
         """
-        Determine whether a JSON cache file is still valid and return its parsed contents if so.
+        Validate a JSON cache file against an expiry period and return its parsed contents when valid.
 
-        Checks the cache file for a timestamp under "last_updated", "timestamp", or "cached_at". If a timestamp is present it is parsed as an ISO-8601 UTC datetime and the cache is considered expired when that timestamp is more than expiry_hours in the past. If no timestamp key is present the cache is treated as valid. If the file is missing, unreadable, or the timestamp is malformed, the function returns None.
+        If present, one of the keys "last_updated", "timestamp", or "cached_at" is parsed as an ISO-8601 UTC timestamp; the cache is considered expired when that timestamp is more than expiry_hours in the past. If no timestamp key is present the cache is treated as valid. If the file is missing, unreadable, or the timestamp is missing/malformed or indicates expiry, the function returns None.
 
         Parameters:
-            file_path (str): Path to the JSON cache file to read.
-            expiry_hours (float): Number of hours before a cached entry is considered expired.
+            file_path (str): Path to the JSON cache file.
+            expiry_hours (float): Age in hours after which the cached entry is considered expired.
 
         Returns:
-            Optional[dict[str, Any]]: The parsed cache dictionary when present and not expired, `None` otherwise.
+            Optional[dict[str, Any]]: The parsed cache dictionary if present and not expired, `None` otherwise.
         """
         cache_data = self.read_json(file_path)
         if not cache_data:
@@ -845,17 +953,12 @@ class CacheManager:
         self, cache_data: dict[str, Any], required_keys: list[str]
     ) -> bool:
         """
-        Validate that a cache mapping contains all required top-level keys.
+        Ensure a cache mapping contains the specified top-level keys.
 
-        Parameters:
-            cache_data (dict[str, Any]): The cache mapping to validate.
-            required_keys (list[str]): List of keys that must be present at the top level of `cache_data`.
+        Logs a warning for the first missing key encountered.
 
         Returns:
-            bool: `True` if every key in `required_keys` exists in `cache_data`, `False` otherwise.
-
-        Notes:
-            Logs a warning for the first missing key encountered.
+            `True` if every key in `required_keys` exists in `cache_data`, `False` otherwise.
         """
         for key in required_keys:
             if key not in cache_data:
@@ -863,62 +966,112 @@ class CacheManager:
                 return False
         return True
 
-    def read_commit_timestamp_cache(self) -> dict[str, Any]:
+    def prune_cache_data(
+        self,
+        cache: dict[str, Any],
+        expiry_seconds: float,
+        *,
+        schema_version: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """
+        Prune a cache mapping by removing entries that are expired or have an unexpected schema version.
+
+        Supported entry formats:
+        - Object form: {"cached_at": "<iso>", "schema_version": "<ver>", ...}
+        - List form (legacy): [data, "<cached_at_iso>"]
+        - Legacy dict form: {"timestamp": "<iso>", "cached_at": "<iso>"}
+
+        Parameters:
+            cache (dict[str, Any]): Mapping of cache keys to cache entries.
+            expiry_seconds (float): Maximum allowed age of an entry in seconds.
+            schema_version (Optional[str]): If provided, only entries whose "schema_version"
+                equals this value are retained; entries missing or mismatched are pruned.
+
+        Returns:
+            dict[str, Any]: A new mapping containing only entries that are parseable, not older
+            than `expiry_seconds`, and that match `schema_version` when it is specified.
+        """
+        now = datetime.now(timezone.utc)
+        keep: dict[str, Any] = {}
+
+        for key, entry in cache.items():
+            cached_at_str = None
+            entry_schema = None
+
+            if isinstance(entry, dict):
+                cached_at_str = entry.get("cached_at")
+                entry_schema = entry.get("schema_version")
+            elif isinstance(entry, (list, tuple)) and len(entry) == 2:
+                # [data, cached_at]
+                cached_at_str = entry[1]
+
+            if not cached_at_str:
+                logger.debug("Pruning entry without cached_at timestamp: %s", key)
+                continue
+
+            cached_at = parse_iso_datetime_utc(cached_at_str)
+            if not cached_at:
+                logger.debug("Pruning entry with unparseable cached_at: %s", key)
+                continue
+
+            # Check expiry
+            age_s = (now - cached_at).total_seconds()
+            if age_s >= expiry_seconds:
+                continue
+
+            # Check schema version if provided
+            if schema_version is not None:
+                if entry_schema is None:
+                    logger.debug("Pruning entry without schema_version: %s", key)
+                    continue
+                if entry_schema != schema_version:
+                    logger.debug(
+                        "Pruning entry with mismatched schema %s != %s: %s",
+                        entry_schema,
+                        schema_version,
+                        key,
+                    )
+                    continue
+
+            keep[key] = entry
+
+        return keep
+
+    def read_commit_timestamp_cache(self) -> dict[str, list[str]]:
         """
         Load and return non-expired commit timestamp entries from the on-disk cache.
 
-        Reads commit_timestamps.json, accepts both legacy dict entries (`{"timestamp": "...", "cached_at": "..."}`)
-        and the newer list form (`[timestamp_iso, cached_at_iso]`), filters out entries older than
-        COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and normalizes retained entries to the list format.
+        Reads commit_timestamps.json, filters out entries older than
+        COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and normalizes retained entries to the
+        preferred list format.
 
         Returns:
-            dict[str, list]: Mapping of cache key to `[timestamp_iso, cached_at_iso]` for entries still within the expiry window.
+            dict[str, list]: Mapping of cache key to `[timestamp_iso, cached_at_iso]`
+                for entries still within the expiry window.
         """
         cache_file = os.path.join(self.cache_dir, "commit_timestamps.json")
         cache_data = self.read_json(cache_file)
         if not isinstance(cache_data, dict):
             return {}
 
-        now = datetime.now(timezone.utc)
-        keep: dict[str, Any] = {}
+        pruned = self.prune_cache_data(
+            cache_data, expiry_seconds=COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600
+        )
 
-        for cache_key, cache_value in cache_data.items():
-            # Support both legacy format and new format for backward compatibility
-            if isinstance(cache_value, (list, tuple)) and len(cache_value) == 2:
-                # New format: [timestamp_iso, cached_at_iso]
-                try:
-                    timestamp_str, cached_at_str = cache_value
-                    cached_at = parse_iso_datetime_utc(cached_at_str)
-                    if cached_at is None:
-                        continue
-                    age = now - cached_at
-                    if (
-                        age.total_seconds()
-                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                    ):
-                        keep[cache_key] = cache_value
-                except (ValueError, TypeError):
-                    continue
-            elif isinstance(cache_value, dict):
+        # Normalize to list format for consistency
+        normalized = {}
+        for key, value in pruned.items():
+            if isinstance(value, dict):
                 # Legacy format: {"timestamp": "...", "cached_at": "..."}
-                try:
-                    timestamp_str = cache_value.get("timestamp")
-                    cached_at_str = cache_value.get("cached_at")
-                    if timestamp_str and cached_at_str:
-                        cached_at = parse_iso_datetime_utc(cached_at_str)
-                        if cached_at is None:
-                            continue
-                        age = now - cached_at
-                        if (
-                            age.total_seconds()
-                            < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                        ):
-                            # Convert to new format for consistency
-                            keep[cache_key] = [timestamp_str, cached_at_str]
-                except (ValueError, TypeError):
-                    continue
+                timestamp = value.get("timestamp")
+                cached_at = value.get("cached_at")
+                if timestamp and cached_at:
+                    normalized[key] = [timestamp, cached_at]
+            else:
+                # New format: [timestamp_iso, cached_at_iso]
+                normalized[key] = list(value)
 
-        return keep
+        return normalized
 
     def get_commit_timestamp(
         self,
@@ -931,9 +1084,9 @@ class CacheManager:
         force_refresh: bool = False,
     ) -> Optional[datetime]:
         """
-        Retrieve the committer timestamp for a GitHub commit, using an on-disk cache when available.
+        Retrieve the committer timestamp for a GitHub commit, using the on-disk cache when possible.
 
-        Looks up a cached timestamp in commit_timestamps.json and returns it if present and not expired; otherwise fetches the commit from the GitHub API, caches the ISO timestamp together with the fetch time, and returns the parsed UTC datetime. Cache entries expire after COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS; setting `force_refresh` bypasses the cache.
+        Looks up a cached timestamp in commit_timestamps.json and returns it if present and not expired; otherwise fetches the commit from the GitHub API, caches the ISO timestamp together with the fetch time, and returns the parsed UTC datetime. Cache entries honor COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS; set `force_refresh` to bypass the cache.
 
         Parameters:
             owner (str): Repository owner (GitHub user or organization).
@@ -944,7 +1097,7 @@ class CacheManager:
             force_refresh (bool): If True, ignore any valid cached entry and fetch from the GitHub API.
 
         Returns:
-            Optional[datetime]: The commit committer datetime in UTC if available and parseable, `None` on fetch or parse failure.
+            Optional[datetime]: The commit committer datetime in UTC if available and parseable, `None` otherwise.
         """
         cache_key = f"{owner}/{repo}/{commit_hash}"
         cache_file = os.path.join(self.cache_dir, "commit_timestamps.json")

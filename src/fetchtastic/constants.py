@@ -153,6 +153,28 @@ DEVICE_HARDWARE_CACHE_HOURS = 24
 
 # Cache configuration
 COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
+
+# Cache schema versions - bump when cache format changes
+
+# GitHub Releases API cache schema version
+#
+# Used by:
+# - FirmwareDownloader (meshtastic/firmware/releases)
+# - MeshtasticAndroidAppDownloader (meshtastic/Meshtastic-Android/releases)
+#
+# Both downloaders share the same cache file (releases.json) and data format
+# because they query the same GitHub API endpoint structure. Schema validates:
+# - tag_name: string, required
+# - prerelease: boolean, required
+# - published_at: ISO-8601 string or null, optional
+#
+# Schema versioning:
+# - Entries with mismatched schema_version are rejected (cache miss).
+# - No migration is performed; fresh data is automatically fetched from GitHub API.
+# - Given the short cache expiry, users will transparently upgrade.
+# - When bumping version: update this constant and mention in release notes.
+GITHUB_RELEASES_CACHE_SCHEMA_VERSION = "1.0"
+
 # Releases API responses are cached for 1 minute to avoid burning GitHub API
 # requests unnecessarily while maintaining relatively fresh data.
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)
