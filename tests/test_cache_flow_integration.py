@@ -37,9 +37,15 @@ def test_cache_schema_mismatch_triggers_refresh(tmp_path):
     # 1. Pre-populate with mismatched schema
     old_data = {
         url_key: {
-            "releases": [{"tag_name": "v1.0.0", "prerelease": False, "published_at": "2023-01-01T00:00:00Z"}],
+            "releases": [
+                {
+                    "tag_name": "v1.0.0",
+                    "prerelease": False,
+                    "published_at": "2023-01-01T00:00:00Z",
+                }
+            ],
             "cached_at": datetime.now(timezone.utc).isoformat(),
-            "schema_version": "0.1"  # Old version
+            "schema_version": "0.1",  # Old version
         }
     }
     with open(cache_file, "w") as f:
@@ -52,12 +58,21 @@ def test_cache_schema_mismatch_triggers_refresh(tmp_path):
             "tag_name": "v2.0.0",
             "prerelease": False,
             "published_at": "2024-01-01T00:00:00Z",
-            "assets": [{"name": "firmware.zip", "browser_download_url": "http://example.com", "size": 100}]
+            "assets": [
+                {
+                    "name": "firmware.zip",
+                    "browser_download_url": "http://example.com",
+                    "size": 100,
+                }
+            ],
         }
     ]
     mock_response.json.return_value = fresh_releases_json
 
-    with patch("fetchtastic.download.firmware.make_github_api_request", return_value=mock_response) as mock_request:
+    with patch(
+        "fetchtastic.download.firmware.make_github_api_request",
+        return_value=mock_response,
+    ) as mock_request:
         releases = downloader.get_releases(limit=8)
 
         # Verify it went to API

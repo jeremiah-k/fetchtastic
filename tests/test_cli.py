@@ -13,7 +13,7 @@ def mock_cli_dependencies(mocker, tmp_path):
     """
     Pytest fixture that patches Fetchtastic CLI external dependencies (network, config, logging, time, and API-tracking) and supplies a mocked DownloadCLIIntegration for tests.
 
-    The mock's `main()` returns empty result tuples, `update_cache()` returns `True`, and `get_latest_versions()` returns empty version strings.
+    The mock's `main()` returns empty result tuples, `clear_cache()` returns `True`, and `get_latest_versions()` returns empty version strings.
 
     Returns:
         MagicMock: Mocked DownloadCLIIntegration instance configured for tests.
@@ -54,7 +54,7 @@ def mock_cli_dependencies(mocker, tmp_path):
         "",
         "",
     )
-    mock_integration_instance.update_cache.return_value = True
+    mock_integration_instance.clear_cache.return_value = True
     mock_integration_instance.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
@@ -1751,9 +1751,9 @@ def test_cli_download_force_flag(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_download_update_cache_flag(mocker, mock_cli_dependencies):
-    """Test 'download' command with --update-cache flag."""
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--update-cache"])
+def test_cli_download_clear_cache_flag(mocker, mock_cli_dependencies):
+    """Test 'download' command with --clear-cache flag."""
+    mocker.patch("sys.argv", ["fetchtastic", "download", "--clear-cache"])
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
@@ -1762,15 +1762,15 @@ def test_cli_download_update_cache_flag(mocker, mock_cli_dependencies):
 
     cli.main()
 
-    mock_cli_dependencies.update_cache.assert_called_once()
+    mock_cli_dependencies.clear_cache.assert_called_once()
     mock_cli_dependencies.main.assert_not_called()
 
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_cache_update_command(mocker, mock_cli_dependencies):
-    """Test 'cache update' command dispatch."""
-    mocker.patch("sys.argv", ["fetchtastic", "cache", "update"])
+def test_cli_cache_clear_command(mocker, mock_cli_dependencies):
+    """Test 'cache clear' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "cache", "clear"])
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
@@ -1779,7 +1779,7 @@ def test_cli_cache_update_command(mocker, mock_cli_dependencies):
 
     cli.main()
 
-    mock_cli_dependencies.update_cache.assert_called_once()
+    mock_cli_dependencies.clear_cache.assert_called_once()
     mock_cli_dependencies.main.assert_not_called()
 
 

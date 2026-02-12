@@ -444,7 +444,11 @@ class TestReleasesCache:
         """Test writing releases cache entry."""
         cache_manager = CacheManager(str(tmp_path))
         releases = [
-            {"tag_name": "v1.0.0", "prerelease": False, "published_at": "2023-01-01T00:00:00Z"}
+            {
+                "tag_name": "v1.0.0",
+                "prerelease": False,
+                "published_at": "2023-01-01T00:00:00Z",
+            }
         ]
 
         cache_manager.write_releases_cache_entry("releases_identifier", releases)
@@ -459,7 +463,10 @@ class TestReleasesCache:
         assert "releases_identifier" in cache_data
         assert cache_data["releases_identifier"]["releases"] == releases
         assert "cached_at" in cache_data["releases_identifier"]
-        assert cache_data["releases_identifier"]["schema_version"] == GITHUB_RELEASES_CACHE_SCHEMA_VERSION
+        assert (
+            cache_data["releases_identifier"]["schema_version"]
+            == GITHUB_RELEASES_CACHE_SCHEMA_VERSION
+        )
 
     def test_write_releases_cache_entry_prunes_old_data(self, tmp_path):
         """Test that writing a new entry prunes old/stale data from the file."""
@@ -491,7 +498,9 @@ class TestReleasesCache:
             json.dump(cache_data, f)
 
         # Write a new entry
-        new_releases = [{"tag_name": "v1.2.0", "prerelease": False, "published_at": now.isoformat()}]
+        new_releases = [
+            {"tag_name": "v1.2.0", "prerelease": False, "published_at": now.isoformat()}
+        ]
         cache_manager.write_releases_cache_entry("new_entry", new_releases)
 
         # Verify file content
@@ -643,7 +652,10 @@ class TestCommitTimestampCache:
         now = datetime.now(timezone.utc)
         cache_data = {
             "key_new": ["2023-01-01T12:00:00Z", now.isoformat()],
-            "key_legacy": {"timestamp": "2023-01-01T13:00:00Z", "cached_at": now.isoformat()},
+            "key_legacy": {
+                "timestamp": "2023-01-01T13:00:00Z",
+                "cached_at": now.isoformat(),
+            },
             "expired": [
                 "2023-01-01T12:00:00Z",
                 (now - timedelta(hours=25)).isoformat(),
