@@ -940,7 +940,7 @@ class DownloadCLIIntegration:
                 - firmware_info: brief note about firmware downloads
                 - configuration: how configuration is used or extended
                 - force_refresh: how to trigger cache clearing / recheck
-                - cache_update: how to clear caches without running downloads
+                - cache_clear: how to clear caches without running downloads
                 - troubleshooting: where to look for more detailed error information
         """
         return {
