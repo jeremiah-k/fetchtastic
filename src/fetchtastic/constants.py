@@ -175,9 +175,9 @@ COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
 # - When bumping version: update this constant and mention in release notes.
 GITHUB_RELEASES_CACHE_SCHEMA_VERSION = "1.0"
 
-# Releases API responses are cached for 1 minute to avoid burning GitHub API
-# requests unnecessarily while maintaining relatively fresh data.
-RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)
+# Releases API responses are cached for 10 minutes to balance API rate limiting
+# with reasonably fresh data. Users can use --force-download to bypass cache.
+RELEASES_CACHE_EXPIRY_HOURS = 10 / 60  # 10 minutes (in hours)
 # Prerelease contents rarely change once a commit is published, so cache for a longer duration.
 FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
 # Keep prerelease commit history fresh for a typical download run (5 minutes)
