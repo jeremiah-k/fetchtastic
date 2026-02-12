@@ -99,8 +99,8 @@ def test_cli_integration_main_rejects_none_config(mocker):
     run_download.assert_not_called()
 
 
-def test_cli_integration_update_cache_loads_config(mocker):
-    """update_cache should use provided config and clear caches."""
+def test_cli_integration_clear_cache_loads_config(mocker):
+    """clear_cache should use provided config and clear caches."""
     integration = DownloadCLIIntegration()
     config = {"DOWNLOAD_DIR": "/tmp"}
     mock_orchestrator = mocker.MagicMock(
@@ -113,19 +113,19 @@ def test_cli_integration_update_cache_loads_config(mocker):
     )
     mock_clear = mocker.patch.object(integration, "_clear_caches")
 
-    result = integration.update_cache(config=config)
+    result = integration.clear_cache(config=config)
 
     mock_clear.assert_called_once()
     assert result is True
 
 
-def test_cli_integration_update_cache_requires_config():
-    """update_cache should require config parameter."""
+def test_cli_integration_clear_cache_requires_config():
+    """clear_cache should require config parameter."""
     integration = DownloadCLIIntegration()
 
     # Test that calling without config parameter raises TypeError
     with pytest.raises(TypeError):
-        integration.update_cache()
+        integration.clear_cache()
 
 
 def test_run_download_successful(mocker):

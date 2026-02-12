@@ -637,12 +637,12 @@ class DownloadCLIIntegration:
             self.handle_cli_error(error)
             return [], [], [], [], [], [], [], "", ""
 
-    def update_cache(self, config: Dict[str, Any]) -> bool:
+    def clear_cache(self, config: Dict[str, Any]) -> bool:
         """
         Clear all download caches without running the download pipeline.
 
         Parameters:
-            config (Dict[str, Any]): Configuration mapping for cache refresh.
+            config (Dict[str, Any]): Configuration mapping for cache clear.
 
         Returns:
             bool: True if caches were cleared successfully, False otherwise.
@@ -951,7 +951,7 @@ class DownloadCLIIntegration:
             "firmware_info": "Downloads Meshtastic firmware releases and extracts files based on patterns",
             "configuration": "Uses existing configuration with additional options for version retention",
             "force_refresh": "Use --force-download or -f to clear caches and recheck all downloads",
-            "cache_update": "Use 'fetchtastic cache update' or 'download --update-cache' to clear caches without downloading",
+            "cache_clear": "Use 'fetchtastic cache clear' or 'download --clear-cache' to clear caches without downloading",
             "troubleshooting": "Check logs for detailed error information and use --verbose for debugging",
         }
 

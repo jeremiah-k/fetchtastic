@@ -198,20 +198,20 @@ def _prepare_command_run() -> Tuple[
     return config, integration
 
 
-def _perform_cache_update(
+def _perform_cache_clear(
     integration: download_cli_integration.DownloadCLIIntegration,
     config: Dict[str, Any],
 ) -> bool:
     """
-    Attempt to update integration caches and log the outcome.
+    Clear integration caches and log the outcome.
 
     Parameters:
         config (Dict[str, Any]): Loaded configuration.
 
     Returns:
-        bool: `True` if the cache update succeeded, `False` otherwise.
+        bool: `True` if the cache clear succeeded, `False` otherwise.
     """
-    success = integration.update_cache(config=config)
+    success = integration.clear_cache(config=config)
     if success:
         log_utils.logger.info("Caches cleared.")
     else:
@@ -225,17 +225,17 @@ def _handle_download_subcommand(
     config: Dict[str, Any],
 ) -> None:
     """
-    Perform either a cache update or a download run based on the parsed command-line arguments.
+    Perform either a cache clear or a download run based on the parsed command-line arguments.
 
-    If args.update_cache is true, triggers a cache update via the provided integration and returns. Otherwise, invokes the integration to perform downloads (using args.force_download to control refresh), measures elapsed time, and logs a download results summary.
+    If args.clear_cache is true, triggers a cache clear via the provided integration and returns. Otherwise, invokes the integration to perform downloads (using args.force_download to control refresh), measures elapsed time, and logs a download results summary.
 
     Parameters:
-        args: Parsed command-line namespace expected to contain at least `update_cache` and `force_download` flags.
-        integration: DownloadCLIIntegration instance used to run cache updates or perform downloads and to log results.
+        args: Parsed command-line namespace expected to contain at least `clear_cache` and `force_download` flags.
+        integration: DownloadCLIIntegration instance used to run cache clears or perform downloads and to log results.
         config: Configuration mapping passed to the integration for the operation.
     """
-    if args.update_cache:
-        _perform_cache_update(integration, config)
+    if args.clear_cache:
+        _perform_cache_clear(integration, config)
         return
 
     start_time = time.time()
@@ -316,9 +316,9 @@ def main():
         help="Force refresh by bypassing cache and rechecking all downloads",
     )
     download_mode_group.add_argument(
-        "--update-cache",
+        "--clear-cache",
         action="store_true",
-        help="Clear cached data and exit without running downloads",
+        help="Clear cached API data and exit without running downloads",
     )
 
     # Command to display NTFY topic
@@ -328,11 +328,11 @@ def main():
     cache_parser = subparsers.add_parser(
         "cache",
         help="Manage cached data",
-        description="Clear or refresh cached API data without downloading assets.",
+        description="Clear cached API data without downloading assets.",
     )
     cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
     cache_subparsers.add_parser(
-        "update",
+        "clear",
         help="Clear cached data and exit",
         description="Clear cached API data and exit without running downloads.",
     )
@@ -459,7 +459,7 @@ def main():
         config, integration = _prepare_command_run()
         if integration is None or config is None:
             sys.exit(1)
-        _perform_cache_update(integration, config)
+        _perform_cache_clear(integration, config)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()

@@ -22,7 +22,7 @@ def mock_cli_dependencies(mocker):
     Returns:
         MagicMock: A mock integration where:
             - `main()` returns ([], [], [], [], [], "", "")
-            - `update_cache()` returns True
+            - `clear_cache()` returns True
             - `get_latest_versions()` returns a dict with empty strings for "firmware", "android", "firmware_prerelease", and "android_prerelease"
     """
     # Mock external dependencies to avoid side effects
@@ -37,7 +37,7 @@ def mock_cli_dependencies(mocker):
     # Mock integration instance
     mock_integration = mocker.MagicMock()
     mock_integration.main.return_value = ([], [], [], [], [], "", "")
-    mock_integration.update_cache.return_value = True
+    mock_integration.clear_cache.return_value = True
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",

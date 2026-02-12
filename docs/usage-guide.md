@@ -42,13 +42,13 @@ Available commands:
 
 ```bash
 fetchtastic download --force-download   # Bypass caches and recheck all downloads
-fetchtastic download --update-cache     # Clear cached API data and exit without downloading
+fetchtastic download --clear-cache      # Clear cached API data and exit without downloading
 ```
 
 ### Cache Management
 
 ```bash
-fetchtastic cache update  # Clear cached API data without downloading
+fetchtastic cache clear  # Clear cached API data without downloading
 ```
 
 ## Setup Process
