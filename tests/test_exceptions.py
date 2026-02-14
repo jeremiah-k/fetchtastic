@@ -5,7 +5,7 @@ Tests the custom exception hierarchy including:
 - Base FetchtasticError and error message formatting
 - Configuration errors (ConfigurationError, ConfigFileError, ConfigValidationError)
 - Download errors (DownloadError, NetworkError, HTTPError, RateLimitError)
-- File system errors (FileSystemError, PermissionError, DiskSpaceError, PathValidationError)
+- File system errors (FileSystemError, FilePermissionError, DiskSpaceError, PathValidationError)
 - Validation errors (ValidationError, VersionError, PatternError)
 - Archive errors (ArchiveError, CorruptedArchiveError, ExtractionError)
 - API errors (APIError, AuthenticationError, ResourceNotFoundError)
@@ -27,13 +27,13 @@ from fetchtastic.exceptions import (
     DownloadError,
     ExtractionError,
     FetchtasticError,
+    FilePermissionError,
     FileSystemError,
     HTTPError,
     MigrationError,
     NetworkError,
     PathValidationError,
     PatternError,
-    PermissionError,
     RateLimitError,
     ResourceNotFoundError,
     SetupError,
@@ -190,7 +190,8 @@ class TestDownloadErrors:
         assert error.reset_time == 1234567890
         assert error.remaining == 0
         assert error.url == "https://api.github.com/repos"
-        assert "1234567890" in str(error)
+        # Reset time is now formatted as human-readable date
+        assert "2009-02-13" in str(error)
         assert "Remaining: 0" in str(error)
 
     def test_rate_limit_error_with_remaining(self):
@@ -217,12 +218,12 @@ class TestFileSystemErrors:
         assert error.path == "/path/to/file.txt"
         assert error.details == "Disk full"
 
-    def test_permission_error(self):
-        """Test PermissionError inherits from FileSystemError."""
-        error = PermissionError("Permission denied", path="/protected/file")
+    def test_file_permission_error(self):
+        """Test FilePermissionError inherits from FileSystemError."""
+        error = FilePermissionError("Permission denied", details="/protected/file")
         assert isinstance(error, FileSystemError)
         assert isinstance(error, FetchtasticError)
-        assert error.path == "/protected/file"
+        assert error.path is None
 
     def test_disk_space_error(self):
         """Test DiskSpaceError inherits from FileSystemError."""
@@ -237,6 +238,7 @@ class TestFileSystemErrors:
         )
         assert isinstance(error, FileSystemError)
         assert error.path == "../../../etc/passwd"
+        assert error.details is not None
         assert "Path traversal" in error.details
 
 
@@ -427,7 +429,7 @@ class TestExceptionHierarchy:
             HTTPError("test"),
             RateLimitError(),
             FileSystemError("test"),
-            PermissionError("test"),
+            FilePermissionError("test"),
             DiskSpaceError("test"),
             PathValidationError("test"),
             ValidationError("test"),
@@ -470,9 +472,9 @@ class TestExceptionHierarchy:
 
         # File system errors
         try:
-            raise PermissionError("test")
+            raise FilePermissionError("test")
         except FileSystemError:
-            pass  # Should catch PermissionError
+            pass  # Should catch FilePermissionError
 
         # Validation errors
         try:
@@ -504,7 +506,7 @@ class TestExceptionHierarchy:
             ConfigFileError("test"),
             NetworkError("test"),
             HTTPError("test"),
-            PermissionError("test"),
+            FilePermissionError("test"),
             VersionError("test"),
             CorruptedArchiveError("test"),
             AuthenticationError("test"),

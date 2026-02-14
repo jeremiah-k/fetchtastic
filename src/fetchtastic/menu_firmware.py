@@ -104,19 +104,19 @@ def run_menu() -> dict[str, list[str]] | None:
         if selection is None:
             return None
         return selection
-    except (json.JSONDecodeError, ValueError) as e:
+    except (json.JSONDecodeError, ValueError):
         # Handle JSON parsing and data validation errors
-        logger.exception(f"Firmware menu failed due to data error: {e}")
+        logger.exception("Firmware menu failed due to data error")
         return None
-    except (requests.RequestException, OSError) as e:
+    except (requests.RequestException, OSError):
         # Handle network and I/O errors
-        logger.exception(f"Firmware menu failed due to network/I/O error: {e}")
+        logger.exception("Firmware menu failed due to network/I/O error")
         return None
-    except (TypeError, KeyError, AttributeError) as e:
+    except (TypeError, KeyError, AttributeError):
         # Handle unexpected data structure errors
-        logger.exception(f"Firmware menu failed due to data structure error: {e}")
+        logger.exception("Firmware menu failed due to data structure error")
         return None
-    except Exception as e:
+    except Exception:
         # Catch-all for unexpected errors (backward compatibility)
-        logger.exception(f"Firmware menu failed due to unexpected error: {e}")
+        logger.exception("Firmware menu failed due to unexpected error")
         return None

@@ -2086,6 +2086,14 @@ def run_setup(
         print("Selected setup sections updated. Run 'fetchtastic download' when ready.")
 
 
+def _safe_current_version() -> str:
+    """Return the installed fetchtastic version, or 'unknown' if unavailable."""
+    try:
+        return version("fetchtastic")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def check_for_updates() -> Tuple[str, Optional[str], bool]:
     """
     Check whether a newer release of Fetchtastic is available on PyPI.
@@ -2118,24 +2126,15 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
     except (requests.RequestException, OSError) as e:
         # Network or I/O errors - unable to check for updates
         logger.debug("Network error checking for updates: %s", e)
-        try:
-            return version("fetchtastic"), None, False
-        except PackageNotFoundError:
-            return "unknown", None, False
+        return _safe_current_version(), None, False
     except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
         # Parsing or data structure errors
         logger.debug("Data error checking for updates: %s", e)
-        try:
-            return version("fetchtastic"), None, False
-        except PackageNotFoundError:
-            return "unknown", None, False
+        return _safe_current_version(), None, False
     except Exception as e:
         # Catch-all for unexpected errors (backward compatibility)
         logger.debug("Unexpected error checking for updates: %s", e)
-        try:
-            return version("fetchtastic"), None, False
-        except PackageNotFoundError:
-            return "unknown", None, False
+        return _safe_current_version(), None, False
 
 
 def get_upgrade_command() -> str:
@@ -2191,7 +2190,11 @@ def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
 
         return False, "Setup is current", last_setup_version, current_version
 
-    except (OSError, IOError, json.JSONDecodeError, yaml.YAMLError) as e:
+    except PackageNotFoundError:
+        # Package metadata not available (development/testing environment)
+        logger.debug("Could not determine installed version: package not found")
+        return True, "Could not determine setup status", None, None
+    except (OSError, json.JSONDecodeError, yaml.YAMLError) as e:
         # File access, JSON parsing, or YAML parsing errors
         logger.debug("Could not determine setup status: %s", e)
         return True, "Could not determine setup status", None, None

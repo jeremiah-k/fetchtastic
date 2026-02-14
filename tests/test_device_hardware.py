@@ -627,8 +627,6 @@ class TestDeviceHardwareManagerPerformance:
 
     def test_memory_usage_with_large_cache(self):
         """Test memory usage doesn't grow excessively with large cache."""
-        import time
-
         with tempfile.TemporaryDirectory() as temp_dir:
             cache_dir = Path(temp_dir)
 

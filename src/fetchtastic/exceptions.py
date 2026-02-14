@@ -151,6 +151,10 @@ class RateLimitError(HTTPError):
     """
     Exception raised when GitHub API rate limit is exceeded.
 
+    Note:
+        GitHub uses HTTP 403 (not 429) for rate limiting, so status_code
+        is set to 403. This differs from the standard HTTP 429 status code.
+
     Attributes:
         reset_time: When the rate limit will reset (Unix timestamp).
         remaining: Number of requests remaining.
@@ -172,12 +176,25 @@ class RateLimitError(HTTPError):
             remaining: Number of requests remaining.
             url: The URL that was being accessed.
         """
+        # Build details string with human-readable reset time
+        details = f"Remaining: {remaining}"
+        if reset_time is not None:
+            try:
+                from datetime import datetime, timezone
+
+                reset_dt = datetime.fromtimestamp(reset_time, tz=timezone.utc)
+                details = (
+                    f"Resets at: {reset_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}, {details}"
+                )
+            except (ValueError, TypeError, OSError):
+                details = f"Resets at timestamp: {reset_time}, {details}"
+
         super().__init__(
             message,
             status_code=403,
             url=url,
             is_retryable=True,
-            details=f"Resets at: {reset_time}, Remaining: {remaining}",
+            details=details,
         )
         self.reset_time = reset_time
         self.remaining = remaining
@@ -217,7 +234,7 @@ class FileSystemError(FetchtasticError):
         self.path = path
 
 
-class PermissionError(FileSystemError):
+class FilePermissionError(FileSystemError):
     """Exception raised when file system permissions prevent an operation."""
 
     pass

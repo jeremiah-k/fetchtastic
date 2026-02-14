@@ -254,13 +254,13 @@ class DeviceHardwareManager:
         except json.JSONDecodeError:
             logger.exception("Invalid JSON response from API")
             return None
-        except (TypeError, KeyError, ValueError, AttributeError) as e:
+        except (TypeError, KeyError, ValueError, AttributeError):
             # Handle data processing errors (invalid types, missing keys, etc.)
-            logger.exception(f"Error processing device hardware data: {e}")
+            logger.exception("Error processing device hardware data")
             return None
-        except (OSError, IOError) as e:
+        except OSError:
             # Handle file/network I/O errors not caught by requests
-            logger.exception(f"I/O error fetching device hardware data: {e}")
+            logger.exception("I/O error fetching device hardware data")
             return None
         # Note: We intentionally don't catch BaseException (KeyboardInterrupt, SystemExit)
         # to allow proper signal handling
