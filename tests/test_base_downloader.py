@@ -960,10 +960,15 @@ class TestBaseDownloaderAsyncDownload:
         """Test async download handles client errors."""
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = ConcreteDownloader(config)
-        import aiohttp
+        from fetchtastic.download.async_client import AsyncDownloadError
+
+        # Create a mock response that raises ClientError when entering context
+        mock_response = AsyncMock()
+        mock_response.__aenter__ = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_response.__aexit__ = AsyncMock()
 
         mock_session = AsyncMock()
-        mock_session.get = Mock(side_effect=aiohttp.ClientError("Connection failed"))
+        mock_session.get = Mock(return_value=mock_response)
 
         with (
             patch("aiohttp.ClientSession", return_value=mock_session),
@@ -977,16 +982,15 @@ class TestBaseDownloaderAsyncDownload:
             )
 
             target = tmp_path / "test.bin"
-            result = await downloader.async_download(
-                "https://example.com/file.bin", target
-            )
-
-        assert result is False
+            # Errors during download should raise AsyncDownloadError
+            with pytest.raises(AsyncDownloadError):
+                await downloader.async_download("https://example.com/file.bin", target)
 
     async def test_async_download_os_error(self, tmp_path, mocker):
         """Test async download handles OS errors."""
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = ConcreteDownloader(config)
+        from fetchtastic.download.async_client import AsyncDownloadError
 
         mock_response = AsyncMock()
         mock_response.status = 200
@@ -1022,30 +1026,28 @@ class TestBaseDownloaderAsyncDownload:
                 )
 
                 target = tmp_path / "test.bin"
-                result = await downloader.async_download(
-                    "https://example.com/file.bin", target
-                )
-
-        assert result is False
+                # OSError should raise AsyncDownloadError with is_retryable=False
+                with pytest.raises(AsyncDownloadError) as exc_info:
+                    await downloader.async_download(
+                        "https://example.com/file.bin", target
+                    )
+                assert exc_info.value.is_retryable is False
 
     async def test_async_download_unexpected_exception(self, tmp_path, mocker):
         """Test async download handles unexpected exceptions."""
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = ConcreteDownloader(config)
+        from fetchtastic.download.async_client import AsyncDownloadError
 
+        # Create a mock that raises RuntimeError when entering the response context
         mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.headers = {"Content-Length": "12"}
-        mock_response.raise_for_status = Mock()
-
-        mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(side_effect=RuntimeError("Unexpected error"))
-        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(
+            side_effect=RuntimeError("Unexpected error")
+        )
+        mock_response.__aexit__ = AsyncMock()
 
         mock_session = AsyncMock()
         mock_session.get = Mock(return_value=mock_response)
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock()
 
         with (
             patch("aiohttp.ClientSession", return_value=mock_session),
@@ -1054,22 +1056,14 @@ class TestBaseDownloaderAsyncDownload:
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock()
 
-            mock_file = AsyncMock()
+            mocker.patch.object(
+                downloader, "_async_verify_file", AsyncMock(return_value=False)
+            )
 
-            with patch("aiofiles.open") as mock_open:
-                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
-                mock_open.return_value.__aexit__ = AsyncMock()
-
-                mocker.patch.object(
-                    downloader, "_async_verify_file", AsyncMock(return_value=False)
-                )
-
-                target = tmp_path / "test.bin"
-                result = await downloader.async_download(
-                    "https://example.com/file.bin", target
-                )
-
-        assert result is False
+            target = tmp_path / "test.bin"
+            # Unexpected exceptions should raise AsyncDownloadError
+            with pytest.raises(AsyncDownloadError):
+                await downloader.async_download("https://example.com/file.bin", target)
 
 
 # =============================================================================

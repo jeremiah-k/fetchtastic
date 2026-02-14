@@ -225,6 +225,11 @@ class AsyncGitHubClient:
             (self.github_token or "no-token").encode()
         ).hexdigest()[:16]
 
+        # Handle limit=0 explicitly - return empty list instead of making API call
+        if limit == 0:
+            logger.debug(f"limit=0 requested, returning empty list for {url}")
+            return []
+
         request_params = params or {}
         if limit:
             request_params["per_page"] = min(limit, 100)
@@ -527,7 +532,7 @@ async def download_files_concurrently(
     downloads: List[Dict[str, Any]],
     max_concurrent: int = 5,
     progress_callback: Optional[Any] = None,
-) -> List[bool]:
+) -> List[Any]:
     """
     Download multiple files concurrently with a semaphore limit.
 
@@ -537,7 +542,11 @@ async def download_files_concurrently(
         progress_callback (Optional[Any]): Optional progress callback for each download.
 
     Returns:
-        List[bool]: Results for each download (True for success, False for failure).
+        List[Any]: Results for each download. Each element is:
+            - True: Download succeeded
+            - False: Download failed without a specific exception
+            - Exception: The exception that caused the failure (typically AsyncDownloadError)
+            This allows callers to inspect the root cause of failures.
 
     Example:
         downloads = [
@@ -545,6 +554,13 @@ async def download_files_concurrently(
             {"url": "https://...", "target_path": "/path/file2.bin"},
         ]
         results = await download_files_concurrently(downloads, max_concurrent=3)
+        for i, result in enumerate(results):
+            if result is True:
+                print(f"Download {i} succeeded")
+            elif isinstance(result, Exception):
+                print(f"Download {i} failed: {result}")
+            else:
+                print(f"Download {i} failed")
     """
     async with create_async_client(max_concurrent=max_concurrent) as client:
         tasks = [
@@ -555,6 +571,5 @@ async def download_files_concurrently(
             )
             for spec in downloads
         ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        # Convert exceptions to False, keep True/False as-is
-        return [r if r is True else False for r in results]
+        # Return raw results to preserve exception information for debugging
+        return await asyncio.gather(*tasks, return_exceptions=True)

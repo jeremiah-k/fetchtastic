@@ -32,7 +32,7 @@ dependencies = [
   "rich",
   # Async support for parallel downloads
   "aiohttp>=3.8.0",
-  "aiofiles>=23.0.0",
+  "aiofiles>=23.1.0",
 ]
 
 [project.optional-dependencies]

@@ -460,15 +460,15 @@ class AsyncDownloaderMixin:
         Returns:
             List[DownloadResult]: Results for each download.
         """
-        semaphore = self._get_semaphore()
+        # Note: Concurrency is controlled by the semaphore in async_download_release
+        # which calls async_download. Do NOT wrap with semaphore here to avoid deadlock.
 
         async def download_one(spec: Dict[str, Any]) -> DownloadResult:
-            async with semaphore:
-                return await self.async_download_release(
-                    spec["release"],
-                    spec["asset"],
-                    progress_callback=progress_callback,
-                )
+            return await self.async_download_release(
+                spec["release"],
+                spec["asset"],
+                progress_callback=progress_callback,
+            )
 
         tasks = [download_one(spec) for spec in downloads]
         results = await asyncio.gather(*tasks, return_exceptions=True)
