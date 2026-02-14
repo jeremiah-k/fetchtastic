@@ -28,10 +28,9 @@ from fetchtastic.constants import (
     LATEST_ANDROID_RELEASE_JSON_FILE,
     MESHTASTIC_ANDROID_RELEASES_URL,
     RELEASE_SCAN_COUNT,
-    RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import make_github_api_request, matches_selected_patterns
+from fetchtastic.utils import matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager
@@ -39,6 +38,7 @@ from .files import (
     _safe_rmtree,
     _sanitize_path_component,
 )
+from .github_source import GithubReleaseSource
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
@@ -68,6 +68,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         super().__init__(config)
         self.cache_manager = cache_manager
         self.android_releases_url = MESHTASTIC_ANDROID_RELEASES_URL
+        self.github_source = GithubReleaseSource(
+            releases_url=MESHTASTIC_ANDROID_RELEASES_URL,
+            cache_manager=cache_manager,
+            config=config,
+        )
         self.latest_release_file = LATEST_ANDROID_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
@@ -292,34 +297,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             while True:
                 params = {"per_page": scan_count}
-                url_key = self.cache_manager.build_url_cache_key(
-                    self.android_releases_url, params
-                )
-                releases_data = self.cache_manager.read_releases_cache_entry(
-                    url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
-                )
+                releases_data = self.github_source.fetch_raw_releases_data(params)
 
                 if releases_data is None:
-                    response = make_github_api_request(
-                        self.android_releases_url,
-                        self.config.get("GITHUB_TOKEN"),
-                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
-                        params=params,
-                    )
-                    releases_data = response.json() if hasattr(response, "json") else []
-                    if isinstance(releases_data, list):
-                        logger.debug(
-                            "Cached %d releases for %s (fetched from API)",
-                            len(releases_data),
-                            self.android_releases_url,
-                        )
-                    self.cache_manager.write_releases_cache_entry(
-                        url_key,
-                        releases_data if isinstance(releases_data, list) else [],
-                    )
-
-                if releases_data is None or not isinstance(releases_data, list):
-                    logger.error("Invalid releases data received from GitHub API")
                     return []
 
                 releases: List[Release] = []
@@ -574,7 +554,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             try:
                 if os.path.getsize(asset_path) != asset.size:
                     return False
-            except (OSError, TypeError):
+            except (OSError, TypeError) as e:
+                logger.debug("Error checking asset size for %s: %s", asset.name, e)
                 return False
         return True
 
@@ -639,10 +620,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 keep_limit = int(DEFAULT_ANDROID_VERSIONS_TO_KEEP)
             stable_releases = sorted(
                 [release for release in cached_releases if not release.prerelease],
-                key=lambda release: self.version_manager.get_release_tuple(
-                    release.tag_name
-                )
-                or (),
+                key=lambda release: (
+                    self.version_manager.get_release_tuple(release.tag_name) or ()
+                ),
                 reverse=True,
             )
             if not stable_releases:

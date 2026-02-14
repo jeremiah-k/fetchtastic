@@ -36,7 +36,6 @@ from fetchtastic.constants import (
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     RELEASE_SCAN_COUNT,
-    RELEASES_CACHE_EXPIRY_HOURS,
     REPO_DOWNLOADS_DIR,
     STORAGE_CHANNEL_SUFFIXES,
 )
@@ -44,7 +43,6 @@ from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     download_file_with_retry,
-    make_github_api_request,
     matches_extract_patterns,
     matches_selected_patterns,
     verify_file_integrity,
@@ -53,6 +51,7 @@ from fetchtastic.utils import (
 from .base import BaseDownloader
 from .cache import CacheManager
 from .files import build_storage_tag_with_channel, get_channel_suffix
+from .github_source import GithubReleaseSource, create_release_from_github_data
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
@@ -91,6 +90,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         super().__init__(config)
         self.cache_manager = cache_manager
         self.firmware_releases_url = MESHTASTIC_FIRMWARE_RELEASES_URL
+        self.github_source = GithubReleaseSource(
+            releases_url=MESHTASTIC_FIRMWARE_RELEASES_URL,
+            cache_manager=cache_manager,
+            config=config,
+        )
         self.latest_release_file = LATEST_FIRMWARE_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_FIRMWARE_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
@@ -234,72 +238,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     )
                     limit = 100
             params = {"per_page": limit if limit else 8}
-            url_key = self.cache_manager.build_url_cache_key(
-                self.firmware_releases_url, params
-            )
-            releases_data = self.cache_manager.read_releases_cache_entry(
-                url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
+
+            releases = self.github_source.get_releases(
+                params, create_release_from_github_data
             )
 
-            if releases_data is not None:
-                logger.debug(
-                    "Using cached releases for %s (%d releases)",
-                    self.firmware_releases_url,
-                    len(releases_data),
-                )
-
-            if releases_data is None:
-                response = make_github_api_request(
-                    self.firmware_releases_url,
-                    self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
-                    params=params,
-                )
-                releases_data = response.json() if hasattr(response, "json") else []
-                if isinstance(releases_data, list):
-                    logger.debug(
-                        "Cached %d releases for %s (fetched from API)",
-                        len(releases_data),
-                        self.firmware_releases_url,
-                    )
-                self.cache_manager.write_releases_cache_entry(
-                    url_key, releases_data if isinstance(releases_data, list) else []
-                )
-
-            if not releases_data or not isinstance(releases_data, list):
-                logger.error("Invalid releases data received from GitHub API")
-                return []
-
-            releases = []
-            for release_data in releases_data:
-                # Filter out releases without assets
-                if not release_data.get("assets"):
-                    continue
-
-                release = Release(
-                    tag_name=release_data["tag_name"],
-                    prerelease=release_data.get("prerelease", False),
-                    published_at=release_data.get("published_at"),
-                    name=release_data.get("name"),
-                    body=release_data.get("body"),
-                )
-
-                # Add assets to the release
-                for asset_data in release_data["assets"]:
-                    asset = Asset(
-                        name=asset_data["name"],
-                        download_url=asset_data["browser_download_url"],
-                        size=asset_data["size"],
-                        browser_download_url=asset_data.get("browser_download_url"),
-                        content_type=asset_data.get("content_type"),
-                    )
-                    release.assets.append(asset)
-
-                releases.append(release)
-
-                # Respect limit if specified
-                if limit and len(releases) >= limit:
-                    break
+            # Respect limit if specified
+            if limit and len(releases) > limit:
+                releases = releases[:limit]
 
             return releases
 

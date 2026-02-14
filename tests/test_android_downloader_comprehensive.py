@@ -265,7 +265,7 @@ class TestMeshtasticAndroidAppDownloader:
         """Test error handling with API failures."""
         with (
             patch(
-                "fetchtastic.download.android.make_github_api_request",
+                "fetchtastic.download.github_source.make_github_api_request",
                 side_effect=requests.RequestException("API Error"),
             ),
             patch.object(

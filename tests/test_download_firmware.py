@@ -220,7 +220,7 @@ class TestFirmwareReleaseDownloader:
 
         assert downloader.ensure_release_notes(release) is None
 
-    @patch("fetchtastic.download.firmware.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
         # Mock cache to return None so it falls back to API
@@ -685,7 +685,7 @@ class TestFirmwareReleaseDownloader:
         mock_scandir.assert_not_called()
         assert mock_logger.warning.called
 
-    @patch("fetchtastic.download.firmware.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_negative_limit(self, mock_api_request, downloader):
         """Test get_releases with negative limit uses default behavior."""
         # Mock API response

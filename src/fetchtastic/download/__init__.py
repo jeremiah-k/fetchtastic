@@ -14,9 +14,20 @@ Core Components:
 - version: Version management utilities
 - cache: Caching infrastructure
 - files: File operations and utilities
+
+Async Support:
+- async_client: AsyncGitHubClient for async HTTP operations
+- async_downloader: AsyncDownloaderMixin for async downloads
+- BaseDownloader: Now includes async_download() method
 """
 
 from .android import MeshtasticAndroidAppDownloader
+from .async_client import AsyncDownloadError, AsyncGitHubClient, create_async_client
+from .async_downloader import (
+    AsyncDownloaderBase,
+    AsyncDownloaderMixin,
+    download_with_progress,
+)
 from .base import BaseDownloader
 from .cache import CacheManager
 from .cli_integration import DownloadCLIIntegration
@@ -46,6 +57,13 @@ __all__ = [
     "Asset",
     # Base classes
     "BaseDownloader",
+    # Async support
+    "AsyncGitHubClient",
+    "AsyncDownloadError",
+    "AsyncDownloaderMixin",
+    "AsyncDownloaderBase",
+    "create_async_client",
+    "download_with_progress",
     # Downloaders
     "MeshtasticAndroidAppDownloader",
     "FirmwareReleaseDownloader",

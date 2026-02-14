@@ -3,18 +3,25 @@ Base Downloader Implementation
 
 This module provides the base implementation of the Downloader interface
 that can be extended by specific artifact downloaders.
+
+Supports both synchronous and asynchronous download operations:
+- download(): Synchronous file download
+- async_download(): Asynchronous file download with progress tracking
 """
 
+import asyncio
 import fnmatch
 import os
+import time
 import zipfile
 from abc import ABC
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union, cast
 
 from requests.exceptions import RequestException  # type: ignore[import-untyped]
 
 from fetchtastic import utils
+from fetchtastic.constants import DEFAULT_CHUNK_SIZE, DEFAULT_REQUEST_TIMEOUT
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
@@ -25,6 +32,9 @@ from .version import VersionManager
 
 if TYPE_CHECKING:
     from .interfaces import Release
+
+# Type alias for async progress callbacks
+AsyncProgressCallback = Callable[[int, Optional[int], str], Any]
 
 
 _MISSING_HISTORY_MANAGER_MSG = (
@@ -116,6 +126,223 @@ class BaseDownloader(Downloader, ABC):
         except (OSError, RequestException, ValueError) as e:
             logger.exception("Error downloading %s: %s", url, e)
             return False
+
+    async def async_download(
+        self,
+        url: str,
+        target_path: Pathish,
+        progress_callback: Optional[AsyncProgressCallback] = None,
+    ) -> bool:
+        """
+        Download a file asynchronously to the specified target path.
+
+        This is the async variant of the download() method, supporting
+        parallel downloads and progress tracking.
+
+        Parameters:
+            url (str): URL to download from.
+            target_path (Pathish): Local path to save the file.
+            progress_callback (Optional[AsyncProgressCallback]):
+                Optional callback for progress updates. Called with
+                (downloaded_bytes, total_bytes, filename).
+
+        Returns:
+            bool: True if download succeeded, False otherwise.
+
+        Example:
+            async def progress(downloaded, total, filename):
+                if total:
+                    print(f"{filename}: {downloaded}/{total} bytes")
+
+            result = await downloader.async_download(
+                "https://example.com/file.bin",
+                "/path/to/file.bin",
+                progress_callback=progress
+            )
+        """
+        # Try to import async libraries first
+        try:
+            import aiofiles
+            import aiohttp
+
+            _aiohttp = aiohttp
+            _aiofiles = aiofiles
+        except ImportError:
+            # Fallback to sync download if async libs not available
+            logger.warning(
+                "Async libraries not available, falling back to sync download"
+            )
+            return self.download(url, target_path)
+
+        try:
+            # Ensure target directory exists
+            target = Path(target_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            # Check if file already exists and is valid
+            if target.exists():
+                if await self._async_verify_file(target):
+                    logger.info(f"Skipped: {target.name} (already present & verified)")
+                    return True
+
+            # Create temp file path
+            temp_path = target.with_suffix(
+                f".tmp.{os.getpid()}.{int(time.time() * 1000)}"
+            )
+
+            start_time = time.time()
+            timeout = _aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
+
+            async with _aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    response.raise_for_status()
+
+                    total_size = int(response.headers.get("Content-Length", 0))
+                    downloaded = 0
+
+                    async with _aiofiles.open(temp_path, "wb") as f:
+                        async for chunk in response.content.iter_chunked(
+                            DEFAULT_CHUNK_SIZE
+                        ):
+                            await f.write(chunk)
+                            downloaded += len(chunk)
+
+                            if progress_callback:
+                                try:
+                                    result = progress_callback(
+                                        downloaded, total_size or None, target.name
+                                    )
+                                    if asyncio.iscoroutine(result):
+                                        await result
+                                except Exception as cb_err:
+                                    logger.debug(f"Progress callback error: {cb_err}")
+
+            elapsed = time.time() - start_time
+            file_size_mb = downloaded / (1024 * 1024)
+            logger.debug(f"Downloaded {url} in {elapsed:.2f}s")
+
+            # Atomic move to final location
+            temp_path.rename(target)
+
+            # Save file hash for verification
+            await self._async_save_hash(target)
+
+            if file_size_mb >= 1.0:
+                logger.info(
+                    f"Successfully downloaded {target.name} ({file_size_mb:.1f} MB)"
+                )
+            else:
+                logger.info(
+                    f"Successfully downloaded {target.name} ({downloaded} bytes)"
+                )
+
+            return True
+
+        except _aiohttp.ClientError as e:
+            logger.error(f"Async download failed for {url}: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"Filesystem error saving {target_path}: {e}")
+            return False
+        except Exception as e:
+            logger.exception(f"Unexpected error downloading {url}: {e}")
+            return False
+
+    async def _async_verify_file(self, file_path: Path) -> bool:
+        """
+        Verify an existing file asynchronously.
+
+        Parameters:
+            file_path (Path): Path to the file to verify.
+
+        Returns:
+            bool: True if file is valid, False otherwise.
+        """
+        try:
+            if file_path.suffix.lower() == ".zip":
+                loop = asyncio.get_running_loop()
+
+                def check_zip() -> bool:
+                    try:
+                        with zipfile.ZipFile(file_path, "r") as zf:
+                            return zf.testzip() is None
+                    except zipfile.BadZipFile:
+                        return False
+
+                if not await loop.run_in_executor(None, check_zip):
+                    return False
+
+            # Verify file integrity using existing sync utility
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None, utils.verify_file_integrity, str(file_path)
+            )
+
+        except (OSError, zipfile.BadZipFile) as e:
+            logger.debug(f"File verification failed for {file_path}: {e}")
+            return False
+
+    async def _async_save_hash(self, file_path: Path) -> None:
+        """
+        Calculate and save file hash asynchronously.
+
+        Parameters:
+            file_path (Path): Path to the file to hash.
+        """
+        loop = asyncio.get_running_loop()
+        hash_value = utils.calculate_sha256(str(file_path))
+        if hash_value:
+            await loop.run_in_executor(
+                None, utils.save_file_hash, str(file_path), hash_value
+            )
+
+    async def async_download_with_retry(
+        self,
+        url: str,
+        target_path: Pathish,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        backoff_factor: float = 2.0,
+        progress_callback: Optional[AsyncProgressCallback] = None,
+    ) -> bool:
+        """
+        Download a file asynchronously with retry logic and exponential backoff.
+
+        Parameters:
+            url (str): URL to download from.
+            target_path (Pathish): Local path to save the file.
+            max_retries (int): Maximum number of retry attempts.
+            retry_delay (float): Initial delay between retries in seconds.
+            backoff_factor (float): Multiplier for delay after each retry.
+            progress_callback (Optional[AsyncProgressCallback]):
+                Optional callback for progress updates.
+
+        Returns:
+            bool: True if download succeeded, False otherwise.
+        """
+        delay = retry_delay
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = await self.async_download(url, target_path, progress_callback)
+                if result:
+                    return True
+            except Exception as e:
+                if attempt == max_retries:
+                    logger.error(
+                        f"Download failed permanently after {max_retries + 1} "
+                        f"attempts for {url}: {e}"
+                    )
+                    return False
+
+                logger.warning(
+                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}, "
+                    f"retrying in {delay:.1f}s"
+                )
+                await asyncio.sleep(delay)
+                delay *= backoff_factor
+
+        return False
 
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """

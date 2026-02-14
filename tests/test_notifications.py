@@ -297,3 +297,130 @@ class TestSendUpToDateNotification:
             expected_message,
             title="Fetchtastic Up to Date",
         )
+
+
+class TestNotificationEdgeCases:
+    """Test edge cases and additional scenarios for notifications."""
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    @patch("fetchtastic.notifications.datetime")
+    def test_send_completion_notification_with_prereleases(
+        self, mock_datetime, mock_send
+    ):
+        """Test completion notification with prerelease versions."""
+        mock_datetime.now.return_value.astimezone.return_value.isoformat.return_value = (
+            "2024-01-01T12:00:00"
+        )
+
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_download_completion_notification(
+            config,
+            ["2.7.4"],
+            ["1.2.3"],
+            downloaded_firmware_prereleases=["2.8.0-alpha"],
+            downloaded_apk_prereleases=["1.3.0-beta"],
+        )
+
+        expected_message = (
+            "Downloaded Firmware versions: 2.7.4\n"
+            "Downloaded Firmware prerelease versions: 2.8.0-alpha\n"
+            "Downloaded Android APK versions: 1.2.3\n"
+            "Downloaded Android APK prerelease versions: 1.3.0-beta\n"
+            "2024-01-01T12:00:00"
+        )
+        mock_send.assert_called_once_with(
+            "https://ntfy.sh",
+            "test",
+            expected_message,
+            title="Fetchtastic Download Completed",
+        )
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    @patch("fetchtastic.notifications.datetime")
+    def test_send_new_releases_notification_with_skipped_reason(
+        self, mock_datetime, mock_send
+    ):
+        """Test new releases notification with skipped reason included."""
+        mock_datetime.now.return_value.astimezone.return_value.isoformat.return_value = (
+            "2024-01-01T12:00:00"
+        )
+
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_new_releases_available_notification(
+            config,
+            ["2.7.4"],
+            ["1.2.3"],
+            downloads_skipped_reason="Downloads skipped due to rate limiting",
+        )
+
+        expected_message = (
+            "Downloads skipped due to rate limiting\n"
+            "Firmware versions available: 2.7.4\n"
+            "Android APK versions available: 1.2.3\n"
+            "2024-01-01T12:00:00"
+        )
+        mock_send.assert_called_once_with(
+            "https://ntfy.sh",
+            "test",
+            expected_message,
+            title="Fetchtastic Downloads Skipped",
+        )
+
+    def test_send_notification_empty_config(self):
+        """Test notification functions with empty/minimal config."""
+        with patch("fetchtastic.notifications.send_ntfy_notification") as mock_send:
+            # Test with empty config - should not send notification
+            notifications.send_download_completion_notification({}, [], [])
+            mock_send.assert_not_called()
+
+    def test_send_notification_missing_server_or_topic(self):
+        """Test that notifications are not sent when server or topic is missing."""
+        with patch("fetchtastic.notifications.requests.post") as mock_post:
+            # Missing NTFY_SERVER - notification should not be sent
+            config1 = {"NTFY_TOPIC": "test"}
+            notifications.send_download_completion_notification(config1, ["1.0.0"], [])
+            mock_post.assert_not_called()
+
+            # Missing NTFY_TOPIC - notification should not be sent
+            config2 = {"NTFY_SERVER": "https://ntfy.sh"}
+            notifications.send_download_completion_notification(config2, ["1.0.0"], [])
+            mock_post.assert_not_called()
+
+            # Missing both - notification should not be sent
+            config3 = {}
+            notifications.send_download_completion_notification(config3, ["1.0.0"], [])
+            mock_post.assert_not_called()
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    def test_send_completion_notification_only_prereleases(self, mock_send):
+        """Test notification when only prereleases were downloaded."""
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_download_completion_notification(
+            config,
+            [],
+            [],
+            downloaded_firmware_prereleases=["2.8.0-alpha"],
+            downloaded_apk_prereleases=["1.3.0-beta"],
+        )
+
+        # Should still send notification for prereleases
+        mock_send.assert_called_once()
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    @patch("fetchtastic.notifications.datetime")
+    def test_send_notification_with_special_characters(self, mock_datetime, mock_send):
+        """Test notification handling of special characters in messages."""
+        mock_datetime.now.return_value.astimezone.return_value.isoformat.return_value = (
+            "2024-01-01T12:00:00"
+        )
+
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_download_completion_notification(
+            config,
+            ["2.7.4-alpha+build.123"],
+            ["1.2.3-rc.1"],
+        )
+
+        call_args = mock_send.call_args
+        assert "2.7.4-alpha+build.123" in call_args[0][2]
+        assert "1.2.3-rc.1" in call_args[0][2]

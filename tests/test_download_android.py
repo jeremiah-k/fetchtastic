@@ -296,7 +296,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
         assert path == expected
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
         mock_response = Mock()
@@ -327,7 +327,7 @@ class TestMeshtasticAndroidAppDownloader:
         assert len(releases[0].assets) == 1
         assert releases[0].assets[0].name == "meshtastic.apk"
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_filters_legacy_android_tags(self, mock_request, downloader):
         """Legacy pre-2.7.0 tags should be skipped entirely."""
         mock_response = Mock()
@@ -364,7 +364,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         assert [release.tag_name for release in releases] == ["v2.7.0"]
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_marks_legacy_prerelease_by_tag(
         self, mock_request, downloader
     ):
@@ -392,7 +392,7 @@ class TestMeshtasticAndroidAppDownloader:
         assert len(releases) == 1
         assert releases[0].prerelease is True
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_api_error(self, mock_request, downloader):
         """Test handling of GitHub API errors."""
         mock_request.side_effect = requests.RequestException("API Error")
