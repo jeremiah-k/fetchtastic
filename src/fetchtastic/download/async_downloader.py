@@ -35,7 +35,6 @@ from fetchtastic.utils import calculate_sha256, save_file_hash
 from .interfaces import Asset, DownloadResult, Pathish, Release
 
 if TYPE_CHECKING:
-    from .cache import CacheManager
     from .files import FileOperations
 
 # Type alias for progress callback - accepts downloaded bytes, total bytes (or None), and filename

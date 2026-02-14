@@ -14,34 +14,31 @@ import hashlib
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Union
 
 import aiofiles
 import aiohttp
 from aiohttp import (
-    ClientError,
     ClientResponse,
     ClientSession,
     ClientTimeout,
     TCPConnector,
 )
-from aiohttp.http_exceptions import HttpProcessingError
 
 from fetchtastic.constants import (
     API_CALL_DELAY,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CONNECT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
-    GITHUB_API_TIMEOUT,
 )
 from fetchtastic.log_utils import logger
 
 from .interfaces import Asset, Release
 
 if TYPE_CHECKING:
-    from .cache import CacheManager
+    pass
 
 Pathish = Union[str, Path]
 
