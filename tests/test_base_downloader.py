@@ -935,9 +935,7 @@ class TestBaseDownloaderAsyncDownload:
 
         assert result is True
 
-    async def test_async_download_fallback_when_async_libs_unavailable(
-        self, tmp_path, mocker
-    ):
+    async def test_async_download_fallback_when_async_libs_unavailable(self, tmp_path):
         """Test fallback to sync download when async libs not available."""
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = ConcreteDownloader(config)
@@ -1104,7 +1102,7 @@ class TestBaseDownloaderAsyncVerifyFile:
 
         assert result is True
 
-    async def test_verify_zip_file_corrupted(self, tmp_path, mocker):
+    async def test_verify_zip_file_corrupted(self, tmp_path):
         """Test verification of corrupted zip file."""
         config = {}
         downloader = ConcreteDownloader(config)

@@ -971,3 +971,40 @@ class TestDownloadFilesConcurrently:
         assert len(results) == 2
         assert results[0] is True
         assert results[1] is False
+
+    async def test_download_files_concurrently_with_github_token(
+        self, mocker, tmp_path
+    ):
+        """Test concurrent download forwards GitHub token to created client."""
+        downloads = [
+            {
+                "url": "https://example.com/private-file.bin",
+                "target_path": str(tmp_path / "private-file.bin"),
+            }
+        ]
+        mock_client = AsyncMock()
+        mock_client.download_file = AsyncMock(return_value=True)
+
+        class MockClientContextManager:
+            async def __aenter__(self):
+                return mock_client
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        mock_create_client = mocker.patch(
+            "fetchtastic.download.async_client.create_async_client",
+            return_value=MockClientContextManager(),
+        )
+
+        results = await download_files_concurrently(
+            downloads,
+            max_concurrent=2,
+            github_token="ghp_test_token",
+        )
+
+        mock_create_client.assert_called_once_with(
+            github_token="ghp_test_token",
+            max_concurrent=2,
+        )
+        assert results == [True]

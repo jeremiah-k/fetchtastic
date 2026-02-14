@@ -532,6 +532,7 @@ async def download_files_concurrently(
     downloads: List[Dict[str, Any]],
     max_concurrent: int = 5,
     progress_callback: Optional[Any] = None,
+    github_token: Optional[str] = None,
 ) -> List[Any]:
     """
     Download multiple files concurrently with a semaphore limit.
@@ -540,6 +541,8 @@ async def download_files_concurrently(
         downloads (List[Dict[str, Any]]): List of download specs with 'url' and 'target_path'.
         max_concurrent (int): Maximum concurrent downloads.
         progress_callback (Optional[Any]): Optional progress callback for each download.
+        github_token (Optional[str]): Optional GitHub token for authenticated downloads.
+            Useful for private release assets and higher API rate limits.
 
     Returns:
         List[Any]: Results for each download. Each element is:
@@ -553,7 +556,11 @@ async def download_files_concurrently(
             {"url": "https://...", "target_path": "/path/file1.bin"},
             {"url": "https://...", "target_path": "/path/file2.bin"},
         ]
-        results = await download_files_concurrently(downloads, max_concurrent=3)
+        results = await download_files_concurrently(
+            downloads,
+            max_concurrent=3,
+            github_token="ghp_...",
+        )
         for i, result in enumerate(results):
             if result is True:
                 print(f"Download {i} succeeded")
@@ -562,7 +569,10 @@ async def download_files_concurrently(
             else:
                 print(f"Download {i} failed")
     """
-    async with create_async_client(max_concurrent=max_concurrent) as client:
+    async with create_async_client(
+        github_token=github_token,
+        max_concurrent=max_concurrent,
+    ) as client:
         tasks = [
             client.download_file(
                 spec["url"],
