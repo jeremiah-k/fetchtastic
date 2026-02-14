@@ -93,10 +93,9 @@ Note: These are files from the latest release. Version numbers may change in oth
 def run_menu() -> dict[str, list[str]] | None:
     """
     Execute the firmware asset selection flow and produce base-name patterns for chosen assets.
-
+    
     Returns:
-        dict[str, list[str]]: A dictionary with key "selected_assets" mapping to a list of selected asset base-name patterns.
-        `None` if no assets were selected or an error occurred.
+        A dictionary with the key "selected_assets" whose value is a list of selected asset base-name patterns, or `None` if no assets were selected or an error occurred.
     """
     try:
         assets = fetch_firmware_assets()

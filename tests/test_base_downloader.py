@@ -31,11 +31,28 @@ class ConcreteDownloader(BaseDownloader):
     """Concrete implementation of BaseDownloader for testing purposes."""
 
     def check_extraction_needed(self, file_path, patterns):
-        """Stub implementation."""
+        """
+        Determine whether extraction is required for a downloaded archive given its path and extraction patterns.
+        
+        Parameters:
+            file_path (str | pathlib.Path): Path to the downloaded file or archive.
+            patterns (Iterable[str] | None): Iterable of glob-style patterns that specify which files to extract; may be None to indicate no pattern filtering.
+        
+        Returns:
+            bool: `True` if the file should be extracted according to the provided patterns, `False` otherwise.
+        """
         return True
 
     def validate_extraction_patterns(self, patterns):
-        """Stub implementation."""
+        """
+        Validate extraction filename patterns for archive extraction.
+        
+        Parameters:
+            patterns (Iterable[str] | None): Glob-style include/exclude patterns to validate, or None to indicate no patterns.
+        
+        Returns:
+            bool: `True` if the provided patterns are valid and usable for extraction, `False` otherwise.
+        """
         return True
 
 

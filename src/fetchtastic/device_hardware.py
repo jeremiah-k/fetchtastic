@@ -199,21 +199,15 @@ class DeviceHardwareManager:
 
     def _fetch_from_api(self) -> Optional[Set[str]]:
         """
-        Fetch device hardware data from the Meshtastic API and return discovered device pattern strings.
-
-        Validates that the configured API URL uses HTTP/HTTPS and has a network location, sends a GET
-        request with a User-Agent header, and parses the JSON response. Extracts non-empty string
-        values of the `platformioTarget` field from objects in the top-level JSON array and returns
-        them as a set.
-
+        Fetch device platform identifiers from the configured Meshtastic API.
+        
+        Validates that the configured API URL uses the HTTP/HTTPS scheme and contains a network location, performs a GET request expecting JSON, and collects non-empty `platformioTarget` string values from objects in the top-level JSON array.
+        
         Returns:
-            A set of device pattern strings on success, or None if the URL is invalid, the HTTP
-            request fails, the response is not valid JSON, or no valid `platformioTarget` values are
-            found.
-
+            A set of discovered `platformioTarget` strings if at least one valid target is found, `None` if the URL is invalid, the HTTP request fails, the response is not valid JSON, or no valid targets are present.
+        
         Side effects:
-            On success updates self._last_fetch_time to the current timestamp; does not modify the
-            cache file (saving is handled elsewhere).
+            Updates self._last_fetch_time to the current timestamp on successful fetch.
         """
         try:
             logger.debug(f"Fetching device hardware data from {self.api_url}")

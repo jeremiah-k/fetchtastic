@@ -2087,7 +2087,12 @@ def run_setup(
 
 
 def _safe_current_version() -> str:
-    """Return the installed fetchtastic version, or 'unknown' if unavailable."""
+    """
+    Get the installed Fetchtastic package version or "unknown" if it cannot be determined.
+    
+    Returns:
+        str: Installed Fetchtastic version string, or "unknown" when the version cannot be determined.
+    """
     try:
         return version("fetchtastic")
     except PackageNotFoundError:
@@ -2096,11 +2101,11 @@ def _safe_current_version() -> str:
 
 def check_for_updates() -> Tuple[str, Optional[str], bool]:
     """
-    Check whether a newer release of Fetchtastic is available on PyPI.
-
+    Determine if a newer Fetchtastic release exists on PyPI.
+    
     Returns:
         tuple: (current_version, latest_version, update_available)
-            current_version (str): Installed fetchtastic version or "unknown" if it cannot be determined.
+            current_version (str): Installed Fetchtastic version or "unknown" if it cannot be determined.
             latest_version (str|None): Latest version string from PyPI, or `None` if the lookup failed.
             update_available (bool): `True` if a newer release exists on PyPI, `False` otherwise.
     """
@@ -2139,9 +2144,10 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
 
 def get_upgrade_command() -> str:
     """
-    Select the shell command to upgrade Fetchtastic for the current platform and installation method.
-
-    On Termux this will choose the pip command if Fetchtastic was installed via pip, otherwise it selects the pipx upgrade command. On non-Termux platforms it returns the pipx upgrade command.
+    Choose the shell command to upgrade Fetchtastic for the current platform and installation method.
+    
+    On Termux this returns "pip install --upgrade fetchtastic" when Fetchtastic was installed via pip, otherwise "pipx upgrade fetchtastic". On non-Termux platforms this returns "pipx upgrade fetchtastic".
+    
     Returns:
         str: Shell command to run to upgrade Fetchtastic.
     """
@@ -2159,14 +2165,16 @@ def get_upgrade_command() -> str:
 
 def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
     """
-    Decides whether the interactive setup wizard should be recommended.
-
+    Determine whether the interactive setup wizard should be recommended.
+    
+    Recommendation is based on whether a configuration exists, whether the config records a last setup version, and whether that recorded version matches the installed package version.
+    
     Returns:
         tuple:
-            should_recommend (bool): `True` if setup should be recommended (no configuration found, no recorded setup version, installed package version differs from recorded version, or an error occurred); `False` if the recorded setup version matches the installed package.
+            should_recommend (bool): `true` if setup should be recommended, `false` otherwise.
             reason (str): Short human-readable explanation for the recommendation.
-            last_setup_version (Optional[str]): Version string stored in configuration under `LAST_SETUP_VERSION`, or `None` if unavailable.
-            current_version (Optional[str]): Installed fetchtastic package version as reported by importlib.metadata, or `None` if it cannot be determined.
+            last_setup_version (Optional[str]): Version string from `LAST_SETUP_VERSION` in the config, or `None` if unavailable.
+            current_version (Optional[str]): Installed Fetchtastic package version, or `None` if it cannot be determined.
     """
     try:
         config = load_config()
@@ -2223,12 +2231,12 @@ def get_version_info() -> tuple[str, str | None, bool]:
 
 def migrate_config() -> bool:
     """
-    Migrate the legacy configuration file from OLD_CONFIG_FILE to CONFIG_FILE and remove the legacy file on success.
-
-    Creates CONFIG_DIR if needed, writes the migrated YAML configuration to CONFIG_FILE, and logs errors encountered during migration or when removing the legacy file.
-
+    Migrate a legacy Fetchtastic configuration file to the current config location.
+    
+    Creates CONFIG_DIR if it does not exist, loads YAML from OLD_CONFIG_FILE, writes the configuration to CONFIG_FILE, and removes OLD_CONFIG_FILE after a successful write.
+    
     Returns:
-        `True` if the configuration was successfully written to CONFIG_FILE (the legacy file will have been removed or a removal failure logged), `False` otherwise.
+        bool: `True` if the configuration was written to CONFIG_FILE, `False` otherwise.
     """
     # Import here to avoid circular imports
     from fetchtastic.log_utils import logger
@@ -2288,27 +2296,22 @@ def prompt_for_migration() -> bool:
 
 def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
     """
-    Create Windows Start Menu shortcuts and supporting batch files for Fetchtastic.
-
-    Creates a Fetchtastic folder in the user's Start Menu containing shortcuts to:
-    - a download runner, repository browser, setup, update checker (all implemented as batch files placed in CONFIG_DIR/batch),
-    - the Fetchtastic configuration file,
-    - the Meshtastic downloads base directory,
-    - the Fetchtastic log file.
-
+    Create a Windows Start Menu folder with Fetchtastic shortcuts and supporting batch files.
+    
+    Creates a "Fetchtastic" folder in the current user's Start Menu containing shortcuts to:
+    a download runner, repository browser, setup and update checkers (implemented as .bat files placed in CONFIG_DIR/batch),
+    the Fetchtastic configuration file, the Meshtastic downloads base directory, and the Fetchtastic log file.
     This function is a no-op on non-Windows platforms or when required Windows modules are unavailable.
-
+    
     Parameters:
         config_file_path (str): Full path to the Fetchtastic YAML configuration file used as the target for the configuration shortcut.
         base_dir (str): Path to the Meshtastic downloads base directory used as the target for the downloads-folder shortcut.
-
+    
     Returns:
-        bool: True if shortcuts and batch files were created successfully; False if running on a non-Windows platform, required Windows modules are missing, or any error occurred while creating files/shortcuts.
-
+        bool: `True` if shortcuts and batch files were created successfully; `False` if running on a non-Windows platform, required Windows modules are missing, or an error occurred while creating files/shortcuts.
+    
     Side effects:
-        - May create CONFIG_DIR/batch and several .bat files.
-        - May create or recreate the Start Menu folder at WINDOWS_START_MENU_FOLDER and write .lnk shortcuts.
-        - May create the user log directory and an empty log file if none exists.
+        May create CONFIG_DIR/batch and several `.bat` files, create or recreate the Start Menu folder at WINDOWS_START_MENU_FOLDER with `.lnk` shortcuts, and create the user log directory and an empty log file if none exists.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
@@ -2602,12 +2605,12 @@ def create_config_shortcut(config_file_path: str, target_dir: str) -> bool:
 
 def create_startup_shortcut() -> bool:
     """
-    Create a Windows startup shortcut that runs Fetchtastic at user login.
-
-    This attempts to create a minimized shortcut in the current user's Startup folder that runs a batch wrapper which invokes the `fetchtastic download` command. Has no effect on non-Windows systems or when the required Windows helper modules are not available.
-
+    Create a Windows startup shortcut that runs the Fetchtastic download command at user login.
+    
+    If Windows helper modules are unavailable or the platform is not Windows, the function does nothing and returns `False`. On success it writes a batch wrapper under the application's config `batch` directory and places a shortcut in the current user's Startup folder.
+    
     Returns:
-        bool: `True` if the shortcut was created successfully, `False` otherwise.
+        bool: `True` if the startup shortcut was created successfully, `False` otherwise.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
