@@ -3,6 +3,7 @@
 import json
 from typing import cast
 
+import requests
 from pick import pick
 
 from fetchtastic.constants import MESHTASTIC_FIRMWARE_RELEASES_URL
@@ -24,7 +25,11 @@ def fetch_firmware_assets() -> list[str]:
     Returns:
         list[str]: Sorted asset filenames from the latest release; empty list if no release data is available.
     """
-    response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
+    try:
+        response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch firmware assets from GitHub API: {e}")
+        return []
 
     try:
         releases = response.json()
@@ -38,9 +43,16 @@ def fetch_firmware_assets() -> list[str]:
         return []
     latest_release = releases[0] or {}
     assets = latest_release.get("assets") or []
+    if not isinstance(assets, list):
+        logger.warning("Invalid assets data from GitHub API.")
+        return []
     # Sorted alphabetically, tolerate missing names
     asset_names = sorted(
-        [(asset.get("name") or "") for asset in assets if (asset.get("name") or "")]
+        [
+            (asset.get("name") or "")
+            for asset in assets
+            if isinstance(asset, dict) and (asset.get("name") or "")
+        ]
     )
 
     return asset_names
@@ -83,8 +95,7 @@ def run_menu() -> dict[str, list[str]] | None:
     Execute the firmware asset selection flow and produce base-name patterns for chosen assets.
 
     Returns:
-        dict[str, list[str]]: A dictionary with key "selected_assets" mapping to a list of selected asset base-name patterns.
-        `None` if no assets were selected or an error occurred.
+        A dictionary with the key "selected_assets" whose value is a list of selected asset base-name patterns, or `None` if no assets were selected or an error occurred.
     """
     try:
         assets = fetch_firmware_assets()
@@ -92,6 +103,19 @@ def run_menu() -> dict[str, list[str]] | None:
         if selection is None:
             return None
         return selection
-    except Exception:
-        logger.exception("Firmware menu failed")
+    except (json.JSONDecodeError, ValueError):
+        # Handle JSON parsing and data validation errors
+        logger.exception("Firmware menu failed due to data error")
+        return None
+    except (requests.RequestException, OSError):
+        # Handle network and I/O errors
+        logger.exception("Firmware menu failed due to network/I/O error")
+        return None
+    except (TypeError, KeyError, AttributeError):
+        # Handle unexpected data structure errors
+        logger.exception("Firmware menu failed due to data structure error")
+        return None
+    except Exception:  # noqa: BLE001
+        # Catch-all for unexpected errors (backward compatibility)
+        logger.exception("Firmware menu failed due to unexpected error")
         return None

@@ -3,6 +3,7 @@
 import json
 from typing import cast
 
+import requests
 from pick import pick
 
 from fetchtastic.constants import (
@@ -23,7 +24,11 @@ def fetch_apk_assets() -> list[str]:
     Returns:
         list[str]: Alphabetically sorted APK asset filenames from the latest release. Empty list if no releases or matching assets are found.
     """
-    response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
+    try:
+        response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch APK assets from GitHub API: {e}")
+        return []
 
     try:
         releases = response.json()
@@ -37,11 +42,15 @@ def fetch_apk_assets() -> list[str]:
         return []
     latest_release = releases[0] or {}
     assets = latest_release.get("assets", []) or []
+    if not isinstance(assets, list):
+        logger.warning("Invalid assets data from GitHub API.")
+        return []
     asset_names = sorted(
         [
             asset_name
             for asset in assets
-            if (asset_name := asset.get("name"))
+            if isinstance(asset, dict)
+            and (asset_name := asset.get("name"))
             and asset_name.lower().endswith(APK_EXTENSION)
         ]
     )
@@ -100,6 +109,19 @@ def run_menu() -> dict[str, list[str]] | None:
         if selected_result is None:
             return None
         return selected_result
-    except Exception:
-        logger.exception("APK menu failed")
+    except (json.JSONDecodeError, ValueError):
+        # Handle JSON parsing and data validation errors
+        logger.exception("APK menu failed due to data error")
+        return None
+    except (requests.RequestException, OSError):
+        # Handle network and I/O errors
+        logger.exception("APK menu failed due to network/I/O error")
+        return None
+    except (TypeError, KeyError, AttributeError):
+        # Handle unexpected data structure errors
+        logger.exception("APK menu failed due to data structure error")
+        return None
+    except Exception:  # noqa: BLE001
+        # Catch-all for unexpected errors (backward compatibility)
+        logger.exception("APK menu failed due to unexpected error")
         return None

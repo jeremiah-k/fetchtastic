@@ -1317,7 +1317,10 @@ def test_copy_to_clipboard_func_termux_success(mocker):
 def test_copy_to_clipboard_func_termux_failure(mocker):
     """Test clipboard functionality on Termux (failure)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mocker.patch("subprocess.run", side_effect=Exception("Termux error"))
+    mocker.patch(
+        "subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "termux-clipboard-set"),
+    )
     mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     result = cli.copy_to_clipboard_func("test text")

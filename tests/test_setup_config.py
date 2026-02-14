@@ -2083,8 +2083,9 @@ def test_setup_firmware_keep_last_beta_interactive(mock_input):
 
     mock_input.side_effect = ["2", "y", "n"]
 
-    with patch("sys.stdin.isatty", return_value=True), patch.dict(
-        os.environ, {"CI": ""}
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.dict(os.environ, {"CI": ""}),
     ):
         result = setup_config._setup_firmware(
             config, is_first_run=True, default_versions=2
@@ -2551,3 +2552,169 @@ def testget_prerelease_patterns_precedence():
 
         assert result == ["new-pattern"]
         mock_logger.warning.assert_not_called()  # No deprecation warning when using new key
+
+
+# Tests for lines 2120-2201: check_for_updates version comparison and should_recommend_setup exceptions
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("requests.get")
+@patch("fetchtastic.setup_config.version")
+def test_check_for_updates_version_comparison_older_version(mock_version, mock_get):
+    """Test check_for_updates correctly identifies when current version is older (lines 2120-2124)."""
+    mock_version.return_value = "1.0.0"
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"info": {"version": "2.0.0"}}
+    mock_get.return_value = mock_response
+
+    current, latest, available = setup_config.check_for_updates()
+    assert current == "1.0.0"
+    assert latest == "2.0.0"
+    assert available is True  # Current is older, update available
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("requests.get")
+@patch("fetchtastic.setup_config.version")
+def test_check_for_updates_version_comparison_with_prerelease(mock_version, mock_get):
+    """Test check_for_updates handles prerelease versions correctly (lines 2120-2124)."""
+    mock_version.return_value = "1.0.0.dev1"
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"info": {"version": "1.0.0"}}
+    mock_get.return_value = mock_response
+
+    current, latest, available = setup_config.check_for_updates()
+    assert current == "1.0.0.dev1"
+    assert latest == "1.0.0"
+    # prerelease is older than release
+    assert available is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+@patch("fetchtastic.setup_config.version")
+def test_should_recommend_setup_package_not_found_error(mock_version, mock_load_config):
+    """Test should_recommend_setup handles PackageNotFoundError (line 2193)."""
+    from importlib.metadata import PackageNotFoundError
+
+    mock_load_config.return_value = {"LAST_SETUP_VERSION": "1.0.0"}
+    mock_version.side_effect = PackageNotFoundError("fetchtastic")
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+def test_should_recommend_setup_os_error(mock_load_config):
+    """Test should_recommend_setup handles OSError (lines 2197-2200)."""
+    mock_load_config.side_effect = OSError("File access error")
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+def test_should_recommend_setup_json_decode_error(mock_load_config):
+    """Test should_recommend_setup handles JSONDecodeError (lines 2197-2200)."""
+    import json
+
+    mock_load_config.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+def test_should_recommend_setup_yaml_error(mock_load_config):
+    """Test should_recommend_setup handles YAMLError (lines 2197-2200)."""
+    mock_load_config.side_effect = yaml.YAMLError("Invalid YAML")
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+def test_should_recommend_setup_key_error(mock_load_config):
+    """Test should_recommend_setup handles KeyError (lines 2201-2204)."""
+    mock_load_config.return_value = object()  # Will cause KeyError on .get()
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+def test_should_recommend_setup_type_error(mock_load_config):
+    """Test should_recommend_setup handles TypeError (lines 2201-2204)."""
+    mock_load_config.side_effect = TypeError("Type mismatch")
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+def test_should_recommend_setup_value_error(mock_load_config):
+    """Test should_recommend_setup handles ValueError (lines 2201-2204)."""
+    mock_load_config.side_effect = ValueError("Invalid value")
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.load_config")
+def test_should_recommend_setup_attribute_error(mock_load_config):
+    """Test should_recommend_setup handles AttributeError (lines 2201-2204)."""
+    mock_load_config.side_effect = AttributeError("Missing attribute")
+
+    should, reason, last_ver, curr_ver = setup_config.should_recommend_setup()
+
+    assert should is True
+    assert "Could not determine setup status" == reason
+    assert last_ver is None
+    assert curr_ver is None

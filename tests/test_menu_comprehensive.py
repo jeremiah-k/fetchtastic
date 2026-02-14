@@ -17,6 +17,8 @@ import requests
 
 from fetchtastic import menu_apk, menu_firmware
 
+pytestmark = [pytest.mark.unit, pytest.mark.user_interface]
+
 
 class TestMenuAPKErrorHandling:
     """Test error handling in menu_apk module."""
@@ -202,6 +204,17 @@ class TestMenuFirmwareErrorHandling:
 
             assert result == []
 
+    def test_fetch_firmware_assets_assets_not_list(self):
+        """Test handling when assets is not a list."""
+        with patch("fetchtastic.menu_firmware.make_github_api_request") as mock_req:
+            mock_response = Mock()
+            mock_response.json.return_value = [{"assets": "not a list"}]
+            mock_req.return_value = mock_response
+
+            result = menu_firmware.fetch_firmware_assets()
+
+            assert result == []
+
     def test_run_menu_json_decode_error(self):
         """Test run_menu handles JSON decode errors."""
         with patch("fetchtastic.menu_firmware.fetch_firmware_assets") as mock_fetch:
@@ -328,9 +341,10 @@ class TestMenuAPKEdgeCases:
 
     def test_select_assets_single_selection(self):
         """Test select_assets with single selection."""
-        with patch("fetchtastic.menu_apk.pick") as mock_pick, patch(
-            "fetchtastic.menu_apk.extract_base_name"
-        ) as mock_extract:
+        with (
+            patch("fetchtastic.menu_apk.pick") as mock_pick,
+            patch("fetchtastic.menu_apk.extract_base_name") as mock_extract,
+        ):
             mock_pick.return_value = [("app-release-1.0.0.apk", 0)]
             mock_extract.return_value = "app-release.apk"
 
@@ -374,7 +388,9 @@ class TestMenuFirmwareEdgeCases:
             assert result == ["firmware.bin"]
 
     def test_select_assets_empty_selection(self):
-        """Test select_assets with empty user selection."""
+        """
+        Verify select_assets returns None when the user selects nothing.
+        """
         with patch("fetchtastic.menu_firmware.pick") as mock_pick:
             mock_pick.return_value = []
 
@@ -384,9 +400,10 @@ class TestMenuFirmwareEdgeCases:
 
     def test_select_assets_multiple_selections(self):
         """Test select_assets with multiple selections."""
-        with patch("fetchtastic.menu_firmware.pick") as mock_pick, patch(
-            "fetchtastic.menu_firmware.extract_base_name"
-        ) as mock_extract:
+        with (
+            patch("fetchtastic.menu_firmware.pick") as mock_pick,
+            patch("fetchtastic.menu_firmware.extract_base_name") as mock_extract,
+        ):
             mock_pick.return_value = [
                 ("firmware-rak4631-2.5.0.bin", 0),
                 ("firmware-tbeam-2.5.0.bin", 1),
@@ -410,11 +427,11 @@ class TestMenuIntegration:
 
     def test_apk_menu_full_flow_success(self):
         """Test full APK menu flow with successful selection."""
-        with patch("fetchtastic.menu_apk.make_github_api_request") as mock_req, patch(
-            "fetchtastic.menu_apk.pick"
-        ) as mock_pick, patch(
-            "fetchtastic.menu_apk.extract_base_name"
-        ) as mock_extract:
+        with (
+            patch("fetchtastic.menu_apk.make_github_api_request") as mock_req,
+            patch("fetchtastic.menu_apk.pick") as mock_pick,
+            patch("fetchtastic.menu_apk.extract_base_name") as mock_extract,
+        ):
             # Setup mock API response
             mock_response = Mock()
             mock_response.json.return_value = [
@@ -437,11 +454,11 @@ class TestMenuIntegration:
 
     def test_firmware_menu_full_flow_success(self):
         """Test full firmware menu flow with successful selection."""
-        with patch(
-            "fetchtastic.menu_firmware.make_github_api_request"
-        ) as mock_req, patch("fetchtastic.menu_firmware.pick") as mock_pick, patch(
-            "fetchtastic.menu_firmware.extract_base_name"
-        ) as mock_extract:
+        with (
+            patch("fetchtastic.menu_firmware.make_github_api_request") as mock_req,
+            patch("fetchtastic.menu_firmware.pick") as mock_pick,
+            patch("fetchtastic.menu_firmware.extract_base_name") as mock_extract,
+        ):
             # Setup mock API response
             mock_response = Mock()
             mock_response.json.return_value = [
@@ -464,9 +481,10 @@ class TestMenuIntegration:
 
     def test_apk_menu_user_cancels(self):
         """Test APK menu when user cancels selection."""
-        with patch("fetchtastic.menu_apk.make_github_api_request") as mock_req, patch(
-            "fetchtastic.menu_apk.pick"
-        ) as mock_pick:
+        with (
+            patch("fetchtastic.menu_apk.make_github_api_request") as mock_req,
+            patch("fetchtastic.menu_apk.pick") as mock_pick,
+        ):
             # Setup mock API response
             mock_response = Mock()
             mock_response.json.return_value = [
@@ -483,9 +501,10 @@ class TestMenuIntegration:
 
     def test_firmware_menu_user_cancels(self):
         """Test firmware menu when user cancels selection."""
-        with patch(
-            "fetchtastic.menu_firmware.make_github_api_request"
-        ) as mock_req, patch("fetchtastic.menu_firmware.pick") as mock_pick:
+        with (
+            patch("fetchtastic.menu_firmware.make_github_api_request") as mock_req,
+            patch("fetchtastic.menu_firmware.pick") as mock_pick,
+        ):
             # Setup mock API response
             mock_response = Mock()
             mock_response.json.return_value = [

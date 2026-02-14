@@ -25,6 +25,7 @@ component_management:
         - src/fetchtastic/download/*.py
         - src/fetchtastic/utils.py
         - src/fetchtastic/device_hardware.py
+        - src/fetchtastic/repo_downloader.py
       statuses:
         - type: project
           target: 60%
@@ -63,6 +64,9 @@ component_management:
         - src/fetchtastic/constants.py
         - src/fetchtastic/log_utils.py
         - src/fetchtastic/__init__.py
+        - src/fetchtastic/exceptions.py
+        - src/fetchtastic/notifications.py
+        - src/fetchtastic/tools/*.py
       statuses:
         - type: project
           target: 60%

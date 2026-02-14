@@ -159,3 +159,51 @@ def test_fetch_firmware_assets_debug_logging_no_list_response(mocker):
     # Should not log debug message since response is not a list
     mock_logger.debug.assert_not_called()
     assert assets == []
+
+
+def test_fetch_firmware_assets_invalid_assets_not_a_list(mocker):
+    """Test fetch_firmware_assets when assets is not a list (lines 46-48)."""
+    mock_api_request = mocker.patch("fetchtastic.menu_firmware.make_github_api_request")
+    mock_response = mocker.MagicMock()
+    # Return a release with assets that is not a list
+    mock_response.json.return_value = [{"assets": "not_a_list_but_a_string"}]
+    mock_api_request.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_firmware.logger")
+
+    assets = menu_firmware.fetch_firmware_assets()
+
+    # Should log warning about invalid assets data
+    mock_logger.warning.assert_called_with("Invalid assets data from GitHub API.")
+    assert assets == []
+
+
+def test_fetch_firmware_assets_invalid_assets_is_dict(mocker):
+    """Test fetch_firmware_assets when assets is a dict instead of list (lines 46-48)."""
+    mock_api_request = mocker.patch("fetchtastic.menu_firmware.make_github_api_request")
+    mock_response = mocker.MagicMock()
+    # Return a release with assets that is a dict
+    mock_response.json.return_value = [{"assets": {"key": "value"}}]
+    mock_api_request.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_firmware.logger")
+
+    assets = menu_firmware.fetch_firmware_assets()
+
+    # Should log warning about invalid assets data
+    mock_logger.warning.assert_called_with("Invalid assets data from GitHub API.")
+    assert assets == []
+
+
+def test_fetch_firmware_assets_invalid_assets_is_int(mocker):
+    """Test fetch_firmware_assets when assets is an int instead of list (lines 46-48)."""
+    mock_api_request = mocker.patch("fetchtastic.menu_firmware.make_github_api_request")
+    mock_response = mocker.MagicMock()
+    # Return a release with assets that is an int
+    mock_response.json.return_value = [{"assets": 12345}]
+    mock_api_request.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_firmware.logger")
+
+    assets = menu_firmware.fetch_firmware_assets()
+
+    # Should log warning about invalid assets data
+    mock_logger.warning.assert_called_with("Invalid assets data from GitHub API.")
+    assert assets == []

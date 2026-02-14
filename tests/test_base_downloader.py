@@ -15,13 +15,15 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from fetchtastic.download.base import BaseDownloader
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.interfaces import Asset, DownloadResult
+from fetchtastic.download.interfaces import Asset
+
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 # Concrete implementation of BaseDownloader for testing
@@ -29,11 +31,28 @@ class ConcreteDownloader(BaseDownloader):
     """Concrete implementation of BaseDownloader for testing purposes."""
 
     def check_extraction_needed(self, file_path, patterns):
-        """Stub implementation."""
+        """
+        Determine whether extraction is required for a downloaded archive given its path and extraction patterns.
+
+        Parameters:
+            file_path (str | pathlib.Path): Path to the downloaded file or archive.
+            patterns (Iterable[str] | None): Iterable of glob-style patterns that specify which files to extract; may be None to indicate no pattern filtering.
+
+        Returns:
+            bool: `True` if the file should be extracted according to the provided patterns, `False` otherwise.
+        """
         return True
 
     def validate_extraction_patterns(self, patterns):
-        """Stub implementation."""
+        """
+        Validate extraction filename patterns for archive extraction.
+
+        Parameters:
+            patterns (Iterable[str] | None): Glob-style include/exclude patterns to validate, or None to indicate no patterns.
+
+        Returns:
+            bool: `True` if the provided patterns are valid and usable for extraction, `False` otherwise.
+        """
         return True
 
 
@@ -152,9 +171,7 @@ class TestBaseDownloaderDownload:
         with tempfile.TemporaryDirectory() as temp_dir:
             target_path = Path(temp_dir) / "test_file.txt"
 
-            with patch(
-                "fetchtastic.utils.download_file_with_retry"
-            ) as mock_download:
+            with patch("fetchtastic.utils.download_file_with_retry") as mock_download:
                 mock_download.side_effect = OSError("Disk full")
 
                 result = downloader.download(
@@ -182,9 +199,7 @@ class TestBaseDownloaderVerify:
             ) as mock_verify:
                 mock_verify.return_value = True
 
-                result = downloader.verify(
-                    tmp_path, expected_hash="abc123"
-                )
+                result = downloader.verify(tmp_path, expected_hash="abc123")
 
                 assert result is True
                 mock_verify.assert_called_once_with(tmp_path, "abc123")
@@ -260,9 +275,7 @@ class TestBaseDownloaderExtract:
             ) as mock_extract:
                 mock_extract.return_value = [os.path.join(temp_dir, "file1.bin")]
 
-                result = downloader.extract(
-                    archive_path, patterns, exclude_patterns
-                )
+                downloader.extract(archive_path, patterns, exclude_patterns)
 
                 mock_extract.assert_called_once_with(
                     str(archive_path),
@@ -311,9 +324,7 @@ class TestBaseDownloaderTargetPath:
             config = {"DOWNLOAD_DIR": temp_dir}
             downloader = ConcreteDownloader(config)
 
-            with patch.object(
-                downloader, "_sanitize_required"
-            ) as mock_sanitize:
+            with patch.object(downloader, "_sanitize_required") as mock_sanitize:
                 mock_sanitize.side_effect = lambda x, label: x
 
                 result = downloader.get_target_path_for_release(
@@ -329,9 +340,7 @@ class TestBaseDownloaderTargetPath:
             config = {"DOWNLOAD_DIR": temp_dir}
             downloader = ConcreteDownloader(config)
 
-            with patch.object(
-                downloader, "_sanitize_required"
-            ) as mock_sanitize:
+            with patch.object(downloader, "_sanitize_required") as mock_sanitize:
                 mock_sanitize.side_effect = lambda x, label: x
 
                 target = downloader.get_target_path_for_release(
@@ -349,9 +358,7 @@ class TestBaseDownloaderShouldDownload:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "_get_selected_patterns"
-        ) as mock_patterns:
+        with patch.object(downloader, "_get_selected_patterns") as mock_patterns:
             mock_patterns.return_value = ["firmware-"]
 
             result = downloader.should_download_release(
@@ -365,14 +372,10 @@ class TestBaseDownloaderShouldDownload:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "_get_selected_patterns"
-        ) as mock_patterns:
+        with patch.object(downloader, "_get_selected_patterns") as mock_patterns:
             mock_patterns.return_value = ["firmware-"]
 
-            result = downloader.should_download_release(
-                "v2.5.0", "debug.hex"
-            )
+            result = downloader.should_download_release("v2.5.0", "debug.hex")
 
             assert result is False
 
@@ -381,17 +384,14 @@ class TestBaseDownloaderShouldDownload:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "_get_selected_patterns"
-        ) as mock_patterns, patch.object(
-            downloader, "_get_exclude_patterns"
-        ) as mock_exclude:
+        with (
+            patch.object(downloader, "_get_selected_patterns") as mock_patterns,
+            patch.object(downloader, "_get_exclude_patterns") as mock_exclude,
+        ):
             mock_patterns.return_value = ["*"]
             mock_exclude.return_value = ["*.hex"]
 
-            result = downloader.should_download_release(
-                "v2.5.0", "firmware.hex"
-            )
+            result = downloader.should_download_release("v2.5.0", "firmware.hex")
 
             assert result is False
 
@@ -400,14 +400,10 @@ class TestBaseDownloaderShouldDownload:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "_get_selected_patterns"
-        ) as mock_patterns:
+        with patch.object(downloader, "_get_selected_patterns") as mock_patterns:
             mock_patterns.return_value = []
 
-            result = downloader.should_download_release(
-                "v2.5.0", "any_file.bin"
-            )
+            result = downloader.should_download_release("v2.5.0", "any_file.bin")
 
             assert result is True
 
@@ -537,14 +533,10 @@ class TestBaseDownloaderExistingFile:
             test_file = release_dir / "firmware.bin"
             test_file.write_text("test")
 
-            with patch.object(
-                downloader, "_sanitize_required"
-            ) as mock_sanitize:
+            with patch.object(downloader, "_sanitize_required") as mock_sanitize:
                 mock_sanitize.side_effect = lambda x, label: x
 
-                result = downloader.get_existing_file_path(
-                    "v2.5.0", "firmware.bin"
-                )
+                result = downloader.get_existing_file_path("v2.5.0", "firmware.bin")
 
                 assert result == str(test_file)
 
@@ -554,14 +546,10 @@ class TestBaseDownloaderExistingFile:
             config = {"DOWNLOAD_DIR": temp_dir}
             downloader = ConcreteDownloader(config)
 
-            with patch.object(
-                downloader, "_sanitize_required"
-            ) as mock_sanitize:
+            with patch.object(downloader, "_sanitize_required") as mock_sanitize:
                 mock_sanitize.side_effect = lambda x, label: x
 
-                result = downloader.get_existing_file_path(
-                    "v2.5.0", "nonexistent.bin"
-                )
+                result = downloader.get_existing_file_path("v2.5.0", "nonexistent.bin")
 
                 assert result is None
 
@@ -604,13 +592,11 @@ class TestBaseDownloaderAssetChecks:
             tmp_path = tmp_file.name
 
         try:
-            with patch.object(
-                downloader, "get_target_path_for_release"
-            ) as mock_target, patch.object(
-                downloader.file_operations, "get_file_size"
-            ) as mock_size, patch.object(
-                downloader, "verify"
-            ) as mock_verify:
+            with (
+                patch.object(downloader, "get_target_path_for_release") as mock_target,
+                patch.object(downloader.file_operations, "get_file_size") as mock_size,
+                patch.object(downloader, "verify") as mock_verify,
+            ):
                 mock_target.return_value = tmp_path
                 mock_size.return_value = 1024
                 mock_verify.return_value = True
@@ -635,11 +621,10 @@ class TestBaseDownloaderAssetChecks:
             tmp_path = tmp_file.name
 
         try:
-            with patch.object(
-                downloader, "get_target_path_for_release"
-            ) as mock_target, patch.object(
-                downloader.file_operations, "get_file_size"
-            ) as mock_size:
+            with (
+                patch.object(downloader, "get_target_path_for_release") as mock_target,
+                patch.object(downloader.file_operations, "get_file_size") as mock_size,
+            ):
                 mock_target.return_value = tmp_path
                 mock_size.return_value = 1024
 
@@ -654,9 +639,7 @@ class TestBaseDownloaderAssetChecks:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "get_existing_file_path"
-        ) as mock_existing:
+        with patch.object(downloader, "get_existing_file_path") as mock_existing:
             mock_existing.return_value = None
 
             result = downloader.needs_download("v2.5.0", "firmware.bin", 1024)
@@ -668,11 +651,10 @@ class TestBaseDownloaderAssetChecks:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "get_existing_file_path"
-        ) as mock_existing, patch.object(
-            downloader.file_operations, "get_file_size"
-        ) as mock_size:
+        with (
+            patch.object(downloader, "get_existing_file_path") as mock_existing,
+            patch.object(downloader.file_operations, "get_file_size") as mock_size,
+        ):
             mock_existing.return_value = "/path/to/file"
             mock_size.return_value = 512  # Different from expected
 

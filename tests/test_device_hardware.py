@@ -630,10 +630,15 @@ class TestDeviceHardwareManagerPerformance:
         with tempfile.TemporaryDirectory() as temp_dir:
             cache_dir = Path(temp_dir)
 
-            # Create large cache
+            # Create large cache in correct format (dict with device_patterns, timestamp)
             large_patterns = {f"device{i}" for i in range(5000)}
             cache_file = cache_dir / "device_hardware.json"
-            cache_file.write_text(json.dumps(list(large_patterns)))
+            cache_data = {
+                "device_patterns": list(large_patterns),
+                "timestamp": time.time(),
+                "api_url": "https://example.com/device_hardware.json",
+            }
+            cache_file.write_text(json.dumps(cache_data))
 
             manager = DeviceHardwareManager(cache_dir=cache_dir)
 
@@ -691,3 +696,177 @@ class TestDeviceHardwareManagerPerformance:
                 # Cache should be significantly faster
                 assert cache_time < api_time
                 assert patterns1 == set(test_patterns)
+
+
+@pytest.mark.unit
+class TestDeviceHardwareManagerExceptionHandlers:
+    """Test exception handlers at lines 257-263."""
+
+    def test_fetch_from_api_type_error(self):
+        """Test _fetch_from_api handles TypeError during data processing (line 257)."""
+        with patch("fetchtastic.device_hardware.requests.get") as mock_get:
+            mock_response = Mock()
+            # Return data that will cause TypeError when iterating
+            mock_response.json.return_value = None  # None is not iterable
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            manager = DeviceHardwareManager()
+            result = manager._fetch_from_api()
+
+            assert result is None
+
+    def test_fetch_from_api_key_error_during_data_access(self):
+        """Test _fetch_from_api handles KeyError during unexpected data access (line 257)."""
+        with patch("fetchtastic.device_hardware.requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+
+            # Create a dict that will raise KeyError in unexpected ways
+            class BadDict(dict):
+                def __getitem__(self, key):
+                    """
+                    Prevent access to the "platformioTarget" key and otherwise return the mapped value.
+
+                    Parameters:
+                        key: The mapping key to retrieve.
+
+                    Returns:
+                        The value associated with `key` from the mapping.
+
+                    Raises:
+                        KeyError: If `key` is "platformioTarget".
+                    """
+                    if key == "platformioTarget":
+                        raise KeyError("Unexpected key access")
+                    return super().__getitem__(key)
+
+            mock_response.json.return_value = [BadDict({"platformioTarget": "device1"})]
+            mock_get.return_value = mock_response
+
+            manager = DeviceHardwareManager()
+            result = manager._fetch_from_api()
+
+            # Should handle the KeyError and return None
+            assert result is None
+
+    def test_fetch_from_api_value_error_during_parse(self):
+        """Test _fetch_from_api handles ValueError during data parsing (line 257)."""
+        with patch("fetchtastic.device_hardware.requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+
+            # Create an object that raises ValueError when json() accesses data
+            class BadResponse:
+                def raise_for_status(self):
+                    """
+                    Raise an HTTPError if the associated HTTP response indicates an error status.
+
+                    Raises:
+                        requests.HTTPError: If the response status code is 400 or greater.
+                    """
+                    pass
+
+                def json(self):
+                    # Return something that causes ValueError during iteration
+                    """
+                    Simulate a failed JSON parse by raising a ValueError.
+
+                    This method emulates a response.json() call that cannot parse or produce JSON and therefore always raises a parsing error.
+
+                    Raises:
+                        ValueError: Raised with message "Invalid value during parsing" to represent a JSON parsing failure.
+                    """
+                    raise ValueError("Invalid value during parsing")
+
+            mock_get.return_value = BadResponse()
+
+            manager = DeviceHardwareManager()
+            result = manager._fetch_from_api()
+
+            # Should handle the ValueError and return None
+            assert result is None
+
+    def test_fetch_from_api_os_error(self):
+        """Test _fetch_from_api handles OSError not caught by requests (line 261)."""
+        with patch("fetchtastic.device_hardware.requests.get") as mock_get:
+            # Simulate an OSError that occurs after request succeeds
+            # e.g., during response.json() call
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.side_effect = OSError("I/O error reading response")
+            mock_get.return_value = mock_response
+
+            manager = DeviceHardwareManager()
+            result = manager._fetch_from_api()
+
+            assert result is None
+
+    def test_fetch_from_api_attribute_error(self):
+        """Test _fetch_from_api handles AttributeError during data access (line 257)."""
+        with patch("fetchtastic.device_hardware.requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+
+            # Create an object that raises AttributeError
+            class BadResponse:
+                def raise_for_status(self):
+                    """
+                    Raise an HTTPError if the associated HTTP response indicates an error status.
+
+                    Raises:
+                        requests.HTTPError: If the response status code is 400 or greater.
+                    """
+                    pass
+
+                def json(self):
+                    """
+                    Indicates the absence of the `json` attribute by raising an AttributeError.
+
+                    Raises:
+                        AttributeError: Always raised with message "Missing attribute".
+                    """
+                    raise AttributeError("Missing attribute")
+
+            mock_get.return_value = BadResponse()
+
+            manager = DeviceHardwareManager()
+            result = manager._fetch_from_api()
+
+            assert result is None
+
+    def test_fetch_from_api_os_error_during_request(self):
+        """Test _fetch_from_api handles OSError during request setup (line 261)."""
+        with patch("fetchtastic.device_hardware.requests.get") as mock_get:
+            # OSError not covered by requests.RequestException
+            mock_get.side_effect = OSError("Network I/O error")
+
+            manager = DeviceHardwareManager()
+            result = manager._fetch_from_api()
+
+            assert result is None
+
+    def test_fetch_from_api_with_invalid_iterable_causing_typeerror(self):
+        """Test _fetch_from_api with data that causes TypeError during iteration."""
+        with patch("fetchtastic.device_hardware.requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+
+            # Create a custom object that raises TypeError when iterated
+            class BadIterable:
+                def __iter__(self):
+                    """
+                    Prevent iteration over instances of this class.
+
+                    Raises:
+                        TypeError: Always raised with message "Cannot iterate over this type".
+                    """
+                    raise TypeError("Cannot iterate over this type")
+
+            mock_response.json.return_value = BadIterable()
+            mock_get.return_value = mock_response
+
+            manager = DeviceHardwareManager()
+            result = manager._fetch_from_api()
+
+            assert result is None

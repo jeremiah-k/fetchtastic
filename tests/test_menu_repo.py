@@ -252,17 +252,19 @@ def test_fetch_repo_contents_key_error(mocker):
 
 
 def test_fetch_repo_contents_unexpected_error(mocker):
-    """Test handling of unexpected errors."""
+    """Test handling of unexpected errors during request."""
+    import requests
+
     mock_make_request = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
-    mock_make_request.side_effect = Exception("Unexpected error")
+    mock_make_request.side_effect = requests.RequestException("Unexpected error")
     mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
 
     items = menu_repo.fetch_repo_contents()
 
     assert items == []
-    mock_logger.error.assert_called_once()
-    assert "Unexpected error fetching repository contents" in str(
-        mock_logger.error.call_args
+    mock_logger.warning.assert_called_once()
+    assert "Could not fetch repository contents from GitHub API" in str(
+        mock_logger.warning.call_args
     )
 
 

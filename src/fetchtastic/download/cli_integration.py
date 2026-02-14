@@ -118,7 +118,9 @@ class DownloadCLIIntegration:
         """
         try:
             self._initialize_components(config)
-            assert self.orchestrator is not None  # guaranteed by _initialize_components
+            # _initialize_components guarantees orchestrator is set
+            if self.orchestrator is None:
+                raise RuntimeError("Failed to initialize download orchestrator")
             orchestrator = self.orchestrator
 
             # Clear caches if force refresh is requested

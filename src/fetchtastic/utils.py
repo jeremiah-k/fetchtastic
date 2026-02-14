@@ -79,19 +79,20 @@ _BANNER_WIDTH = 20
 
 def _get_package_version() -> str:
     """
-    Get the installed package version.
+    Return the installed fetchtastic package version.
 
     Returns:
-        The installed fetchtastic version string, or 'unknown' if the
-        package cannot be found.
+        The package version string, or 'unknown' if the version cannot be determined.
     """
     try:
         return importlib.metadata.version("fetchtastic")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
-    except Exception:
+    except (ImportError, AttributeError, OSError) as e:
+        # Handle import system errors, missing attributes, or file access issues
         logger.warning(
-            "Could not determine package version due to an unexpected error.",
+            "Could not determine package version: %s",
+            e,
             exc_info=True,
         )
         return "unknown"
@@ -423,17 +424,16 @@ def _update_rate_limit(
     token_hash: str, remaining: int, reset_timestamp: Optional[datetime] = None
 ) -> None:
     """
-    Update cached rate-limit information for a specific token and optionally persist the cache to disk.
+    Update the in-memory rate-limit entry for a token and persist the cache to disk when appropriate.
 
     Parameters:
-        token_hash (str): Short hash identifying the token whose rate-limit is being updated.
+        token_hash (str): Short identifier for the token whose rate-limit state is being updated.
         remaining (int): Number of remaining requests reported for the token.
-        reset_timestamp (Optional[datetime]): Time when the rate limit resets; if omitted, defaults to one hour from now (timezone-aware).
+        reset_timestamp (Optional[datetime]): Time when the rate limit resets; if omitted, defaults to one hour from now (UTC).
 
     Details:
-        - Stores (remaining, reset_timestamp) in the in-memory rate-limit cache.
-        - Triggers persistence to the on-disk cache if this is a new entry, if `remaining` decreased compared to the cached value, or if the configured save interval has elapsed.
-        - Updates the session's last-cache-save timestamp when persisting.
+        - Stores the tuple (remaining, reset_timestamp) in the in-memory rate-limit cache.
+        - Triggers an on-disk save when adding a new entry, when `remaining` decreased compared to the cached value, or when the configured save interval has elapsed; the last-cache-save timestamp is updated when a save is scheduled.
         - Persistence is performed outside the internal lock to avoid deadlocks.
     """
     global _rate_limit_cache, _last_cache_save_time
@@ -441,12 +441,11 @@ def _update_rate_limit(
     now = datetime.now(timezone.utc)
     current_time = now.timestamp()
 
-    # Ensure reset_timestamp is set
+    # Ensure reset_timestamp is set (default to 1 hour from now if not provided)
     if reset_timestamp is None:
         reset_timestamp = now + timedelta(hours=1)
 
-    assert reset_timestamp is not None  # For type checker
-
+    # reset_timestamp is guaranteed to be set here
     with _rate_limit_lock:
         # Check if remaining decreased and at least 5 seconds have passed
         should_save = False
@@ -987,9 +986,9 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a remote URL to a local file, verify its integrity (ZIP checks and SHA-256), and atomically install it.
+    Download a remote URL to a local file, verify its integrity, and atomically install it.
 
-    If the destination file already exists and is verified it is left in place. Temporary or partially downloaded files are removed on failure; corrupted files and their associated hash records are removed before re-downloading.
+    If the destination file already exists and passes verification it is left in place. The function validates ZIP archives using ZIP integrity checks and verifies or records a SHA-256 sidecar hash. Temporary or partially downloaded files are removed on failure; corrupted files and their associated hash records are removed before re-downloading. On Windows the final install may be retried to accommodate transient file-access issues.
 
     Parameters:
         url (str): HTTP(S) URL of the file to download.
@@ -1289,7 +1288,7 @@ def download_file_with_retry(
         if response is not None:
             try:
                 response.close()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug(f"Error closing HTTP response for {url}: {e}")
         session.close()
     return False

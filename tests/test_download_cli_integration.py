@@ -915,3 +915,31 @@ def test_log_download_results_summary_logging_order(mocker):
     assert joined_calls.index("Latest APK: v2.7.11") < joined_calls.index(
         "Latest APK prerelease: none"
     )
+
+
+def test_run_download_orchestrator_none_after_init(mocker):
+    """Test run_download raises RuntimeError when orchestrator is None after _initialize_components (lines 122-123)."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+
+    # Mock _initialize_components to not set orchestrator
+    def mock_init_components(cfg):
+        # Explicitly set orchestrator to None
+        """
+        Simulate a failed component initialization by clearing the download orchestrator.
+
+        This test helper sets integration.orchestrator to None so callers observe an uninitialized orchestrator.
+        Parameters:
+            cfg: Configuration object passed by the caller; it is accepted but ignored.
+        """
+        integration.orchestrator = None
+
+    mocker.patch.object(
+        integration, "_initialize_components", side_effect=mock_init_components
+    )
+
+    # Should raise RuntimeError when orchestrator is None
+    with pytest.raises(
+        RuntimeError, match="Failed to initialize download orchestrator"
+    ):
+        integration.run_download(config=config, force_refresh=False)
