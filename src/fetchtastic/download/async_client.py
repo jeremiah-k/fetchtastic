@@ -400,8 +400,8 @@ class AsyncGitHubClient:
                     f"Downloaded {url} in {elapsed:.2f}s ({file_size_mb:.2f} MB)"
                 )
 
-                # Atomic move to final location
-                temp_path.rename(target)
+                # Atomic replace to handle existing targets across platforms
+                temp_path.replace(target)
 
                 if file_size_mb >= 1.0:
                     logger.info(f"Downloaded: {target.name} ({file_size_mb:.1f} MB)")
@@ -526,7 +526,7 @@ async def download_files_concurrently(
         progress_callback (Optional[Any]): Optional progress callback for each download.
 
     Returns:
-        List[bool]: Results for each download (True for success).
+        List[bool]: Results for each download (True for success, False for failure).
 
     Example:
         downloads = [
@@ -535,16 +535,15 @@ async def download_files_concurrently(
         ]
         results = await download_files_concurrently(downloads, max_concurrent=3)
     """
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def download_one(spec: Dict[str, Any]) -> bool:
-        async with semaphore:
-            async with AsyncGitHubClient() as client:
-                return await client.download_file(
-                    spec["url"],
-                    spec["target_path"],
-                    progress_callback=progress_callback,
-                )
-
-    tasks = [download_one(spec) for spec in downloads]
-    return await asyncio.gather(*tasks, return_exceptions=False)
+    async with create_async_client(max_concurrent=max_concurrent) as client:
+        tasks = [
+            client.download_file(
+                spec["url"],
+                spec["target_path"],
+                progress_callback=progress_callback,
+            )
+            for spec in downloads
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Convert exceptions to False, keep True/False as-is
+        return [r if r is True else False for r in results]

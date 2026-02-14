@@ -174,6 +174,7 @@ class BaseDownloader(Downloader, ABC):
             )
             return self.download(url, target_path)
 
+        temp_path: Optional[Path] = None
         try:
             # Ensure target directory exists
             target = Path(target_path)
@@ -221,8 +222,8 @@ class BaseDownloader(Downloader, ABC):
             file_size_mb = downloaded / (1024 * 1024)
             logger.debug(f"Downloaded {url} in {elapsed:.2f}s")
 
-            # Atomic move to final location
-            temp_path.rename(target)
+            # Atomic replace to handle existing targets across platforms
+            temp_path.replace(target)
 
             # Save file hash for verification
             await self._async_save_hash(target)
@@ -239,12 +240,27 @@ class BaseDownloader(Downloader, ABC):
             return True
 
         except _aiohttp.ClientError as e:
+            if temp_path and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
             logger.error(f"Async download failed for {url}: {e}")
             return False
         except OSError as e:
+            if temp_path and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
             logger.error(f"Filesystem error saving {target_path}: {e}")
             return False
         except Exception as e:
+            if temp_path and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
             logger.exception(f"Unexpected error downloading {url}: {e}")
             return False
 
@@ -324,23 +340,30 @@ class BaseDownloader(Downloader, ABC):
 
         for attempt in range(max_retries + 1):
             try:
-                result = await self.async_download(url, target_path, progress_callback)
-                if result:
-                    return True
-            except Exception as e:
-                if attempt == max_retries:
-                    logger.error(
-                        f"Download failed permanently after {max_retries + 1} "
-                        f"attempts for {url}: {e}"
-                    )
-                    return False
-
-                logger.warning(
-                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}, "
-                    f"retrying in {delay:.1f}s"
+                result = await self.async_download(
+                    url, target_path, progress_callback=progress_callback
                 )
-                await asyncio.sleep(delay)
-                delay *= backoff_factor
+            except Exception as e:
+                result = False
+                logger.warning(
+                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}: {e}"
+                )
+
+            if result:
+                return True
+
+            if attempt == max_retries:
+                logger.error(
+                    f"Download failed permanently after {max_retries + 1} attempts for {url}"
+                )
+                return False
+
+            logger.warning(
+                f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}, "
+                f"retrying in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
+            delay *= backoff_factor
 
         return False
 

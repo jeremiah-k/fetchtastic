@@ -97,10 +97,14 @@ class GithubReleaseSource:
                         len(releases_data),
                         self.releases_url,
                     )
-                self.cache_manager.write_releases_cache_entry(
-                    url_key,
-                    releases_data if isinstance(releases_data, list) else [],
-                )
+                    self.cache_manager.write_releases_cache_entry(
+                        url_key, releases_data
+                    )
+                else:
+                    logger.debug(
+                        "Skipping cache write for %s due to invalid API response",
+                        self.releases_url,
+                    )
 
             if releases_data is None or not isinstance(releases_data, list):
                 logger.error("Invalid releases data received from GitHub API")
@@ -173,10 +177,14 @@ class GithubReleaseSource:
                         len(releases_data),
                         self.releases_url,
                     )
-                self.cache_manager.write_releases_cache_entry(
-                    url_key,
-                    releases_data if isinstance(releases_data, list) else [],
-                )
+                    self.cache_manager.write_releases_cache_entry(
+                        url_key, releases_data
+                    )
+                else:
+                    logger.debug(
+                        "Skipping cache write for %s due to invalid API response",
+                        self.releases_url,
+                    )
 
             if releases_data is None or not isinstance(releases_data, list):
                 logger.error("Invalid releases data received from GitHub API")

@@ -737,6 +737,9 @@ class TestBaseDownloaderAsyncDownload:
                 )
                 mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
 
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
+
                 target = tmp_path / "test.bin"
                 result = await downloader.async_download(
                     "https://example.com/file.bin", target
@@ -800,6 +803,9 @@ class TestBaseDownloaderAsyncDownload:
                 )
                 mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
 
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
+
                 target = tmp_path / "subdir" / "nested" / "test.bin"
                 result = await downloader.async_download(
                     "https://example.com/file.bin", target
@@ -818,8 +824,13 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.headers = {"Content-Length": "12"}
         mock_response.raise_for_status = Mock()
 
+        # Create an async iterator for chunks
+        async def chunk_iterator(*args, **kwargs):
+            for chunk in [b"chunk1", b"chunk2"]:
+                yield chunk
+
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=[b"chunk1", b"chunk2"])
+        mock_content.iter_chunked = Mock(return_value=chunk_iterator())
         mock_response.content = mock_content
 
         mock_session = AsyncMock()
@@ -848,6 +859,9 @@ class TestBaseDownloaderAsyncDownload:
                     downloader, "_async_verify_file", AsyncMock(return_value=False)
                 )
                 mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
 
                 target = tmp_path / "test.bin"
                 result = await downloader.async_download(
@@ -899,6 +913,9 @@ class TestBaseDownloaderAsyncDownload:
                     downloader, "_async_verify_file", AsyncMock(return_value=False)
                 )
                 mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
 
                 target = tmp_path / "test.bin"
                 # Should not raise

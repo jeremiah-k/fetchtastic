@@ -79,10 +79,24 @@ class AsyncDownloaderMixin:
 
         Returns:
             str: Full path where the file should be saved.
+
+        Raises:
+            ValueError: If the release_tag or file_name contains unsafe path components.
         """
-        # Default implementation - can be overridden
-        safe_release = release_tag.replace("/", "_").replace("\\", "_")
-        safe_name = file_name.replace("/", "_").replace("\\", "_")
+        from .files import _sanitize_path_component
+
+        safe_release = _sanitize_path_component(release_tag)
+        safe_name = _sanitize_path_component(file_name)
+
+        if safe_release is None:
+            raise ValueError(
+                f"Unsafe release tag provided; aborting to avoid path traversal: {release_tag!r}"
+            )
+        if safe_name is None:
+            raise ValueError(
+                f"Unsafe file name provided; aborting to avoid path traversal: {file_name!r}"
+            )
+
         version_dir = os.path.join(self.download_dir, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
@@ -178,8 +192,8 @@ class AsyncDownloaderMixin:
             file_size_mb = downloaded / (1024 * 1024)
             logger.debug(f"Downloaded {url} in {elapsed:.2f}s")
 
-            # Atomic move to final location
-            temp_path.rename(target)
+            # Atomic replace to handle existing targets across platforms
+            temp_path.replace(target)
 
             # Generate and save hash
             await self._async_save_file_hash(target)
@@ -321,23 +335,30 @@ class AsyncDownloaderMixin:
 
         for attempt in range(max_retries + 1):
             try:
-                result = await self.async_download(url, target_path, progress_callback)
-                if result:
-                    return True
-            except Exception as e:
-                if attempt == max_retries:
-                    logger.error(
-                        f"Download failed permanently after {max_retries + 1} "
-                        f"attempts for {url}: {e}"
-                    )
-                    return False
-
-                logger.warning(
-                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}, "
-                    f"retrying in {delay:.1f}s"
+                result = await self.async_download(
+                    url, target_path, progress_callback=progress_callback
                 )
-                await asyncio.sleep(delay)
-                delay *= backoff_factor
+            except Exception as e:
+                result = False
+                logger.warning(
+                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}: {e}"
+                )
+
+            if result:
+                return True
+
+            if attempt == max_retries:
+                logger.error(
+                    f"Download failed permanently after {max_retries + 1} attempts for {url}"
+                )
+                return False
+
+            logger.warning(
+                f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}, "
+                f"retrying in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
+            delay *= backoff_factor
 
         return False
 
@@ -427,7 +448,30 @@ class AsyncDownloaderMixin:
                 )
 
         tasks = [download_one(spec) for spec in downloads]
-        return list(await asyncio.gather(*tasks, return_exceptions=False))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Convert exceptions to DownloadResult with error
+        final_results: List[DownloadResult] = []
+        for i, r in enumerate(results):
+            if isinstance(r, Exception):
+                spec = downloads[i]
+                final_results.append(
+                    DownloadResult(
+                        success=False,
+                        release_tag=spec["release"].tag_name,
+                        file_path=Path(
+                            self.get_target_path_for_release(
+                                spec["release"].tag_name, spec["asset"].name
+                            )
+                        ),
+                        download_url=spec["asset"].download_url,
+                        error_message=str(r),
+                        error_type=ERROR_TYPE_UNKNOWN,
+                        is_retryable=True,
+                    )
+                )
+            else:
+                final_results.append(r)  # type: ignore[arg-type]
+        return final_results
 
 
 class AsyncDownloaderBase(AsyncDownloaderMixin):
