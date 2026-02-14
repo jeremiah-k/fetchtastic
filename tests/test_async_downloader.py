@@ -119,16 +119,16 @@ class TestGetTargetPathForRelease:
         assert os.path.exists(os.path.dirname(result))
 
     def test_get_target_path_sanitizes_slashes(self, tmp_path):
-        """Test that slashes are sanitized in path components."""
+        """Test that unsafe path components with slashes raise ValueError."""
         downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_DIR": str(tmp_path)})
 
-        result = downloader.get_target_path_for_release(
-            "v2.5.0/beta", "sub/firmware.bin"
-        )
+        # Slashes in release tag or file name should raise ValueError
+        # to prevent path traversal attacks
+        with pytest.raises(ValueError, match="Unsafe release tag"):
+            downloader.get_target_path_for_release("v2.5.0/beta", "firmware.bin")
 
-        # Slashes should be replaced with underscores
-        assert "/" not in os.path.basename(os.path.dirname(result))
-        assert "/" not in os.path.basename(result)
+        with pytest.raises(ValueError, match="Unsafe file name"):
+            downloader.get_target_path_for_release("v2.5.0", "sub/firmware.bin")
 
 
 # =============================================================================
@@ -359,7 +359,7 @@ class TestAsyncDownload:
                 mocker.patch.object(downloader, "_async_save_file_hash", AsyncMock())
 
                 target = tmp_path / "test.bin"
-                with patch.object(Path, "rename"):
+                with patch.object(Path, "replace"):
                     result = await downloader.async_download(
                         "https://example.com/file.bin", target
                     )
@@ -428,7 +428,7 @@ class TestAsyncDownload:
                 mocker.patch.object(downloader, "_async_save_file_hash", AsyncMock())
 
                 target = tmp_path / "subdir" / "nested" / "test.bin"
-                with patch.object(Path, "rename"):
+                with patch.object(Path, "replace"):
                     result = await downloader.async_download(
                         "https://example.com/file.bin", target
                     )
@@ -484,7 +484,7 @@ class TestAsyncDownload:
                 mocker.patch.object(downloader, "_async_save_file_hash", AsyncMock())
 
                 target = tmp_path / "test.bin"
-                with patch.object(Path, "rename"):
+                with patch.object(Path, "replace"):
                     result = await downloader.async_download(
                         "https://example.com/file.bin",
                         target,
@@ -988,7 +988,7 @@ class TestAsyncDownloaderBase:
                 mocker.patch.object(downloader, "_async_save_file_hash", AsyncMock())
 
                 target = tmp_path / "test.bin"
-                with patch.object(Path, "rename"):
+                with patch.object(Path, "replace"):
                     result = await downloader.async_download(
                         "https://example.com/file.bin", target
                     )
@@ -1055,7 +1055,7 @@ class TestDownloadWithProgress:
                         AsyncMock(),
                     ):
                         target = tmp_path / "test.bin"
-                        with patch.object(Path, "rename"):
+                        with patch.object(Path, "replace"):
                             result = await download_with_progress(
                                 "https://example.com/file.bin",
                                 target,
@@ -1108,7 +1108,7 @@ class TestDownloadWithProgress:
                         AsyncMock(),
                     ):
                         target = tmp_path / "test.bin"
-                        with patch.object(Path, "rename"):
+                        with patch.object(Path, "replace"):
                             result = await download_with_progress(
                                 "https://example.com/file.bin",
                                 target,

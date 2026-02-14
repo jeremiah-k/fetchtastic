@@ -593,8 +593,8 @@ class TestDownloadFile:
             mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
             mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            # Mock Path.rename to avoid file system operations
-            with patch.object(Path, "rename"):
+            # Mock Path.replace to avoid file system operations
+            with patch.object(Path, "replace"):
                 result = await client.download_file(
                     "https://example.com/file.bin", target
                 )
@@ -632,7 +632,7 @@ class TestDownloadFile:
         with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
             mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
             mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
-            with patch.object(Path, "rename"):
+            with patch.object(Path, "replace"):
                 result = await client.download_file(
                     "https://example.com/file.bin", target
                 )
@@ -678,7 +678,7 @@ class TestDownloadFile:
         with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
             mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
             mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
-            with patch.object(Path, "rename"):
+            with patch.object(Path, "replace"):
                 result = await client.download_file(
                     "https://example.com/file.bin",
                     target,
