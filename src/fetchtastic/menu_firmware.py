@@ -3,6 +3,7 @@
 import json
 from typing import cast
 
+import requests
 from pick import pick
 
 from fetchtastic.constants import MESHTASTIC_FIRMWARE_RELEASES_URL
@@ -92,6 +93,19 @@ def run_menu() -> dict[str, list[str]] | None:
         if selection is None:
             return None
         return selection
-    except Exception:
-        logger.exception("Firmware menu failed")
+    except (json.JSONDecodeError, ValueError) as e:
+        # Handle JSON parsing and data validation errors
+        logger.exception(f"Firmware menu failed due to data error: {e}")
+        return None
+    except (requests.RequestException, OSError) as e:
+        # Handle network and I/O errors
+        logger.exception(f"Firmware menu failed due to network/I/O error: {e}")
+        return None
+    except (TypeError, KeyError, AttributeError) as e:
+        # Handle unexpected data structure errors
+        logger.exception(f"Firmware menu failed due to data structure error: {e}")
+        return None
+    except Exception as e:
+        # Catch-all for unexpected errors (backward compatibility)
+        logger.exception(f"Firmware menu failed due to unexpected error: {e}")
         return None

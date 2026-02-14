@@ -89,9 +89,11 @@ def _get_package_version() -> str:
         return importlib.metadata.version("fetchtastic")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
-    except Exception:
+    except (ImportError, AttributeError, OSError) as e:
+        # Handle import system errors, missing attributes, or file access issues
         logger.warning(
-            "Could not determine package version due to an unexpected error.",
+            "Could not determine package version: %s",
+            e,
             exc_info=True,
         )
         return "unknown"
@@ -441,12 +443,11 @@ def _update_rate_limit(
     now = datetime.now(timezone.utc)
     current_time = now.timestamp()
 
-    # Ensure reset_timestamp is set
+    # Ensure reset_timestamp is set (default to 1 hour from now if not provided)
     if reset_timestamp is None:
         reset_timestamp = now + timedelta(hours=1)
 
-    assert reset_timestamp is not None  # For type checker
-
+    # reset_timestamp is guaranteed to be set here
     with _rate_limit_lock:
         # Check if remaining decreased and at least 5 seconds have passed
         should_save = False

@@ -10,7 +10,7 @@ import os
 import zipfile
 from abc import ABC
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, cast
 
 from requests.exceptions import RequestException  # type: ignore[import-untyped]
 

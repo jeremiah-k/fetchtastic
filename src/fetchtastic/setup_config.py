@@ -2,6 +2,7 @@
 
 import functools
 import getpass
+import json
 import math
 import os
 import platform
@@ -35,13 +36,10 @@ from fetchtastic.log_utils import logger
 # These patterns exclude specialized variants and debug files that most users don't need
 # Patterns use fnmatch (glob-style) matching against the base filename
 RECOMMENDED_EXCLUDE_PATTERNS = [
-    "*.hex",  # hex files (debug/raw files)
-    "*tcxo*",  # TCXO related files (crystal oscillator)
+    "*.hex",  # hex files (debug/raw files) - alternative to .bin/.uf2
+    "*tcxo*",  # TCXO crystal oscillator variants (specific hardware)
     "*s3-core*",  # S3 core files (specific hardware)
-    "*request*",  # request files (debug/test files) - NOTE: May be too broad, consider review
-    # TODO: This pattern could exclude legitimate firmware assets containing "request" in their names.
-    # Consider making this pattern more specific or moving it to optional patterns if false positives are reported.
-    "*rak4631_*",  # RAK4631 underscore variants (like rak4631_eink)
+    "*rak4631_*",  # RAK4631 display variants (e.g., rak4631_eink)
     "*heltec_*",  # Heltec underscore variants
     "*tbeam_*",  # T-Beam underscore variants
     "*tlora_*",  # TLORA underscore variants
@@ -2098,13 +2096,14 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
             latest_version (str|None): Latest version string from PyPI, or `None` if the lookup failed.
             update_available (bool): `True` if a newer release exists on PyPI, `False` otherwise.
     """
+    # Import requests locally to allow test patching of requests.get
+    import requests  # type: ignore[import-untyped]
+
     try:
         # Get current version
         current_version = version("fetchtastic")
 
         # Get latest version from PyPI
-        import requests  # type: ignore[import-untyped]
-
         response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
         if response.status_code == 200:
             data = response.json()
@@ -2116,11 +2115,26 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
             latest_ver = pkg_version.parse(latest_version)
             return current_version, latest_version, latest_ver > current_ver
         return current_version, None, False
-    except Exception:
-        # If anything fails, just return that no update is available
+    except (requests.RequestException, OSError) as e:
+        # Network or I/O errors - unable to check for updates
+        logger.debug("Network error checking for updates: %s", e)
         try:
             return version("fetchtastic"), None, False
-        except Exception:
+        except PackageNotFoundError:
+            return "unknown", None, False
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        # Parsing or data structure errors
+        logger.debug("Data error checking for updates: %s", e)
+        try:
+            return version("fetchtastic"), None, False
+        except PackageNotFoundError:
+            return "unknown", None, False
+    except Exception as e:
+        # Catch-all for unexpected errors (backward compatibility)
+        logger.debug("Unexpected error checking for updates: %s", e)
+        try:
+            return version("fetchtastic"), None, False
+        except PackageNotFoundError:
             return "unknown", None, False
 
 
@@ -2177,7 +2191,13 @@ def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
 
         return False, "Setup is current", last_setup_version, current_version
 
-    except Exception:
+    except (OSError, IOError, json.JSONDecodeError, yaml.YAMLError) as e:
+        # File access, JSON parsing, or YAML parsing errors
+        logger.debug("Could not determine setup status: %s", e)
+        return True, "Could not determine setup status", None, None
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
+        # Data structure or validation errors
+        logger.debug("Configuration data error: %s", e)
         return True, "Could not determine setup status", None, None
 
 

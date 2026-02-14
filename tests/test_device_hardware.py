@@ -627,13 +627,20 @@ class TestDeviceHardwareManagerPerformance:
 
     def test_memory_usage_with_large_cache(self):
         """Test memory usage doesn't grow excessively with large cache."""
+        import time
+
         with tempfile.TemporaryDirectory() as temp_dir:
             cache_dir = Path(temp_dir)
 
-            # Create large cache
+            # Create large cache in correct format (dict with device_patterns, timestamp)
             large_patterns = {f"device{i}" for i in range(5000)}
             cache_file = cache_dir / "device_hardware.json"
-            cache_file.write_text(json.dumps(list(large_patterns)))
+            cache_data = {
+                "device_patterns": list(large_patterns),
+                "timestamp": time.time(),
+                "api_url": "https://example.com/device_hardware.json",
+            }
+            cache_file.write_text(json.dumps(cache_data))
 
             manager = DeviceHardwareManager(cache_dir=cache_dir)
 
