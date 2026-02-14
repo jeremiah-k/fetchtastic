@@ -1658,3 +1658,97 @@ def test_display_banner(mock_logger, version, log_message):
         call(separator),
     ]
     mock_logger.info.assert_has_calls(expected_calls)
+
+
+# Tests for lines 92-99: _get_package_version exception handlers
+
+
+@pytest.mark.unit
+def test_get_package_version_import_error(mocker):
+    """Test _get_package_version handles ImportError (line 92)."""
+    mocker.patch(
+        "fetchtastic.utils.importlib.metadata.version",
+        side_effect=ImportError("Import failed"),
+    )
+    mock_logger = mocker.patch("fetchtastic.utils.logger")
+
+    from fetchtastic.utils import _get_package_version
+
+    result = _get_package_version()
+
+    assert result == "unknown"
+    mock_logger.warning.assert_called_once()
+    assert "Could not determine package version" in mock_logger.warning.call_args[0][0]
+
+
+@pytest.mark.unit
+def test_get_package_version_attribute_error(mocker):
+    """Test _get_package_version handles AttributeError (line 92)."""
+    mocker.patch(
+        "fetchtastic.utils.importlib.metadata.version",
+        side_effect=AttributeError("Missing attribute"),
+    )
+    mock_logger = mocker.patch("fetchtastic.utils.logger")
+
+    from fetchtastic.utils import _get_package_version
+
+    result = _get_package_version()
+
+    assert result == "unknown"
+    mock_logger.warning.assert_called_once()
+    assert "Could not determine package version" in mock_logger.warning.call_args[0][0]
+
+
+@pytest.mark.unit
+def test_get_package_version_os_error(mocker):
+    """Test _get_package_version handles OSError (line 92)."""
+    mocker.patch(
+        "fetchtastic.utils.importlib.metadata.version",
+        side_effect=OSError("File access error"),
+    )
+    mock_logger = mocker.patch("fetchtastic.utils.logger")
+
+    from fetchtastic.utils import _get_package_version
+
+    result = _get_package_version()
+
+    assert result == "unknown"
+    mock_logger.warning.assert_called_once()
+    assert "Could not determine package version" in mock_logger.warning.call_args[0][0]
+
+
+@pytest.mark.unit
+def test_get_package_version_package_not_found(mocker):
+    """Test _get_package_version handles PackageNotFoundError (line 90)."""
+    from importlib.metadata import PackageNotFoundError
+
+    mocker.patch(
+        "fetchtastic.utils.importlib.metadata.version",
+        side_effect=PackageNotFoundError("fetchtastic"),
+    )
+    mock_logger = mocker.patch("fetchtastic.utils.logger")
+
+    from fetchtastic.utils import _get_package_version
+
+    result = _get_package_version()
+
+    assert result == "unknown"
+    # PackageNotFoundError should NOT trigger warning log
+    mock_logger.warning.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_package_version_success(mocker):
+    """Test _get_package_version returns version on success."""
+    mocker.patch(
+        "fetchtastic.utils.importlib.metadata.version",
+        return_value="1.2.3",
+    )
+    mock_logger = mocker.patch("fetchtastic.utils.logger")
+
+    from fetchtastic.utils import _get_package_version
+
+    result = _get_package_version()
+
+    assert result == "1.2.3"
+    mock_logger.warning.assert_not_called()
