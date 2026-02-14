@@ -1011,7 +1011,7 @@ class CacheManager:
 
             cached_at = parse_iso_datetime_utc(cached_at_str)
             if not cached_at:
-                logger.debug("Pruning entry with unparseable cached_at: %s", key)
+                logger.debug("Pruning entry with unparsable cached_at: %s", key)
                 continue
 
             # Check expiry

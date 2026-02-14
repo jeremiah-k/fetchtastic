@@ -22,7 +22,7 @@ lint:
     - shfmt@3.6.0
     - gitleaks@8.30.0
     - codespell@2.4.1
-    - actionlint@1.7.10
+    - actionlint@1.7.11
     - bandit@1.9.3
     - black@26.1.0
     - checkov@3.2.501
@@ -31,7 +31,7 @@ lint:
     - markdownlint@0.47.0
     - osv-scanner@2.3.3
     - prettier@3.8.1
-    - ruff@0.15.0
+    - ruff@0.15.1
     - taplo@0.10.0
     - trufflehog@3.93.3
     - yamllint@1.38.0

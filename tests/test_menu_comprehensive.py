@@ -12,7 +12,6 @@ for both APK and firmware menu functionality including:
 import json
 from unittest.mock import Mock, patch
 
-import pytest
 import requests
 
 from fetchtastic import menu_apk, menu_firmware

@@ -15,13 +15,13 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from fetchtastic.download.base import BaseDownloader
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.interfaces import Asset, DownloadResult
+from fetchtastic.download.interfaces import Asset
 
 
 # Concrete implementation of BaseDownloader for testing
@@ -256,7 +256,7 @@ class TestBaseDownloaderExtract:
             ) as mock_extract:
                 mock_extract.return_value = [os.path.join(temp_dir, "file1.bin")]
 
-                result = downloader.extract(archive_path, patterns, exclude_patterns)
+                downloader.extract(archive_path, patterns, exclude_patterns)
 
                 mock_extract.assert_called_once_with(
                     str(archive_path),

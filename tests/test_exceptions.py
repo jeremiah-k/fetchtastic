@@ -12,8 +12,6 @@ Tests the custom exception hierarchy including:
 - Setup/Installation errors (SetupError, CronError, ShortcutError, MigrationError)
 """
 
-import pytest
-
 from fetchtastic.exceptions import (
     APIError,
     ArchiveError,
