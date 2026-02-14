@@ -725,6 +725,18 @@ class TestDeviceHardwareManagerExceptionHandlers:
             # Create a dict that will raise KeyError in unexpected ways
             class BadDict(dict):
                 def __getitem__(self, key):
+                    """
+                    Prevent access to the "platformioTarget" key and otherwise return the mapped value.
+                    
+                    Parameters:
+                        key: The mapping key to retrieve.
+                    
+                    Returns:
+                        The value associated with `key` from the mapping.
+                    
+                    Raises:
+                        KeyError: If `key` is "platformioTarget".
+                    """
                     if key == "platformioTarget":
                         raise KeyError("Unexpected key access")
                     return super().__getitem__(key)
@@ -747,10 +759,24 @@ class TestDeviceHardwareManagerExceptionHandlers:
             # Create an object that raises ValueError when json() accesses data
             class BadResponse:
                 def raise_for_status(self):
+                    """
+                    Raise an HTTPError if the associated HTTP response indicates an error status.
+                    
+                    Raises:
+                        requests.HTTPError: If the response status code is 400 or greater.
+                    """
                     pass
 
                 def json(self):
                     # Return something that causes ValueError during iteration
+                    """
+                    Simulate a failed JSON parse by raising a ValueError.
+                    
+                    This method emulates a response.json() call that cannot parse or produce JSON and therefore always raises a parsing error.
+                    
+                    Raises:
+                        ValueError: Raised with message "Invalid value during parsing" to represent a JSON parsing failure.
+                    """
                     raise ValueError("Invalid value during parsing")
 
             mock_get.return_value = BadResponse()
@@ -785,9 +811,21 @@ class TestDeviceHardwareManagerExceptionHandlers:
             # Create an object that raises AttributeError
             class BadResponse:
                 def raise_for_status(self):
+                    """
+                    Raise an HTTPError if the associated HTTP response indicates an error status.
+                    
+                    Raises:
+                        requests.HTTPError: If the response status code is 400 or greater.
+                    """
                     pass
 
                 def json(self):
+                    """
+                    Indicates the absence of the `json` attribute by raising an AttributeError.
+                    
+                    Raises:
+                        AttributeError: Always raised with message "Missing attribute".
+                    """
                     raise AttributeError("Missing attribute")
 
             mock_get.return_value = BadResponse()
@@ -817,6 +855,12 @@ class TestDeviceHardwareManagerExceptionHandlers:
             # Create a custom object that raises TypeError when iterated
             class BadIterable:
                 def __iter__(self):
+                    """
+                    Prevent iteration over instances of this class.
+                    
+                    Raises:
+                        TypeError: Always raised with message "Cannot iterate over this type".
+                    """
                     raise TypeError("Cannot iterate over this type")
 
             mock_response.json.return_value = BadIterable()

@@ -388,7 +388,9 @@ class TestMenuFirmwareEdgeCases:
             assert result == ["firmware.bin"]
 
     def test_select_assets_empty_selection(self):
-        """Test select_assets with empty user selection."""
+        """
+        Verify select_assets returns None when the user selects nothing.
+        """
         with patch("fetchtastic.menu_firmware.pick") as mock_pick:
             mock_pick.return_value = []
 

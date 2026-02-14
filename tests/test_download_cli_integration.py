@@ -925,6 +925,13 @@ def test_run_download_orchestrator_none_after_init(mocker):
     # Mock _initialize_components to not set orchestrator
     def mock_init_components(cfg):
         # Explicitly set orchestrator to None
+        """
+        Simulate a failed component initialization by clearing the download orchestrator.
+        
+        This test helper sets integration.orchestrator to None so callers observe an uninitialized orchestrator.
+        Parameters:
+            cfg: Configuration object passed by the caller; it is accepted but ignored.
+        """
         integration.orchestrator = None
 
     mocker.patch.object(

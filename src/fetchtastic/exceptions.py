@@ -18,17 +18,23 @@ class FetchtasticError(Exception):
 
     def __init__(self, message: str, details: str | None = None) -> None:
         """
-        Initialize the exception.
-
-        Args:
-            message: The primary error message.
-            details: Optional additional context about the error.
+        Initialize the base FetchtasticError with a message and optional details.
+        
+        Parameters:
+            message (str): Primary error message for the exception.
+            details (str | None): Optional additional context included in the exception's string representation.
         """
         self.message = message
         self.details = details
         super().__init__(message)
 
     def __str__(self) -> str:
+        """
+        Return a human-readable representation of the error, including details when present.
+        
+        Returns:
+            str: The error `message` alone, or `message` followed by " - " and `details` if `details` is provided.
+        """
         if self.details:
             return f"{self.message} - {self.details}"
         return self.message
@@ -88,14 +94,14 @@ class DownloadError(FetchtasticError):
         details: str | None = None,
     ) -> None:
         """
-        Initialize the download exception.
-
-        Args:
-            message: The primary error message.
-            url: The URL that was being downloaded.
-            retry_count: Number of retry attempts made.
-            is_retryable: Whether this error could be retried.
-            details: Optional additional context.
+        Initialize a DownloadError with optional URL, retry metadata, and extra details.
+        
+        Parameters:
+            message (str): Primary error message.
+            url (str | None): URL involved in the failed download, if available.
+            retry_count (int): Number of retry attempts that have been made for this download.
+            is_retryable (bool): Whether the failure is considered safe/useful to retry.
+            details (str | None): Optional additional context for diagnostics.
         """
         super().__init__(message, details)
         self.url = url
@@ -135,15 +141,15 @@ class HTTPError(DownloadError):
         details: str | None = None,
     ) -> None:
         """
-        Initialize the HTTP exception.
-
-        Args:
-            message: The primary error message.
-            status_code: The HTTP status code.
-            url: The URL that was being downloaded.
-            retry_count: Number of retry attempts made.
-            is_retryable: Whether this error could be retried.
-            details: Optional additional context.
+        Initialize an HTTP error with a message and optional HTTP-specific metadata.
+        
+        Parameters:
+            message (str): The primary error message.
+            status_code (int | None): HTTP status code returned by the request, if available.
+            url (str | None): The request URL associated with the error, if known.
+            retry_count (int): Number of retry attempts that have been made.
+            is_retryable (bool): Whether the error is considered retryable.
+            details (str | None): Optional additional context or diagnostic information.
         """
         super().__init__(message, url, retry_count, is_retryable, details)
         self.status_code = status_code
@@ -170,13 +176,17 @@ class RateLimitError(HTTPError):
         url: str | None = None,
     ) -> None:
         """
-        Initialize the rate limit exception.
-
-        Args:
-            message: The primary error message.
-            reset_time: When the rate limit will reset (Unix timestamp).
-            remaining: Number of requests remaining.
-            url: The URL that was being accessed.
+        Initialize a RateLimitError representing a GitHub API rate limit.
+        
+        Parameters:
+            message (str): Primary error message.
+            reset_time (int | None): Unix timestamp (seconds since epoch) when the rate limit resets, or None if unknown.
+            remaining (int): Number of requests remaining.
+            url (str | None): The URL that triggered the rate limit, if available.
+        
+        Notes:
+            - Sets `status_code` to 403 and `is_retryable` to True on the exception.
+            - Exposes `reset_time` and `remaining` as instance attributes and includes a human-readable `details` string describing the reset time and remaining requests.
         """
         # Build details string with human-readable reset time
         details = f"Remaining: {remaining}"
@@ -223,12 +233,12 @@ class FileSystemError(FetchtasticError):
         details: str | None = None,
     ) -> None:
         """
-        Initialize the file system exception.
-
-        Args:
-            message: The primary error message.
-            path: The file path that caused the error.
-            details: Optional additional context.
+        Initialize a FileSystemError with a message, optional path, and optional details.
+        
+        Parameters:
+            message (str): The primary error message.
+            path (str | None): The file or directory path associated with the error, if available.
+            details (str | None): Additional context or diagnostic information.
         """
         super().__init__(message, details)
         self.path = path
@@ -323,12 +333,12 @@ class ArchiveError(FetchtasticError):
         details: str | None = None,
     ) -> None:
         """
-        Initialize the archive exception.
-
-        Args:
-            message: The primary error message.
-            archive_path: Path to the problematic archive.
-            details: Optional additional context.
+        Create an ArchiveError with a message and optional archive path and details.
+        
+        Parameters:
+            message (str): Primary error message.
+            archive_path (str | None): Path to the archive related to the error, if available.
+            details (str | None): Additional contextual information about the error.
         """
         super().__init__(message, details)
         self.archive_path = archive_path
@@ -369,13 +379,13 @@ class APIError(FetchtasticError):
         details: str | None = None,
     ) -> None:
         """
-        Initialize the API exception.
-
-        Args:
-            message: The primary error message.
-            endpoint: The API endpoint that was accessed.
-            status_code: The HTTP status code returned.
-            details: Optional additional context.
+        Initialize an API error with an optional endpoint, HTTP status code, and additional details.
+        
+        Parameters:
+            message: Primary error message describing the failure.
+            endpoint: The API endpoint associated with the error, if known.
+            status_code: The HTTP status code returned by the API, if available.
+            details: Optional supplemental context or diagnostic information.
         """
         super().__init__(message, details)
         self.endpoint = endpoint
