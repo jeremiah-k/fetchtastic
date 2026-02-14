@@ -2259,13 +2259,13 @@ def migrate_config() -> bool:
         try:
             os.remove(OLD_CONFIG_FILE)
             logger.info(f"Configuration migrated to {CONFIG_FILE} and old file removed")
-        except Exception as e:  # noqa: BLE001
+        except OSError as e:
             logger.error(
                 f"Configuration migrated to {CONFIG_FILE} but failed to remove old file: {e}"
             )
 
         return True
-    except Exception as e:  # noqa: BLE001
+    except (OSError, yaml.YAMLError) as e:
         logger.error(f"Error saving config to new location: {e}")
         return False
 
@@ -2686,7 +2686,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                 ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
             )
             return True
-        except Exception as e:  # noqa: BLE001
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             logger.error("Error copying to Termux clipboard: %s", e)
             return False
     elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:

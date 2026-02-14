@@ -357,10 +357,8 @@ def fetch_repo_contents(
     except (ValueError, KeyError) as e:
         logger.error(f"Error parsing repository contents response: {e}")
         return []
-    except Exception as e:  # noqa: BLE001
-        logger.error(
-            f"Unexpected error fetching repository contents: {e}", exc_info=True
-        )
+    except (TypeError, AttributeError) as e:
+        logger.error(f"Error processing repository contents: {e}", exc_info=True)
         return []
 
 
