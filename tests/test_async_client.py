@@ -13,7 +13,7 @@ Tests the async HTTP client functionality including:
 - Factory functions and utility functions
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -93,7 +93,7 @@ class TestAsyncGitHubClientInitialization:
         assert client.max_concurrent == 5
         assert client.connector_limit == 10
         assert client._session is None
-        assert client._semaphore is None
+        assert client._semaphore is not None  # Semaphore is now created in __init__
         assert client._closed is False
         assert client._rate_limit_remaining == {}
         assert client._rate_limit_reset == {}
@@ -670,7 +670,7 @@ class TestDownloadFile:
         # Track callback invocations
         callback_calls = []
 
-        async def progress_callback(downloaded, total):
+        async def progress_callback(downloaded, total, filename):
             callback_calls.append((downloaded, total))
 
         target = tmp_path / "test.bin"
@@ -971,10 +971,3 @@ class TestDownloadFilesConcurrently:
         assert len(results) == 2
         assert results[0] is True
         assert results[1] is False
-
-
-# =============================================================================
-# Import for timedelta in rate limit test
-# =============================================================================
-
-from datetime import timedelta

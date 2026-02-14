@@ -66,6 +66,9 @@ class AsyncDownloaderMixin:
     file_operations: "FileOperations"
     download_dir: str
 
+    # Instance-level semaphore for proper concurrency control across downloads
+    _semaphore: Optional[asyncio.Semaphore] = None
+
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
         Get the target path for a release file.
@@ -128,6 +131,20 @@ class AsyncDownloaderMixin:
         """
         return float(self.config.get("DOWNLOAD_RETRY_DELAY", 1.0))
 
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        """
+        Get or create the semaphore for concurrency control.
+
+        The semaphore is created once per instance and reused for all downloads,
+        ensuring proper concurrency limiting across multiple async_download calls.
+
+        Returns:
+            asyncio.Semaphore: Semaphore for limiting concurrent downloads.
+        """
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self._get_max_concurrent())
+        return self._semaphore
+
     async def async_download(
         self,
         url: str,
@@ -160,9 +177,12 @@ class AsyncDownloaderMixin:
         try:
             start_time = time.time()
             timeout = aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
-            semaphore = asyncio.Semaphore(self._get_max_concurrent())
 
-            async with semaphore:
+            # Use instance-level semaphore for proper concurrency control
+            async with self._get_semaphore():
+                # Note: Creating session per-download is intentional here for simplicity
+                # For high-volume use cases, consider using AsyncGitHubClient which
+                # manages a shared session with connection pooling
                 connector = aiohttp.TCPConnector(limit=self._get_max_concurrent())
                 async with aiohttp.ClientSession(
                     connector=connector, timeout=timeout
@@ -286,12 +306,13 @@ class AsyncDownloaderMixin:
             file_path (Path): Path to the file to hash.
         """
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: save_file_hash(
-                str(file_path), calculate_sha256(str(file_path)) or ""
-            ),
-        )
+
+        def _compute_and_save() -> None:
+            hash_value = calculate_sha256(str(file_path))
+            if hash_value:
+                save_file_hash(str(file_path), hash_value)
+
+        await loop.run_in_executor(None, _compute_and_save)
 
     async def _async_cleanup_temp_file(self, temp_path: Path) -> None:
         """
@@ -330,8 +351,10 @@ class AsyncDownloaderMixin:
         Returns:
             bool: True if download succeeded, False otherwise.
         """
-        max_retries = max_retries or self._get_max_retries()
-        delay = retry_delay or self._get_retry_delay()
+        max_retries = (
+            max_retries if max_retries is not None else self._get_max_retries()
+        )
+        delay = retry_delay if retry_delay is not None else self._get_retry_delay()
 
         for attempt in range(max_retries + 1):
             try:
@@ -437,7 +460,7 @@ class AsyncDownloaderMixin:
         Returns:
             List[DownloadResult]: Results for each download.
         """
-        semaphore = asyncio.Semaphore(self._get_max_concurrent())
+        semaphore = self._get_semaphore()
 
         async def download_one(spec: Dict[str, Any]) -> DownloadResult:
             async with semaphore:

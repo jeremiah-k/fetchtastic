@@ -249,7 +249,7 @@ def create_release_from_github_data(release_data: Dict[str, Any]) -> Release:
     for asset_data in release_data.get("assets", []):
         asset = Asset(
             name=asset_data["name"],
-            download_url=asset_data["browser_download_url"],
+            download_url=asset_data.get("browser_download_url"),
             size=asset_data["size"],
             browser_download_url=asset_data.get("browser_download_url"),
             content_type=asset_data.get("content_type"),

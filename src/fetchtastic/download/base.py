@@ -306,7 +306,10 @@ class BaseDownloader(Downloader, ABC):
             file_path (Path): Path to the file to hash.
         """
         loop = asyncio.get_running_loop()
-        hash_value = utils.calculate_sha256(str(file_path))
+        # Run hash calculation in executor to avoid blocking event loop
+        hash_value = await loop.run_in_executor(
+            None, utils.calculate_sha256, str(file_path)
+        )
         if hash_value:
             await loop.run_in_executor(
                 None, utils.save_file_hash, str(file_path), hash_value

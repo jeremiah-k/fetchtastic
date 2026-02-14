@@ -16,7 +16,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
 
 import aiofiles
 import aiohttp
@@ -35,12 +35,10 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 
-from .interfaces import Asset, Release
+from .interfaces import Asset, Pathish, Release
 
 if TYPE_CHECKING:
     pass
-
-Pathish = Union[str, Path]
 
 
 class AsyncDownloadError(Exception):
@@ -109,7 +107,7 @@ class AsyncGitHubClient:
         self.max_concurrent = max_concurrent
         self.connector_limit = connector_limit
         self._session: Optional[ClientSession] = None
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._semaphore = asyncio.Semaphore(max_concurrent)
         self._closed: bool = False
 
         # Rate limit tracking
@@ -148,7 +146,7 @@ class AsyncGitHubClient:
                 timeout=self.timeout,
                 headers=self._get_default_headers(),
             )
-            self._semaphore = asyncio.Semaphore(self.max_concurrent)
+            # Semaphore is already created in __init__
         return self._session
 
     def _get_default_headers(self) -> Dict[str, str]:
@@ -341,7 +339,7 @@ class AsyncGitHubClient:
             target_path (Pathish): Local path to save the file.
             chunk_size (int): Size of chunks for streaming download.
             progress_callback (Optional[Any]): Optional callback for progress updates.
-                Signature: async def callback(downloaded: int, total: Optional[int])
+                Signature: callback(downloaded: int, total: Optional[int], filename: str)
 
         Returns:
             bool: True if download succeeded, False otherwise.
@@ -356,9 +354,6 @@ class AsyncGitHubClient:
         target.parent.mkdir(parents=True, exist_ok=True)
 
         # Use semaphore to limit concurrent downloads
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self.max_concurrent)
-
         async with self._semaphore:
             temp_path = target.with_suffix(
                 f".tmp.{os.getpid()}.{int(time.time() * 1000)}"
@@ -387,7 +382,7 @@ class AsyncGitHubClient:
                             if progress_callback:
                                 try:
                                     result = progress_callback(
-                                        downloaded, total_size or None
+                                        downloaded, total_size or None, target.name
                                     )
                                     if asyncio.iscoroutine(result):
                                         await result
@@ -433,6 +428,22 @@ class AsyncGitHubClient:
                     f"Filesystem error: {e}",
                     url=url,
                     is_retryable=False,
+                ) from e
+            except AsyncDownloadError:
+                # Re-raise AsyncDownloadError without wrapping it
+                raise
+            except Exception as e:
+                # Catch-all for unexpected exceptions - clean up temp file
+                logger.exception(f"Unexpected error downloading {url}: {e}")
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
+                raise AsyncDownloadError(
+                    f"Unexpected error: {e}",
+                    url=url,
+                    is_retryable=True,
                 ) from e
 
     async def download_file_with_retry(
