@@ -115,6 +115,27 @@ class TestBaseDownloaderInitialization:
 
         assert downloader._get_versions_to_keep() == 5
 
+    def test_get_max_concurrent_default(self):
+        """Test default max concurrent downloads."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        assert downloader._get_max_concurrent() == 5
+
+    def test_get_max_concurrent_invalid_fallback(self):
+        """Invalid max concurrent values should fall back to default."""
+        config = {"MAX_CONCURRENT_DOWNLOADS": "not-a-number"}
+        downloader = ConcreteDownloader(config)
+
+        assert downloader._get_max_concurrent() == 5
+
+    def test_get_max_concurrent_clamped_minimum(self):
+        """Values <= 0 should be clamped to avoid invalid semaphores."""
+        config = {"MAX_CONCURRENT_DOWNLOADS": 0}
+        downloader = ConcreteDownloader(config)
+
+        assert downloader._get_max_concurrent() == 1
+
 
 class TestBaseDownloaderDownload:
     """Test download functionality."""

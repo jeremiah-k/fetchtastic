@@ -264,24 +264,89 @@ class AsyncGitHubClient:
                     response.raise_for_status()
                     data = await response.json()
 
+            if not isinstance(data, list):
+                logger.warning(
+                    "Unexpected releases payload type from %s: expected list, got %s",
+                    url,
+                    type(data).__name__,
+                )
+                return []
+
             releases = []
             for item in data:
+                if not isinstance(item, dict):
+                    logger.warning(
+                        "Skipping malformed release entry from %s: expected dict, got %s",
+                        url,
+                        type(item).__name__,
+                    )
+                    continue
+
+                tag_name = item.get("tag_name", "")
+                if not isinstance(tag_name, str):
+                    logger.warning(
+                        "Skipping release entry from %s with invalid tag_name type %s",
+                        url,
+                        type(tag_name).__name__,
+                    )
+                    continue
+
+                assets_data = item.get("assets", [])
+                if not isinstance(assets_data, list):
+                    logger.warning(
+                        "Skipping assets for release %s due to invalid assets type %s",
+                        tag_name or "<unknown>",
+                        type(assets_data).__name__,
+                    )
+                    assets_data = []
+
+                parsed_assets: List[Asset] = []
+                for asset in assets_data:
+                    if not isinstance(asset, dict):
+                        logger.warning(
+                            "Skipping malformed asset in release %s: expected dict, got %s",
+                            tag_name or "<unknown>",
+                            type(asset).__name__,
+                        )
+                        continue
+                    asset_name = asset.get("name", "")
+                    if not isinstance(asset_name, str):
+                        logger.warning(
+                            "Skipping asset in release %s with invalid name type %s",
+                            tag_name or "<unknown>",
+                            type(asset_name).__name__,
+                        )
+                        continue
+                    raw_size = asset.get("size", 0)
+                    try:
+                        asset_size = int(raw_size)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Using size=0 for asset %s in release %s due to invalid size value",
+                            asset_name or "<unknown>",
+                            tag_name or "<unknown>",
+                        )
+                        asset_size = 0
+                    browser_download_url = asset.get("browser_download_url")
+                    if not isinstance(browser_download_url, str):
+                        browser_download_url = ""
+                    parsed_assets.append(
+                        Asset(
+                            name=asset_name,
+                            download_url=browser_download_url,
+                            size=asset_size,
+                            browser_download_url=browser_download_url or None,
+                            content_type=asset.get("content_type"),
+                        )
+                    )
+
                 release = Release(
-                    tag_name=item.get("tag_name", ""),
+                    tag_name=tag_name,
                     prerelease=item.get("prerelease", False),
                     published_at=item.get("published_at"),
                     name=item.get("name"),
                     body=item.get("body"),
-                    assets=[
-                        Asset(
-                            name=asset.get("name", ""),
-                            download_url=asset.get("browser_download_url", ""),
-                            size=asset.get("size", 0),
-                            browser_download_url=asset.get("browser_download_url"),
-                            content_type=asset.get("content_type"),
-                        )
-                        for asset in item.get("assets", [])
-                    ],
+                    assets=parsed_assets,
                 )
                 releases.append(release)
 
@@ -549,6 +614,7 @@ async def download_files_concurrently(
             - True: Download succeeded
             - False: Download failed without a specific exception
             - Exception: The exception that caused the failure (typically AsyncDownloadError)
+            - ValueError: Invalid download spec (missing/invalid 'url' or 'target_path')
             This allows callers to inspect the root cause of failures.
 
     Example:
@@ -573,13 +639,43 @@ async def download_files_concurrently(
         github_token=github_token,
         max_concurrent=max_concurrent,
     ) as client:
-        tasks = [
-            client.download_file(
-                spec["url"],
-                spec["target_path"],
-                progress_callback=progress_callback,
+        results: List[Any] = [None] * len(downloads)
+        task_indexes: List[int] = []
+        tasks: List[Any] = []
+
+        for index, spec in enumerate(downloads):
+            if not isinstance(spec, dict):
+                results[index] = ValueError(
+                    f"Invalid download spec at index {index}: expected dict"
+                )
+                continue
+
+            url = spec.get("url")
+            target_path = spec.get("target_path")
+            if not isinstance(url, str) or not url.strip():
+                results[index] = ValueError(
+                    f"Invalid download spec at index {index}: missing/invalid 'url'"
+                )
+                continue
+            if not isinstance(target_path, (str, Path)):
+                results[index] = ValueError(
+                    f"Invalid download spec at index {index}: missing/invalid 'target_path'"
+                )
+                continue
+
+            task_indexes.append(index)
+            tasks.append(
+                client.download_file(
+                    url,
+                    target_path,
+                    progress_callback=progress_callback,
+                )
             )
-            for spec in downloads
-        ]
+
+        if tasks:
+            gathered_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for index, task_result in zip(task_indexes, gathered_results, strict=False):
+                results[index] = task_result
+
         # Return raw results to preserve exception information for debugging
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        return results

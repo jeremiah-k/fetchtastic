@@ -283,6 +283,18 @@ class TestFirmwareReleaseDownloader:
                 ],
             },
             {
+                "tag_name": "v1.1.1",
+                "prerelease": False,
+                # Blank download URL should skip this asset, then skip release.
+                "assets": [
+                    {
+                        "name": "firmware-no-url.zip",
+                        "browser_download_url": " ",
+                        "size": 500,
+                    }
+                ],
+            },
+            {
                 "tag_name": "v1.0.0",
                 "prerelease": False,
                 "assets": [

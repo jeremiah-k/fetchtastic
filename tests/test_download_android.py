@@ -421,6 +421,18 @@ class TestMeshtasticAndroidAppDownloader:
                 ],
             },
             {
+                "tag_name": "v2.7.2",
+                "prerelease": False,
+                # Blank download URL should skip this asset, then skip release
+                "assets": [
+                    {
+                        "name": "meshtastic-no-url.apk",
+                        "browser_download_url": "   ",
+                        "size": 1000000,
+                    }
+                ],
+            },
+            {
                 "tag_name": "v2.7.0",
                 "prerelease": False,
                 "published_at": "2023-01-01T00:00:00Z",

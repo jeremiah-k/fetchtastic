@@ -23,11 +23,7 @@ from requests.exceptions import RequestException  # type: ignore[import-untyped]
 from fetchtastic import utils
 from fetchtastic.constants import (
     DEFAULT_CHUNK_SIZE,
-    DEFAULT_CONNECT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
-    ERROR_TYPE_FILESYSTEM,
-    ERROR_TYPE_NETWORK,
-    ERROR_TYPE_UNKNOWN,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
@@ -118,7 +114,24 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             int: Maximum concurrent downloads (default 5).
         """
-        return int(self.config.get("MAX_CONCURRENT_DOWNLOADS", 5))
+        raw_value = self.config.get("MAX_CONCURRENT_DOWNLOADS", 5)
+        try:
+            parsed_value = int(raw_value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid MAX_CONCURRENT_DOWNLOADS value %r; using default of 5",
+                raw_value,
+            )
+            return 5
+
+        if parsed_value <= 0:
+            logger.warning(
+                "MAX_CONCURRENT_DOWNLOADS must be >= 1; clamping %d to 1",
+                parsed_value,
+            )
+            return 1
+
+        return parsed_value
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         """

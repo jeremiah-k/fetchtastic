@@ -407,8 +407,8 @@ class RepositoryDownloader(BaseDownloader):
             had_errors = False
             with os.scandir(repo_dir) as it:
                 for entry in it:
+                    entry_display = _format_entry_path(entry.path)
                     try:
-                        entry_display = _format_entry_path(entry.path)
                         if entry.is_file() or entry.is_symlink():
                             os.remove(entry.path)
                             logger.info("Removed file: %s", entry_display)
@@ -483,7 +483,7 @@ class RepositoryDownloader(BaseDownloader):
 
     def cleanup_old_versions(
         self,
-        _keep_limit: int,
+        keep_limit: int,
         cached_releases: Optional[List[Release]] = None,
         keep_last_beta: bool = False,
     ) -> None:
@@ -493,10 +493,11 @@ class RepositoryDownloader(BaseDownloader):
         The _keep_limit parameter is ignored because repository files are not versioned; this method removes all files under the repository downloads area.
 
         Parameters:
-            _keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
+            keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
             cached_releases (Optional[List[Release]]): Unused for repository downloads; retained for signature compatibility.
             keep_last_beta (bool): Unused for repository downloads; retained for signature compatibility.
         """
+        del keep_limit  # intentionally unused (signature compatibility)
         del (
             cached_releases,
             keep_last_beta,
@@ -548,10 +549,10 @@ class RepositoryDownloader(BaseDownloader):
 
     def check_extraction_needed(
         self,
-        _file_path: str,
-        _extract_dir: str,
-        _patterns: List[str],
-        _exclude_patterns: List[str],
+        file_path: str,
+        extract_dir: str,
+        patterns: List[str],
+        exclude_patterns: List[str],
     ) -> bool:
         """
         Indicates whether the given repository file requires extraction.
@@ -561,13 +562,14 @@ class RepositoryDownloader(BaseDownloader):
         Returns:
             `False` indicating extraction is not required for repository files.
         """
+        del file_path, extract_dir, patterns, exclude_patterns
         # Repository files are typically not archives, so extraction is never needed
         logger.debug(
             "Extraction need check called for repository file - not applicable"
         )
         return False
 
-    def should_download_release(self, _release_tag: str, _asset_name: str) -> bool:
+    def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
         Indicates whether a repository release asset should be downloaded.
 
@@ -576,5 +578,6 @@ class RepositoryDownloader(BaseDownloader):
         Returns:
             True for all repository assets, False otherwise.
         """
+        del release_tag, asset_name
         # Repository downloads don't use pattern filtering in the same way
         return True

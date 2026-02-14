@@ -387,6 +387,86 @@ class TestGetReleases:
 
         assert captured_params["params"]["per_page"] == 50
 
+    async def test_get_releases_non_list_payload_returns_empty(self, mocker):
+        """Non-list JSON payloads should be handled defensively."""
+        client = AsyncGitHubClient()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.json = AsyncMock(return_value={"unexpected": "shape"})
+        mock_response.raise_for_status = Mock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        releases = await client.get_releases(
+            "https://api.github.com/repos/test/test/releases"
+        )
+
+        assert releases == []
+
+    async def test_get_releases_skips_malformed_entries(self, mocker):
+        """Malformed release and asset entries should be skipped safely."""
+        client = AsyncGitHubClient()
+
+        payload = [
+            "not-a-dict",
+            {"tag_name": "v1.0.0", "assets": "not-a-list"},
+            {
+                "tag_name": "v1.1.0",
+                "prerelease": False,
+                "assets": [
+                    "bad-asset",
+                    {
+                        "name": "firmware-good.bin",
+                        "browser_download_url": "https://example.com/fw.bin",
+                        "size": 1024,
+                    },
+                    {
+                        "name": "firmware-bad-size.bin",
+                        "browser_download_url": "https://example.com/fw2.bin",
+                        "size": "not-int",
+                    },
+                ],
+            },
+        ]
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.json = AsyncMock(return_value=payload)
+        mock_response.raise_for_status = Mock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        releases = await client.get_releases(
+            "https://api.github.com/repos/test/test/releases"
+        )
+
+        assert len(releases) == 2
+        assert releases[0].tag_name == "v1.0.0"
+        assert releases[0].assets == []
+        assert releases[1].tag_name == "v1.1.0"
+        assert len(releases[1].assets) == 2
+        assert releases[1].assets[0].name == "firmware-good.bin"
+        assert releases[1].assets[1].size == 0
+
     async def test_get_releases_rate_limit_exceeded(self, mocker):
         """Test get_releases raises error on rate limit exceeded."""
         client = AsyncGitHubClient()
@@ -1008,3 +1088,37 @@ class TestDownloadFilesConcurrently:
             max_concurrent=2,
         )
         assert results == [True]
+
+    async def test_download_files_concurrently_invalid_specs(self, mocker, tmp_path):
+        """Invalid specs should produce clear ValueError results."""
+        downloads = [
+            {"target_path": str(tmp_path / "missing-url.bin")},
+            {"url": "https://example.com/missing-target.bin"},
+            "not-a-dict",
+            {
+                "url": "https://example.com/valid.bin",
+                "target_path": str(tmp_path / "valid.bin"),
+            },
+        ]
+        mock_client = AsyncMock()
+        mock_client.download_file = AsyncMock(return_value=True)
+
+        class MockClientContextManager:
+            async def __aenter__(self):
+                return mock_client
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        mocker.patch(
+            "fetchtastic.download.async_client.create_async_client",
+            return_value=MockClientContextManager(),
+        )
+
+        results = await download_files_concurrently(downloads)
+
+        assert len(results) == 4
+        assert isinstance(results[0], ValueError)
+        assert isinstance(results[1], ValueError)
+        assert isinstance(results[2], ValueError)
+        assert results[3] is True

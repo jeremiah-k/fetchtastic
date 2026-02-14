@@ -14,7 +14,7 @@ import subprocess
 import sys
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, cast
 
 import platformdirs
 import yaml  # type: ignore[import-untyped]
@@ -172,10 +172,12 @@ CRON_SCHEDULES = {
 }
 
 # Import Windows-specific modules if on Windows
+winshell: Any = None
 if platform.system() == "Windows":
     try:
-        import winshell  # type: ignore[import-not-found]
+        import winshell as winshell_module  # type: ignore[import-not-found]
 
+        winshell = winshell_module
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
         WINDOWS_MODULES_AVAILABLE = False
@@ -2706,7 +2708,8 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                 win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
             except (ImportError, TypeError):
                 # Fall back to SetClipboardText for older versions or if win32con is missing attributes
-                win32clipboard.SetClipboardText(text)
+                set_clipboard_text = cast(Any, win32clipboard.SetClipboardText)
+                set_clipboard_text(text)
             win32clipboard.CloseClipboard()
             return True
         except Exception as e:  # noqa: BLE001
