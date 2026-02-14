@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -126,6 +127,12 @@ def pytest_runtest_setup():
     requests.Session.request = _block_network
 
 
+@pytest.fixture(autouse=True)
+def _mock_time_sleep(monkeypatch):
+    """Make time.sleep instant for all tests to prevent delays."""
+    monkeypatch.setattr(time, "sleep", lambda *args, **kwargs: None)
+
+
 # =============================================================================
 # Async Test Fixtures
 # =============================================================================
@@ -160,6 +167,7 @@ async def async_client(mock_aiohttp_session, mocker):
 
     yield client
 
+    # Properly mark as closed (session is mocked, no need to close it)
     client._closed = True
 
 

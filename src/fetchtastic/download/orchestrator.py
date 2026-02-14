@@ -71,6 +71,7 @@ def is_connected_to_wifi() -> bool:
             capture_output=True,
             text=True,
             check=False,
+            timeout=5,
         )
         if process.returncode != 0:
             error_message = process.stderr.strip()
