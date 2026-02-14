@@ -975,17 +975,17 @@ class CacheManager:
     ) -> dict[str, Any]:
         """
         Return a new mapping containing only cache entries that are parseable, not expired, and that match an optional schema version.
-        
+
         Supported entry formats:
         - Object form: {"cached_at": "<iso>", "schema_version": "<ver>", ...}
         - List form (legacy): [data, "<cached_at_iso>"]
         - Legacy dict form: {"timestamp": "<iso>", "cached_at": "<iso>"}
-        
+
         Parameters:
             cache (dict[str, Any]): Mapping of cache keys to cache entries to be pruned.
             expiry_seconds (float): Maximum allowed age of an entry in seconds; entries with age greater than or equal to this value are removed.
             schema_version (Optional[str]): If provided, only entries whose "schema_version" equals this value are retained; entries missing or with a different schema version are removed.
-        
+
         Returns:
             dict[str, Any]: A new mapping containing only entries that are parseable, whose "cached_at" can be parsed as a UTC datetime, are younger than `expiry_seconds`, and (when `schema_version` is provided) have a matching schema version.
         """

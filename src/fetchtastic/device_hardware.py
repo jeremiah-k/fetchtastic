@@ -200,12 +200,12 @@ class DeviceHardwareManager:
     def _fetch_from_api(self) -> Optional[Set[str]]:
         """
         Fetch device platform identifiers from the configured Meshtastic API.
-        
+
         Validates that the configured API URL uses the HTTP/HTTPS scheme and contains a network location, performs a GET request expecting JSON, and collects non-empty `platformioTarget` string values from objects in the top-level JSON array.
-        
+
         Returns:
             A set of discovered `platformioTarget` strings if at least one valid target is found, `None` if the URL is invalid, the HTTP request fails, the response is not valid JSON, or no valid targets are present.
-        
+
         Side effects:
             Updates self._last_fetch_time to the current timestamp on successful fetch.
         """

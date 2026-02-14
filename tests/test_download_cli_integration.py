@@ -927,7 +927,7 @@ def test_run_download_orchestrator_none_after_init(mocker):
         # Explicitly set orchestrator to None
         """
         Simulate a failed component initialization by clearing the download orchestrator.
-        
+
         This test helper sets integration.orchestrator to None so callers observe an uninitialized orchestrator.
         Parameters:
             cfg: Configuration object passed by the caller; it is accepted but ignored.

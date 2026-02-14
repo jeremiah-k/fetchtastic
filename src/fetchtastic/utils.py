@@ -80,7 +80,7 @@ _BANNER_WIDTH = 20
 def _get_package_version() -> str:
     """
     Return the installed fetchtastic package version.
-    
+
     Returns:
         The package version string, or 'unknown' if the version cannot be determined.
     """
@@ -425,12 +425,12 @@ def _update_rate_limit(
 ) -> None:
     """
     Update the in-memory rate-limit entry for a token and persist the cache to disk when appropriate.
-    
+
     Parameters:
         token_hash (str): Short identifier for the token whose rate-limit state is being updated.
         remaining (int): Number of remaining requests reported for the token.
         reset_timestamp (Optional[datetime]): Time when the rate limit resets; if omitted, defaults to one hour from now (UTC).
-    
+
     Details:
         - Stores the tuple (remaining, reset_timestamp) in the in-memory rate-limit cache.
         - Triggers an on-disk save when adding a new entry, when `remaining` decreased compared to the cached value, or when the configured save interval has elapsed; the last-cache-save timestamp is updated when a save is scheduled.
@@ -987,13 +987,13 @@ def download_file_with_retry(
 ) -> bool:
     """
     Download a remote URL to a local file, verify its integrity, and atomically install it.
-    
+
     If the destination file already exists and passes verification it is left in place. The function validates ZIP archives using ZIP integrity checks and verifies or records a SHA-256 sidecar hash. Temporary or partially downloaded files are removed on failure; corrupted files and their associated hash records are removed before re-downloading. On Windows the final install may be retried to accommodate transient file-access issues.
-    
+
     Parameters:
         url (str): HTTP(S) URL of the file to download.
         download_path (str): Final filesystem path where the downloaded file will be installed.
-    
+
     Returns:
         bool: `True` if the destination file is present and verified or was downloaded and installed successfully, `False` otherwise.
     """

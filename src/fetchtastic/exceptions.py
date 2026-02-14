@@ -19,7 +19,7 @@ class FetchtasticError(Exception):
     def __init__(self, message: str, details: str | None = None) -> None:
         """
         Initialize the base FetchtasticError with a message and optional details.
-        
+
         Parameters:
             message (str): Primary error message for the exception.
             details (str | None): Optional additional context included in the exception's string representation.
@@ -31,7 +31,7 @@ class FetchtasticError(Exception):
     def __str__(self) -> str:
         """
         Return a human-readable representation of the error, including details when present.
-        
+
         Returns:
             str: The error `message` alone, or `message` followed by " - " and `details` if `details` is provided.
         """
@@ -95,7 +95,7 @@ class DownloadError(FetchtasticError):
     ) -> None:
         """
         Initialize a DownloadError with optional URL, retry metadata, and extra details.
-        
+
         Parameters:
             message (str): Primary error message.
             url (str | None): URL involved in the failed download, if available.
@@ -142,7 +142,7 @@ class HTTPError(DownloadError):
     ) -> None:
         """
         Initialize an HTTP error with a message and optional HTTP-specific metadata.
-        
+
         Parameters:
             message (str): The primary error message.
             status_code (int | None): HTTP status code returned by the request, if available.
@@ -177,13 +177,13 @@ class RateLimitError(HTTPError):
     ) -> None:
         """
         Initialize a RateLimitError representing a GitHub API rate limit.
-        
+
         Parameters:
             message (str): Primary error message.
             reset_time (int | None): Unix timestamp (seconds since epoch) when the rate limit resets, or None if unknown.
             remaining (int): Number of requests remaining.
             url (str | None): The URL that triggered the rate limit, if available.
-        
+
         Notes:
             - Sets `status_code` to 403 and `is_retryable` to True on the exception.
             - Exposes `reset_time` and `remaining` as instance attributes and includes a human-readable `details` string describing the reset time and remaining requests.
@@ -234,7 +234,7 @@ class FileSystemError(FetchtasticError):
     ) -> None:
         """
         Initialize a FileSystemError with a message, optional path, and optional details.
-        
+
         Parameters:
             message (str): The primary error message.
             path (str | None): The file or directory path associated with the error, if available.
@@ -334,7 +334,7 @@ class ArchiveError(FetchtasticError):
     ) -> None:
         """
         Create an ArchiveError with a message and optional archive path and details.
-        
+
         Parameters:
             message (str): Primary error message.
             archive_path (str | None): Path to the archive related to the error, if available.
@@ -380,7 +380,7 @@ class APIError(FetchtasticError):
     ) -> None:
         """
         Initialize an API error with an optional endpoint, HTTP status code, and additional details.
-        
+
         Parameters:
             message: Primary error message describing the failure.
             endpoint: The API endpoint associated with the error, if known.

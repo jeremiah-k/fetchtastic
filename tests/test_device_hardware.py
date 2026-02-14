@@ -727,13 +727,13 @@ class TestDeviceHardwareManagerExceptionHandlers:
                 def __getitem__(self, key):
                     """
                     Prevent access to the "platformioTarget" key and otherwise return the mapped value.
-                    
+
                     Parameters:
                         key: The mapping key to retrieve.
-                    
+
                     Returns:
                         The value associated with `key` from the mapping.
-                    
+
                     Raises:
                         KeyError: If `key` is "platformioTarget".
                     """
@@ -761,7 +761,7 @@ class TestDeviceHardwareManagerExceptionHandlers:
                 def raise_for_status(self):
                     """
                     Raise an HTTPError if the associated HTTP response indicates an error status.
-                    
+
                     Raises:
                         requests.HTTPError: If the response status code is 400 or greater.
                     """
@@ -771,9 +771,9 @@ class TestDeviceHardwareManagerExceptionHandlers:
                     # Return something that causes ValueError during iteration
                     """
                     Simulate a failed JSON parse by raising a ValueError.
-                    
+
                     This method emulates a response.json() call that cannot parse or produce JSON and therefore always raises a parsing error.
-                    
+
                     Raises:
                         ValueError: Raised with message "Invalid value during parsing" to represent a JSON parsing failure.
                     """
@@ -813,7 +813,7 @@ class TestDeviceHardwareManagerExceptionHandlers:
                 def raise_for_status(self):
                     """
                     Raise an HTTPError if the associated HTTP response indicates an error status.
-                    
+
                     Raises:
                         requests.HTTPError: If the response status code is 400 or greater.
                     """
@@ -822,7 +822,7 @@ class TestDeviceHardwareManagerExceptionHandlers:
                 def json(self):
                     """
                     Indicates the absence of the `json` attribute by raising an AttributeError.
-                    
+
                     Raises:
                         AttributeError: Always raised with message "Missing attribute".
                     """
@@ -857,7 +857,7 @@ class TestDeviceHardwareManagerExceptionHandlers:
                 def __iter__(self):
                     """
                     Prevent iteration over instances of this class.
-                    
+
                     Raises:
                         TypeError: Always raised with message "Cannot iterate over this type".
                     """
