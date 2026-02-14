@@ -112,11 +112,28 @@ class GithubReleaseSource:
 
             releases: List[Release] = []
             for release_data in releases_data:
-                # Filter out releases without assets
-                if not release_data.get("assets"):
+                if not isinstance(release_data, dict):
+                    logger.warning(
+                        "Skipping malformed release entry from %s: expected dict, got %s",
+                        self.releases_url,
+                        type(release_data).__name__,
+                    )
                     continue
 
-                release = parse_release_func(release_data)
+                assets_data = release_data.get("assets")
+                # Filter out releases without a valid asset list
+                if not isinstance(assets_data, list) or not assets_data:
+                    continue
+
+                try:
+                    release = parse_release_func(release_data)
+                except (KeyError, TypeError, ValueError) as exc:
+                    logger.warning(
+                        "Skipping malformed release entry from %s: %s",
+                        self.releases_url,
+                        exc,
+                    )
+                    continue
                 if release is not None:
                     releases.append(release)
 
@@ -224,7 +241,7 @@ class GithubReleaseSource:
         return response.json() if hasattr(response, "json") else None
 
 
-def create_release_from_github_data(release_data: Dict[str, Any]) -> Release:
+def create_release_from_github_data(release_data: Dict[str, Any]) -> Optional[Release]:
     """
     Create a Release object from GitHub API release data.
 
@@ -235,10 +252,16 @@ def create_release_from_github_data(release_data: Dict[str, Any]) -> Release:
         release_data (Dict[str, Any]): Raw release data from GitHub API.
 
     Returns:
-        Release: A Release object populated with assets.
+        Optional[Release]: A Release object populated with assets, or None
+            when required fields are missing/invalid.
     """
+    tag_name = release_data.get("tag_name")
+    if not isinstance(tag_name, str) or not tag_name.strip():
+        logger.warning("Skipping release with missing or invalid tag_name")
+        return None
+
     release = Release(
-        tag_name=release_data["tag_name"],
+        tag_name=tag_name,
         prerelease=release_data.get("prerelease", False),
         published_at=release_data.get("published_at"),
         name=release_data.get("name"),
@@ -246,14 +269,40 @@ def create_release_from_github_data(release_data: Dict[str, Any]) -> Release:
     )
 
     # Add assets to the release
-    for asset_data in release_data.get("assets", []):
+    assets_data = release_data.get("assets")
+    if not isinstance(assets_data, list):
+        logger.warning("Skipping release %s with invalid assets field", tag_name)
+        return None
+
+    for asset_data in assets_data:
+        if not isinstance(asset_data, dict):
+            logger.warning("Skipping malformed asset for release %s", tag_name)
+            continue
+        asset_name = asset_data.get("name")
+        if not isinstance(asset_name, str) or not asset_name.strip():
+            logger.warning("Skipping asset with invalid name for release %s", tag_name)
+            continue
+        raw_size = asset_data.get("size")
+        try:
+            asset_size = int(raw_size)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Skipping asset %s with invalid size for release %s",
+                asset_name,
+                tag_name,
+            )
+            continue
         asset = Asset(
-            name=asset_data["name"],
+            name=asset_name,
             download_url=asset_data.get("browser_download_url", ""),
-            size=asset_data["size"],
+            size=asset_size,
             browser_download_url=asset_data.get("browser_download_url"),
             content_type=asset_data.get("content_type"),
         )
         release.assets.append(asset)
+
+    if not release.assets:
+        logger.warning("Skipping release %s with no valid assets", tag_name)
+        return None
 
     return release

@@ -393,6 +393,57 @@ class TestMeshtasticAndroidAppDownloader:
         assert releases[0].prerelease is True
 
     @patch("fetchtastic.download.github_source.make_github_api_request")
+    def test_get_releases_skips_malformed_entries(self, mock_request, downloader):
+        """Malformed Android releases/assets should be skipped while preserving valid entries."""
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {
+                # Missing tag_name
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "meshtastic-invalid.apk",
+                        "browser_download_url": "https://example.com/invalid.apk",
+                        "size": 100,
+                    }
+                ],
+            },
+            {
+                "tag_name": "v2.7.1",
+                "prerelease": False,
+                # Invalid size should skip this asset, then skip release
+                "assets": [
+                    {
+                        "name": "meshtastic-bad.apk",
+                        "browser_download_url": "https://example.com/bad.apk",
+                        "size": "oops",
+                    }
+                ],
+            },
+            {
+                "tag_name": "v2.7.0",
+                "prerelease": False,
+                "published_at": "2023-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "meshtastic.apk",
+                        "browser_download_url": "https://example.com/meshtastic.apk",
+                        "size": 1000000,
+                    }
+                ],
+            },
+        ]
+        mock_request.return_value = mock_response
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+
+        releases = downloader.get_releases(limit=10)
+
+        assert len(releases) == 1
+        assert releases[0].tag_name == "v2.7.0"
+        assert len(releases[0].assets) == 1
+        assert releases[0].assets[0].name == "meshtastic.apk"
+
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_api_error(self, mock_request, downloader):
         """Test handling of GitHub API errors."""
         mock_request.side_effect = requests.RequestException("API Error")

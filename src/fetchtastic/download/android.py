@@ -305,11 +305,24 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 releases: List[Release] = []
                 stable_count = 0
                 for release_data in releases_data:
+                    if not isinstance(release_data, dict):
+                        logger.warning(
+                            "Skipping malformed Android release entry: expected dict, got %s",
+                            type(release_data).__name__,
+                        )
+                        continue
+
+                    assets_data = release_data.get("assets")
                     # Filter out releases without assets
-                    if not release_data.get("assets"):
+                    if not isinstance(assets_data, list) or not assets_data:
                         continue
 
                     tag_name = release_data.get("tag_name", "")
+                    if not isinstance(tag_name, str) or not tag_name.strip():
+                        logger.warning(
+                            "Skipping Android release with missing or invalid tag_name"
+                        )
+                        continue
                     if not _is_supported_android_release(
                         tag_name, version_manager=self.version_manager
                     ):
@@ -328,15 +341,50 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     )
 
                     # Add assets to the release
-                    for asset_data in release_data["assets"]:
+                    for asset_data in assets_data:
+                        if not isinstance(asset_data, dict):
+                            logger.warning(
+                                "Skipping malformed Android asset in release %s",
+                                tag_name,
+                            )
+                            continue
+                        asset_name = asset_data.get("name")
+                        if not isinstance(asset_name, str) or not asset_name.strip():
+                            logger.warning(
+                                "Skipping Android asset with invalid name in release %s",
+                                tag_name,
+                            )
+                            continue
+                        raw_size = asset_data.get("size")
+                        try:
+                            asset_size = int(raw_size)
+                        except (TypeError, ValueError):
+                            logger.warning(
+                                "Skipping Android asset %s with invalid size in release %s",
+                                asset_name,
+                                tag_name,
+                            )
+                            continue
+                        browser_download_url = asset_data.get("browser_download_url")
                         asset = Asset(
-                            name=asset_data["name"],
-                            download_url=asset_data["browser_download_url"],
-                            size=asset_data["size"],
-                            browser_download_url=asset_data.get("browser_download_url"),
+                            name=asset_name,
+                            download_url=str(browser_download_url or ""),
+                            size=asset_size,
+                            browser_download_url=(
+                                str(browser_download_url)
+                                if browser_download_url is not None
+                                else None
+                            ),
                             content_type=asset_data.get("content_type"),
                         )
                         release.assets.append(asset)
+
+                    if not release.assets:
+                        logger.warning(
+                            "Skipping Android release %s with no valid assets",
+                            tag_name,
+                        )
+                        continue
 
                     releases.append(release)
                     if not release.prerelease:
