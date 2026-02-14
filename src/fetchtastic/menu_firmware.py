@@ -25,7 +25,11 @@ def fetch_firmware_assets() -> list[str]:
     Returns:
         list[str]: Sorted asset filenames from the latest release; empty list if no release data is available.
     """
-    response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
+    try:
+        response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
+    except (requests.RequestException, requests.Timeout) as e:
+        logger.error(f"Failed to fetch firmware assets from GitHub API: {e}")
+        return []
 
     try:
         releases = response.json()
@@ -39,9 +43,16 @@ def fetch_firmware_assets() -> list[str]:
         return []
     latest_release = releases[0] or {}
     assets = latest_release.get("assets") or []
+    if not isinstance(assets, list):
+        logger.warning("Invalid assets data from GitHub API.")
+        return []
     # Sorted alphabetically, tolerate missing names
     asset_names = sorted(
-        [(asset.get("name") or "") for asset in assets if (asset.get("name") or "")]
+        [
+            (asset.get("name") or "")
+            for asset in assets
+            if isinstance(asset, dict) and (asset.get("name") or "")
+        ]
     )
 
     return asset_names

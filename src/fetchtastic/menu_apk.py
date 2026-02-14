@@ -24,7 +24,11 @@ def fetch_apk_assets() -> list[str]:
     Returns:
         list[str]: Alphabetically sorted APK asset filenames from the latest release. Empty list if no releases or matching assets are found.
     """
-    response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
+    try:
+        response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
+    except (requests.RequestException, requests.Timeout) as e:
+        logger.error(f"Failed to fetch APK assets from GitHub API: {e}")
+        return []
 
     try:
         releases = response.json()
@@ -38,11 +42,15 @@ def fetch_apk_assets() -> list[str]:
         return []
     latest_release = releases[0] or {}
     assets = latest_release.get("assets", []) or []
+    if not isinstance(assets, list):
+        logger.warning("Invalid assets data from GitHub API.")
+        return []
     asset_names = sorted(
         [
             asset_name
             for asset in assets
-            if (asset_name := asset.get("name"))
+            if isinstance(asset, dict)
+            and (asset_name := asset.get("name"))
             and asset_name.lower().endswith(APK_EXTENSION)
         ]
     )
