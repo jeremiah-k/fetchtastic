@@ -1310,7 +1310,7 @@ def _setup_automation(
                             print(
                                 "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
                             )
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             print(f"Failed to remove startup shortcut: {e}")
                             print("You can manually remove it from: " + startup_folder)
                     else:
@@ -2022,7 +2022,7 @@ def run_setup(
     except PackageNotFoundError:
         # If fetchtastic package is not found, we can't get the version.
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # If other error, we can't get the version.
         # Log the specific error for debugging but don't fail setup
         logger.debug("Could not determine package version: %s", e)
@@ -2131,7 +2131,7 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
         # Parsing or data structure errors
         logger.debug("Data error checking for updates: %s", e)
         return _safe_current_version(), None, False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Catch-all for unexpected errors (backward compatibility)
         logger.debug("Unexpected error checking for updates: %s", e)
         return _safe_current_version(), None, False
@@ -2241,7 +2241,7 @@ def migrate_config() -> bool:
     if not os.path.exists(CONFIG_DIR):
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error creating config directory: {e}")
             return False
 
@@ -2259,13 +2259,13 @@ def migrate_config() -> bool:
         try:
             os.remove(OLD_CONFIG_FILE)
             logger.info(f"Configuration migrated to {CONFIG_FILE} and old file removed")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(
                 f"Configuration migrated to {CONFIG_FILE} but failed to remove old file: {e}"
             )
 
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error saving config to new location: {e}")
         return False
 
@@ -2325,7 +2325,7 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
             # Try to create the parent directory structure
             try:
                 os.makedirs(parent_dir, exist_ok=True)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Error creating parent directory: {e}")
                 return False
 
@@ -2336,7 +2336,7 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
                 # Try to remove the entire folder
                 shutil.rmtree(WINDOWS_START_MENU_FOLDER)
                 print("Successfully removed existing shortcuts folder")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Warning: Could not remove shortcuts folder: {e}")
                 # Try to remove individual files as a fallback
                 try:
@@ -2358,7 +2358,7 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
                             print(f"Could not remove {entry.name}: {e3}")
 
                     print("Attempted to remove individual files")
-                except Exception as e2:
+                except Exception as e2:  # noqa: BLE001
                     print(f"Warning: Could not clean shortcuts folder: {e2}")
                     print("Will attempt to overwrite existing shortcuts")
 
@@ -2366,7 +2366,7 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
         print(f"Creating Start Menu folder: {WINDOWS_START_MENU_FOLDER}")
         try:
             os.makedirs(WINDOWS_START_MENU_FOLDER, exist_ok=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Error creating Start Menu folder: {e}")
             return False
 
@@ -2563,7 +2563,7 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
 
         print("Shortcuts created in Start Menu")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Failed to create Windows Start Menu shortcuts: {e}")
         return False
 
@@ -2595,7 +2595,7 @@ def create_config_shortcut(config_file_path: str, target_dir: str) -> bool:
 
         print(f"Created shortcut to configuration file at: {shortcut_path}")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Failed to create shortcut to configuration file: {e}")
         return False
 
@@ -2659,7 +2659,7 @@ def create_startup_shortcut() -> bool:
 
         print(f"Created startup shortcut at: {shortcut_path}")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Failed to create startup shortcut: {e}")
         return False
 
@@ -2686,7 +2686,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                 ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
             )
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error copying to Termux clipboard: %s", e)
             return False
     elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
@@ -2706,7 +2706,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                 win32clipboard.SetClipboardText(text)
             win32clipboard.CloseClipboard()
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error copying to Windows clipboard: %s", e)
             return False
     else:
@@ -2744,7 +2744,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                     "Clipboard functionality is not supported on this platform."
                 )
                 return False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error copying to clipboard on %s: %s", system, e)
             return False
 
@@ -2810,7 +2810,7 @@ def install_crond() -> None:
             # Enable crond service
             subprocess.run(["sv-enable", "crond"], check=True)
             print("crond service enabled.")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"An error occurred while installing or enabling crond: {e}")
     else:
         # For non-Termux environments, crond installation is not needed

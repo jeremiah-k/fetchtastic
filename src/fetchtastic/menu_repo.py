@@ -357,7 +357,7 @@ def fetch_repo_contents(
     except (ValueError, KeyError) as e:
         logger.error(f"Error parsing repository contents response: {e}")
         return []
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(
             f"Unexpected error fetching repository contents: {e}", exc_info=True
         )
@@ -691,7 +691,7 @@ def run_menu(config: dict[str, Any] | None = None) -> dict[str, Any] | None:
         directory = current_path
 
         return {"directory": directory, "files": selected_files}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"An error occurred: {e}")
         return None
 
@@ -749,6 +749,6 @@ def run_repository_downloader_menu(config):
             logger.info("No files were downloaded successfully.")
             return None
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error in repository downloader workflow: {e}", exc_info=True)
         return None

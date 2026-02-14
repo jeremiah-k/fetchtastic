@@ -698,6 +698,7 @@ class TestDeviceHardwareManagerPerformance:
                 assert patterns1 == set(test_patterns)
 
 
+@pytest.mark.unit
 class TestDeviceHardwareManagerExceptionHandlers:
     """Test exception handlers at lines 257-263."""
 

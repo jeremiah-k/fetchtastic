@@ -1290,7 +1290,7 @@ def download_file_with_retry(
         if response is not None:
             try:
                 response.close()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug(f"Error closing HTTP response for {url}: {e}")
         session.close()
     return False

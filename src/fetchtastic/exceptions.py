@@ -5,6 +5,8 @@ This module defines domain-specific exceptions that provide better error
 categorization and more informative error messages for users and developers.
 """
 
+from datetime import datetime, timezone
+
 
 class FetchtasticError(Exception):
     """
@@ -180,8 +182,6 @@ class RateLimitError(HTTPError):
         details = f"Remaining: {remaining}"
         if reset_time is not None:
             try:
-                from datetime import datetime, timezone
-
                 reset_dt = datetime.fromtimestamp(reset_time, tz=timezone.utc)
                 details = (
                     f"Resets at: {reset_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}, {details}"

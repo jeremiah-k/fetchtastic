@@ -23,6 +23,8 @@ from fetchtastic.download.base import BaseDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 # Concrete implementation of BaseDownloader for testing
 class ConcreteDownloader(BaseDownloader):
@@ -365,11 +367,10 @@ class TestBaseDownloaderShouldDownload:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "_get_selected_patterns"
-        ) as mock_patterns, patch.object(
-            downloader, "_get_exclude_patterns"
-        ) as mock_exclude:
+        with (
+            patch.object(downloader, "_get_selected_patterns") as mock_patterns,
+            patch.object(downloader, "_get_exclude_patterns") as mock_exclude,
+        ):
             mock_patterns.return_value = ["*"]
             mock_exclude.return_value = ["*.hex"]
 
@@ -574,13 +575,11 @@ class TestBaseDownloaderAssetChecks:
             tmp_path = tmp_file.name
 
         try:
-            with patch.object(
-                downloader, "get_target_path_for_release"
-            ) as mock_target, patch.object(
-                downloader.file_operations, "get_file_size"
-            ) as mock_size, patch.object(
-                downloader, "verify"
-            ) as mock_verify:
+            with (
+                patch.object(downloader, "get_target_path_for_release") as mock_target,
+                patch.object(downloader.file_operations, "get_file_size") as mock_size,
+                patch.object(downloader, "verify") as mock_verify,
+            ):
                 mock_target.return_value = tmp_path
                 mock_size.return_value = 1024
                 mock_verify.return_value = True
@@ -605,11 +604,10 @@ class TestBaseDownloaderAssetChecks:
             tmp_path = tmp_file.name
 
         try:
-            with patch.object(
-                downloader, "get_target_path_for_release"
-            ) as mock_target, patch.object(
-                downloader.file_operations, "get_file_size"
-            ) as mock_size:
+            with (
+                patch.object(downloader, "get_target_path_for_release") as mock_target,
+                patch.object(downloader.file_operations, "get_file_size") as mock_size,
+            ):
                 mock_target.return_value = tmp_path
                 mock_size.return_value = 1024
 
@@ -636,11 +634,10 @@ class TestBaseDownloaderAssetChecks:
         config = {}
         downloader = ConcreteDownloader(config)
 
-        with patch.object(
-            downloader, "get_existing_file_path"
-        ) as mock_existing, patch.object(
-            downloader.file_operations, "get_file_size"
-        ) as mock_size:
+        with (
+            patch.object(downloader, "get_existing_file_path") as mock_existing,
+            patch.object(downloader.file_operations, "get_file_size") as mock_size,
+        ):
             mock_existing.return_value = "/path/to/file"
             mock_size.return_value = 512  # Different from expected
 

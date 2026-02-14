@@ -26,7 +26,7 @@ def fetch_apk_assets() -> list[str]:
     """
     try:
         response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
-    except (requests.RequestException, requests.Timeout) as e:
+    except requests.RequestException as e:
         logger.error(f"Failed to fetch APK assets from GitHub API: {e}")
         return []
 
@@ -121,7 +121,7 @@ def run_menu() -> dict[str, list[str]] | None:
         # Handle unexpected data structure errors
         logger.exception("APK menu failed due to data structure error")
         return None
-    except Exception:
+    except Exception:  # noqa: BLE001
         # Catch-all for unexpected errors (backward compatibility)
         logger.exception("APK menu failed due to unexpected error")
         return None

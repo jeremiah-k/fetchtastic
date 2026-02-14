@@ -27,7 +27,7 @@ def fetch_firmware_assets() -> list[str]:
     """
     try:
         response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
-    except (requests.RequestException, requests.Timeout) as e:
+    except requests.RequestException as e:
         logger.error(f"Failed to fetch firmware assets from GitHub API: {e}")
         return []
 
@@ -116,7 +116,7 @@ def run_menu() -> dict[str, list[str]] | None:
         # Handle unexpected data structure errors
         logger.exception("Firmware menu failed due to data structure error")
         return None
-    except Exception:
+    except Exception:  # noqa: BLE001
         # Catch-all for unexpected errors (backward compatibility)
         logger.exception("Firmware menu failed due to unexpected error")
         return None
