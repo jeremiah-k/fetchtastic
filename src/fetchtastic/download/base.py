@@ -249,8 +249,8 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         self,
         url: str,
         target_path: Pathish,
-        max_retries: Optional[int] = 3,
-        retry_delay: Optional[float] = 1.0,
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
         backoff_factor: float = 2.0,
         progress_callback: Optional[AsyncProgressCallback] = None,
     ) -> bool:
@@ -260,8 +260,8 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         Parameters:
             url (str): URL to download from.
             target_path (Pathish): Local path to save the file.
-            max_retries (Optional[int]): Maximum number of retry attempts (default: 3).
-            retry_delay (Optional[float]): Initial delay between retries in seconds (default: 1.0).
+            max_retries (Optional[int]): Maximum retry attempts; `None` defers to configured/default value.
+            retry_delay (Optional[float]): Initial delay between retries in seconds; `None` defers to configured/default value.
             backoff_factor (float): Multiplier applied to the delay after each retry (default: 2.0).
             progress_callback (Optional[AsyncProgressCallback]): Optional callback for progress updates.
 

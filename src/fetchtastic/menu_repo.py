@@ -75,8 +75,8 @@ class MenuPicker(Picker[Option]):
         """
         max_y, max_x = screen.getmaxyx()
         title_lines = len(self.get_title_lines(max_width=max_x))
-        max_rows = max_y - self.position.y
-        step = int(max_rows - title_lines - 1)
+        max_rows = int(max_y - self.position.y)
+        step = max_rows - title_lines - 1
         return max(1, step)
 
     def _is_action_option(self, option: Option) -> bool:
@@ -730,9 +730,19 @@ def run_repository_downloader_menu(config: dict[str, Any]) -> list[str] | None:
         for file_info in raw_files:
             if not isinstance(file_info, dict):
                 continue
+            name = file_info.get("name")
+            download_url = file_info.get("download_url")
+            if (
+                not isinstance(name, str)
+                or not name.strip()
+                or not isinstance(download_url, str)
+                or not download_url.strip()
+            ):
+                logger.warning("Skipping malformed file entry: %s", file_info)
+                continue
             file_data = {
-                "name": file_info["name"],
-                "download_url": file_info["download_url"],
+                "name": name,
+                "download_url": download_url,
                 "size": file_info.get("size", 0),
             }
             files_to_download.append(file_data)

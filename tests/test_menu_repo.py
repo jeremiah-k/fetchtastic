@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import pytest
 import requests
-from pick import Option
+from pick import Option, Position
 
 from fetchtastic import menu_repo
 
@@ -146,6 +148,43 @@ def test_select_item(mocker):
     mock_pick.return_value = (Option(label="[Quit]", value={"type": "quit"}), 1)
     selected = menu_repo.select_item(items)
     assert selected["type"] == "quit"
+
+
+def test_menu_picker_page_step_clamps_to_minimum():
+    """Test MenuPicker._page_step never returns less than 1."""
+    picker = menu_repo.MenuPicker(
+        [Option(label="item", value={"type": "dir"})],
+        title="Title",
+        position=Position(0, 0),
+    )
+
+    class TinyScreen:
+        def getmaxyx(self):
+            return (1, 20)
+
+    assert picker._page_step(TinyScreen()) == 1
+
+
+def test_pick_menu_calls_picker_start(mocker):
+    """Test _pick_menu delegates to MenuPicker.start and returns its result."""
+    expected = (Option(label="dir1/", value={"type": "dir"}), 0)
+    mock_picker_cls = mocker.patch("fetchtastic.menu_repo.MenuPicker")
+    mock_picker_cls.return_value.start.return_value = expected
+
+    result = menu_repo._pick_menu([Option(label="dir1/", value={"type": "dir"})])
+
+    assert result == expected
+    mock_picker_cls.return_value.start.assert_called_once()
+
+
+def test_select_item_returns_none_when_picker_returns_non_option(mocker):
+    """Test select_item returns None when picker returns a non-Option value."""
+    mocker.patch("fetchtastic.menu_repo._pick_menu", return_value=(None, -1))
+    items = [{"name": "file1.txt", "path": "file1.txt", "type": "file"}]
+
+    selected = menu_repo.select_item(items)
+
+    assert selected is None
 
 
 def test_select_files(mocker):
@@ -369,6 +408,77 @@ def test_run_repository_downloader_menu_no_selection(mocker):
 
     assert result is None
     mock_logger.info.assert_called_once_with("No files selected for download.")
+
+
+def test_run_repository_downloader_menu_non_dict_selection(mocker):
+    """Test run_repository_downloader_menu returns None for non-dict selections."""
+    mocker.patch("fetchtastic.menu_repo.run_menu", return_value=["not-a-dict"])
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
+
+    assert result is None
+    mock_logger.info.assert_called_once_with("No files selected for download.")
+
+
+def test_run_repository_downloader_menu_invalid_selection_payload(mocker):
+    """Test run_repository_downloader_menu returns None for invalid payload types."""
+    mocker.patch(
+        "fetchtastic.menu_repo.run_menu",
+        return_value={"files": "not-a-list", "directory": 123},
+    )
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
+
+    assert result is None
+    mock_logger.info.assert_called_once_with("No files selected for download.")
+
+
+def test_run_repository_downloader_menu_skips_malformed_file_entries(mocker):
+    """Test run_repository_downloader_menu filters malformed file entries before download."""
+    mocker.patch(
+        "fetchtastic.menu_repo.run_menu",
+        return_value={
+            "directory": "firmware",
+            "files": [
+                {
+                    "name": "ok.bin",
+                    "download_url": "https://example.com/ok.bin",
+                    "size": 42,
+                },
+                {"name": "", "download_url": "https://example.com/blank-name.bin"},
+                {"name": "missing-url"},
+                "not-a-dict",
+                {"name": "bad-url.bin", "download_url": "   "},
+            ],
+        },
+    )
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+    mock_repo_downloader_cls = mocker.patch(
+        "fetchtastic.menu_repo.RepositoryDownloader"
+    )
+    mock_repo_downloader = mock_repo_downloader_cls.return_value
+    result_obj = mocker.MagicMock()
+    result_obj.success = True
+    result_obj.file_path = Path("/tmp/ok.bin")
+    result_obj.error_message = ""
+    mock_repo_downloader.download_repository_files_batch.return_value = [result_obj]
+
+    result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
+
+    assert result == ["/tmp/ok.bin"]
+    mock_repo_downloader.download_repository_files_batch.assert_called_once_with(
+        [
+            {
+                "name": "ok.bin",
+                "download_url": "https://example.com/ok.bin",
+                "size": 42,
+            }
+        ],
+        "firmware",
+    )
+    assert mock_logger.warning.called
 
 
 def test_fetch_directory_contents(mocker):

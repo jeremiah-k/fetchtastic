@@ -796,7 +796,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.raise_for_status = Mock()
         mock_content = MagicMock()
         mock_content.iter_chunked = Mock(
-            side_effect=lambda *a, **kw: _make_async_iter([b"test"])
+            side_effect=lambda *_args, **_kwargs: _make_async_iter([b"test"])
         )
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
@@ -913,7 +913,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.raise_for_status = Mock()
 
         # Create an async iterator for chunks
-        async def chunk_iterator(*args, **kwargs):
+        async def chunk_iterator(*_args, **_kwargs):
             """
             Yield a sequence of byte chunks suitable for testing async stream consumers.
 
@@ -996,7 +996,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock()
 
-        def bad_callback(downloaded, total, filename):
+        def bad_callback(_downloaded, _total, _filename):
             """
             Synchronous progress callback that always raises a ValueError.
 

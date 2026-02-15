@@ -375,6 +375,13 @@ class AsyncGitHubClient:
                         type(tag_name).__name__,
                     )
                     continue
+                tag_name = tag_name.strip()
+                if not tag_name:
+                    logger.warning(
+                        "Skipping release entry from %s with invalid or empty tag_name",
+                        url,
+                    )
+                    continue
 
                 assets_data = item.get("assets", [])
                 if not isinstance(assets_data, list):

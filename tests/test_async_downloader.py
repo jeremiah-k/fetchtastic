@@ -1135,6 +1135,31 @@ class TestAsyncDownloadMultiple:
         assert results[1].release_tag == "<unknown>"
         assert results[2].release_tag == "<unknown>"
 
+    async def test_download_multiple_handles_blank_release_asset_fields(
+        self, mocker, tmp_path, sample_release, sample_asset
+    ):
+        """Blank tag/name/url fields should be treated as malformed in exception fallback."""
+        downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_DIR": str(tmp_path)})
+
+        sample_release.tag_name = "  "
+        sample_asset.name = " "
+        sample_asset.download_url = " "
+
+        downloads = [{"release": sample_release, "asset": sample_asset}]
+
+        mocker.patch.object(
+            downloader,
+            "async_download_release",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        )
+
+        results = await downloader.async_download_multiple(downloads)
+
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].release_tag == "<unknown>"
+        assert "Invalid download spec" in (results[0].error_message or "")
+
     async def test_download_multiple_with_progress_callback(
         self, mocker, tmp_path, sample_release, sample_asset
     ):

@@ -265,21 +265,28 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                 if isinstance(spec, dict):
                     release = spec.get("release")
                     asset = spec.get("asset")
+                    tag_name = getattr(release, "tag_name", None)
+                    asset_name = getattr(asset, "name", None)
+                    asset_url = getattr(asset, "download_url", None)
 
                     if (
-                        release is not None
-                        and asset is not None
-                        and isinstance(getattr(release, "tag_name", None), str)
-                        and isinstance(getattr(asset, "name", None), str)
-                        and isinstance(getattr(asset, "download_url", None), str)
+                        isinstance(tag_name, str)
+                        and tag_name.strip()
+                        and isinstance(asset_name, str)
+                        and asset_name.strip()
+                        and isinstance(asset_url, str)
+                        and asset_url.strip()
                     ):
-                        release_tag = release.tag_name
-                        download_url = asset.download_url
+                        clean_tag_name = tag_name.strip()
+                        clean_asset_name = asset_name.strip()
+                        clean_asset_url = asset_url.strip()
+                        release_tag = clean_tag_name
+                        download_url = clean_asset_url
                         is_retryable = True
                         try:
                             file_path = Path(
                                 self.get_target_path_for_release(
-                                    release.tag_name, asset.name
+                                    clean_tag_name, clean_asset_name
                                 )
                             )
                         except Exception:

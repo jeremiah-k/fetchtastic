@@ -602,6 +602,43 @@ class TestGetReleases:
         assert releases[0].assets[0].name == "valid.bin"
         assert releases[0].assets[0].download_url == ""
 
+    async def test_get_releases_skips_blank_tag_name(self, mocker):
+        """Blank tag names should be treated as invalid and skipped."""
+        client = AsyncGitHubClient()
+        payload = [
+            {
+                "tag_name": "   ",
+                "assets": [
+                    {
+                        "name": "firmware.bin",
+                        "size": 1,
+                        "browser_download_url": "https://example.com/fw.bin",
+                    }
+                ],
+            }
+        ]
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.json = AsyncMock(return_value=payload)
+        mock_response.raise_for_status = Mock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        releases = await client.get_releases(
+            "https://api.github.com/repos/test/test/releases"
+        )
+
+        assert releases == []
+
     async def test_get_releases_logs_invalid_tag_and_asset_name_types(
         self, mocker, capsys
     ):
