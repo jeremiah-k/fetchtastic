@@ -40,11 +40,12 @@ async def _async_block_network(*_args, **_kwargs):
 
 # Configure pytest-asyncio mode - only register if available
 try:
-    import pytest_asyncio  # noqa: F401
+    import importlib
 
+    importlib.import_module("pytest_asyncio")
     pytest_plugins = ("pytest_asyncio",)
 except ImportError:
-    pytest_plugins = ()  # type: ignore[misc]
+    pytest_plugins = ()
 
 
 def pytest_configure(config):
@@ -139,14 +140,14 @@ def pytest_runtest_setup():
         import aiohttp  # type: ignore[import-not-found]
 
         aiohttp.request = _async_block_network
-        aiohttp.ClientSession.request = _async_block_network
-        aiohttp.ClientSession.get = _async_block_network
-        aiohttp.ClientSession.post = _async_block_network
-        aiohttp.ClientSession.put = _async_block_network
-        aiohttp.ClientSession.delete = _async_block_network
-        aiohttp.ClientSession.head = _async_block_network
-        aiohttp.ClientSession.patch = _async_block_network
-        aiohttp.ClientSession.options = _async_block_network
+        aiohttp.ClientSession.request = _async_block_network  # type: ignore[assignment]
+        aiohttp.ClientSession.get = _async_block_network  # type: ignore[assignment]
+        aiohttp.ClientSession.post = _async_block_network  # type: ignore[assignment]
+        aiohttp.ClientSession.put = _async_block_network  # type: ignore[assignment]
+        aiohttp.ClientSession.delete = _async_block_network  # type: ignore[assignment]
+        aiohttp.ClientSession.head = _async_block_network  # type: ignore[assignment]
+        aiohttp.ClientSession.patch = _async_block_network  # type: ignore[assignment]
+        aiohttp.ClientSession.options = _async_block_network  # type: ignore[assignment]
     except ImportError:
         pass
 
@@ -160,7 +161,7 @@ def _mock_time_sleep(monkeypatch):
     time.sleep(). Tests that require real timing behavior should explicitly
     monkeypatch sleep back to the real implementation within the test.
     """
-    monkeypatch.setattr(time, "sleep", lambda *args, **kwargs: None)
+    monkeypatch.setattr(time, "sleep", lambda *_args, **_kwargs: None)
 
 
 # =============================================================================

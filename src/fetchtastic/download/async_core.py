@@ -346,7 +346,14 @@ class AsyncDownloadCoreMixin:
             logger.debug(f"Downloaded {url} in {elapsed:.2f}s")
 
             temp_path.replace(target)
-            await self._async_save_file_hash(target)
+            # Save hash in background - failure should not fail the download
+            # since the file is already in place
+            try:
+                await self._async_save_file_hash(target)
+            except Exception as hash_err:
+                logger.warning(
+                    "Failed to save file hash for %s: %s", target.name, hash_err
+                )
 
             if file_size_mb >= FILE_SIZE_MB_LOGGING_THRESHOLD:
                 logger.info(f"Downloaded: {target.name} ({file_size_mb:.1f} MB)")

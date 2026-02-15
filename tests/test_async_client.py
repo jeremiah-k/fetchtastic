@@ -29,6 +29,10 @@ from tests.async_test_utils import make_async_iter
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
+# Test constants to avoid hardcoded token warnings
+TEST_GITHUB_TOKEN = "ghp_test_token"  # noqa: S105
+TEST_TOKEN_HASH = "abc123"  # noqa: S105
+
 
 # =============================================================================
 # AsyncDownloadError Tests (lines 43-75)
@@ -101,20 +105,20 @@ class TestAsyncGitHubClientInitialization:
 
     def test_init_with_token(self):
         """Test initialization with GitHub token."""
-        client = AsyncGitHubClient(github_token="ghp_test_token")
+        client = AsyncGitHubClient(github_token=TEST_GITHUB_TOKEN)
 
-        assert client.github_token == "ghp_test_token"
+        assert client.github_token == TEST_GITHUB_TOKEN
 
     def test_init_with_custom_parameters(self):
         """Test initialization with custom parameters."""
         client = AsyncGitHubClient(
-            github_token="test_token",
+            github_token=TEST_GITHUB_TOKEN,
             timeout=60.0,
             max_concurrent=10,
             connector_limit=20,
         )
 
-        assert client.github_token == "test_token"
+        assert client.github_token == TEST_GITHUB_TOKEN
         assert client.max_concurrent == 10
         assert client.connector_limit == 20
         # timeout is stored as ClientTimeout object
@@ -276,12 +280,12 @@ class TestGetDefaultHeaders:
 
     def test_headers_with_token(self, mocker):
         """Test default headers include authorization when token is provided."""
-        client = AsyncGitHubClient(github_token="ghp_test_token")
+        client = AsyncGitHubClient(github_token=TEST_GITHUB_TOKEN)
         mocker.patch("fetchtastic.utils.get_user_agent", return_value="Fetchtastic/1.0")
 
         headers = client._get_default_headers()
 
-        assert headers["Authorization"] == "token ghp_test_token"
+        assert headers["Authorization"] == f"token {TEST_GITHUB_TOKEN}"
 
 
 # =============================================================================
@@ -296,7 +300,7 @@ class TestRateLimitGuard:
     async def test_rate_limit_guard_allows_when_remaining(self, mocker):
         """Test rate limit guard allows request when remaining > 0."""
         client = AsyncGitHubClient()
-        token_hash = "abc123"
+        token_hash = TEST_TOKEN_HASH
         client._rate_limit_remaining[token_hash] = 10
         client._rate_limit_reset[token_hash] = datetime.now(timezone.utc)
 
@@ -306,7 +310,7 @@ class TestRateLimitGuard:
     async def test_rate_limit_guard_raises_when_exceeded(self, mocker):
         """Test rate limit guard raises error when limit exceeded."""
         client = AsyncGitHubClient()
-        token_hash = "abc123"
+        token_hash = TEST_TOKEN_HASH
         client._rate_limit_remaining[token_hash] = 0
         # Set reset time in the future
         client._rate_limit_reset[token_hash] = datetime.now(timezone.utc) + timedelta(
@@ -332,7 +336,7 @@ class TestGetReleases:
 
     async def test_get_releases_success(self, mocker, sample_release_data):
         """Test successful release fetch."""
-        client = AsyncGitHubClient(github_token="test_token")
+        client = AsyncGitHubClient(github_token=TEST_GITHUB_TOKEN)
 
         # Create mock response
         mock_response = AsyncMock()
@@ -1565,8 +1569,8 @@ class TestCreateAsyncClient:
         """Test factory with GitHub token."""
         mocker.patch.object(AsyncGitHubClient, "close", new_callable=AsyncMock)
 
-        async with create_async_client(github_token="test_token") as client:
-            assert client.github_token == "test_token"
+        async with create_async_client(github_token=TEST_GITHUB_TOKEN) as client:
+            assert client.github_token == TEST_GITHUB_TOKEN
 
     async def test_create_async_client_with_max_concurrent(self, mocker):
         """Test factory with custom max_concurrent."""
@@ -1678,11 +1682,11 @@ class TestDownloadFilesConcurrently:
         results = await download_files_concurrently(
             downloads,
             max_concurrent=2,
-            github_token="ghp_test_token",
+            github_token=TEST_GITHUB_TOKEN,
         )
 
         mock_create_client.assert_called_once_with(
-            github_token="ghp_test_token",
+            github_token=TEST_GITHUB_TOKEN,
             max_concurrent=2,
         )
         assert results == [True]
