@@ -1103,7 +1103,6 @@ class TestAsyncDownloadMultiple:
 # =============================================================================
 
 
-@pytest.mark.asyncio
 class TestAsyncDownloaderBase:
     """Test AsyncDownloaderBase class."""
 
@@ -1125,6 +1124,7 @@ class TestAsyncDownloaderBase:
         assert downloader.config == config
         assert downloader.download_dir == str(tmp_path)
 
+    @pytest.mark.asyncio
     async def test_base_is_usable_for_downloads(self, tmp_path, mocker):
         """Test that AsyncDownloaderBase can be used directly."""
         downloader = AsyncDownloaderBase(config={"DOWNLOAD_DIR": str(tmp_path)})
