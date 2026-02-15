@@ -100,6 +100,38 @@ class TestDownloadOrchestrator:
 
         orchestrator.android_downloader.get_releases.assert_called_once()
 
+    def test_get_release_check_workers_invalid_value(self, orchestrator):
+        """Invalid worker config should fall back to default."""
+        orchestrator.config["MAX_PARALLEL_RELEASE_CHECKS"] = "invalid"
+
+        worker_count = orchestrator._get_release_check_workers()
+
+        assert worker_count == 4
+
+    def test_check_releases_complete_uses_parallel_executor(self, orchestrator):
+        """Multiple releases should use bounded parallel completeness checks."""
+        releases = [
+            Release(tag_name="v1.0.0", prerelease=False, assets=[]),
+            Release(tag_name="v1.0.1", prerelease=False, assets=[]),
+        ]
+        orchestrator.config["MAX_PARALLEL_RELEASE_CHECKS"] = 8
+        checker = Mock(return_value=True)
+
+        with patch("fetchtastic.download.orchestrator.ThreadPoolExecutor") as mock_pool:
+            pool_ctx = mock_pool.return_value.__enter__.return_value
+            # Mock submit() to return futures with result() method
+            mock_futures = [
+                Mock(result=Mock(return_value=True)),
+                Mock(result=Mock(return_value=False)),
+            ]
+            pool_ctx.submit.side_effect = mock_futures
+
+            results = orchestrator._check_releases_complete(releases, checker)
+
+        assert results == [True, False]
+        mock_pool.assert_called_once_with(max_workers=2)
+        assert pool_ctx.submit.call_count == 2
+
     def test_process_android_downloads_skips_complete_and_prerelease_assets(
         self, orchestrator
     ):

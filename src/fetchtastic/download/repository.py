@@ -488,14 +488,14 @@ class RepositoryDownloader(BaseDownloader):
         keep_last_beta: bool = False,
     ) -> None:
         """
-        Clear the repository downloads directory, ignoring any retention limit.
+        Remove all files and directories from the repository downloads directory.
 
-        The keep_limit parameter is ignored because repository files are not versioned; this method removes all files under the repository downloads area.
+        This downloader does not version repository files; the provided parameters are accepted for API compatibility but ignored.
 
         Parameters:
-            keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
-            cached_releases (Optional[List[Release]]): Unused for repository downloads; retained for signature compatibility.
-            keep_last_beta (bool): Unused for repository downloads; retained for signature compatibility.
+            keep_limit (int): Ignored; retention limits do not apply to repository downloads.
+            cached_releases (Optional[List[Release]]): Ignored; present for signature compatibility.
+            keep_last_beta (bool): Ignored; present for signature compatibility.
         """
         del keep_limit  # intentionally unused (signature compatibility)
         del (
@@ -507,10 +507,10 @@ class RepositoryDownloader(BaseDownloader):
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
-        Provide the fixed tag that identifies the latest repository release.
+        Return the constant tag that denotes the latest repository release.
 
         Returns:
-            The string "repository-latest".
+            The literal tag "repository-latest".
         """
         return "repository-latest"
 
@@ -556,12 +556,12 @@ class RepositoryDownloader(BaseDownloader):
         exclude_patterns: List[str],
     ) -> bool:
         """
-        Determine whether extraction should be performed for a repository file.
+        Indicates whether a repository file requires extraction.
 
-        Repository files are not treated as archives; extraction is not applicable.
+        Repository files are not archives; extraction is never applicable for repository downloads.
 
         Returns:
-            False indicating extraction is not required for repository files.
+            bool: `False` indicating extraction is not required for repository files.
         """
         del file_path, extract_dir, patterns, exclude_patterns
         # Repository files are typically not archives, so extraction is never needed
@@ -572,9 +572,9 @@ class RepositoryDownloader(BaseDownloader):
 
     def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
-        Always permit downloading of repository release assets.
+        Always allow downloading of repository release assets.
 
-        Repository downloads are not filtered by release tag or asset name; this method unconditionally approves downloads.
+        The provided `release_tag` and `asset_name` are ignored; repository files are not filtered by release metadata.
 
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.

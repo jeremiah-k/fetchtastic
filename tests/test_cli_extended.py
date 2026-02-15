@@ -469,6 +469,7 @@ def test_windows_specific_cleanup_logic(mocker):
     mock_winshell = mocker.MagicMock()
     mocker.patch.dict("sys.modules", {"winshell": mock_winshell})
     mocker.patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
+    mocker.patch("fetchtastic.setup_config.winshell", mock_winshell)
     mock_winshell.startup.return_value = (
         "/Users/test/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
     )

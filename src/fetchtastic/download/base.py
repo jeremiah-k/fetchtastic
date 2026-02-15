@@ -21,7 +21,7 @@ from requests.exceptions import RequestException  # type: ignore[import-untyped]
 
 from fetchtastic import utils
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import matches_selected_patterns
+from fetchtastic.utils import load_file_hash, matches_selected_patterns
 
 from .async_core import AsyncDownloadCoreMixin
 from .cache import CacheManager
@@ -58,16 +58,13 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None
     ):
         """
-        Initialize BaseDownloader and its common helpers.
+        Initialize the downloader with configuration and an optional cache manager.
 
         Parameters:
-            config (Dict[str, Any]): Configuration containing downloader settings. Recognized keys include
-                "DOWNLOAD_DIR" (defaults to "~/meshtastic") and "VERSIONS_TO_KEEP" (defaults to 5).
-            cache_manager (Optional[CacheManager]): Cache manager to use; a new CacheManager is created if omitted.
+            config (Dict[str, Any]): Downloader configuration. Recognized keys include "DOWNLOAD_DIR" (path to store downloads, defaults to "~/meshtastic") and "VERSIONS_TO_KEEP" (number of release versions to retain, defaults to 5).
+            cache_manager (Optional[CacheManager]): Cache manager to use; if omitted a new CacheManager is created and used.
 
-        Notes:
-            Creates a VersionManager and FileOperations instance, stores a CacheManager, and normalizes
-            download_dir (string path) and versions_to_keep from the provided configuration.
+        Initializes internal helpers including a VersionManager, FileOperations, and the cache manager, and normalizes the configured download directory and versions-to-keep value.
         """
         self.config = config
         self.version_manager = VersionManager()
@@ -100,9 +97,9 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     def _get_versions_to_keep(self) -> int:
         """
-        Number of release versions to retain.
+        Get the number of release versions to retain.
 
-        Reads the `VERSIONS_TO_KEEP` configuration value and returns it as an integer; defaults to 5 when unset.
+        Reads the 'VERSIONS_TO_KEEP' configuration value and returns it as an int; defaults to 5 if unset.
 
         Returns:
             int: Number of versions to keep.
@@ -123,26 +120,24 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     def _sync_download_fallback(self, url: str, target_path: Pathish) -> Optional[bool]:
         """
-        Call the synchronous downloader as a fallback when async support is unavailable.
-
-        Parameters:
-            url (str): URL of the resource to download.
-            target_path (Pathish): Destination path for the downloaded file.
+        Calls the synchronous downloader when async support is unavailable.
 
         Returns:
-            bool: `True` if the download succeeded, `False` otherwise.
+            `True` if the download succeeded, `False` otherwise.
         """
         logger.warning("Async libraries not available, falling back to sync download")
         return self.download(url, target_path)
 
     def download(self, url: str, target_path: Pathish) -> bool:
         """
-        Download a file to the specified target path.
+        Download a file from the given URL into the specified target path, creating parent directories if needed.
 
-        Ensures the target's parent directory exists before attempting the download.
+        Parameters:
+            url (str): The source URL of the file to download.
+            target_path (Pathish): Filesystem path where the downloaded file will be saved.
 
         Returns:
-            `True` if the file was downloaded successfully, `False` otherwise.
+            bool: `True` if the file was downloaded and saved successfully, `False` otherwise.
         """
         try:
             # Ensure target directory exists using pathlib
@@ -186,34 +181,41 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     async def _async_verify_file(self, file_path: Path) -> bool:
         """
-        Determine whether a file's contents are intact and not corrupted. For ZIP archives, performs an archive integrity test before general integrity verification.
-
-        Parameters:
-            file_path (Path): Path to the file to verify.
+        Verify that a file's contents are intact; for ZIP files, perform an archive integrity check before the general integrity verification.
 
         Returns:
-            bool: True if the file is valid, False otherwise.
+            True if the file is intact and passes integrity checks, False otherwise.
         """
         try:
+            loop = asyncio.get_running_loop()
             if file_path.suffix.lower() == ".zip":
-                loop = asyncio.get_running_loop()
                 if not await loop.run_in_executor(None, is_zip_intact, str(file_path)):
                     return False
 
+            # Require a trusted hash before considering the file verified.
+            # Files without a stored hash (e.g., manually copied or stale files)
+            # must be re-downloaded to ensure correctness.
+            stored_hash = await loop.run_in_executor(
+                None, load_file_hash, str(file_path)
+            )
+            if not stored_hash:
+                logger.debug("No stored hash for %s; treating as unverified", file_path)
+                return False
+
             # Verify file integrity using existing sync utility
-            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
                 None, utils.verify_file_integrity, str(file_path)
             )
 
         except (OSError, zipfile.BadZipFile) as e:
-            logger.debug(f"File verification failed for {file_path}: {e}")
+            logger.debug("File verification failed for %s: %s", file_path, e)
             return False
 
     async def _async_save_hash(self, file_path: Path) -> None:
         """
-        Asynchronously compute the file's SHA-256 hash and persist it alongside the file.
+        Compute and persist the SHA-256 hash for a file.
 
+        If hashing succeeds, the hash is saved alongside the file (to the file's associated hash storage).
         Parameters:
             file_path (Path): Path to the file whose SHA-256 hash will be computed and saved.
         """
@@ -233,15 +235,19 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
-        Verifies an existing file asynchronously.
+        Verify the integrity of the existing file at the given path.
 
-        @returns: `True` if the file is valid, `False` otherwise.
+        Returns:
+            `True` if the file is valid, `False` otherwise.
         """
         return await self._async_verify_file(file_path)
 
     async def _async_save_file_hash(self, file_path: Path) -> None:
         """
-        Persist the SHA-256 hash for the given file using the downloader's asynchronous hash saver.
+        Compute and persist the SHA-256 hash of the specified file.
+
+        Parameters:
+            file_path (Path): Path to the file whose SHA-256 hash will be calculated and saved.
         """
         await self._async_save_hash(file_path)
 
@@ -667,12 +673,12 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     def is_asset_complete(self, release_tag: str, asset: Asset) -> bool:
         """
-        Check whether the downloaded asset for a release exists and is valid.
+        Determine whether the local file for a release asset exists and is valid.
 
-        Performs an existence check, verifies the file size when provided by the asset, verifies integrity using stored hash records, and performs a ZIP integrity check for .zip files.
+        Performs these checks when applicable: file existence, file size matches the asset's declared size, file hash verification against stored records, and ZIP integrity for .zip files.
 
         Returns:
-            True if the file exists and passes all applicable checks, False otherwise.
+            True if the asset file exists and passes size, hash, and ZIP integrity checks, False otherwise.
         """
         target_path = self.get_target_path_for_release(release_tag, asset.name)
         if not os.path.exists(target_path):
@@ -715,7 +721,12 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
             raise AttributeError(
                 _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
             )
-        return cast(bool, manager.is_release_revoked(release))
+        is_release_revoked = getattr(manager, "is_release_revoked", None)
+        if not callable(is_release_revoked):
+            raise AttributeError(
+                _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
+            )
+        return bool(is_release_revoked(release))
 
     def needs_download(
         self, release_tag: str, file_name: str, expected_size: int

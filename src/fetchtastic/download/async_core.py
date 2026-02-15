@@ -7,6 +7,7 @@ AsyncDownloaderMixin.
 """
 
 import asyncio
+import inspect
 import os
 import time
 from pathlib import Path
@@ -101,13 +102,12 @@ class AsyncDownloadCoreMixin:
 
     def _get_retry_delay(self) -> float:
         """
-        Return the initial download retry delay read from the configuration.
+        Obtain the initial retry delay for downloads from configuration.
 
-        Reads DOWNLOAD_RETRY_DELAY from self.config, defaults to 1.0 on missing or invalid values,
-        and clamps negative values to 0.0.
+        Reads `DOWNLOAD_RETRY_DELAY` from `self.config`, uses 1.0 if missing or invalid, and clamps negative values to 0.0.
 
         Returns:
-            float: Initial retry delay in seconds.
+            Initial retry delay in seconds.
         """
         raw_value = self.config.get("DOWNLOAD_RETRY_DELAY", 1.0)
         try:
@@ -141,9 +141,7 @@ class AsyncDownloadCoreMixin:
 
     async def _ensure_session(self, aiohttp_module: Optional[Any] = None) -> Any:
         """
-        Ensure and return a reusable aiohttp ClientSession for downloads.
-
-        If no aiohttp module is provided, the function will import it dynamically. The returned session is created with a TCPConnector limited by the configured maximum concurrent downloads and a default request timeout.
+        Provide a reusable aiohttp ClientSession configured with this mixin's concurrency limit and default request timeout.
 
         Parameters:
             aiohttp_module (Optional[Any]): Optional aiohttp module to use instead of importing one.
@@ -168,16 +166,20 @@ class AsyncDownloadCoreMixin:
         return self._session
 
     async def close(self) -> None:
-        """Close the shared aiohttp session, if active."""
+        """
+        Close the shared aiohttp ClientSession and clear the internal session reference.
+
+        If a session exists and is not already closed, it is closed (awaited if necessary). After this call the mixin's internal session attribute is set to None.
+        """
         if self._session is not None and not getattr(self._session, "closed", False):
             close_result = self._session.close()
-            if asyncio.iscoroutine(close_result):
+            if inspect.isawaitable(close_result):
                 await close_result
         self._session = None
 
     async def __aenter__(self) -> "AsyncDownloadCoreMixin":
         """
-        Ensure an aiohttp session is created and return self for use as an async context manager.
+        Ensure an aiohttp ClientSession is available for the mixin.
 
         Returns:
             AsyncDownloadCoreMixin: The mixin instance with a ready-to-use session.
@@ -195,9 +197,9 @@ class AsyncDownloadCoreMixin:
 
     def _sync_download_fallback(self, url: str, target_path: Pathish) -> Optional[bool]:
         """
-        Optional fallback when async dependencies are unavailable.
+        Provide an optional synchronous fallback for environments without async dependencies.
 
-        Return None to indicate no fallback behavior.
+        When implemented, perform a synchronous download of `url` to `target_path`. Return `True` if the download completed and the file is in place, `False` if the fallback attempted but failed, or `None` to indicate no synchronous fallback is available.
         """
         del url, target_path
         return None
@@ -210,24 +212,24 @@ class AsyncDownloadCoreMixin:
         filename: str,
     ) -> None:
         """
-        Invoke a progress callback with the current download progress and suppress any callback errors.
+        Call a progress callback with current download metrics and ignore any exceptions it raises.
 
         Parameters:
-            callback (CoreProgressCallback): Callable receiving (downloaded, total, filename). May be synchronous or return a coroutine.
+            callback (CoreProgressCallback): Callable that accepts (downloaded, total, filename). May be synchronous or return an awaitable.
             downloaded (int): Number of bytes downloaded so far.
             total (Optional[int]): Total number of bytes if known, otherwise None.
             filename (str): Target filename being downloaded.
         """
         try:
             result = callback(downloaded, total, filename)
-            if asyncio.iscoroutine(result):
+            if inspect.isawaitable(result):
                 await result
         except Exception as e:
             logger.debug(f"Progress callback error: {e}")
 
     async def _async_cleanup_temp_file(self, temp_path: Path) -> None:
         """
-        Delete the temporary file at the given path if it exists.
+        Remove the temporary file at the specified path if it exists.
 
         Parameters:
             temp_path (Path): Path to the temporary file to remove. If removal fails due to an OS error, the error is logged at debug level and suppressed.
@@ -240,24 +242,23 @@ class AsyncDownloadCoreMixin:
 
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
-        Determine whether the local file at `file_path` is valid and the download can be skipped.
+        Decide whether an existing local file at `file_path` is valid so the download can be skipped.
 
-        Parameters:
-            file_path (Path): Path to the local file to verify.
+        Must be implemented by subclasses to perform the actual verification.
 
         Returns:
-            bool: `true` if the file is valid and the caller may skip downloading, `false` otherwise.
+            True if the file is valid and the caller may skip downloading, False otherwise.
         """
         raise NotImplementedError
 
     async def _async_save_file_hash(self, file_path: Path) -> None:
         """
-        Compute and persist a content hash for the given file.
+        Compute and persist a stable content hash for the given file.
 
-        Implementations should calculate a stable checksum (e.g., SHA-256) of the file at `file_path` and persist it according to the subclass's storage policy (for example, writing a sidecar file or updating a database). This method is expected to be implemented by concrete classes to record the downloaded file's hash for future verification.
+        Implementations must compute a stable checksum (for example, SHA-256) of the file at `file_path` and persist that value according to the subclass's storage policy (for example, writing a sidecar file or updating a database) so it can be used for future verification.
 
         Parameters:
-            file_path (Path): Path to the file whose hash should be computed and stored.
+            file_path (Path): Path to the file whose content hash should be computed and stored.
         """
         raise NotImplementedError
 
@@ -268,16 +269,17 @@ class AsyncDownloadCoreMixin:
         progress_callback: Optional[CoreProgressCallback] = None,
     ) -> bool:
         """
-        Download a file from `url` and save it to `target_path`, reporting progress if requested.
+        Download a file from a URL to the specified target path, using a temporary file and reporting progress.
+
+        If the target already exists and is verified by the implementation, no download is performed. The function writes to a temporary file and atomically replaces the target on success.
 
         Parameters:
             progress_callback (Optional[CoreProgressCallback]): Optional callable invoked with
-                (downloaded_bytes, total_bytes_or_None, filename) to report progress. May be
-                sync or async; errors raised by the callback are logged and do not stop the download.
+                (downloaded_bytes, total_bytes_or_None, filename) to report progress. The callback
+                may be synchronous or asynchronous; errors raised by the callback are suppressed.
 
         Returns:
-            bool: `True` if the file is present at `target_path` after this call (downloaded or
-            already present and verified).
+            True if the file is present at `target_path` after this call (downloaded or already present and verified).
 
         Raises:
             AsyncDownloadError: If the download or file save fails.
@@ -296,7 +298,14 @@ class AsyncDownloadCoreMixin:
             ) from e
 
         target = Path(target_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+        except (OSError, FileNotFoundError) as e:
+            raise AsyncDownloadError(
+                f"Failed to create destination directory: {e}",
+                url=url,
+                is_retryable=False,
+            ) from e
 
         if target.exists():
             if await self._async_verify_existing_file(target):
@@ -345,7 +354,14 @@ class AsyncDownloadCoreMixin:
             logger.debug(f"Downloaded {url} in {elapsed:.2f}s")
 
             temp_path.replace(target)
-            await self._async_save_file_hash(target)
+            # Save hash in background - failure should not fail the download
+            # since the file is already in place
+            try:
+                await self._async_save_file_hash(target)
+            except Exception as hash_err:
+                logger.warning(
+                    "Failed to save file hash for %s: %s", target.name, hash_err
+                )
 
             if file_size_mb >= FILE_SIZE_MB_LOGGING_THRESHOLD:
                 logger.info(f"Downloaded: {target.name} ({file_size_mb:.1f} MB)")
@@ -408,15 +424,17 @@ class AsyncDownloadCoreMixin:
             progress_callback (Optional[CoreProgressCallback]): Optional callback to report download progress.
 
         Returns:
-            `True` if the download succeeded, `False` otherwise.
+            bool: `True` if the download succeeded.
 
         Raises:
-            AsyncDownloadError: If a non-retryable download error occurs.
+            AsyncDownloadError: If a non-retryable download error occurs or retries are exhausted.
         """
         attempts = max_retries if max_retries is not None else self._get_max_retries()
         attempts = max(0, attempts)
         delay = retry_delay if retry_delay is not None else self._get_retry_delay()
+        delay = max(0.0, delay)
         last_error: Optional[AsyncDownloadError] = None
+        last_cause: Optional[Exception] = None
 
         for attempt in range(attempts + 1):
             try:
@@ -426,11 +444,20 @@ class AsyncDownloadCoreMixin:
                 if result:
                     return True
 
+                # Defensive path: some implementations (or tests) may return False
+                # instead of raising AsyncDownloadError on failure.
+                last_error = AsyncDownloadError(
+                    f"Download failed after {attempt + 1}/{attempts + 1} attempts",
+                    url=url,
+                    retry_count=attempt,
+                    is_retryable=attempt < attempts,
+                )
+                last_cause = None
                 if attempt == attempts:
                     logger.error(
                         f"Download failed permanently after {attempts + 1} attempts for {url}"
                     )
-                    return False
+                    break
 
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
@@ -438,29 +465,32 @@ class AsyncDownloadCoreMixin:
                 )
             except AsyncDownloadError as e:
                 last_error = e
+                last_cause = None
                 if not e.is_retryable:
                     logger.error(f"Download failed permanently for {url}: {e.message}")
                     raise
                 if attempt == attempts:
                     logger.error(f"Download failed permanently for {url}: {e.message}")
-                    return False
+                    break
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
                     f"retrying in {delay:.1f}s: {e.message}"
                 )
             except Exception as e:
-                last_error = AsyncDownloadError(
+                wrapped_error = AsyncDownloadError(
                     f"Unexpected error: {e}",
                     url=url,
                     is_retryable=True,
                 )
+                last_error = wrapped_error
+                last_cause = e
                 if attempt == attempts:
                     logger.error(
                         "Download failed permanently for %s: %s",
                         url,
-                        last_error.message,
+                        wrapped_error.message,
                     )
-                    return False
+                    break
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
                     f"retrying in {delay:.1f}s: {e}"
@@ -469,6 +499,12 @@ class AsyncDownloadCoreMixin:
             await asyncio.sleep(delay)
             delay *= backoff_factor
 
-        if last_error:
-            logger.error("Download failed for %s: %s", url, last_error.message)
-        return False
+        if last_error is not None:
+            if last_cause is not None:
+                raise last_error from last_cause
+            raise last_error
+        raise AsyncDownloadError(
+            "Download failed unexpectedly without an error context",
+            url=url,
+            is_retryable=False,
+        )

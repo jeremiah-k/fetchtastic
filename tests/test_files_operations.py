@@ -30,6 +30,8 @@ from fetchtastic.download.files import (
     strip_unwanted_chars,
 )
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 class TestStripUnwantedChars:
     """Test strip_unwanted_chars function."""
@@ -217,20 +219,127 @@ class TestIsReleaseComplete:
 
     def test_corrupted_zip_file(self, tmp_path):
         """
-        Verify _is_release_complete returns False when an asset's ZIP file is present but is corrupted or not a valid ZIP.
+        Check that _is_release_complete treats a present but invalid ZIP asset as an incomplete release.
 
-        Creates a non-ZIP file named as the expected asset and asserts the function reports the release as incomplete.
+        Creates a file with the expected asset name containing non-ZIP bytes and asserts the release is reported incomplete.
         """
         release_dir = tmp_path / "release"
         release_dir.mkdir()
 
         # Create a corrupted zip file
         test_file = release_dir / "file1.zip"
-        test_file.write_bytes(b"not a zip file")
+        content = b"not a zip file"
+        test_file.write_bytes(content)
 
         result = _is_release_complete(
-            {"assets": [{"name": "file1.zip", "size": 15}]}, str(release_dir), [], []
+            {"assets": [{"name": "file1.zip", "size": len(content)}]},
+            str(release_dir),
+            [],
+            [],
         )
+        assert result is False
+
+    def test_complete_release_uses_hash_baseline_for_zip(self, tmp_path, monkeypatch):
+        """When a hash baseline exists, ZIP validation should use hash verification."""
+        release_dir = tmp_path / "release"
+        release_dir.mkdir()
+        test_file = release_dir / "file1.zip"
+        test_file.write_bytes(b"not-a-zip-but-hash-verified")
+
+        verify_calls = {"count": 0}
+
+        def fake_verify(file_path: str) -> bool:
+            """
+            Test helper that records each invocation and succeeds only for the configured test file.
+
+            Increments verify_calls["count"] on every call.
+
+            Parameters:
+                file_path (str): Path of the file to verify.
+
+            Returns:
+                bool: `True` if `file_path` equals `str(test_file)`, `false` otherwise.
+            """
+            verify_calls["count"] += 1
+            return file_path == str(test_file)
+
+        def fail_zip_open(*_args, **_kwargs):
+            """
+            Raise an AssertionError indicating the ZIP library must not be opened.
+
+            This helper is intended for tests as a drop-in replacement for ZipFile; it always raises
+            AssertionError to fail the test if code attempts to open a ZIP when a hash baseline should
+            be used instead.
+            """
+            raise AssertionError(
+                "ZipFile should not be opened when hash baseline exists"
+            )
+
+        monkeypatch.setattr("fetchtastic.download.files.load_file_hash", lambda _p: "h")
+        monkeypatch.setattr(
+            "fetchtastic.download.files.verify_file_integrity", fake_verify
+        )
+        monkeypatch.setattr("fetchtastic.download.files.zipfile.ZipFile", fail_zip_open)
+
+        result = _is_release_complete(
+            {"assets": [{"name": "file1.zip", "size": test_file.stat().st_size}]},
+            str(release_dir),
+            [],
+            [],
+        )
+
+        assert result is True
+        assert verify_calls["count"] == 1
+
+    def test_complete_non_zip_release_uses_integrity_verification(
+        self, tmp_path, monkeypatch
+    ):
+        """Non-zip assets should be integrity-verified in addition to size checks."""
+        release_dir = tmp_path / "release"
+        release_dir.mkdir()
+        test_file = release_dir / "file1.bin"
+        test_file.write_bytes(b"binary-data")
+
+        verify_calls = {"count": 0}
+
+        def fake_verify(file_path: str) -> bool:
+            verify_calls["count"] += 1
+            return file_path == str(test_file)
+
+        monkeypatch.setattr(
+            "fetchtastic.download.files.verify_file_integrity", fake_verify
+        )
+
+        result = _is_release_complete(
+            {"assets": [{"name": "file1.bin", "size": test_file.stat().st_size}]},
+            str(release_dir),
+            [],
+            [],
+        )
+
+        assert result is True
+        assert verify_calls["count"] == 1
+
+    def test_incomplete_non_zip_release_when_integrity_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """Non-zip assets should mark release incomplete when integrity verification fails."""
+        release_dir = tmp_path / "release"
+        release_dir.mkdir()
+        test_file = release_dir / "file1.bin"
+        test_file.write_bytes(b"binary-data")
+
+        monkeypatch.setattr(
+            "fetchtastic.download.files.verify_file_integrity", lambda _p: False
+        )
+
+        result = _is_release_complete(
+            {"assets": [{"name": "file1.bin", "size": test_file.stat().st_size}]},
+            str(release_dir),
+            [],
+            [],
+        )
+
         assert result is False
 
 

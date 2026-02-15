@@ -32,23 +32,9 @@ from fetchtastic.download.async_downloader import (
     download_with_progress,
 )
 from fetchtastic.download.interfaces import Asset, DownloadResult
+from tests.async_test_utils import make_async_iter
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
-
-
-# Helper to create async iterator from list
-async def _make_async_iter(items):
-    """
-    Asynchronously iterates over the provided iterable, yielding each element in order.
-
-    Parameters:
-        items (iterable): An iterable of values to yield.
-
-    Returns:
-        async iterator: An asynchronous iterator that yields the elements from `items` in their original order.
-    """
-    for item in items:
-        yield item
 
 
 # =============================================================================
@@ -197,12 +183,12 @@ class TestCallProgressCallback:
 
         def sync_callback(downloaded, total, filename):
             """
-            Record download progress into the test's callback_calls list.
+            Record a single progress event into the test's callback_calls list.
 
             Parameters:
-                downloaded (int): Number of bytes (or units) downloaded so far.
-                total (int | None): Total number of bytes (or units) expected, or None if unknown.
-                filename (str): Name of the file being downloaded.
+                downloaded: Number of bytes (or units) downloaded so far.
+                total: Total number of bytes (or units) expected, or None if unknown.
+                filename: Name of the file being downloaded.
 
             Side effects:
                 Appends a tuple (downloaded, total, filename) to the outer-scope list `callback_calls`.
@@ -221,7 +207,7 @@ class TestCallProgressCallback:
 
         async def async_callback(downloaded, total, filename):
             """
-            Record a progress callback invocation by appending the provided values to a shared list.
+            Record a progress callback invocation by appending the tuple (downloaded, total, filename) to the shared list.
 
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
@@ -250,6 +236,58 @@ class TestCallProgressCallback:
 
         # Should not raise
         await downloader._call_progress_callback(bad_callback, 1024, 2048, "test.bin")
+
+    async def test_awaitable_callback_result_is_awaited(self):
+        """Awaitable callback results (not only coroutine objects) should be awaited."""
+        downloader = ConcreteAsyncDownloader()
+
+        class AwaitableProgressResult:
+            def __init__(self) -> None:
+                """
+                Initialize the instance and mark it as not yet awaited.
+
+                Sets the `awaited` attribute to `False` to indicate the awaitable has not been awaited.
+                """
+                self.awaited = False
+
+            def __await__(self):
+                """
+                Make the instance awaitable; awaiting the instance completes immediately with no result.
+
+                Returns:
+                    An iterator for use with `await` that resolves to `None`.
+                """
+                self.awaited = True
+
+                async def _resolve():
+                    """
+                    No-op coroutine used as a resolved placeholder.
+
+                    This coroutine does nothing and completes immediately; await it when a resolved awaitable is required.
+                    """
+                    return None
+
+                return _resolve().__await__()
+
+        awaitable_result = AwaitableProgressResult()
+
+        def callback(_downloaded, _total, _filename):
+            """
+            Progress callback that forwards progress parameters and returns a precomputed result.
+
+            Parameters:
+                _downloaded (int): Number of bytes downloaded so far.
+                _total (int | None): Total number of bytes, or None if unknown.
+                _filename (str): Target filename for the download.
+
+            Returns:
+                The `awaitable_result` captured from the enclosing scope; may be an awaitable or a direct value.
+            """
+            return awaitable_result
+
+        await downloader._call_progress_callback(callback, 1024, 2048, "test.bin")
+
+        assert awaitable_result.awaited is True
 
 
 # =============================================================================
@@ -297,7 +335,7 @@ class TestAsyncVerifyExistingFile:
 
         assert result is True
 
-    async def test_verify_zip_file_corrupted(self, tmp_path, mocker):
+    async def test_verify_zip_file_corrupted(self, tmp_path):
         """Test verification of corrupted zip file."""
         downloader = ConcreteAsyncDownloader()
 
@@ -309,7 +347,7 @@ class TestAsyncVerifyExistingFile:
 
         assert result is False
 
-    async def test_verify_file_not_exists(self, tmp_path, mocker):
+    async def test_verify_file_not_exists(self, tmp_path):
         """Test verification of non-existent file."""
         downloader = ConcreteAsyncDownloader()
 
@@ -402,7 +440,7 @@ class TestAsyncDownload:
         # Mock content iteration
         mock_content = MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"test content"])
+            return_value=make_async_iter([b"test content"])
         )
         mock_response.content = mock_content
 
@@ -457,7 +495,7 @@ class TestAsyncDownload:
         mock_response.raise_for_status = Mock()
         mock_content = MagicMock()
         mock_content.iter_chunked = Mock(
-            side_effect=lambda *a, **kw: _make_async_iter([b"test"])
+            side_effect=lambda *_args, **_kwargs: make_async_iter([b"test"])
         )
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
@@ -530,7 +568,7 @@ class TestAsyncDownload:
         mock_response.raise_for_status = Mock()
 
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
@@ -580,7 +618,7 @@ class TestAsyncDownload:
 
         mock_content = MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"chunk1", b"chunk2"])
+            return_value=make_async_iter([b"chunk1", b"chunk2"])
         )
         mock_response.content = mock_content
 
@@ -594,12 +632,12 @@ class TestAsyncDownload:
 
         async def progress(downloaded, total, filename):
             """
-            Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
+            Record a progress callback invocation by appending a (downloaded, total, filename) tuple to the shared callback_calls list.
 
             Parameters:
-                downloaded (int): Number of bytes downloaded so far.
-                total (int | None): Total number of bytes expected, or None if unknown.
-                filename (str): Name of the file being downloaded.
+                downloaded: Number of bytes downloaded so far.
+                total: Total number of bytes expected, or None if unknown.
+                filename: Name of the file being downloaded.
             """
             callback_calls.append((downloaded, total, filename))
 
@@ -672,7 +710,7 @@ class TestAsyncDownload:
         mock_response.raise_for_status = Mock()
 
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_session = AsyncMock()
@@ -759,7 +797,7 @@ class TestAsyncDownloadWithRetry:
         assert mock_download.call_count == 2
 
     async def test_retry_exhausted(self, mocker, tmp_path):
-        """Test failure after exhausting all retries."""
+        """Test raising AsyncDownloadError after exhausting all retries."""
         downloader = ConcreteAsyncDownloader()
 
         mock_download = mocker.patch.object(
@@ -769,14 +807,15 @@ class TestAsyncDownloadWithRetry:
         mocker.patch("asyncio.sleep", AsyncMock())
 
         target = tmp_path / "test.bin"
-        result = await downloader.async_download_with_retry(
-            "https://example.com/file.bin",
-            target,
-            max_retries=2,
-            retry_delay=0.1,
-        )
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await downloader.async_download_with_retry(
+                "https://example.com/file.bin",
+                target,
+                max_retries=2,
+                retry_delay=0.1,
+            )
 
-        assert result is False
+        assert "Download failed after 3/3 attempts" in exc_info.value.message
         assert mock_download.call_count == 3  # Initial + 2 retries
 
     async def test_retry_non_retryable_async_download_error_raises(
@@ -872,10 +911,10 @@ class TestAsyncDownloadWithRetry:
 
         async def track_sleep(duration):
             """
-            Record a sleep duration into the shared `sleep_calls` list.
+            Append a sleep duration value to the shared `sleep_calls` list.
 
             Parameters:
-                duration (float): Number of seconds that would have been slept; appended to `sleep_calls`.
+                duration (float): Number of seconds to record; appended to the module-level `sleep_calls` list.
             """
             sleep_calls.append(duration)
 
@@ -926,10 +965,18 @@ class TestAsyncDownloadRelease:
         self, mocker, tmp_path, sample_release, sample_asset
     ):
         """Test failed release download."""
+        from fetchtastic.download.async_client import AsyncDownloadError
+
         downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_DIR": str(tmp_path)})
 
         mocker.patch.object(
-            downloader, "async_download_with_retry", AsyncMock(return_value=False)
+            downloader,
+            "async_download_with_retry",
+            AsyncMock(
+                side_effect=AsyncDownloadError(
+                    "Download failed", url=sample_asset.download_url, is_retryable=True
+                )
+            ),
         )
 
         result = await downloader.async_download_release(sample_release, sample_asset)
@@ -997,12 +1044,12 @@ class TestAsyncDownloadRelease:
 
         async def progress(downloaded, total, filename):
             """
-            Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
+            Record a progress callback invocation by appending a (downloaded, total, filename) tuple to the shared callback_calls list.
 
             Parameters:
-                downloaded (int): Number of bytes downloaded so far.
-                total (int | None): Total number of bytes expected, or None if unknown.
-                filename (str): Name of the file being downloaded.
+                downloaded: Number of bytes downloaded so far.
+                total: Total number of bytes expected, or None if unknown.
+                filename: Name of the file being downloaded.
             """
             callback_calls.append((downloaded, total, filename))
 
@@ -1182,11 +1229,11 @@ class TestAsyncDownloadMultiple:
 
         async def progress(downloaded, total, filename):
             """
-            Default no-op progress callback invoked during a download operation.
+            Default no-op progress callback used during a download.
 
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
-                total (int | None): Total number of bytes expected, or None if unknown.
+                total (int | None): Total number of bytes expected, or `None` if unknown.
                 filename (str): Name of the file being downloaded.
             """
             pass
@@ -1237,7 +1284,7 @@ class TestAsyncDownloaderBase:
         mock_response.raise_for_status = Mock()
 
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
@@ -1285,18 +1332,18 @@ class TestAsyncDownloaderBase:
 class TestDownloadWithProgress:
     """Test download_with_progress utility function."""
 
-    async def test_download_with_progress_success(self, tmp_path, mocker):
+    async def test_download_with_progress_success(self, tmp_path):
         """Test successful download with progress function."""
         callback_calls = []
 
         async def progress(downloaded, total, filename):
             """
-            Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
+            Record a progress callback invocation by appending a (downloaded, total, filename) tuple to the shared callback_calls list.
 
             Parameters:
-                downloaded (int): Number of bytes downloaded so far.
-                total (int | None): Total number of bytes expected, or None if unknown.
-                filename (str): Name of the file being downloaded.
+                downloaded: Number of bytes downloaded so far.
+                total: Total number of bytes expected, or None if unknown.
+                filename: Name of the file being downloaded.
             """
             callback_calls.append((downloaded, total, filename))
 
@@ -1308,7 +1355,7 @@ class TestDownloadWithProgress:
 
         mock_content = MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"test content"])
+            return_value=make_async_iter([b"test content"])
         )
         mock_response.content = mock_content
 
@@ -1353,7 +1400,7 @@ class TestDownloadWithProgress:
 
         assert result is True
 
-    async def test_download_with_progress_custom_config(self, tmp_path, mocker):
+    async def test_download_with_progress_custom_config(self, tmp_path):
         """Test download with custom config."""
         config = {"MAX_CONCURRENT_DOWNLOADS": 10}
 
@@ -1363,7 +1410,7 @@ class TestDownloadWithProgress:
         mock_response.raise_for_status = Mock()
 
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)

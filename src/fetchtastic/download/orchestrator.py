@@ -11,8 +11,9 @@ import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests  # type: ignore[import-untyped]
 
@@ -56,10 +57,10 @@ def is_connected_to_wifi() -> bool:
     """
     Determine whether the device is connected to a Wi-Fi network.
 
-    On non-Termux platforms this function assumes connectivity and returns `True`. On Termux it runs the `termux-wifi-connectioninfo` command (with a 5-second timeout) and returns `True` only if the command succeeds, the JSON output contains `"supplicant_state": "COMPLETED"`, and an `"ip"` value is present.
+    On non-Termux platforms this function assumes connectivity and returns `true`. On Termux it examines the output of the Termux Wi-Fi API and returns `true` only when the API reports a supplicant state of "COMPLETED" and a non-empty IP address; any command, parsing, or execution error results in `false`.
 
     Returns:
-        `True` if the device is (or is assumed to be) connected to Wi-Fi, `False` otherwise.
+        `true` if the device is (or is assumed to be) connected to Wi-Fi, `false` otherwise.
     """
     if not is_termux():
         return True
@@ -86,12 +87,12 @@ def is_connected_to_wifi() -> bool:
         data = json.loads(output)
         if not isinstance(data, dict):
             return False
-        supplicant_state_raw = data.get("supplicant_state", "")
-        ip_address_raw = data.get("ip", "")
+        raw_supplicant_state = data.get("supplicant_state", "")
+        raw_ip_address = data.get("ip", "")
         supplicant_state = (
-            supplicant_state_raw if isinstance(supplicant_state_raw, str) else ""
+            raw_supplicant_state if isinstance(raw_supplicant_state, str) else ""
         )
-        ip_address = ip_address_raw if isinstance(ip_address_raw, str) else ""
+        ip_address = raw_ip_address if isinstance(raw_ip_address, str) else ""
         return supplicant_state == "COMPLETED" and ip_address != ""
     except json.JSONDecodeError as e:
         logger.warning(f"Error decoding JSON from termux-wifi-connectioninfo: {e}")
@@ -225,12 +226,19 @@ class DownloadOrchestrator:
             stable_releases = [r for r in android_releases if not r.prerelease]
             releases_to_process = stable_releases[:keep_count]
 
-            releases_to_download = []
             for release in releases_to_process:
                 self.android_downloader.ensure_release_notes(release)
                 suffix = self.android_downloader.format_release_log_suffix(release)
                 logger.info(f"Checking {release.tag_name}{suffix}…")
-                if self.android_downloader.is_release_complete(release):
+
+            completion_states = self._check_releases_complete(
+                releases_to_process, self.android_downloader.is_release_complete
+            )
+            releases_to_download = []
+            for release, is_complete in zip(
+                releases_to_process, completion_states, strict=True
+            ):
+                if is_complete:
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -331,13 +339,13 @@ class DownloadOrchestrator:
 
     def _ensure_firmware_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Return cached firmware releases, fetching them once from the downloader if not already cached.
+        Ensure firmware releases are fetched (if needed) and return the cached list.
 
         Parameters:
-            limit (Optional[int]): Maximum number of releases to fetch on the initial request; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
+            limit (Optional[int]): Maximum number of releases to fetch when loading from the downloader; if None or larger than a previously fetched limit, the method may refetch to satisfy the requested amount.
 
         Returns:
-            List[Release]: The cached list of firmware releases.
+            List[Release]: The cached list of firmware releases (may be empty).
         """
         return self._ensure_releases(
             downloader=self.firmware_downloader,
@@ -346,11 +354,68 @@ class DownloadOrchestrator:
             limit=limit,
         )
 
+    def _get_release_check_workers(self) -> int:
+        """
+        Return the number of worker threads to use when checking release completeness.
+
+        Reads `MAX_PARALLEL_RELEASE_CHECKS` from configuration and falls back to 4.
+        Values below 1 or invalid values are clamped/fallback to safe defaults.
+
+        Returns:
+            int: Positive worker count for parallel release completeness checks.
+        """
+        raw_workers = self.config.get("MAX_PARALLEL_RELEASE_CHECKS", 4)
+        try:
+            return max(1, int(raw_workers))
+        except (TypeError, ValueError):
+            logger.debug(
+                "Invalid MAX_PARALLEL_RELEASE_CHECKS value %r; using default 4",
+                raw_workers,
+            )
+            return 4
+
+    def _check_releases_complete(
+        self, releases: List[Release], checker: Callable[[Release], bool]
+    ) -> List[bool]:
+        """
+        Check completeness of each release and return flags in the same order as the input.
+
+        Uses bounded thread parallelism when more than one release to reduce wall-clock time for I/O-heavy checks.
+
+        Parameters:
+            releases (List[Release]): Releases to evaluate.
+            checker (Callable[[Release], bool]): Callable that returns `True` if a release is complete, `False` otherwise.
+
+        Returns:
+            List[bool]: A list where each element is `True` if the corresponding release is complete, `False` otherwise, aligned with `releases`.
+        """
+        if not releases:
+            return []
+
+        def _safe_check(r: Release) -> bool:
+            try:
+                return checker(r)
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "Release check failed for %s; treating as incomplete",
+                    r.tag_name,
+                    exc_info=True,
+                )
+                return False
+
+        worker_count = min(len(releases), self._get_release_check_workers())
+        if worker_count <= 1:
+            return [_safe_check(release) for release in releases]
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [executor.submit(_safe_check, r) for r in releases]
+            return [f.result() for f in futures]
+
     def _process_firmware_downloads(self) -> None:
         """
         Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
 
-        Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, filesystem, and parsing errors encountered during processing are caught and logged.
+        Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and prunes prerelease subdirectories that do not match the managed naming and versioning conventions.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):
@@ -399,11 +464,18 @@ class DownloadOrchestrator:
                 if most_recent_beta and most_recent_beta not in releases_to_process:
                     releases_to_process.append(most_recent_beta)
 
-            releases_to_download = []
             for release in releases_to_process:
                 suffix = self.firmware_downloader.format_release_log_suffix(release)
                 logger.info(f"Checking {release.tag_name}{suffix}…")
-                if self.firmware_downloader.is_release_complete(release):
+
+            completion_states = self._check_releases_complete(
+                releases_to_process, self.firmware_downloader.is_release_complete
+            )
+            releases_to_download = []
+            for release, is_complete in zip(
+                releases_to_process, completion_states, strict=True
+            ):
+                if is_complete:
                     self.firmware_downloader.ensure_release_notes(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"

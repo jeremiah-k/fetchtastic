@@ -160,6 +160,12 @@ def test_menu_picker_page_step_clamps_to_minimum():
 
     class TinyScreen:
         def getmaxyx(self):
+            """
+            Get the current window size as (rows, columns).
+
+            Returns:
+                tuple[int, int]: A pair where the first element is the number of rows and the second is the number of columns.
+            """
             return (1, 20)
 
     assert picker._page_step(TinyScreen()) == 1
@@ -407,7 +413,9 @@ def test_run_repository_downloader_menu_no_selection(mocker):
     result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
 
     assert result is None
-    mock_logger.info.assert_called_once_with("No files selected for download.")
+    mock_logger.info.assert_called_once_with(
+        "No files selected for download (empty selection)."
+    )
 
 
 def test_run_repository_downloader_menu_non_dict_selection(mocker):
@@ -418,7 +426,9 @@ def test_run_repository_downloader_menu_non_dict_selection(mocker):
     result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
 
     assert result is None
-    mock_logger.info.assert_called_once_with("No files selected for download.")
+    mock_logger.info.assert_called_once_with(
+        "No files selected for download (invalid selection type)."
+    )
 
 
 def test_run_repository_downloader_menu_invalid_selection_payload(mocker):
@@ -432,7 +442,9 @@ def test_run_repository_downloader_menu_invalid_selection_payload(mocker):
     result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
 
     assert result is None
-    mock_logger.info.assert_called_once_with("No files selected for download.")
+    mock_logger.info.assert_called_once_with(
+        "No files selected for download (malformed selection structure)."
+    )
 
 
 def test_run_repository_downloader_menu_skips_malformed_file_entries(mocker):

@@ -25,8 +25,13 @@ from fetchtastic.download.async_client import (
     create_async_client,
     download_files_concurrently,
 )
+from tests.async_test_utils import make_async_iter
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
+# Test constants to avoid hardcoded token warnings
+TEST_GITHUB_TOKEN = "ghp_test_token"  # noqa: S105
+TEST_TOKEN_HASH = "abc123"  # noqa: S105
 
 
 # =============================================================================
@@ -100,20 +105,20 @@ class TestAsyncGitHubClientInitialization:
 
     def test_init_with_token(self):
         """Test initialization with GitHub token."""
-        client = AsyncGitHubClient(github_token="ghp_test_token")
+        client = AsyncGitHubClient(github_token=TEST_GITHUB_TOKEN)
 
-        assert client.github_token == "ghp_test_token"
+        assert client.github_token == TEST_GITHUB_TOKEN
 
     def test_init_with_custom_parameters(self):
         """Test initialization with custom parameters."""
         client = AsyncGitHubClient(
-            github_token="test_token",
+            github_token=TEST_GITHUB_TOKEN,
             timeout=60.0,
             max_concurrent=10,
             connector_limit=20,
         )
 
-        assert client.github_token == "test_token"
+        assert client.github_token == TEST_GITHUB_TOKEN
         assert client.max_concurrent == 10
         assert client.connector_limit == 20
         # timeout is stored as ClientTimeout object
@@ -182,7 +187,7 @@ class TestAsyncGitHubClientContextManager:
         assert client._session is None
         assert client._closed is True
 
-    async def test_close_without_session(self, mocker):
+    async def test_close_without_session(self):
         """Test close method when no session exists."""
         client = AsyncGitHubClient()
         client._session = None
@@ -275,12 +280,12 @@ class TestGetDefaultHeaders:
 
     def test_headers_with_token(self, mocker):
         """Test default headers include authorization when token is provided."""
-        client = AsyncGitHubClient(github_token="ghp_test_token")
+        client = AsyncGitHubClient(github_token=TEST_GITHUB_TOKEN)
         mocker.patch("fetchtastic.utils.get_user_agent", return_value="Fetchtastic/1.0")
 
         headers = client._get_default_headers()
 
-        assert headers["Authorization"] == "token ghp_test_token"
+        assert headers["Authorization"] == f"token {TEST_GITHUB_TOKEN}"
 
 
 # =============================================================================
@@ -295,7 +300,7 @@ class TestRateLimitGuard:
     async def test_rate_limit_guard_allows_when_remaining(self, mocker):
         """Test rate limit guard allows request when remaining > 0."""
         client = AsyncGitHubClient()
-        token_hash = "abc123"
+        token_hash = TEST_TOKEN_HASH
         client._rate_limit_remaining[token_hash] = 10
         client._rate_limit_reset[token_hash] = datetime.now(timezone.utc)
 
@@ -305,7 +310,7 @@ class TestRateLimitGuard:
     async def test_rate_limit_guard_raises_when_exceeded(self, mocker):
         """Test rate limit guard raises error when limit exceeded."""
         client = AsyncGitHubClient()
-        token_hash = "abc123"
+        token_hash = TEST_TOKEN_HASH
         client._rate_limit_remaining[token_hash] = 0
         # Set reset time in the future
         client._rate_limit_reset[token_hash] = datetime.now(timezone.utc) + timedelta(
@@ -331,7 +336,7 @@ class TestGetReleases:
 
     async def test_get_releases_success(self, mocker, sample_release_data):
         """Test successful release fetch."""
-        client = AsyncGitHubClient(github_token="test_token")
+        client = AsyncGitHubClient(github_token=TEST_GITHUB_TOKEN)
 
         # Create mock response
         mock_response = AsyncMock()
@@ -392,12 +397,12 @@ class TestGetReleases:
         # Track what params were passed
         captured_params = {}
 
-        def capture_params(url, params=None):
+        def capture_params(_url, params=None):
             """
             Records the provided query parameters into the shared `captured_params` mapping and returns the preconfigured `mock_response`.
 
             Parameters:
-                params (dict | None): Query parameters passed for the request; may be None.
+                _params (dict | None): Query parameters passed for the request; may be None.
 
             Returns:
                 mock_response: The mock response object to be returned by the fake request.
@@ -861,21 +866,6 @@ class TestUpdateRateLimits:
 # =============================================================================
 
 
-# Helper to create async iterator from list
-async def _make_async_iter(items):
-    """
-    Asynchronously iterate over a synchronous iterable and yield each element.
-
-    Parameters:
-        items (Iterable): A synchronous iterable whose elements will be yielded by the async iterator.
-
-    Returns:
-        AsyncIterator: An asynchronous iterator that yields each element from `items`.
-    """
-    for item in items:
-        yield item
-
-
 @pytest.mark.asyncio
 class TestDownloadFile:
     """Test download_file method."""
@@ -892,7 +882,7 @@ class TestDownloadFile:
         # Mock content iteration - iter_chunked returns async iterator
         mock_content = mocker.MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"test content"])
+            return_value=make_async_iter([b"test content"])
         )
         mock_response.content = mock_content
 
@@ -935,7 +925,7 @@ class TestDownloadFile:
         mock_response.headers = {"Content-Length": "12"}
 
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
@@ -974,7 +964,7 @@ class TestDownloadFile:
 
         mock_content = mocker.MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"chunk1", b"chunk2"])
+            return_value=make_async_iter([b"chunk1", b"chunk2"])
         )
         mock_response.content = mock_content
 
@@ -994,14 +984,14 @@ class TestDownloadFile:
         # Track callback invocations
         callback_calls = []
 
-        async def progress_callback(downloaded, total, filename):
+        async def progress_callback(downloaded, total, _filename):
             """
-            Record download progress for tests by appending seen values to the shared list.
+            Append the observed download progress (downloaded, total) to the shared callback_calls list for tests.
 
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int): Total number of bytes expected; may be 0 when unknown.
-                filename (str): Target filename for the download; not used by this callback.
+                _filename (str): Target filename for the download; unused by this test callback.
             """
             callback_calls.append((downloaded, total))
 
@@ -1029,7 +1019,7 @@ class TestDownloadFile:
         mock_response.headers = {"Content-Length": "chunked"}
 
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1125,7 +1115,7 @@ class TestDownloadFile:
         mock_response.status = 200
         mock_response.headers = {"Content-Length": "4"}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1141,6 +1131,12 @@ class TestDownloadFile:
         target = tmp_path / "test.bin"
 
         def bad_callback(_downloaded, _total, _filename):
+            """
+            Callback that always raises a RuntimeError to simulate a failing progress callback.
+
+            Raises:
+                RuntimeError: Always raised with message "callback-failed".
+            """
             raise RuntimeError("callback-failed")
 
         with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
@@ -1164,7 +1160,7 @@ class TestDownloadFile:
         big_chunk = b"x" * (1024 * 1024)
         mock_response.headers = {"Content-Length": str(len(big_chunk))}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([big_chunk]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([big_chunk]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1198,7 +1194,7 @@ class TestDownloadFile:
         mock_response.status = 200
         mock_response.headers = {"Content-Length": "4"}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1258,7 +1254,7 @@ class TestDownloadFile:
         mock_response.status = 200
         mock_response.headers = {"Content-Length": "4"}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1295,6 +1291,18 @@ class TestDownloadFile:
         client = AsyncGitHubClient()
 
         async def bad_iter(_chunk_size):
+            """
+            An async iterable stub that raises a RuntimeError as soon as iteration begins.
+
+            Parameters:
+                _chunk_size (int): Ignored placeholder for the requested chunk size.
+
+            Returns:
+                An async iterator of bytes chunks (no values are produced because iteration always raises).
+
+            Raises:
+                RuntimeError: Always raised with message "iter-broken" when the iterator is started.
+            """
             raise RuntimeError("iter-broken")
             yield b"unused"  # pragma: no cover
 
@@ -1457,10 +1465,10 @@ class TestDownloadFileWithRetry:
 
         async def track_sleep(duration):
             """
-            Record a sleep duration into the shared test sleep_calls list.
+            Append a sleep duration to the shared test `sleep_calls` list.
 
             Parameters:
-                duration (float): Sleep duration in seconds to append to sleep_calls.
+                duration (float): Duration in seconds to record.
             """
             sleep_calls.append(duration)
 
@@ -1479,6 +1487,34 @@ class TestDownloadFileWithRetry:
         # Verify exponential backoff: 1.0, 2.0
         assert sleep_calls[0] == 1.0
         assert sleep_calls[1] == 2.0
+
+    async def test_download_with_retry_clamps_negative_retry_delay(
+        self, mocker, tmp_path
+    ):
+        """Negative retry delay should be clamped to 0.0 before sleeping."""
+        client = AsyncGitHubClient()
+
+        mocker.patch.object(
+            client,
+            "download_file",
+            new_callable=AsyncMock,
+            side_effect=[
+                AsyncDownloadError("retryable", is_retryable=True),
+                True,
+            ],
+        )
+        mock_sleep = mocker.patch("asyncio.sleep", AsyncMock())
+
+        target = tmp_path / "test.bin"
+        result = await client.download_file_with_retry(
+            "https://example.com/file.bin",
+            target,
+            max_retries=1,
+            retry_delay=-2.0,
+        )
+
+        assert result is True
+        mock_sleep.assert_awaited_once_with(0.0)
 
     async def test_download_with_retry_fallback_last_error_branch(
         self, mocker, tmp_path
@@ -1551,8 +1587,8 @@ class TestCreateAsyncClient:
         """Test factory with GitHub token."""
         mocker.patch.object(AsyncGitHubClient, "close", new_callable=AsyncMock)
 
-        async with create_async_client(github_token="test_token") as client:
-            assert client.github_token == "test_token"
+        async with create_async_client(github_token=TEST_GITHUB_TOKEN) as client:
+            assert client.github_token == TEST_GITHUB_TOKEN
 
     async def test_create_async_client_with_max_concurrent(self, mocker):
         """Test factory with custom max_concurrent."""
@@ -1647,7 +1683,7 @@ class TestDownloadFilesConcurrently:
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
-                Exit the asynchronous context, ensuring the client is closed.
+                Exit the asynchronous context and ensure the client is closed.
 
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.
@@ -1664,11 +1700,11 @@ class TestDownloadFilesConcurrently:
         results = await download_files_concurrently(
             downloads,
             max_concurrent=2,
-            github_token="ghp_test_token",
+            github_token=TEST_GITHUB_TOKEN,
         )
 
         mock_create_client.assert_called_once_with(
-            github_token="ghp_test_token",
+            github_token=TEST_GITHUB_TOKEN,
             max_concurrent=2,
         )
         assert results == [True]
@@ -1699,7 +1735,7 @@ class TestDownloadFilesConcurrently:
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
-                Exit the asynchronous context, ensuring the client is closed.
+                Exit the asynchronous context and ensure the client is closed.
 
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.

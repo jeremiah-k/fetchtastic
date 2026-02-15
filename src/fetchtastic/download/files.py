@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 from fetchtastic.utils import (
     get_hash_file_path,
     get_legacy_hash_file_path,
+    load_file_hash,
     matches_selected_patterns,
     save_file_hash,
     verify_file_integrity,
@@ -166,15 +167,15 @@ def is_zip_intact(file_path: str | Path) -> bool:
 
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
-    Return a list of safe prerelease subdirectory names found in the given directory.
+    List safe prerelease subdirectory names found in a directory.
 
-    Scans the provided prerelease directory for immediate subdirectories whose names start with the firmware prefix, validates and sanitizes each name, and collects the safe names. Unsafe names are skipped and a warning is logged; filesystem errors while scanning are logged at debug level.
+    Scans immediate subdirectories whose names start with FIRMWARE_DIR_PREFIX, returns their sanitized names, and skips any names deemed unsafe.
 
     Parameters:
         prerelease_dir (str): Path to the prerelease directory to scan.
 
     Returns:
-        list[str]: Sanitized subdirectory names that start with the firmware prefix; empty if the directory does not exist or on scan errors.
+        list[str]: Sanitized subdirectory names that start with the firmware prefix; empty list if the directory does not exist or on scan errors.
     """
     if not os.path.exists(prerelease_dir):
         return []
@@ -239,7 +240,7 @@ def _is_release_complete(
     if not os.path.exists(release_dir):
         return False
 
-    expected_assets: list[str] = []
+    expected_assets: list[tuple[str, Any]] = []
     assets = release_data.get("assets")
     if not isinstance(assets, list):
         return False
@@ -258,13 +259,13 @@ def _is_release_complete(
         if _matches_exclude(file_name, exclude_patterns):
             continue
 
-        expected_assets.append(file_name)
+        expected_assets.append((file_name, asset.get("size")))
 
     if not expected_assets:
         logger.debug("No assets match selected patterns for release in %s", release_dir)
         return False
 
-    for asset_name in expected_assets:
+    for asset_name, expected_size in expected_assets:
         asset_path = os.path.join(release_dir, asset_name)
         if not os.path.exists(asset_path):
             logger.debug(
@@ -272,41 +273,49 @@ def _is_release_complete(
             )
             return False
 
+        # Check file size before format-specific integrity checks
+        try:
+            actual_size = os.path.getsize(asset_path)
+        except OSError:
+            return False
+        if expected_size is not None:
+            try:
+                normalized_expected_size = int(expected_size)
+            except (TypeError, ValueError):
+                return False
+            if actual_size != normalized_expected_size:
+                logger.debug(
+                    "File size mismatch for %s: expected %s, got %s",
+                    asset_path,
+                    normalized_expected_size,
+                    actual_size,
+                )
+                return False
+
         if asset_name.lower().endswith(".zip"):
             try:
-                with zipfile.ZipFile(asset_path, "r") as zf:
-                    if zf.testzip() is not None:
+                has_hash_baseline = load_file_hash(asset_path) is not None
+                if has_hash_baseline:
+                    if not verify_file_integrity(asset_path):
+                        logger.debug("Hash verification failed for %s", asset_path)
+                        return False
+                else:
+                    # Use is_zip_intact to check for corruption
+                    if not is_zip_intact(asset_path):
                         logger.debug("Corrupted zip file detected: %s", asset_path)
                         return False
-                actual_size = os.path.getsize(asset_path)
-                asset_data = _find_asset_by_name(release_data, asset_name)
-                if asset_data:
-                    expected_size = asset_data.get("size")
-                    if expected_size is not None and actual_size != expected_size:
+                    # Persist a hash so future checks use the faster hash path
+                    if not verify_file_integrity(asset_path):
                         logger.debug(
-                            "File size mismatch for %s: expected %s, got %s",
+                            "Could not persist hash baseline for %s; "
+                            "future checks will re-verify ZIP integrity",
                             asset_path,
-                            expected_size,
-                            actual_size,
                         )
-                        return False
             except (zipfile.BadZipFile, OSError, IOError, TypeError):
                 return False
         else:
-            try:
-                actual_size = os.path.getsize(asset_path)
-                asset_data = _find_asset_by_name(release_data, asset_name)
-                if asset_data:
-                    expected_size = asset_data.get("size")
-                    if expected_size is not None and actual_size != expected_size:
-                        logger.debug(
-                            "File size mismatch for %s: expected %s, got %s",
-                            asset_path,
-                            expected_size,
-                            actual_size,
-                        )
-                        return False
-            except (OSError, TypeError):
+            if not verify_file_integrity(asset_path):
+                logger.debug("Hash verification failed for %s", asset_path)
                 return False
 
     return True

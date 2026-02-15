@@ -225,14 +225,14 @@ def _handle_download_subcommand(
     config: Dict[str, Any],
 ) -> None:
     """
-    Perform either a cache clear or a download run based on the parsed command-line arguments.
+    Run either a cache clear or a download operation based on command-line flags.
 
-    If args.clear_cache is true, triggers a cache clear via the provided integration and returns. Otherwise, invokes the integration to perform downloads (using args.force_download to control refresh), measures elapsed time, and logs a download results summary.
+    If `args.clear_cache` is true, clears caches via the provided integration; otherwise runs the integration's download routine (honoring `args.force_download`), measures elapsed time, and logs a download summary.
 
     Parameters:
-        args: Parsed command-line namespace expected to contain at least `clear_cache` and `force_download` flags.
-        integration: DownloadCLIIntegration instance used to run cache clears or perform downloads and to log results.
-        config: Configuration mapping passed to the integration for the operation.
+        args (argparse.Namespace): Parsed CLI arguments; expected to include `clear_cache` and `force_download`.
+        integration (download_cli_integration.DownloadCLIIntegration): Integration instance used to perform the cache clear or downloads and to emit the results summary.
+        config (dict): Configuration mapping passed to the integration for the operation.
     """
     if args.clear_cache:
         _perform_cache_clear(integration, config)
@@ -271,9 +271,13 @@ def main() -> None:
     # Logging is automatically initialized by importing log_utils
 
     """
-    CLI entry point that parses arguments and dispatches Fetchtastic subcommands.
+    Parse command-line arguments and dispatch Fetchtastic subcommands.
 
-    Parses command-line arguments and invokes the requested command behavior such as running setup, performing downloads, showing the NTFY topic, managing caches, cleaning Fetchtastic data, interacting with the repository, or printing version/help information. Subcommands may read, create, migrate, or remove configuration; run interactive setup flows; perform download or repository operations; manage system startup/cron entries; and copy text to the clipboard when configured.
+    Handles the top-level CLI for Fetchtastic, routing requests to subcommands such as
+    setup, download, topic, cache, clean, version, help, and repo. Each subcommand
+    performs the corresponding user-facing action (for example: run interactive
+    setup, perform downloads, show the NTFY topic, clear cached data, remove
+    Fetchtastic files, display version information, or interact with the repository).
     """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
@@ -570,22 +574,18 @@ def show_help(
     main_subparsers: Any = None,
 ) -> None:
     """
-    Show contextual CLI help for a specific command or subcommand.
+    Display contextual CLI help for a top-level command or its subcommand.
 
-    If no command is supplied, prints the general help. Handles the "repo" command specially:
-    prints repo help and, if a repo subcommand is supplied, prints that subcommand's help or an
-    available-subcommands listing. For other known top-level commands, prints that command's help.
-    If an unknown command is requested, prints an error and lists available commands when possible.
+    If no command is provided, prints the general help. For the "repo" command, prints the repo help
+    and, if a repo subcommand is specified, prints that subcommand's help or a listing of available
+    repo subcommands. For other known top-level commands, prints that command's help. If the requested
+    command is unknown, prints an error and, when possible, a list of available top-level commands.
 
     Parameters:
-        help_command (str or None): The top-level command to show help for (e.g., "repo", "setup").
-        help_subcommand (str or None): The subcommand to show help for (e.g., "browse", "clean").
-        main_subparsers (argparse._SubParsersAction, optional): The main parser's subparsers used
-            to detect available top-level commands and print their help when present.
-
-    Notes:
-        - `parser`, `repo_parser`, and `repo_subparsers` are the argument parser objects used to
-          render help; their types are evident from usage and are not documented here.
+        help_command (str | None): The top-level command name to show help for (e.g., "repo", "setup").
+        help_subcommand (str | None): The subcommand name to show help for (e.g., "browse", "clean").
+        main_subparsers (Any, optional): The main parser's subparsers object used to detect and
+            display available top-level commands.
     """
     if not help_command:
         # No specific command requested, show general help
@@ -622,6 +622,17 @@ def show_help(
 
 
 def _require_interactive_or_test_clean(operation_name: str) -> bool:
+    """
+    Ensure a destructive or interactive operation is permitted in the current environment.
+
+    If the session is running under pytest and the environment variable FETCHTASTIC_ALLOW_TEST_CLEAN is not set, logs an error referencing the provided operation name and returns False. If standard input is not a TTY and the override variable is not set, logs an error referencing the operation name and returns False. Otherwise returns True.
+
+    Parameters:
+        operation_name (str): Human-facing name of the operation used in logged messages.
+
+    Returns:
+        bool: `True` if the operation is allowed (interactive terminal or explicit test override), `False` otherwise.
+    """
     allow_test_clean = os.environ.get("FETCHTASTIC_ALLOW_TEST_CLEAN")
     is_pytest = os.environ.get("PYTEST_CURRENT_TEST")
 
@@ -724,20 +735,12 @@ def run_clean() -> None:
     # Windows-specific cleanup
     if platform.system() == "Windows":
         # Check if Windows modules are available
-        windows_modules_available = False
-        winshell_module: Any | None = None
-        try:
-            import winshell as _winshell  # type: ignore[import-not-found]
-
-            winshell_module = _winshell
-
-            windows_modules_available = True
-        except ImportError:
+        winshell_module = getattr(setup_config, "winshell", None)
+        if winshell_module is None:
             print(
                 "Windows modules not available. Some Windows-specific items may not be removed."
             )
-
-        if windows_modules_available:
+        else:
             # Remove Start Menu shortcuts
             windows_start_menu_folder = setup_config.WINDOWS_START_MENU_FOLDER
             if os.path.exists(windows_start_menu_folder):
@@ -779,8 +782,6 @@ def run_clean() -> None:
 
             # Remove startup shortcut
             try:
-                if winshell_module is None:
-                    raise AttributeError("winshell module not available")
                 startup_folder = winshell_module.startup()
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
                 if os.path.exists(startup_shortcut_path):

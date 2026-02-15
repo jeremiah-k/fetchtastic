@@ -11,6 +11,7 @@ Provides both:
 
 import asyncio
 import hashlib
+import inspect
 import os
 import time
 from contextlib import asynccontextmanager
@@ -40,6 +41,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 
+from .github_source import create_asset_from_github_data
 from .interfaces import Asset, Pathish, Release
 
 
@@ -107,18 +109,15 @@ class AsyncGitHubClient:
 
         def _clamp_positive(name: str, value: Any, default: int) -> int:
             """
-            Normalize a value to a positive integer (minimum 1), falling back to a default on parse errors.
+            Normalize a value to an integer >= 1, falling back to a provided default when parsing fails.
 
             Parameters:
-                name (str): Identifier used in warning messages when logging invalid or clamped values.
+                name (str): Identifier used in messages when the input is invalid or adjusted.
                 value (Any): Value to coerce to an integer.
-                default (int): Fallback integer returned when `value` cannot be parsed as an int.
+                default (int): Fallback returned when `value` cannot be parsed as an int.
 
             Returns:
-                int: The parsed integer if it is greater than or equal to 1; `default` if parsing fails; 1 if the parsed value is less than 1.
-
-            Notes:
-                Logs a warning when parsing fails or when a value is clamped to 1.
+                int: The parsed integer if it is greater than or equal to 1; `default` if parsing fails; otherwise 1.
             """
             try:
                 parsed = int(value)
@@ -149,10 +148,10 @@ class AsyncGitHubClient:
 
     async def __aenter__(self) -> "AsyncGitHubClient":
         """
-        Enter the async context, ensuring the client session is initialized.
+        Ensure the client session is initialized and return the client for use as an async context manager.
 
         Returns:
-            AsyncGitHubClient: The initialized client instance.
+            The initialized client instance.
         """
         await self._ensure_session()
         return self
@@ -167,10 +166,10 @@ class AsyncGitHubClient:
 
     async def _ensure_session(self) -> ClientSession:
         """
-        Ensure a session exists, creating one if needed.
+        Ensure an aiohttp ClientSession is available; create and configure one if absent or closed.
 
         Returns:
-            ClientSession: The active aiohttp session.
+            ClientSession: The active aiohttp ClientSession.
         """
         if self._session is None or self._session.closed:
             connector = TCPConnector(
@@ -269,19 +268,19 @@ class AsyncGitHubClient:
         params: Optional[Dict[str, Any]] = None,
     ) -> List[Release]:
         """
-        Fetch releases from GitHub API asynchronously.
+        Retrieve release entries from a GitHub releases API endpoint.
 
         Parameters:
             url (str): GitHub API releases URL.
-            limit (Optional[int]): Maximum number of releases to return.
-            params (Optional[Dict[str, Any]]): Additional query parameters.
+            limit (Optional[int]): Maximum number of releases to request; must be an integer >= 0. A value of 0 returns an empty list without making a network request. If omitted, no explicit per-page limit is applied.
+            params (Optional[Dict[str, Any]]): Additional query parameters to include in the request.
 
         Returns:
-            List[Release]: List of Release objects, newest first.
+            List[Release]: Parsed Release objects from the response, newest first.
 
         Raises:
-            AsyncDownloadError: If the API request fails.
-            ValueError: If `limit` is provided but is not an integer >= 0.
+            ValueError: If `limit` cannot be interpreted as an integer >= 0.
+            AsyncDownloadError: On HTTP, network, or rate-limit errors while fetching or parsing releases.
         """
         session = await self._ensure_session()
 
@@ -394,43 +393,14 @@ class AsyncGitHubClient:
 
                 parsed_assets: List[Asset] = []
                 for asset in assets_data:
-                    if not isinstance(asset, dict):
-                        logger.warning(
-                            "Skipping malformed asset in release %s: expected dict, got %s",
-                            tag_name or "<unknown>",
-                            type(asset).__name__,
-                        )
-                        continue
-                    asset_name = asset.get("name", "")
-                    if not isinstance(asset_name, str):
-                        logger.warning(
-                            "Skipping asset in release %s with invalid name type %s",
-                            tag_name or "<unknown>",
-                            type(asset_name).__name__,
-                        )
-                        continue
-                    raw_size = asset.get("size", 0)
-                    try:
-                        asset_size = int(raw_size)
-                    except (TypeError, ValueError):
-                        logger.warning(
-                            "Using size=0 for asset %s in release %s due to invalid size value",
-                            asset_name or "<unknown>",
-                            tag_name or "<unknown>",
-                        )
-                        asset_size = 0
-                    browser_download_url = asset.get("browser_download_url")
-                    if not isinstance(browser_download_url, str):
-                        browser_download_url = ""
-                    parsed_assets.append(
-                        Asset(
-                            name=asset_name,
-                            download_url=browser_download_url,
-                            size=asset_size,
-                            browser_download_url=browser_download_url or None,
-                            content_type=asset.get("content_type"),
-                        )
+                    parsed_asset = create_asset_from_github_data(
+                        asset,
+                        tag_name,
+                        invalid_size_default=0,
+                        allow_invalid_download_url=True,
                     )
+                    if parsed_asset is not None:
+                        parsed_assets.append(parsed_asset)
 
                 release = Release(
                     tag_name=tag_name,
@@ -553,7 +523,7 @@ class AsyncGitHubClient:
                                     result = progress_callback(
                                         downloaded, total_size or None, target.name
                                     )
-                                    if asyncio.iscoroutine(result):
+                                    if inspect.isawaitable(result):
                                         await result
                                 except Exception as cb_err:
                                     logger.debug(f"Progress callback error: {cb_err}")
@@ -599,7 +569,12 @@ class AsyncGitHubClient:
                     is_retryable=False,
                 ) from e
             except AsyncDownloadError:
-                # Re-raise AsyncDownloadError without wrapping it
+                # Re-raise AsyncDownloadError without wrapping it, but clean up temp file first
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
                 raise
             except Exception as e:
                 # Catch-all for unexpected exceptions - clean up temp file
@@ -642,7 +617,7 @@ class AsyncGitHubClient:
             AsyncDownloadError: If a non-retryable error occurs or all retry attempts are exhausted.
         """
         last_error: Optional[Exception] = None
-        delay = retry_delay
+        delay = max(0.0, retry_delay)
 
         for attempt in range(max_retries + 1):
             try:
@@ -698,40 +673,21 @@ async def download_files_concurrently(
     github_token: Optional[str] = None,
 ) -> List[Any]:
     """
-    Download multiple files concurrently with a semaphore limit.
+    Download multiple files concurrently, limited by max_concurrent.
 
     Parameters:
-        downloads (List[Dict[str, Any]]): List of download specs with 'url' and 'target_path'.
-        max_concurrent (int): Maximum concurrent downloads.
-        progress_callback (Optional[Any]): Optional progress callback for each download.
-        github_token (Optional[str]): Optional GitHub token for authenticated downloads.
-            Useful for private release assets and higher API rate limits.
+        downloads (List[Dict[str, Any]]): Sequence of download specifications. Each spec must be a dict with keys:
+            - 'url' (str): HTTP(S) URL to download.
+            - 'target_path' (str | Path): Destination filesystem path for the downloaded file.
+        max_concurrent (int): Maximum number of concurrent downloads.
+        progress_callback (Optional[Any]): Optional callable (sync or async) invoked with progress updates for each download.
+        github_token (Optional[str]): Optional GitHub token used for authenticated requests and higher rate limits.
 
     Returns:
-        List[Any]: Results for each download. Each element is:
-            - True: Download succeeded
-            - False: Download failed without a specific exception
-            - Exception: The exception that caused the failure (typically AsyncDownloadError)
-            - ValueError: Invalid download spec (missing/invalid 'url' or 'target_path')
-            This allows callers to inspect the root cause of failures.
-
-    Example:
-        downloads = [
-            {"url": "https://...", "target_path": "/path/file1.bin"},
-            {"url": "https://...", "target_path": "/path/file2.bin"},
-        ]
-        results = await download_files_concurrently(
-            downloads,
-            max_concurrent=3,
-            github_token="ghp_...",
-        )
-        for i, result in enumerate(results):
-            if result is True:
-                print(f"Download {i} succeeded")
-            elif isinstance(result, Exception):
-                print(f"Download {i} failed: {result}")
-            else:
-                print(f"Download {i} failed")
+        List[Any]: Result per input spec in the same order:
+            - True: download succeeded.
+            - Exception: the exception raised during download (e.g., AsyncDownloadError) or ValueError for an invalid spec.
+            - False is not produced by this function; failures are returned as Exception instances to preserve diagnostics.
     """
     async with create_async_client(
         github_token=github_token,
