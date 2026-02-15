@@ -585,6 +585,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 logger.debug("Error checking asset size for %s: %s", asset.name, e)
                 return False
 
+        return True
+
     def cleanup_old_versions(
         self,
         keep_limit: int,

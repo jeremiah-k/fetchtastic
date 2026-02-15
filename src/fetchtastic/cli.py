@@ -226,9 +226,9 @@ def _handle_download_subcommand(
 ) -> None:
     """
     Run either a cache clear or a download operation based on command-line flags.
-    
+
     If `args.clear_cache` is true, clears caches via the provided integration; otherwise runs the integration's download routine (honoring `args.force_download`), measures elapsed time, and logs a download summary.
-    
+
     Parameters:
         args (argparse.Namespace): Parsed CLI arguments; expected to include `clear_cache` and `force_download`.
         integration (download_cli_integration.DownloadCLIIntegration): Integration instance used to perform the cache clear or downloads and to emit the results summary.
@@ -272,7 +272,7 @@ def main() -> None:
 
     """
     Parse command-line arguments and dispatch Fetchtastic subcommands.
-    
+
     Handles the top-level CLI for Fetchtastic, routing requests to subcommands such as
     setup, download, topic, cache, clean, version, help, and repo. Each subcommand
     performs the corresponding user-facing action (for example: run interactive
@@ -575,12 +575,12 @@ def show_help(
 ) -> None:
     """
     Display contextual CLI help for a top-level command or its subcommand.
-    
+
     If no command is provided, prints the general help. For the "repo" command, prints the repo help
     and, if a repo subcommand is specified, prints that subcommand's help or a listing of available
     repo subcommands. For other known top-level commands, prints that command's help. If the requested
     command is unknown, prints an error and, when possible, a list of available top-level commands.
-    
+
     Parameters:
         help_command (str | None): The top-level command name to show help for (e.g., "repo", "setup").
         help_subcommand (str | None): The subcommand name to show help for (e.g., "browse", "clean").
@@ -624,12 +624,12 @@ def show_help(
 def _require_interactive_or_test_clean(operation_name: str) -> bool:
     """
     Ensure a destructive or interactive operation is permitted in the current environment.
-    
+
     If the session is running under pytest and the environment variable FETCHTASTIC_ALLOW_TEST_CLEAN is not set, logs an error referencing the provided operation name and returns False. If standard input is not a TTY and the override variable is not set, logs an error referencing the operation name and returns False. Otherwise returns True.
-    
+
     Parameters:
         operation_name (str): Human-facing name of the operation used in logged messages.
-    
+
     Returns:
         bool: `True` if the operation is allowed (interactive terminal or explicit test override), `False` otherwise.
     """

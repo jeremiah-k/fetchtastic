@@ -119,13 +119,18 @@ class TestDownloadOrchestrator:
 
         with patch("fetchtastic.download.orchestrator.ThreadPoolExecutor") as mock_pool:
             pool_ctx = mock_pool.return_value.__enter__.return_value
-            pool_ctx.map.return_value = [True, False]
+            # Mock submit() to return futures with result() method
+            mock_futures = [
+                Mock(result=Mock(return_value=True)),
+                Mock(result=Mock(return_value=False)),
+            ]
+            pool_ctx.submit.side_effect = mock_futures
 
             results = orchestrator._check_releases_complete(releases, checker)
 
         assert results == [True, False]
         mock_pool.assert_called_once_with(max_workers=2)
-        pool_ctx.map.assert_called_once_with(checker, releases)
+        assert pool_ctx.submit.call_count == 2
 
     def test_process_android_downloads_skips_complete_and_prerelease_assets(
         self, orchestrator

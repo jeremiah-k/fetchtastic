@@ -110,12 +110,12 @@ class AsyncGitHubClient:
         def _clamp_positive(name: str, value: Any, default: int) -> int:
             """
             Normalize a value to an integer >= 1, falling back to a provided default when parsing fails.
-            
+
             Parameters:
                 name (str): Identifier used in messages when the input is invalid or adjusted.
                 value (Any): Value to coerce to an integer.
                 default (int): Fallback returned when `value` cannot be parsed as an int.
-            
+
             Returns:
                 int: The parsed integer if it is greater than or equal to 1; `default` if parsing fails; otherwise 1.
             """
@@ -149,7 +149,7 @@ class AsyncGitHubClient:
     async def __aenter__(self) -> "AsyncGitHubClient":
         """
         Ensure the client session is initialized and return the client for use as an async context manager.
-        
+
         Returns:
             The initialized client instance.
         """
@@ -167,7 +167,7 @@ class AsyncGitHubClient:
     async def _ensure_session(self) -> ClientSession:
         """
         Ensure an aiohttp ClientSession is available; create and configure one if absent or closed.
-        
+
         Returns:
             ClientSession: The active aiohttp ClientSession.
         """
@@ -269,15 +269,15 @@ class AsyncGitHubClient:
     ) -> List[Release]:
         """
         Retrieve release entries from a GitHub releases API endpoint.
-        
+
         Parameters:
             url (str): GitHub API releases URL.
             limit (Optional[int]): Maximum number of releases to request; must be an integer >= 0. A value of 0 returns an empty list without making a network request. If omitted, no explicit per-page limit is applied.
             params (Optional[Dict[str, Any]]): Additional query parameters to include in the request.
-        
+
         Returns:
             List[Release]: Parsed Release objects from the response, newest first.
-        
+
         Raises:
             ValueError: If `limit` cannot be interpreted as an integer >= 0.
             AsyncDownloadError: On HTTP, network, or rate-limit errors while fetching or parsing releases.
@@ -674,7 +674,7 @@ async def download_files_concurrently(
 ) -> List[Any]:
     """
     Download multiple files concurrently, limited by max_concurrent.
-    
+
     Parameters:
         downloads (List[Dict[str, Any]]): Sequence of download specifications. Each spec must be a dict with keys:
             - 'url' (str): HTTP(S) URL to download.
@@ -682,7 +682,7 @@ async def download_files_concurrently(
         max_concurrent (int): Maximum number of concurrent downloads.
         progress_callback (Optional[Any]): Optional callable (sync or async) invoked with progress updates for each download.
         github_token (Optional[str]): Optional GitHub token used for authenticated requests and higher rate limits.
-    
+
     Returns:
         List[Any]: Result per input spec in the same order:
             - True: download succeeded.

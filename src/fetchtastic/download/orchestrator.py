@@ -392,12 +392,24 @@ class DownloadOrchestrator:
         if not releases:
             return []
 
+        def _safe_check(r: Release) -> bool:
+            try:
+                return checker(r)
+            except Exception:
+                logger.debug(
+                    "Release check failed for %s; treating as incomplete",
+                    r.tag_name,
+                    exc_info=True,
+                )
+                return False
+
         worker_count = min(len(releases), self._get_release_check_workers())
         if worker_count <= 1:
-            return [checker(release) for release in releases]
+            return [_safe_check(release) for release in releases]
 
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            return list(executor.map(checker, releases))
+            futures = [executor.submit(_safe_check, r) for r in releases]
+            return [f.result() for f in futures]
 
     def _process_firmware_downloads(self) -> None:
         """

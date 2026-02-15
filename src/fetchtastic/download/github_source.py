@@ -280,14 +280,14 @@ def create_asset_from_github_data(
 ) -> Optional[Asset]:
     """
     Create an Asset object from a GitHub asset payload, performing defensive validation.
-    
+
     Parameters:
         asset_data (Any): Raw GitHub asset payload; must be a dict containing at minimum a non-empty `name`.
         release_tag (str): Release tag used in warning messages.
         asset_label (str): Label used in warnings to identify the asset (default "asset").
         invalid_size_default (Optional[int]): Fallback size to use when `size` is missing or invalid; if `None`, such assets are rejected.
         allow_invalid_download_url (bool): If True, allow missing or invalid download URLs (returned as empty string); otherwise assets with invalid download URL are rejected.
-    
+
     Returns:
         Optional[Asset]: An Asset populated from the payload when validations pass; `None` if the payload is malformed or required fields are invalid.
     """

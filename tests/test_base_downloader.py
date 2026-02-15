@@ -924,7 +924,7 @@ class TestBaseDownloaderAsyncDownload:
         async def progress(downloaded, total, filename):
             """
             Append reported download progress values to the enclosing test's `callback_calls` list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.
@@ -986,12 +986,12 @@ class TestBaseDownloaderAsyncDownload:
         def bad_callback(_downloaded, _total, _filename):
             """
             Progress callback that always raises a ValueError.
-            
+
             Parameters:
                 _downloaded (int): Number of bytes or units downloaded so far.
                 _total (int | None): Total number of bytes or units expected, or None if unknown.
                 _filename (str): Name of the file being downloaded.
-            
+
             Raises:
                 ValueError: Always raised with the message "Callback error".
             """
@@ -1186,6 +1186,7 @@ class TestBaseDownloaderAsyncVerifyFile:
         test_file = tmp_path / "test.bin"
         test_file.write_bytes(b"test content")
 
+        mocker.patch("fetchtastic.download.base.load_file_hash", return_value="abc123")
         mocker.patch("fetchtastic.utils.verify_file_integrity", return_value=True)
 
         result = await downloader._async_verify_file(test_file)
@@ -1201,6 +1202,7 @@ class TestBaseDownloaderAsyncVerifyFile:
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("file.txt", "content")
 
+        mocker.patch("fetchtastic.download.base.load_file_hash", return_value="abc123")
         mocker.patch("fetchtastic.utils.verify_file_integrity", return_value=True)
 
         result = await downloader._async_verify_file(zip_path)
@@ -1398,9 +1400,9 @@ class TestBaseDownloaderAsyncDownloadWithRetry:
         async def track_sleep(duration):
             """
             Record a sleep duration for later inspection.
-            
+
             Appends the given duration, in seconds, to the shared `sleep_calls` list.
-            
+
             Parameters:
                 duration (float): Sleep time in seconds to record.
             """
@@ -1434,7 +1436,7 @@ class TestBaseDownloaderAsyncDownloadWithRetry:
         async def progress(downloaded, total, filename):
             """
             Report progress of an ongoing file download.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.

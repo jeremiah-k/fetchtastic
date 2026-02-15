@@ -489,9 +489,9 @@ class RepositoryDownloader(BaseDownloader):
     ) -> None:
         """
         Remove all files and directories from the repository downloads directory.
-        
+
         This downloader does not version repository files; the provided parameters are accepted for API compatibility but ignored.
-        
+
         Parameters:
             keep_limit (int): Ignored; retention limits do not apply to repository downloads.
             cached_releases (Optional[List[Release]]): Ignored; present for signature compatibility.
@@ -508,7 +508,7 @@ class RepositoryDownloader(BaseDownloader):
     def get_latest_release_tag(self) -> Optional[str]:
         """
         Return the constant tag that denotes the latest repository release.
-        
+
         Returns:
             The literal tag "repository-latest".
         """
@@ -557,9 +557,9 @@ class RepositoryDownloader(BaseDownloader):
     ) -> bool:
         """
         Indicates whether a repository file requires extraction.
-        
+
         Repository files are not archives; extraction is never applicable for repository downloads.
-        
+
         Returns:
             bool: `False` indicating extraction is not required for repository files.
         """
@@ -573,9 +573,9 @@ class RepositoryDownloader(BaseDownloader):
     def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
         Always allow downloading of repository release assets.
-        
+
         The provided `release_tag` and `asset_name` are ignored; repository files are not filtered by release metadata.
-        
+
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.
         """

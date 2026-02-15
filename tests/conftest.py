@@ -18,7 +18,7 @@ _ASYNC_NETWORK_BLOCK_MSG = (
 def _block_network(*_args, **_kwargs):
     """
     Block synchronous network calls during tests by raising a RuntimeError.
-    
+
     Raises:
         RuntimeError: with the message `_NETWORK_BLOCK_MSG` to indicate network access is blocked in tests.
     """
@@ -51,7 +51,7 @@ except ImportError:
 def pytest_configure(config):
     """
     Register the "asyncio" pytest marker.
-    
+
     Adds an `asyncio` marker description to the pytest configuration so asyncio-based tests are auto-detected.
     """
     config.addinivalue_line(
@@ -171,9 +171,9 @@ def _mock_time_sleep(monkeypatch):
 def mock_aiohttp_session(mocker):
     """
     Provide a mocked aiohttp.ClientSession for testing async HTTP operations.
-    
+
     Yields a MagicMock configured with the spec of `aiohttp.ClientSession` and with `closed` set to False.
-    
+
     Returns:
         MagicMock: A mock `aiohttp.ClientSession`-like object with `closed = False`.
     """
@@ -188,9 +188,9 @@ def mock_aiohttp_session(mocker):
 async def async_client(mock_aiohttp_session, mocker):
     """
     Yield an AsyncGitHubClient configured to use a mocked aiohttp session for tests.
-    
+
     The yielded client has its `_session` set to the provided `mock_aiohttp_session` and its `_semaphore` replaced with a MagicMock. On fixture teardown the client is marked closed by setting `_closed = True`.
-    
+
     Returns:
         AsyncGitHubClient: A test-configured client instance.
     """
@@ -230,14 +230,14 @@ def mock_async_response(mocker):
     ):
         """
         Create a mocked aiohttp.ClientResponse for use in tests.
-        
+
         Parameters:
             status (int): HTTP status code exposed on the response.
             headers (dict | None): Headers mapping for the response; defaults to an empty dict.
             json_data (Any | None): Value returned by the response's `json()` coroutine.
             content_chunks (Iterable[bytes] | None): If provided, `response.content.iter_chunked(...)` will yield these byte chunks to simulate a streamed body.
             raise_for_status (Exception | callable | None): If provided, calling `response.raise_for_status()` will raise the exception or invoke the callable; if `None`, `raise_for_status()` is a no-op mock.
-        
+
         Returns:
             A mock compatible with `aiohttp.ClientResponse` with `status`, `headers`, an async `json()` method, optional `content.iter_chunked` streaming behavior, and a mocked `raise_for_status()` implementation.
         """
@@ -253,7 +253,7 @@ def mock_async_response(mocker):
             async def _async_iter_chunks():
                 """
                 Asynchronously iterate over the configured sequence of content chunks.
-                
+
                 Yields:
                     bytes: Each chunk from the surrounding `content_chunks` iterable, produced asynchronously.
                 """
@@ -321,10 +321,10 @@ def sample_release_data():
 def sample_release(sample_release_data):
     """
     Provide a Release object constructed from the first entry of sample release data for tests.
-    
+
     Parameters:
         sample_release_data (list[dict]): List of release dictionaries (as produced by the sample_release_data fixture). The first item is used to build the Release.
-    
+
     Returns:
         Release: A Release instance populated from the selected sample data; its `assets` are converted into `Asset` objects with `name`, `download_url`, `size`, `browser_download_url`, and `content_type`.
     """
@@ -354,7 +354,7 @@ def sample_release(sample_release_data):
 def sample_asset():
     """
     Create a sample Asset representing a firmware file for tests.
-    
+
     Returns:
         Asset: An Asset populated with a realistic name, download_url, size, browser_download_url, and content_type suitable for use in tests.
     """

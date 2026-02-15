@@ -69,9 +69,9 @@ class MenuPicker(Picker[Option]):
     def _page_step(self, screen: CursesScreen) -> int:
         """
         Calculate the vertical page-step size for the menu based on the screen height and title lines.
-        
+
         Considers the number of rows available below the current cursor position and subtracts title lines and one padding row.
-        
+
         Returns:
             int: Number of rows to move when paging (at least 1).
         """
@@ -161,7 +161,7 @@ def _pick_menu(
 ) -> Any:
     """
     Display an interactive terminal menu and return the user's selection(s).
-    
+
     Parameters:
         options: Menu options to display.
         title: Optional title shown above the menu.
@@ -173,7 +173,7 @@ def _pick_menu(
         position: Optional starting Position for the picker; defaults to Position(0, 0) when omitted.
         clear_screen: If True, clear the screen before drawing the menu.
         quit_keys: Additional key codes that trigger quitting/canceling the menu.
-    
+
     Returns:
         For single-select mode: a tuple `(Option, int)` containing the chosen option and its index, or `(None, -1)` if canceled.
         For multi-select mode: a list of `(Option, int)` tuples for each selected option, or an empty list if canceled.
@@ -275,10 +275,10 @@ def _process_repo_contents(
     ) -> tuple[int, float, tuple[Any, ...], str] | tuple[tuple[Any, ...], str]:
         """
         Compute a sort key for a firmware directory entry, prioritizing recent commits when available.
-        
+
         Parameters:
             d (dict[str, Any]): Directory entry with a "name" key; the name is expected to start with the firmware prefix.
-        
+
         Returns:
             tuple: If commit timestamps are available, returns a 4-tuple
             (has_commit_flag, commit_timestamp, version_tuple, name) where `has_commit_flag` is `1` when a commit timestamp exists and `0` otherwise, `commit_timestamp` is a float seconds-since-epoch (or `0.0` when absent), `version_tuple` is a parsed version tuple (empty tuple if unparsable), and `name` is the directory name.
@@ -486,11 +486,11 @@ def select_item(
 ) -> dict[str, Any] | None:
     """
     Show a menu for browsing repository items in a directory.
-    
+
     Parameters:
         items (list[dict[str, Any]]): Repository entries where each item has at least a "type" key with value "dir" or "file".
         current_path (str): Current directory path shown in the menu title (empty for repository root).
-    
+
     Returns:
         dict[str, Any] | None: The selected action or item:
           - Directory selection: the selected directory's item dict (contains its metadata).

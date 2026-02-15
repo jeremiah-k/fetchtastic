@@ -16,7 +16,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 def _build_source() -> tuple[GithubReleaseSource, Mock]:
     """
     Create a GithubReleaseSource configured with a mocked cache manager.
-    
+
     Returns:
         tuple[GithubReleaseSource, Mock]: A tuple where the first element is a GithubReleaseSource
         initialized for "https://api.github.com/repos/owner/repo/releases" and the second element
@@ -88,10 +88,10 @@ class TestGithubReleaseSourceGetReleases:
         def bad_parser(_release_data):
             """
             Always raises a ValueError to indicate the provided release data is invalid.
-            
+
             Parameters:
                 _release_data: The input release payload (ignored).
-            
+
             Raises:
                 ValueError: Always raised with the message "bad release".
             """

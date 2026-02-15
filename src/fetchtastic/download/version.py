@@ -612,14 +612,14 @@ class VersionManager:
     ) -> bool:
         """
         Write version-tracking JSON (including timestamp and metadata) to the given path using an atomic write.
-        
+
         Parameters:
             file_path: Destination file path for the tracking JSON.
             version: Version string to record.
             release_type: Release type used to derive file metadata.
             cache_manager: Object providing an `atomic_write_json(path, data)` method used for the atomic write.
             additional_data: Optional mapping to merge into the tracking JSON.
-        
+
         Returns:
             `true` if the file was written successfully, `false` otherwise.
         """
@@ -687,7 +687,7 @@ class VersionManager:
     ) -> bool:
         """
         Determine whether tracking_data contains every key listed in required_keys.
-        
+
         Returns:
             True if every key in required_keys exists in tracking_data, False otherwise.
         """
