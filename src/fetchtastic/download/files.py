@@ -313,6 +313,10 @@ def _is_release_complete(
                         )
             except (zipfile.BadZipFile, OSError, IOError, TypeError):
                 return False
+        else:
+            if not verify_file_integrity(asset_path):
+                logger.debug("Hash verification failed for %s", asset_path)
+                return False
 
     return True
 

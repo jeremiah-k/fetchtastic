@@ -444,6 +444,8 @@ class AsyncDownloadCoreMixin:
                 if result:
                     return True
 
+                # Defensive path: some implementations (or tests) may return False
+                # instead of raising AsyncDownloadError on failure.
                 last_error = AsyncDownloadError(
                     f"Download failed after {attempt + 1}/{attempts + 1} attempts",
                     url=url,

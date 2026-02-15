@@ -287,6 +287,57 @@ class TestIsReleaseComplete:
         assert result is True
         assert verify_calls["count"] == 1
 
+    def test_complete_non_zip_release_uses_integrity_verification(
+        self, tmp_path, monkeypatch
+    ):
+        """Non-zip assets should be integrity-verified in addition to size checks."""
+        release_dir = tmp_path / "release"
+        release_dir.mkdir()
+        test_file = release_dir / "file1.bin"
+        test_file.write_bytes(b"binary-data")
+
+        verify_calls = {"count": 0}
+
+        def fake_verify(file_path: str) -> bool:
+            verify_calls["count"] += 1
+            return file_path == str(test_file)
+
+        monkeypatch.setattr(
+            "fetchtastic.download.files.verify_file_integrity", fake_verify
+        )
+
+        result = _is_release_complete(
+            {"assets": [{"name": "file1.bin", "size": test_file.stat().st_size}]},
+            str(release_dir),
+            [],
+            [],
+        )
+
+        assert result is True
+        assert verify_calls["count"] == 1
+
+    def test_incomplete_non_zip_release_when_integrity_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """Non-zip assets should mark release incomplete when integrity verification fails."""
+        release_dir = tmp_path / "release"
+        release_dir.mkdir()
+        test_file = release_dir / "file1.bin"
+        test_file.write_bytes(b"binary-data")
+
+        monkeypatch.setattr(
+            "fetchtastic.download.files.verify_file_integrity", lambda _p: False
+        )
+
+        result = _is_release_complete(
+            {"assets": [{"name": "file1.bin", "size": test_file.stat().st_size}]},
+            str(release_dir),
+            [],
+            [],
+        )
+
+        assert result is False
+
 
 class TestFileOperations:
     """Test FileOperations class."""
