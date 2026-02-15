@@ -837,6 +837,48 @@ class TestDownloadFile:
         assert result is True
         assert len(callback_calls) == 2  # Once per chunk
 
+    async def test_download_file_non_numeric_content_length(self, mocker, tmp_path):
+        """Non-numeric Content-Length should be treated as unknown/zero."""
+        client = AsyncGitHubClient()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "chunked"}
+
+        mock_content = mocker.MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = mocker.MagicMock()
+        mock_session.get = mocker.MagicMock(return_value=mock_response)
+
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock()
+        callback_calls = []
+
+        async def progress_callback(downloaded, total, filename):
+            callback_calls.append((downloaded, total, filename))
+
+        target = tmp_path / "test.bin"
+        with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
+            mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+            with patch.object(Path, "replace"):
+                result = await client.download_file(
+                    "https://example.com/file.bin",
+                    target,
+                    progress_callback=progress_callback,
+                )
+
+        assert result is True
+        assert callback_calls == [(4, None, "test.bin")]
+
     async def test_download_file_http_error(self, mocker, tmp_path):
         """Test download handles HTTP errors."""
         client = AsyncGitHubClient()

@@ -33,7 +33,7 @@ from fetchtastic.download.async_downloader import (
 )
 from fetchtastic.download.interfaces import Asset, DownloadResult
 
-pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.asyncio]
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 # Helper to create async iterator from list
@@ -169,6 +169,7 @@ class TestGetTargetPathForRelease:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestCallProgressCallback:
     """Test _call_progress_callback method."""
 
@@ -214,6 +215,7 @@ class TestCallProgressCallback:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncVerifyExistingFile:
     """Test _async_verify_existing_file method."""
 
@@ -281,6 +283,7 @@ class TestAsyncVerifyExistingFile:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncSaveFileHash:
     """Test _async_save_file_hash method."""
 
@@ -310,6 +313,7 @@ class TestAsyncSaveFileHash:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncCleanupTempFile:
     """Test _async_cleanup_temp_file method."""
 
@@ -339,6 +343,7 @@ class TestAsyncCleanupTempFile:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncDownload:
     """Test async_download method."""
 
@@ -656,6 +661,7 @@ class TestAsyncDownload:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncDownloadWithRetry:
     """Test async_download_with_retry method."""
 
@@ -718,6 +724,37 @@ class TestAsyncDownloadWithRetry:
 
         assert result is False
         assert mock_download.call_count == 3  # Initial + 2 retries
+
+    async def test_retry_non_retryable_async_download_error_raises(
+        self, mocker, tmp_path
+    ):
+        """Non-retryable AsyncDownloadError should be re-raised immediately."""
+        downloader = ConcreteAsyncDownloader()
+
+        mock_download = mocker.patch.object(
+            downloader,
+            "async_download",
+            AsyncMock(
+                side_effect=AsyncDownloadError(
+                    "Not found", status_code=404, is_retryable=False
+                )
+            ),
+        )
+
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        target = tmp_path / "test.bin"
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await downloader.async_download_with_retry(
+                "https://example.com/missing.bin",
+                target,
+                max_retries=3,
+                retry_delay=0.1,
+            )
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.is_retryable is False
+        mock_download.assert_called_once()
 
     async def test_retry_exception_handling(self, mocker, tmp_path):
         """Test handling exceptions during retry."""
@@ -804,6 +841,7 @@ class TestAsyncDownloadWithRetry:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncDownloadRelease:
     """Test async_download_release method."""
 
@@ -861,6 +899,30 @@ class TestAsyncDownloadRelease:
         assert result.error_type == ERROR_TYPE_UNKNOWN
         assert result.is_retryable is True
 
+    async def test_download_release_non_retryable_error_preserves_flags(
+        self, mocker, tmp_path, sample_release, sample_asset
+    ):
+        """AsyncDownloadError details should be preserved in DownloadResult."""
+        downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_DIR": str(tmp_path)})
+
+        mocker.patch.object(
+            downloader,
+            "async_download_with_retry",
+            AsyncMock(
+                side_effect=AsyncDownloadError(
+                    "HTTP error 404", status_code=404, is_retryable=False
+                )
+            ),
+        )
+
+        result = await downloader.async_download_release(sample_release, sample_asset)
+
+        assert result.success is False
+        assert result.error_message == "HTTP error 404"
+        assert result.error_type == ERROR_TYPE_NETWORK
+        assert result.http_status_code == 404
+        assert result.is_retryable is False
+
     async def test_download_release_with_progress_callback(
         self, mocker, tmp_path, sample_release, sample_asset
     ):
@@ -890,6 +952,7 @@ class TestAsyncDownloadRelease:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncDownloadMultiple:
     """Test async_download_multiple method."""
 
@@ -1040,6 +1103,7 @@ class TestAsyncDownloadMultiple:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestAsyncDownloaderBase:
     """Test AsyncDownloaderBase class."""
 
@@ -1116,6 +1180,7 @@ class TestAsyncDownloaderBase:
 # =============================================================================
 
 
+@pytest.mark.asyncio
 class TestDownloadWithProgress:
     """Test download_with_progress utility function."""
 

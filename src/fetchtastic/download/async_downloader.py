@@ -25,6 +25,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import calculate_sha256, save_file_hash
 
+from .async_client import AsyncDownloadError
 from .async_core import AsyncDownloadCoreMixin
 from .interfaces import Asset, DownloadResult, Pathish, Release
 
@@ -198,7 +199,18 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                     error_type=ERROR_TYPE_NETWORK,
                     is_retryable=True,
                 )
-
+        except AsyncDownloadError as e:
+            logger.error("Error downloading %s: %s", asset.name, e.message)
+            return DownloadResult(
+                success=False,
+                release_tag=release.tag_name,
+                file_path=Path(target_path),
+                download_url=asset.download_url,
+                error_message=e.message,
+                error_type=ERROR_TYPE_NETWORK,
+                http_status_code=e.status_code,
+                is_retryable=e.is_retryable,
+            )
         except Exception as e:
             logger.exception(f"Error downloading {asset.name}: {e}")
             return DownloadResult(

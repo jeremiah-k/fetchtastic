@@ -475,7 +475,13 @@ class AsyncGitHubClient:
                             is_retryable=response.status >= 500,
                         )
 
-                    total_size = int(response.headers.get("Content-Length", 0))
+                    raw_content_length = response.headers.get("Content-Length")
+                    try:
+                        total_size = (
+                            int(raw_content_length) if raw_content_length else 0
+                        )
+                    except (TypeError, ValueError):
+                        total_size = 0
                     downloaded = 0
 
                     async with aiofiles.open(temp_path, "wb") as f:

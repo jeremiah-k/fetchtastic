@@ -261,7 +261,6 @@ class AsyncDownloadCoreMixin:
                             status_code=response.status,
                             is_retryable=response.status >= 500,
                         )
-                    response.raise_for_status()
 
                     content_length = response.headers.get("Content-Length")
                     try:
@@ -369,7 +368,10 @@ class AsyncDownloadCoreMixin:
                 )
             except AsyncDownloadError as e:
                 last_error = e
-                if not e.is_retryable or attempt == attempts:
+                if not e.is_retryable:
+                    logger.error(f"Download failed permanently for {url}: {e.message}")
+                    raise
+                if attempt == attempts:
                     logger.error(f"Download failed permanently for {url}: {e.message}")
                     return False
                 logger.warning(
