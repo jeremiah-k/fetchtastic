@@ -710,11 +710,12 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         Raises:
             AttributeError: If the downloader does not have a release_history_manager.
         """
-        if not hasattr(self, "release_history_manager"):
+        manager = getattr(self, "release_history_manager", None)
+        if manager is None:
             raise AttributeError(
                 _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
             )
-        return self.release_history_manager.is_release_revoked(release)  # type: ignore[attr-defined]
+        return cast(bool, manager.is_release_revoked(release))
 
     def needs_download(
         self, release_tag: str, file_name: str, expected_size: int

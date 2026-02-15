@@ -84,8 +84,14 @@ def is_connected_to_wifi() -> bool:
             return False
 
         data = json.loads(output)
-        supplicant_state = data.get("supplicant_state", "")
-        ip_address = data.get("ip", "")
+        if not isinstance(data, dict):
+            return False
+        supplicant_state_raw = data.get("supplicant_state", "")
+        ip_address_raw = data.get("ip", "")
+        supplicant_state = (
+            supplicant_state_raw if isinstance(supplicant_state_raw, str) else ""
+        )
+        ip_address = ip_address_raw if isinstance(ip_address_raw, str) else ""
         return supplicant_state == "COMPLETED" and ip_address != ""
     except json.JSONDecodeError as e:
         logger.warning(f"Error decoding JSON from termux-wifi-connectioninfo: {e}")

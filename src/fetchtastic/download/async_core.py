@@ -152,7 +152,10 @@ class AsyncDownloadCoreMixin:
             Active aiohttp ClientSession instance.
         """
         if aiohttp_module is None:
-            import aiohttp as aiohttp_module  # type: ignore[import-not-found]
+            import aiohttp as imported_aiohttp
+
+            aiohttp_module = imported_aiohttp
+        assert aiohttp_module is not None
 
         if self._session is None or getattr(self._session, "closed", False):
             connector = aiohttp_module.TCPConnector(limit=self._get_max_concurrent())
@@ -278,7 +281,7 @@ class AsyncDownloadCoreMixin:
             AsyncDownloadError: If the download or file save fails.
         """
         try:
-            import aiofiles
+            import aiofiles  # type: ignore[import-untyped]
             import aiohttp
         except ImportError as e:
             fallback_result = self._sync_download_fallback(url, target_path)

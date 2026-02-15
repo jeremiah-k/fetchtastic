@@ -3,7 +3,7 @@
 import json
 from typing import cast
 
-import requests
+import requests  # type: ignore[import-untyped]
 from pick import pick
 
 from fetchtastic.constants import MESHTASTIC_FIRMWARE_RELEASES_URL

@@ -2822,7 +2822,7 @@ def install_crond() -> None:
 
 
 @cron_command_required
-def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
+def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") -> None:
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
 
@@ -2909,7 +2909,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
 
 
 @cron_command_required
-def remove_cron_job(*, crontab_path: str = "crontab"):
+def remove_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Remove Fetchtastic's non-@reboot cron entries from the current user's crontab.
 
@@ -3007,7 +3007,7 @@ def remove_boot_script() -> None:
 
 
 @cron_command_required
-def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
+def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Ensure an @reboot crontab entry exists to run the `fetchtastic download` command after system reboot.
 
@@ -3077,7 +3077,7 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
 
 
 @cron_command_required
-def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
+def remove_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Remove any @reboot cron entries that run or are labeled for Fetchtastic.
 
@@ -3139,7 +3139,7 @@ def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
 
 
 @cron_check_command_required
-def check_any_cron_jobs_exist(*, crontab_path: str = "crontab"):
+def check_any_cron_jobs_exist(*, crontab_path: str = "crontab") -> bool:
     """
     Determine whether the current user's crontab contains any entries.
 
@@ -3180,7 +3180,7 @@ def check_boot_script_exists() -> bool:
 
 
 @cron_check_command_required
-def check_cron_job_exists(*, crontab_path: str = "crontab"):
+def check_cron_job_exists(*, crontab_path: str = "crontab") -> bool:
     """
     Determine whether any Fetchtastic cron entries exist in the current user's crontab (ignoring '@reboot' lines).
 

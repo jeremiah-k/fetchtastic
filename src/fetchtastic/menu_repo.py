@@ -1,6 +1,6 @@
 import curses
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol, cast
 
 import requests  # type: ignore[import-untyped]
 from pick import (
@@ -61,7 +61,7 @@ KEYS_PAGE_UP = tuple(k for k in (_KEY_PAGE_UP,) if k is not None)
 KEYS_PAGE_DOWN = tuple(k for k in (_KEY_PAGE_DOWN,) if k is not None)
 
 
-class MenuPicker(Picker):
+class MenuPicker(Picker[Option]):
     """
     Picker extension that supports PageUp/PageDown for faster navigation.
     """
@@ -76,7 +76,7 @@ class MenuPicker(Picker):
         max_y, max_x = screen.getmaxyx()
         title_lines = len(self.get_title_lines(max_width=max_x))
         max_rows = max_y - self.position.y
-        step = max_rows - title_lines - 1
+        step = int(max_rows - title_lines - 1)
         return max(1, step)
 
     def _is_action_option(self, option: Option) -> bool:
@@ -188,7 +188,8 @@ def _pick_menu(
         clear_screen=clear_screen,
         quit_keys=quit_keys,
     )
-    return picker.start()
+    start_picker = cast(Callable[[], tuple[Option, int] | list[Option]], picker.start)
+    return start_picker()
 
 
 def _process_repo_contents(
@@ -255,7 +256,7 @@ def _process_repo_contents(
     # Sort firmware directories by commit time when available, otherwise by version.
     def _fw_dir_key(
         d: dict[str, Any],
-    ) -> tuple[int, float, tuple, str] | tuple[tuple, str]:
+    ) -> tuple[int, float, tuple[Any, ...], str] | tuple[tuple[Any, ...], str]:
         """
         Provide a sorting key for a firmware directory entry.
 
@@ -525,7 +526,7 @@ def select_item(
     option, _index = _pick_menu(display_options, title, indicator="*")
 
     if isinstance(option, Option):
-        return option.value
+        return cast(dict[str, Any] | None, option.value)
     return None
 
 
@@ -694,7 +695,7 @@ def run_menu(config: dict[str, Any] | None = None) -> dict[str, Any] | None:
         return None
 
 
-def run_repository_downloader_menu(config):
+def run_repository_downloader_menu(config: dict[str, Any]) -> list[str] | None:
     """
     Orchestrates an interactive repository browsing and download workflow.
 
@@ -712,13 +713,23 @@ def run_repository_downloader_menu(config):
         if not selected_files:
             logger.info("No files selected for download.")
             return None
+        if not isinstance(selected_files, dict):
+            logger.info("No files selected for download.")
+            return None
+        raw_files = selected_files.get("files")
+        raw_directory = selected_files.get("directory")
+        if not isinstance(raw_files, list) or not isinstance(raw_directory, str):
+            logger.info("No files selected for download.")
+            return None
 
         # Create repository downloader instance
         repo_downloader = RepositoryDownloader(config)
 
         # Convert selected files to the format expected by the new downloader
         files_to_download = []
-        for file_info in selected_files["files"]:
+        for file_info in raw_files:
+            if not isinstance(file_info, dict):
+                continue
             file_data = {
                 "name": file_info["name"],
                 "download_url": file_info["download_url"],
@@ -728,7 +739,7 @@ def run_repository_downloader_menu(config):
 
         # Download the files using the new downloader
         download_results = repo_downloader.download_repository_files_batch(
-            files_to_download, selected_files["directory"]
+            files_to_download, raw_directory
         )
 
         # Process results

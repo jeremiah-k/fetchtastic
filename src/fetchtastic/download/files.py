@@ -1062,7 +1062,7 @@ def build_storage_tag_with_channel(
     sanitized_release_tag: str,
     release: "Release",
     release_history_manager: "ReleaseHistoryManager",
-    config: dict,
+    config: dict[str, Any],
     is_revoked: bool,
 ) -> str:
     """

@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-import aiofiles
+import aiofiles  # type: ignore[import-untyped]
 import aiohttp
 from aiohttp import (
     ClientResponse,
