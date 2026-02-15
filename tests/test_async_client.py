@@ -126,6 +126,16 @@ class TestAsyncGitHubClientInitialization:
         assert client.max_concurrent == 1
         assert client.connector_limit == 1
 
+    def test_init_invalid_limits_fall_back_to_defaults(self):
+        """Invalid concurrency limits should fall back to default values."""
+        client = AsyncGitHubClient(
+            max_concurrent="invalid",  # type: ignore[arg-type]
+            connector_limit=object(),  # type: ignore[arg-type]
+        )
+
+        assert client.max_concurrent == 5
+        assert client.connector_limit == 10
+
 
 # =============================================================================
 # Async Context Manager Tests (lines 122-134)
@@ -544,6 +554,90 @@ class TestGetReleases:
         assert len(releases[1].assets) == 2
         assert releases[1].assets[0].name == "firmware-good.bin"
         assert releases[1].assets[1].size == 0
+
+    async def test_get_releases_skips_invalid_types_in_release_and_asset_fields(
+        self, mocker
+    ):
+        """Invalid tag/asset field types should be skipped or normalized safely."""
+        client = AsyncGitHubClient()
+
+        payload = [
+            {"tag_name": 123, "assets": []},
+            {
+                "tag_name": "v2.0.0",
+                "assets": [
+                    {"name": 99, "size": 1, "browser_download_url": "https://x"},
+                    {
+                        "name": "valid.bin",
+                        "size": 12,
+                        "browser_download_url": 42,
+                    },
+                ],
+            },
+        ]
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.json = AsyncMock(return_value=payload)
+        mock_response.raise_for_status = Mock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        releases = await client.get_releases(
+            "https://api.github.com/repos/test/test/releases"
+        )
+
+        assert len(releases) == 1
+        assert releases[0].tag_name == "v2.0.0"
+        assert len(releases[0].assets) == 1
+        assert releases[0].assets[0].name == "valid.bin"
+        assert releases[0].assets[0].download_url == ""
+
+    async def test_get_releases_logs_invalid_tag_and_asset_name_types(
+        self, mocker, capsys
+    ):
+        """Invalid tag and asset-name types should emit warning logs."""
+        client = AsyncGitHubClient()
+
+        payload = [
+            {"tag_name": 123, "assets": []},
+            {
+                "tag_name": "v2.0.0",
+                "assets": [
+                    {"name": 42, "size": 1, "browser_download_url": "https://x"}
+                ],
+            },
+        ]
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.json = AsyncMock(return_value=payload)
+        mock_response.raise_for_status = Mock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        await client.get_releases("https://api.github.com/repos/test/test/releases")
+
+        output = capsys.readouterr().out
+        assert "invalid tag_name type" in output
+        assert "invalid name" in output
 
     async def test_get_releases_rate_limit_exceeded(self, mocker):
         """Test get_releases raises error on rate limit exceeded."""
@@ -984,6 +1078,223 @@ class TestDownloadFile:
 
         assert exc_info.value.is_retryable is True
 
+    async def test_download_file_ignores_progress_callback_errors(
+        self, mocker, tmp_path
+    ):
+        """Progress callback exceptions should not fail the download."""
+        client = AsyncGitHubClient()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "4"}
+        mock_content = mocker.MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = mocker.MagicMock()
+        mock_session.get = mocker.MagicMock(return_value=mock_response)
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock()
+        target = tmp_path / "test.bin"
+
+        def bad_callback(_downloaded, _total, _filename):
+            raise RuntimeError("callback-failed")
+
+        with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
+            mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+            with patch.object(Path, "replace"):
+                result = await client.download_file(
+                    "https://example.com/file.bin",
+                    target,
+                    progress_callback=bad_callback,
+                )
+
+        assert result is True
+
+    async def test_download_file_logs_mb_for_large_download(self, mocker, tmp_path):
+        """Downloads >= 1 MB should execute the MB logging branch."""
+        client = AsyncGitHubClient()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        big_chunk = b"x" * (1024 * 1024)
+        mock_response.headers = {"Content-Length": str(len(big_chunk))}
+        mock_content = mocker.MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([big_chunk]))
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = mocker.MagicMock()
+        mock_session.get = mocker.MagicMock(return_value=mock_response)
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock()
+        target = tmp_path / "large.bin"
+
+        with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
+            mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+            with patch.object(Path, "replace"):
+                result = await client.download_file(
+                    "https://example.com/large.bin",
+                    target,
+                )
+
+        assert result is True
+
+    async def test_download_file_logs_bytes_for_small_download(self, mocker, tmp_path):
+        """Small downloads should execute the bytes logging branch."""
+        client = AsyncGitHubClient()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "4"}
+        mock_content = mocker.MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = mocker.MagicMock()
+        mock_session.get = mocker.MagicMock(return_value=mock_response)
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock()
+        target = tmp_path / "small.bin"
+
+        with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
+            mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+            with patch.object(Path, "replace"):
+                result = await client.download_file(
+                    "https://example.com/small.bin",
+                    target,
+                )
+
+        assert result is True
+
+    async def test_download_file_client_error_cleanup_handles_unlink_oserror(
+        self, mocker, tmp_path
+    ):
+        """Client error cleanup should tolerate temp-file unlink failures."""
+        client = AsyncGitHubClient()
+        import aiohttp
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(side_effect=aiohttp.ClientError("Connection failed"))
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+
+        target = tmp_path / "test.bin"
+        temp_path = tmp_path / "preexisting.tmp"
+        temp_path.write_bytes(b"temp")
+
+        with (
+            patch.object(Path, "with_suffix", return_value=temp_path),
+            patch.object(Path, "unlink", side_effect=OSError("unlink-failed")),
+        ):
+            with pytest.raises(AsyncDownloadError):
+                await client.download_file("https://example.com/file.bin", target)
+
+    async def test_download_file_oserror_cleanup_handles_unlink_oserror(
+        self, mocker, tmp_path
+    ):
+        """Filesystem error cleanup should tolerate temp-file unlink failures."""
+        client = AsyncGitHubClient()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "4"}
+        mock_content = mocker.MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+
+        target = tmp_path / "test.bin"
+        temp_path = tmp_path / "preexisting.tmp"
+        temp_path.write_bytes(b"temp")
+
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock(side_effect=OSError("disk-full"))
+
+        with (
+            patch("fetchtastic.download.async_client.aiofiles.open") as mock_open,
+            patch.object(Path, "with_suffix", return_value=temp_path),
+            patch.object(Path, "unlink", side_effect=OSError("unlink-failed")),
+        ):
+            mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+            with pytest.raises(AsyncDownloadError) as exc_info:
+                await client.download_file("https://example.com/file.bin", target)
+
+        assert exc_info.value.is_retryable is False
+
+    async def test_download_file_unexpected_error_cleanup_handles_unlink_oserror(
+        self, mocker, tmp_path
+    ):
+        """Unexpected errors should be wrapped and cleanup should tolerate unlink failures."""
+        client = AsyncGitHubClient()
+
+        async def bad_iter(_chunk_size):
+            raise RuntimeError("iter-broken")
+            yield b"unused"  # pragma: no cover
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "4"}
+        mock_content = mocker.MagicMock()
+        mock_content.iter_chunked = Mock(side_effect=bad_iter)
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+
+        target = tmp_path / "test.bin"
+        temp_path = tmp_path / "preexisting.tmp"
+        temp_path.write_bytes(b"temp")
+
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock()
+
+        with (
+            patch("fetchtastic.download.async_client.aiofiles.open") as mock_open,
+            patch.object(Path, "with_suffix", return_value=temp_path),
+            patch.object(Path, "unlink", side_effect=OSError("unlink-failed")),
+        ):
+            mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+            with pytest.raises(AsyncDownloadError) as exc_info:
+                await client.download_file("https://example.com/file.bin", target)
+
+        assert "Unexpected error" in exc_info.value.message
+
 
 # =============================================================================
 # Download File With Retry Tests (lines 441-489)
@@ -1131,6 +1442,51 @@ class TestDownloadFileWithRetry:
         # Verify exponential backoff: 1.0, 2.0
         assert sleep_calls[0] == 1.0
         assert sleep_calls[1] == 2.0
+
+    async def test_download_with_retry_fallback_last_error_branch(
+        self, mocker, tmp_path
+    ):
+        """Exercise the defensive last_error branch after the retry loop."""
+        client = AsyncGitHubClient()
+        import fetchtastic.download.async_client as async_client_module
+
+        mocker.patch.object(
+            client,
+            "download_file",
+            new_callable=AsyncMock,
+            side_effect=AsyncDownloadError("retryable", is_retryable=True),
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+        mocker.patch.object(async_client_module, "range", return_value=[1])
+
+        target = tmp_path / "test.bin"
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await client.download_file_with_retry(
+                "https://example.com/file.bin",
+                target,
+                max_retries=0,
+            )
+
+        assert exc_info.value.message == "retryable"
+
+    async def test_download_with_retry_negative_retries_returns_false(
+        self, mocker, tmp_path
+    ):
+        """Negative retry counts should skip attempts and return False."""
+        client = AsyncGitHubClient()
+        mock_download = mocker.patch.object(
+            client, "download_file", new_callable=AsyncMock, return_value=True
+        )
+
+        target = tmp_path / "test.bin"
+        result = await client.download_file_with_retry(
+            "https://example.com/file.bin",
+            target,
+            max_retries=-1,
+        )
+
+        assert result is False
+        mock_download.assert_not_called()
 
 
 # =============================================================================
