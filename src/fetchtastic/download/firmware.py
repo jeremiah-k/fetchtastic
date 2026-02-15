@@ -44,7 +44,6 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     download_file_with_retry,
     load_file_hash,
-    make_github_api_request,
     matches_extract_patterns,
     matches_selected_patterns,
     verify_file_integrity,
