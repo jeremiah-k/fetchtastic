@@ -279,19 +279,17 @@ def create_asset_from_github_data(
     allow_invalid_download_url: bool = False,
 ) -> Optional[Asset]:
     """
-    Create an Asset from raw GitHub API asset data with defensive validation.
-
+    Create an Asset object from a GitHub asset payload, performing defensive validation.
+    
     Parameters:
-        asset_data (Any): Raw GitHub asset payload.
-        release_tag (str): Release tag used for validation warnings.
-        asset_label (str): Label used in warning messages.
-        invalid_size_default (Optional[int]): Fallback size value to use when the asset size
-            is invalid. If `None`, invalid sizes cause the asset to be skipped.
-        allow_invalid_download_url (bool): If `True`, assets with missing/invalid download URL
-            values are retained with an empty download URL; otherwise they are skipped.
-
+        asset_data (Any): Raw GitHub asset payload; must be a dict containing at minimum a non-empty `name`.
+        release_tag (str): Release tag used in warning messages.
+        asset_label (str): Label used in warnings to identify the asset (default "asset").
+        invalid_size_default (Optional[int]): Fallback size to use when `size` is missing or invalid; if `None`, such assets are rejected.
+        allow_invalid_download_url (bool): If True, allow missing or invalid download URLs (returned as empty string); otherwise assets with invalid download URL are rejected.
+    
     Returns:
-        Optional[Asset]: Parsed Asset when valid, otherwise None.
+        Optional[Asset]: An Asset populated from the payload when validations pass; `None` if the payload is malformed or required fields are invalid.
     """
     if not isinstance(asset_data, dict):
         logger.warning("Skipping malformed %s for release %s", asset_label, release_tag)

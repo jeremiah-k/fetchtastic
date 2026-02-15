@@ -612,16 +612,16 @@ class VersionManager:
     ) -> bool:
         """
         Write version-tracking JSON (including timestamp and metadata) to the given path using an atomic write.
-
+        
         Parameters:
-            file_path (str): Destination file path for the tracking JSON.
-            version (str): Version string to record.
-            release_type (str): Release type used to derive file metadata.
-            cache_manager (CacheManager): Cache manager providing `atomic_write_json`.
-            additional_data (Optional[Dict[str, Any]]): Optional data to merge into the tracking JSON.
-
+            file_path: Destination file path for the tracking JSON.
+            version: Version string to record.
+            release_type: Release type used to derive file metadata.
+            cache_manager: Object providing an `atomic_write_json(path, data)` method used for the atomic write.
+            additional_data: Optional mapping to merge into the tracking JSON.
+        
         Returns:
-            bool: `True` if the file was written successfully, `False` otherwise.
+            `true` if the file was written successfully, `false` otherwise.
         """
         tracking_data = self.create_version_tracking_json(
             version, release_type, additional_data=additional_data
@@ -686,14 +686,10 @@ class VersionManager:
         self, tracking_data: Dict[str, Any], required_keys: List[str]
     ) -> bool:
         """
-        Validate that a version-tracking mapping contains all required keys.
-
-        Parameters:
-            tracking_data (Dict[str, Any]): Mapping representing version tracking data to inspect.
-            required_keys (List[str]): Keys that must be present in tracking_data.
-
+        Determine whether tracking_data contains every key listed in required_keys.
+        
         Returns:
-            bool: `True` if every key in `required_keys` exists in `tracking_data`, `False` otherwise.
+            True if every key in required_keys exists in tracking_data, False otherwise.
         """
         for key in required_keys:
             if key not in tracking_data:

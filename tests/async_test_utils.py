@@ -10,13 +10,10 @@ T = TypeVar("T")
 
 async def make_async_iter(items: Iterable[T]) -> AsyncIterator[T]:
     """
-    Yield each item from a synchronous iterable as an async iterator.
-
-    Parameters:
-        items (Iterable[T]): Items to yield.
-
+    Create an async iterator that yields the elements of a synchronous iterable.
+    
     Returns:
-        AsyncIterator[T]: Async iterator over the provided items.
+        AsyncIterator[T]: An async iterator that yields each element from the provided iterable.
     """
     for item in items:
         yield item

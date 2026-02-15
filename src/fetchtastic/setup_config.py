@@ -2671,11 +2671,13 @@ def create_startup_shortcut() -> bool:
 
 def copy_to_clipboard_func(text: Optional[str]) -> bool:
     """
-    Copy the given text to the system clipboard using a platform-appropriate method.
-
+    Copy text to the system clipboard using a platform-appropriate method.
+    
+    If `text` is `None`, the function performs no action and returns `False`.
+    
     Parameters:
-        text (Optional[str]): Text to copy; if `None`, the function performs no action.
-
+        text (Optional[str]): The text to copy to the clipboard; may be `None`.
+    
     Returns:
         bool: `True` if the text was successfully copied to the clipboard, `False` otherwise.
     """
@@ -2830,10 +2832,12 @@ def install_crond() -> None:
 def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") -> None:
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
-
-    Removes existing Fetchtastic scheduled entries (excluding any `@reboot` lines) and writes a single scheduled entry for the chosen frequency. Unknown frequency values default to "hourly". This function is a no-op on Windows.
+    
+    Removes any existing Fetchtastic scheduled entries (excluding `@reboot` lines) and writes a single cron entry for the chosen frequency, updating the current user's crontab. Unknown `frequency` values default to "hourly". This function does nothing on Windows.
+    
     Parameters:
-        frequency (str): Schedule key from CRON_SCHEDULES (for example "hourly" or "daily"); unknown values default to "hourly".
+        frequency (str): Key from CRON_SCHEDULES selecting the schedule preset (e.g., "hourly", "daily"); unknown keys default to "hourly".
+        crontab_path (str): Path or command name for the `crontab` executable to use.
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
@@ -3014,9 +3018,13 @@ def remove_boot_script() -> None:
 @cron_command_required
 def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
-    Ensure an @reboot crontab entry exists to run the `fetchtastic download` command after system reboot.
-
-    If running on Windows this is a no-op. Removes any existing `@reboot` entries associated with Fetchtastic and adds a single `@reboot <path-to-fetchtastic> download  # fetchtastic` entry. If the `fetchtastic` executable cannot be found, the crontab is left unchanged. Subprocess and I/O errors are logged.
+    Ensure an @reboot cron entry exists to run Fetchtastic's download command after system reboot.
+    
+    Removes existing @reboot entries associated with Fetchtastic and adds a single
+    `@reboot <path-to-fetchtastic> download  # fetchtastic` entry when the
+    `fetchtastic` executable is found. Leaves the crontab unchanged on Windows or
+    if the executable cannot be located; operational errors are logged.
+    
     Parameters:
         crontab_path (str): Filesystem path to the `crontab` command used to read and update the user's crontab.
     """
@@ -3084,9 +3092,10 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
 @cron_command_required
 def remove_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
-    Remove any @reboot cron entries that run or are labeled for Fetchtastic.
-
-    If running on Windows the function performs no action. Otherwise it reads the current user crontab using the provided `crontab_path`, removes any `@reboot` lines that invoke or are commented for Fetchtastic, and writes the updated crontab back. Errors encountered while reading or writing are logged.
+    Remove any @reboot cron entries that invoke or are labeled for Fetchtastic.
+    
+    This is a no-op on Windows. On other platforms it reads the current user's crontab, removes lines that start with `@reboot` and either invoke Fetchtastic or contain a Fetchtastic label/comment, and writes the updated crontab back. Errors encountered while reading or writing are logged.
+    
     Parameters:
         crontab_path (str): Path to the `crontab` executable used to read and write the user's crontab.
     """
@@ -3146,13 +3155,13 @@ def remove_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
 @cron_check_command_required
 def check_any_cron_jobs_exist(*, crontab_path: str = "crontab") -> bool:
     """
-    Determine whether the current user's crontab contains any entries.
-
+    Check whether the current user's crontab contains any entries.
+    
     Parameters:
         crontab_path (str): Path to the `crontab` executable used to list the user's crontab.
-
+    
     Returns:
-        bool: `True` if at least one cron entry exists for the current user, `False` if the crontab is empty or an error occurs.
+        True if at least one cron entry exists for the current user, False otherwise.
     """
     try:
         result = subprocess.run(

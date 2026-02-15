@@ -236,7 +236,9 @@ class TestLogUtils:
             assert log_utils._file_handler.level == logging.INFO
 
     def test_logger_exception_method(self):
-        """Test that logger.exception method works correctly."""
+        """
+        Verifies that logger.exception is invoked with the provided message when an exception is logged.
+        """
         with patch("fetchtastic.log_utils.logger.exception") as mock_exception:
             try:
                 raise ValueError("Test exception")

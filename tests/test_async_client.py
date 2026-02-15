@@ -986,12 +986,12 @@ class TestDownloadFile:
 
         async def progress_callback(downloaded, total, filename):
             """
-            Record download progress for tests by appending seen values to the shared list.
-
+            Append the observed download progress (downloaded, total) to the shared callback_calls list for tests.
+            
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int): Total number of bytes expected; may be 0 when unknown.
-                filename (str): Target filename for the download; not used by this callback.
+                filename (str): Target filename for the download; unused by this test callback.
             """
             callback_calls.append((downloaded, total))
 
@@ -1131,6 +1131,12 @@ class TestDownloadFile:
         target = tmp_path / "test.bin"
 
         def bad_callback(_downloaded, _total, _filename):
+            """
+            Callback that always raises a RuntimeError to simulate a failing progress callback.
+            
+            Raises:
+                RuntimeError: Always raised with message "callback-failed".
+            """
             raise RuntimeError("callback-failed")
 
         with patch("fetchtastic.download.async_client.aiofiles.open") as mock_open:
@@ -1285,6 +1291,18 @@ class TestDownloadFile:
         client = AsyncGitHubClient()
 
         async def bad_iter(_chunk_size):
+            """
+            An async iterable stub that raises a RuntimeError as soon as iteration begins.
+            
+            Parameters:
+                _chunk_size (int): Ignored placeholder for the requested chunk size.
+            
+            Returns:
+                An async iterator of bytes chunks (no values are produced because iteration always raises).
+            
+            Raises:
+                RuntimeError: Always raised with message "iter-broken" when the iterator is started.
+            """
             raise RuntimeError("iter-broken")
             yield b"unused"  # pragma: no cover
 
@@ -1447,10 +1465,10 @@ class TestDownloadFileWithRetry:
 
         async def track_sleep(duration):
             """
-            Record a sleep duration into the shared test sleep_calls list.
-
+            Append a sleep duration to the shared test `sleep_calls` list.
+            
             Parameters:
-                duration (float): Sleep duration in seconds to append to sleep_calls.
+                duration (float): Duration in seconds to record.
             """
             sleep_calls.append(duration)
 
@@ -1665,8 +1683,8 @@ class TestDownloadFilesConcurrently:
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
-                Exit the asynchronous context, ensuring the client is closed.
-
+                Exit the asynchronous context and ensure the client is closed.
+                
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.
                     exc_val (BaseException | None): Exception instance raised inside the context, or None.
@@ -1717,8 +1735,8 @@ class TestDownloadFilesConcurrently:
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
-                Exit the asynchronous context, ensuring the client is closed.
-
+                Exit the asynchronous context and ensure the client is closed.
+                
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.
                     exc_val (BaseException | None): Exception instance raised inside the context, or None.
