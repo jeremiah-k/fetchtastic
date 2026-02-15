@@ -7,12 +7,16 @@ Fetchtastic automatically downloads the latest Meshtastic firmware and Android A
 ## ✨ Features
 
 - 🔄 **Automatic Downloads**: Latest firmware and Android APK releases
+- ⚡ **Async Download Engine**: `aiohttp`-based downloads with connection pooling and retry/backoff
 - 📱 **Cross-Platform**: Linux, macOS, Windows, and Android (Termux)
 - 🗂️ **Repository Browser**: Browse and download files from meshtastic.github.io
 - 🔔 **Notifications**: Push notifications via NTFY
 - ⏰ **Scheduling**: Automatic downloads via cron/startup scripts
 - 🎯 **Smart Selection**: Choose specific devices and APK variants
 - 📦 **Auto-extraction**: Extract firmware files from zip archives
+- ✅ **Stronger Integrity Checks**: Hash-based verification and ZIP integrity validation
+- 🚦 **GitHub API Resilience**: Centralized release fetching, defensive parsing, caching, and rate-limit-aware behavior
+- 🧵 **Parallel Validation**: Release completeness checks run in parallel for faster scans
 - 🔧 **Easy Setup**: One-command installation with guided setup
 
 ## 🚀 Quick Start
@@ -74,6 +78,13 @@ fetchtastic version       # Show version
 fetchtastic clean         # Remove all configuration
 ```
 
+## 🏗️ Architecture Highlights
+
+- **Shared GitHub release source**: Release parsing and validation are centralized for consistency across firmware and Android paths.
+- **Async + sync compatibility**: Async download paths are first-class, with sync fallbacks when async libraries are unavailable.
+- **Defensive verification flow**: Size checks, hash baselines, and ZIP integrity checks are combined to reduce false positives.
+- **Better retry semantics**: Retryable vs non-retryable errors are preserved to improve behavior and diagnostics.
+
 ## 📁 File Organization
 
 Downloads are organized in a clean structure:
@@ -130,6 +141,23 @@ Contributions are welcome! Please feel free to:
 - Improve documentation
 
 Visit the [GitHub repository](https://github.com/jeremiah-k/fetchtastic) to get started.
+
+## 🧪 Development & Testing
+
+```bash
+# create and activate environment
+python3 -m venv .venv
+. .venv/bin/activate
+
+# install dependencies
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+
+# run tests
+python -m pytest tests/
+```
+
+Test suite organization uses markers such as `unit`, `integration`, `core_downloads`, `user_interface`, `configuration`, and `infrastructure`.
 
 ## 📄 License
 
