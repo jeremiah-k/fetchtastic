@@ -13,9 +13,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from fetchtastic.constants import (
+    BYTES_PER_MEGABYTE,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CONNECT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    FILE_SIZE_MB_LOGGING_THRESHOLD,
+    HTTP_STATUS_ERROR_THRESHOLD,
+    HTTP_STATUS_RETRY_THRESHOLD,
 )
 from fetchtastic.log_utils import logger
 
@@ -303,12 +307,12 @@ class AsyncDownloadCoreMixin:
             async with self._get_semaphore():
                 session = await self._ensure_session(aiohttp)
                 async with session.get(url) as response:
-                    if response.status >= 400:
+                    if response.status >= HTTP_STATUS_ERROR_THRESHOLD:
                         raise AsyncDownloadError(
                             f"HTTP error {response.status}",
                             url=url,
                             status_code=response.status,
-                            is_retryable=response.status >= 500,
+                            is_retryable=response.status >= HTTP_STATUS_RETRY_THRESHOLD,
                         )
 
                     content_length = response.headers.get("Content-Length")
@@ -332,13 +336,13 @@ class AsyncDownloadCoreMixin:
                                 )
 
             elapsed = time.time() - start_time
-            file_size_mb = downloaded / (1024 * 1024)
+            file_size_mb = downloaded / BYTES_PER_MEGABYTE
             logger.debug(f"Downloaded {url} in {elapsed:.2f}s")
 
             temp_path.replace(target)
             await self._async_save_file_hash(target)
 
-            if file_size_mb >= 1.0:
+            if file_size_mb >= FILE_SIZE_MB_LOGGING_THRESHOLD:
                 logger.info(f"Downloaded: {target.name} ({file_size_mb:.1f} MB)")
             else:
                 logger.info(f"Downloaded: {target.name} ({downloaded} bytes)")
@@ -354,7 +358,7 @@ class AsyncDownloadCoreMixin:
                 f"HTTP error {e.status}: {e.message}",
                 url=url,
                 status_code=e.status,
-                is_retryable=e.status >= 500,
+                is_retryable=e.status >= HTTP_STATUS_RETRY_THRESHOLD,
             ) from e
         except aiohttp.ClientError as e:
             await self._async_cleanup_temp_file(temp_path)

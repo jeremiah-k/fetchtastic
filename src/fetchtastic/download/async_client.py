@@ -29,9 +29,14 @@ from aiohttp import (
 
 from fetchtastic.constants import (
     API_CALL_DELAY,
+    BYTES_PER_MEGABYTE,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CONNECT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    FILE_SIZE_MB_LOGGING_THRESHOLD,
+    HTTP_STATUS_ERROR_THRESHOLD,
+    HTTP_STATUS_RETRY_THRESHOLD,
+    RATE_LIMIT_REMAINING_DEFAULT,
 )
 from fetchtastic.log_utils import logger
 
@@ -207,6 +212,29 @@ class AsyncGitHubClient:
             await self._session.close()
             self._session = None
         self._closed = True
+        # Clean up expired rate limit entries on close
+        self._cleanup_expired_rate_limits()
+
+    def _cleanup_expired_rate_limits(self) -> None:
+        """
+        Remove rate limit entries that have reset time in the past.
+
+        This prevents unbounded growth of the rate limit tracking dictionaries
+        by removing entries for tokens whose rate limit windows have expired.
+        """
+        now = datetime.now(timezone.utc)
+        expired_keys = [
+            token_hash
+            for token_hash, reset_time in self._rate_limit_reset.items()
+            if reset_time < now
+        ]
+
+        for key in expired_keys:
+            self._rate_limit_remaining.pop(key, None)
+            self._rate_limit_reset.pop(key, None)
+
+        if expired_keys:
+            logger.debug(f"Cleaned up {len(expired_keys)} expired rate limit entries")
 
     @asynccontextmanager
     async def _rate_limit_guard(self, token_hash: str) -> AsyncIterator[None]:
@@ -219,7 +247,12 @@ class AsyncGitHubClient:
         Raises:
             AsyncDownloadError: If the token's remaining requests are zero and the reset time is in the future.
         """
-        remaining = self._rate_limit_remaining.get(token_hash, 60)
+        # Opportunistic cleanup of expired rate limit entries
+        self._cleanup_expired_rate_limits()
+
+        remaining = self._rate_limit_remaining.get(
+            token_hash, RATE_LIMIT_REMAINING_DEFAULT
+        )
         reset_time = self._rate_limit_reset.get(token_hash)
 
         if remaining == 0 and reset_time and reset_time > datetime.now(timezone.utc):
@@ -411,7 +444,7 @@ class AsyncGitHubClient:
                 f"HTTP error {e.status}: {e.message}",
                 url=url,
                 status_code=e.status,
-                is_retryable=e.status >= 500,
+                is_retryable=e.status >= HTTP_STATUS_RETRY_THRESHOLD,
             ) from e
         except aiohttp.ClientError as e:
             logger.error(f"Network error fetching releases from {url}: {e}")
@@ -486,12 +519,12 @@ class AsyncGitHubClient:
                 start_time = time.time()
 
                 async with session.get(url) as response:
-                    if response.status >= 400:
+                    if response.status >= HTTP_STATUS_ERROR_THRESHOLD:
                         raise AsyncDownloadError(
                             f"HTTP error {response.status}",
                             url=url,
                             status_code=response.status,
-                            is_retryable=response.status >= 500,
+                            is_retryable=response.status >= HTTP_STATUS_RETRY_THRESHOLD,
                         )
 
                     raw_content_length = response.headers.get("Content-Length")
@@ -519,7 +552,7 @@ class AsyncGitHubClient:
                                     logger.debug(f"Progress callback error: {cb_err}")
 
                 elapsed = time.time() - start_time
-                file_size_mb = downloaded / (1024 * 1024)
+                file_size_mb = downloaded / BYTES_PER_MEGABYTE
                 logger.debug(
                     f"Downloaded {url} in {elapsed:.2f}s ({file_size_mb:.2f} MB)"
                 )
@@ -527,7 +560,7 @@ class AsyncGitHubClient:
                 # Atomic replace to handle existing targets across platforms
                 temp_path.replace(target)
 
-                if file_size_mb >= 1.0:
+                if file_size_mb >= FILE_SIZE_MB_LOGGING_THRESHOLD:
                     logger.info(f"Downloaded: {target.name} ({file_size_mb:.1f} MB)")
                 else:
                     logger.info(f"Downloaded: {target.name} ({downloaded} bytes)")

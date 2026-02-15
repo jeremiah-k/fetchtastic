@@ -285,7 +285,9 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                         except Exception:
                             file_path = Path("<unknown>")
                     else:
-                        error_message = f"Invalid download spec: {r}"
+                        error_message = (
+                            f"Invalid download spec: {spec!r}. Original error: {r}"
+                        )
 
                 final_results.append(
                     DownloadResult(
