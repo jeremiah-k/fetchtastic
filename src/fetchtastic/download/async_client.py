@@ -109,18 +109,15 @@ class AsyncGitHubClient:
 
         def _clamp_positive(name: str, value: Any, default: int) -> int:
             """
-            Normalize a value to a positive integer (minimum 1), falling back to a default on parse errors.
-
+            Normalize a value to an integer >= 1, falling back to a provided default when parsing fails.
+            
             Parameters:
-                name (str): Identifier used in warning messages when logging invalid or clamped values.
+                name (str): Identifier used in messages when the input is invalid or adjusted.
                 value (Any): Value to coerce to an integer.
-                default (int): Fallback integer returned when `value` cannot be parsed as an int.
-
+                default (int): Fallback returned when `value` cannot be parsed as an int.
+            
             Returns:
-                int: The parsed integer if it is greater than or equal to 1; `default` if parsing fails; 1 if the parsed value is less than 1.
-
-            Notes:
-                Logs a warning when parsing fails or when a value is clamped to 1.
+                int: The parsed integer if it is greater than or equal to 1; `default` if parsing fails; otherwise 1.
             """
             try:
                 parsed = int(value)
@@ -151,10 +148,10 @@ class AsyncGitHubClient:
 
     async def __aenter__(self) -> "AsyncGitHubClient":
         """
-        Enter the async context, ensuring the client session is initialized.
-
+        Ensure the client session is initialized and return the client for use as an async context manager.
+        
         Returns:
-            AsyncGitHubClient: The initialized client instance.
+            The initialized client instance.
         """
         await self._ensure_session()
         return self
@@ -169,10 +166,10 @@ class AsyncGitHubClient:
 
     async def _ensure_session(self) -> ClientSession:
         """
-        Ensure a session exists, creating one if needed.
-
+        Ensure an aiohttp ClientSession is available; create and configure one if absent or closed.
+        
         Returns:
-            ClientSession: The active aiohttp session.
+            ClientSession: The active aiohttp ClientSession.
         """
         if self._session is None or self._session.closed:
             connector = TCPConnector(
@@ -271,19 +268,19 @@ class AsyncGitHubClient:
         params: Optional[Dict[str, Any]] = None,
     ) -> List[Release]:
         """
-        Fetch releases from GitHub API asynchronously.
-
+        Retrieve release entries from a GitHub releases API endpoint.
+        
         Parameters:
             url (str): GitHub API releases URL.
-            limit (Optional[int]): Maximum number of releases to return.
-            params (Optional[Dict[str, Any]]): Additional query parameters.
-
+            limit (Optional[int]): Maximum number of releases to request; must be an integer >= 0. A value of 0 returns an empty list without making a network request. If omitted, no explicit per-page limit is applied.
+            params (Optional[Dict[str, Any]]): Additional query parameters to include in the request.
+        
         Returns:
-            List[Release]: List of Release objects, newest first.
-
+            List[Release]: Parsed Release objects from the response, newest first.
+        
         Raises:
-            AsyncDownloadError: If the API request fails.
-            ValueError: If `limit` is provided but is not an integer >= 0.
+            ValueError: If `limit` cannot be interpreted as an integer >= 0.
+            AsyncDownloadError: On HTTP, network, or rate-limit errors while fetching or parsing releases.
         """
         session = await self._ensure_session()
 
@@ -676,40 +673,21 @@ async def download_files_concurrently(
     github_token: Optional[str] = None,
 ) -> List[Any]:
     """
-    Download multiple files concurrently with a semaphore limit.
-
+    Download multiple files concurrently, limited by max_concurrent.
+    
     Parameters:
-        downloads (List[Dict[str, Any]]): List of download specs with 'url' and 'target_path'.
-        max_concurrent (int): Maximum concurrent downloads.
-        progress_callback (Optional[Any]): Optional progress callback for each download.
-        github_token (Optional[str]): Optional GitHub token for authenticated downloads.
-            Useful for private release assets and higher API rate limits.
-
+        downloads (List[Dict[str, Any]]): Sequence of download specifications. Each spec must be a dict with keys:
+            - 'url' (str): HTTP(S) URL to download.
+            - 'target_path' (str | Path): Destination filesystem path for the downloaded file.
+        max_concurrent (int): Maximum number of concurrent downloads.
+        progress_callback (Optional[Any]): Optional callable (sync or async) invoked with progress updates for each download.
+        github_token (Optional[str]): Optional GitHub token used for authenticated requests and higher rate limits.
+    
     Returns:
-        List[Any]: Results for each download. Each element is:
-            - True: Download succeeded
-            - False: Download failed without a specific exception
-            - Exception: The exception that caused the failure (typically AsyncDownloadError)
-            - ValueError: Invalid download spec (missing/invalid 'url' or 'target_path')
-            This allows callers to inspect the root cause of failures.
-
-    Example:
-        downloads = [
-            {"url": "https://...", "target_path": "/path/file1.bin"},
-            {"url": "https://...", "target_path": "/path/file2.bin"},
-        ]
-        results = await download_files_concurrently(
-            downloads,
-            max_concurrent=3,
-            github_token="ghp_...",
-        )
-        for i, result in enumerate(results):
-            if result is True:
-                print(f"Download {i} succeeded")
-            elif isinstance(result, Exception):
-                print(f"Download {i} failed: {result}")
-            else:
-                print(f"Download {i} failed")
+        List[Any]: Result per input spec in the same order:
+            - True: download succeeded.
+            - Exception: the exception raised during download (e.g., AsyncDownloadError) or ValueError for an invalid spec.
+            - False is not produced by this function; failures are returned as Exception instances to preserve diagnostics.
     """
     async with create_async_client(
         github_token=github_token,

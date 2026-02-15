@@ -167,15 +167,15 @@ def is_zip_intact(file_path: str | Path) -> bool:
 
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
-    Return a list of safe prerelease subdirectory names found in the given directory.
-
-    Scans the provided prerelease directory for immediate subdirectories whose names start with the firmware prefix, validates and sanitizes each name, and collects the safe names. Unsafe names are skipped and a warning is logged; filesystem errors while scanning are logged at debug level.
-
+    List safe prerelease subdirectory names found in a directory.
+    
+    Scans immediate subdirectories whose names start with FIRMWARE_DIR_PREFIX, returns their sanitized names, and skips any names deemed unsafe.
+    
     Parameters:
         prerelease_dir (str): Path to the prerelease directory to scan.
-
+    
     Returns:
-        list[str]: Sanitized subdirectory names that start with the firmware prefix; empty if the directory does not exist or on scan errors.
+        list[str]: Sanitized subdirectory names that start with the firmware prefix; empty list if the directory does not exist or on scan errors.
     """
     if not os.path.exists(prerelease_dir):
         return []

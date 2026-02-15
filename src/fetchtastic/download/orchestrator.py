@@ -55,12 +55,12 @@ from .version import VersionManager, is_prerelease_directory
 
 def is_connected_to_wifi() -> bool:
     """
-    Determine whether the device is connected to a Wi-Fi network.
-
-    On non-Termux platforms this function assumes connectivity and returns `True`. On Termux it runs the `termux-wifi-connectioninfo` command (with a 5-second timeout) and returns `True` only if the command succeeds, the JSON output contains `"supplicant_state": "COMPLETED"`, and an `"ip"` value is present.
-
+    Determine whether the device is connected to a Wi‑Fi network.
+    
+    On non‑Termux platforms this function assumes connectivity and returns `true`. On Termux it examines the output of the Termux Wi‑Fi API and returns `true` only when the API reports a supplicant state of "COMPLETED" and a non-empty IP address; any command, parsing, or execution error results in `false`.
+    
     Returns:
-        `True` if the device is (or is assumed to be) connected to Wi-Fi, `False` otherwise.
+        `true` if the device is (or is assumed to be) connected to Wi‑Fi, `false` otherwise.
     """
     if not is_termux():
         return True
@@ -339,13 +339,13 @@ class DownloadOrchestrator:
 
     def _ensure_firmware_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Return cached firmware releases, fetching them once from the downloader if not already cached.
-
+        Ensure firmware releases are fetched (if needed) and return the cached list.
+        
         Parameters:
-            limit (Optional[int]): Maximum number of releases to fetch on the initial request; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
-
+            limit (Optional[int]): Maximum number of releases to fetch when loading from the downloader; if None or larger than a previously fetched limit, the method may refetch to satisfy the requested amount.
+        
         Returns:
-            List[Release]: The cached list of firmware releases.
+            List[Release]: The cached list of firmware releases (may be empty).
         """
         return self._ensure_releases(
             downloader=self.firmware_downloader,
@@ -378,17 +378,16 @@ class DownloadOrchestrator:
         self, releases: List[Release], checker: Callable[[Release], bool]
     ) -> List[bool]:
         """
-        Evaluate release completeness for each release in stable input order.
-
-        Uses bounded thread parallelism when checking more than one release to
-        reduce total wall-clock time for I/O-heavy completeness checks.
-
+        Check completeness of each release and return flags in the same order as the input.
+        
+        Uses bounded thread parallelism when more than one release to reduce wall-clock time for I/O-heavy checks.
+        
         Parameters:
-            releases (List[Release]): Releases to check.
-            checker (Callable[[Release], bool]): Callable that returns whether a release is complete.
-
+            releases (List[Release]): Releases to evaluate.
+            checker (Callable[[Release], bool]): Callable that returns `True` if a release is complete, `False` otherwise.
+        
         Returns:
-            List[bool]: Completion flags aligned with `releases`.
+            List[bool]: A list where each element is `True` if the corresponding release is complete, `False` otherwise, aligned with `releases`.
         """
         if not releases:
             return []
@@ -403,8 +402,8 @@ class DownloadOrchestrator:
     def _process_firmware_downloads(self) -> None:
         """
         Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
-
-        Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Network, filesystem, and parsing errors encountered during processing are caught and logged.
+        
+        Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and prunes prerelease subdirectories that do not match the managed naming and versioning conventions.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):

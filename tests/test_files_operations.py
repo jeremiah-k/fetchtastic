@@ -217,9 +217,9 @@ class TestIsReleaseComplete:
 
     def test_corrupted_zip_file(self, tmp_path):
         """
-        Verify _is_release_complete returns False when an asset's ZIP file is present but is corrupted or not a valid ZIP.
-
-        Creates a non-ZIP file named as the expected asset and asserts the function reports the release as incomplete.
+        Check that _is_release_complete treats a present but invalid ZIP asset as an incomplete release.
+        
+        Creates a file with the expected asset name containing non-ZIP bytes and asserts the release is reported incomplete.
         """
         release_dir = tmp_path / "release"
         release_dir.mkdir()
@@ -243,10 +243,28 @@ class TestIsReleaseComplete:
         verify_calls = {"count": 0}
 
         def fake_verify(file_path: str) -> bool:
+            """
+            Test helper that records each invocation and succeeds only for the configured test file.
+            
+            Increments verify_calls["count"] on every call.
+            
+            Parameters:
+                file_path (str): Path of the file to verify.
+            
+            Returns:
+                bool: `True` if `file_path` equals `str(test_file)`, `false` otherwise.
+            """
             verify_calls["count"] += 1
             return file_path == str(test_file)
 
         def fail_zip_open(*_args, **_kwargs):
+            """
+            Raise an AssertionError indicating the ZIP library must not be opened.
+            
+            This helper is intended for tests as a drop-in replacement for ZipFile; it always raises
+            AssertionError to fail the test if code attempts to open a ZIP when a hash baseline should
+            be used instead.
+            """
             raise AssertionError(
                 "ZipFile should not be opened when hash baseline exists"
             )

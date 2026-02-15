@@ -68,10 +68,12 @@ class MenuPicker(Picker[Option]):
 
     def _page_step(self, screen: CursesScreen) -> int:
         """
-        Compute how many rows to move when paging through the menu based on available screen rows and title lines.
-
+        Calculate the vertical page-step size for the menu based on the screen height and title lines.
+        
+        Considers the number of rows available below the current cursor position and subtracts title lines and one padding row.
+        
         Returns:
-            int: Number of rows to move for a page step (at least 1).
+            int: Number of rows to move when paging (at least 1).
         """
         max_y, max_x = screen.getmaxyx()
         title_lines = len(self.get_title_lines(max_width=max_x))
@@ -158,23 +160,23 @@ def _pick_menu(
     quit_keys: list[int] | None = None,
 ) -> Any:
     """
-    Present a terminal menu and return the user's selection(s).
-
+    Display an interactive terminal menu and return the user's selection(s).
+    
     Parameters:
-        options (list[Option]): List of menu options to display.
-        title (str | None): Optional title shown above the menu.
-        indicator (str): Character used to mark the current selection.
-        default_index (int): Index highlighted when the menu opens.
-        multiselect (bool): If True, allow selecting multiple options.
-        min_selection_count (int): Minimum number of items required when multiselect is enabled.
-        screen (CursesScreen | None): Optional pre-initialized curses screen to use for rendering.
-        position (Position | None): Optional position for the picker; defaults to Position(0, 0) if None.
-        clear_screen (bool): If True, clear the screen before drawing the menu.
-        quit_keys (list[int] | None): Additional key codes that trigger quitting/canceling the menu.
-
+        options: Menu options to display.
+        title: Optional title shown above the menu.
+        indicator: Character used to mark the current selection.
+        default_index: Index highlighted when the menu opens.
+        multiselect: If True, allow selecting multiple options.
+        min_selection_count: Minimum number of items required when multiselect is enabled.
+        screen: Optional pre-initialized curses-like screen to use for rendering.
+        position: Optional starting Position for the picker; defaults to Position(0, 0) when omitted.
+        clear_screen: If True, clear the screen before drawing the menu.
+        quit_keys: Additional key codes that trigger quitting/canceling the menu.
+    
     Returns:
-        Any: For single-select mode, returns the chosen Option, or `(None, -1)` if canceled.
-             For multi-select mode, returns a list of selected Option objects, or an empty list if canceled.
+        For single-select mode: a tuple `(Option, int)` containing the chosen option and its index, or `(None, -1)` if canceled.
+        For multi-select mode: a list of `(Option, int)` tuples for each selected option, or an empty list if canceled.
     """
     picker = MenuPicker(
         options,
@@ -272,13 +274,15 @@ def _process_repo_contents(
         d: dict[str, Any],
     ) -> tuple[int, float, tuple[Any, ...], str] | tuple[tuple[Any, ...], str]:
         """
-        Provide a sorting key for a firmware directory entry.
-
+        Compute a sort key for a firmware directory entry, prioritizing recent commits when available.
+        
         Parameters:
-            d (dict[str, Any]): Directory entry dictionary with a "name" key containing the directory name (expected to start with FIRMWARE_DIR_PREFIX).
-
+            d (dict[str, Any]): Directory entry with a "name" key; the name is expected to start with the firmware prefix.
+        
         Returns:
-            tuple: A tuple suitable for sorting firmware directories. If firmware commit timestamps are available, returns `(1 if a commit timestamp exists else 0, commit_timestamp (float), version_tuple, name)`; otherwise returns `(version_tuple, name)`.
+            tuple: If commit timestamps are available, returns a 4-tuple
+            (has_commit_flag, commit_timestamp, version_tuple, name) where `has_commit_flag` is `1` when a commit timestamp exists and `0` otherwise, `commit_timestamp` is a float seconds-since-epoch (or `0.0` when absent), `version_tuple` is a parsed version tuple (empty tuple if unparsable), and `name` is the directory name.
+            Otherwise returns a 2-tuple `(version_tuple, name)`.
         """
         name = d["name"]
         version_str = name.removeprefix(FIRMWARE_DIR_PREFIX)
@@ -481,18 +485,18 @@ def select_item(
     items: list[dict[str, Any]], current_path: str = ""
 ) -> dict[str, Any] | None:
     """
-    Present a navigation menu for repository items and return the user's chosen action or item.
-
+    Show a menu for browsing repository items in a directory.
+    
     Parameters:
         items (list[dict[str, Any]]): Repository entries where each item has at least a "type" key with value "dir" or "file".
-        current_path (str): Path shown in menu title to indicate the current directory (empty for root).
-
+        current_path (str): Current directory path shown in the menu title (empty for repository root).
+    
     Returns:
-        dict[str, Any] | None: The selected value:
-          - For directory selection: directory item dict (contains its metadata).
-          - For choosing files in current directory: {"type": "current"}.
-          - For going up one level: {"type": "back"}.
-          - For quitting: {"type": "quit"}.
+        dict[str, Any] | None: The selected action or item:
+          - Directory selection: the selected directory's item dict (contains its metadata).
+          - Selecting files in the current directory: {"type": "current"}.
+          - Going up one level: {"type": "back"}.
+          - Quitting the menu: {"type": "quit"}.
           - `None` if no valid selection was made.
     """
     if not items:

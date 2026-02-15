@@ -160,6 +160,12 @@ def test_menu_picker_page_step_clamps_to_minimum():
 
     class TinyScreen:
         def getmaxyx(self):
+            """
+            Get the current window size as (rows, columns).
+            
+            Returns:
+                tuple[int, int]: A pair where the first element is the number of rows and the second is the number of columns.
+            """
             return (1, 20)
 
     assert picker._page_step(TinyScreen()) == 1

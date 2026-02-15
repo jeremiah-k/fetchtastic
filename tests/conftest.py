@@ -17,10 +17,10 @@ _ASYNC_NETWORK_BLOCK_MSG = (
 
 def _block_network(*_args, **_kwargs):
     """
-    Prevent network calls in tests by raising a RuntimeError.
-
+    Block synchronous network calls during tests by raising a RuntimeError.
+    
     Raises:
-        RuntimeError: with `_NETWORK_BLOCK_MSG` indicating that network access is blocked during tests.
+        RuntimeError: with the message `_NETWORK_BLOCK_MSG` to indicate network access is blocked in tests.
     """
     raise RuntimeError(_NETWORK_BLOCK_MSG)
 
@@ -50,11 +50,9 @@ except ImportError:
 
 def pytest_configure(config):
     """
-    Configure pytest-asyncio to enable automatic detection of asyncio-marked tests.
-
-    Parameters:
-        config: pytest.Config
-            The pytest configuration object used to register the `asyncio` marker.
+    Register the "asyncio" pytest marker.
+    
+    Adds an `asyncio` marker description to the pytest configuration so asyncio-based tests are auto-detected.
     """
     config.addinivalue_line(
         "markers", "asyncio: mark test as an asyncio test (auto-detected)"
@@ -172,9 +170,12 @@ def _mock_time_sleep(monkeypatch):
 @pytest.fixture
 def mock_aiohttp_session(mocker):
     """
-    Provide a mock aiohttp.ClientSession for testing async HTTP operations.
-
-    Yields a MagicMock configured with the aiohttp.ClientSession spec and with `closed` set to False.
+    Provide a mocked aiohttp.ClientSession for testing async HTTP operations.
+    
+    Yields a MagicMock configured with the spec of `aiohttp.ClientSession` and with `closed` set to False.
+    
+    Returns:
+        MagicMock: A mock `aiohttp.ClientSession`-like object with `closed = False`.
     """
     import aiohttp
 
@@ -186,10 +187,12 @@ def mock_aiohttp_session(mocker):
 @pytest.fixture
 async def async_client(mock_aiohttp_session, mocker):
     """
-    Provides an AsyncGitHubClient instance configured for tests.
-
+    Yield an AsyncGitHubClient configured to use a mocked aiohttp session for tests.
+    
+    The yielded client has its `_session` set to the provided `mock_aiohttp_session` and its `_semaphore` replaced with a MagicMock. On fixture teardown the client is marked closed by setting `_closed = True`.
+    
     Returns:
-        client (AsyncGitHubClient): A client whose `_session` is set to the provided mocked aiohttp session and whose `_semaphore` is a mock. The client is marked closed during fixture teardown.
+        AsyncGitHubClient: A test-configured client instance.
     """
     from fetchtastic.download.async_client import AsyncGitHubClient
 
@@ -226,17 +229,17 @@ def mock_async_response(mocker):
         raise_for_status=None,
     ):
         """
-        Create a mocked aiohttp.ClientResponse configured for tests.
-
+        Create a mocked aiohttp.ClientResponse for use in tests.
+        
         Parameters:
-            status (int): HTTP status code to expose on the response.
-            headers (dict | None): Headers mapping for the response; defaults to empty dict.
-            json_data (Any | None): Value that the response's asynchronous `json()` method will return.
-            content_chunks (Iterable[bytes] | None): Iterable returned by `response.content.iter_chunked(...)` to simulate streamed body chunks.
-            raise_for_status (Exception | callable | None): If provided, calling `response.raise_for_status()` will raise this exception (or call the callable). If `None`, `raise_for_status()` is a no-op.
-
+            status (int): HTTP status code exposed on the response.
+            headers (dict | None): Headers mapping for the response; defaults to an empty dict.
+            json_data (Any | None): Value returned by the response's `json()` coroutine.
+            content_chunks (Iterable[bytes] | None): If provided, `response.content.iter_chunked(...)` will yield these byte chunks to simulate a streamed body.
+            raise_for_status (Exception | callable | None): If provided, calling `response.raise_for_status()` will raise the exception or invoke the callable; if `None`, `raise_for_status()` is a no-op mock.
+        
         Returns:
-            A mock object compatible with `aiohttp.ClientResponse`, with `status`, `headers`, an async `json()` method, optional `content.iter_chunked`, and a mocked `raise_for_status()` behavior.
+            A mock compatible with `aiohttp.ClientResponse` with `status`, `headers`, an async `json()` method, optional `content.iter_chunked` streaming behavior, and a mocked `raise_for_status()` implementation.
         """
         import aiohttp
 
@@ -248,6 +251,12 @@ def mock_async_response(mocker):
         if content_chunks:
 
             async def _async_iter_chunks():
+                """
+                Asynchronously iterate over the configured sequence of content chunks.
+                
+                Yields:
+                    bytes: Each chunk from the surrounding `content_chunks` iterable, produced asynchronously.
+                """
                 for chunk in content_chunks:
                     yield chunk
 
@@ -310,7 +319,15 @@ def sample_release_data():
 
 @pytest.fixture
 def sample_release(sample_release_data):
-    """Fixture providing a sample Release object for testing."""
+    """
+    Provide a Release object constructed from the first entry of sample release data for tests.
+    
+    Parameters:
+        sample_release_data (list[dict]): List of release dictionaries (as produced by the sample_release_data fixture). The first item is used to build the Release.
+    
+    Returns:
+        Release: A Release instance populated from the selected sample data; its `assets` are converted into `Asset` objects with `name`, `download_url`, `size`, `browser_download_url`, and `content_type`.
+    """
     from fetchtastic.download.interfaces import Asset, Release
 
     data = sample_release_data[0]
@@ -336,12 +353,10 @@ def sample_release(sample_release_data):
 @pytest.fixture
 def sample_asset():
     """
-    Provide a sample Asset instance representing a firmware asset for tests.
-
-    The returned Asset is populated with a realistic name, download URLs, size, and content type to be used by tests needing a firmware-like asset.
-
+    Create a sample Asset representing a firmware file for tests.
+    
     Returns:
-        Asset: An Asset object initialized with sample firmware metadata.
+        Asset: An Asset populated with a realistic name, download_url, size, browser_download_url, and content_type suitable for use in tests.
     """
     from fetchtastic.download.interfaces import Asset
 

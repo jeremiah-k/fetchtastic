@@ -102,13 +102,12 @@ class AsyncDownloadCoreMixin:
 
     def _get_retry_delay(self) -> float:
         """
-        Return the initial download retry delay read from the configuration.
-
-        Reads DOWNLOAD_RETRY_DELAY from self.config, defaults to 1.0 on missing or invalid values,
-        and clamps negative values to 0.0.
-
+        Obtain the initial retry delay for downloads from configuration.
+        
+        Reads `DOWNLOAD_RETRY_DELAY` from `self.config`, uses 1.0 if missing or invalid, and clamps negative values to 0.0.
+        
         Returns:
-            float: Initial retry delay in seconds.
+            Initial retry delay in seconds.
         """
         raw_value = self.config.get("DOWNLOAD_RETRY_DELAY", 1.0)
         try:
@@ -142,13 +141,11 @@ class AsyncDownloadCoreMixin:
 
     async def _ensure_session(self, aiohttp_module: Optional[Any] = None) -> Any:
         """
-        Ensure and return a reusable aiohttp ClientSession for downloads.
-
-        If no aiohttp module is provided, the function will import it dynamically. The returned session is created with a TCPConnector limited by the configured maximum concurrent downloads and a default request timeout.
-
+        Provide a reusable aiohttp ClientSession configured with this mixin's concurrency limit and default request timeout.
+        
         Parameters:
             aiohttp_module (Optional[Any]): Optional aiohttp module to use instead of importing one.
-
+        
         Returns:
             Active aiohttp ClientSession instance.
         """
@@ -169,7 +166,11 @@ class AsyncDownloadCoreMixin:
         return self._session
 
     async def close(self) -> None:
-        """Close the shared aiohttp session, if active."""
+        """
+        Close the shared aiohttp ClientSession and clear the internal session reference.
+        
+        If a session exists and is not already closed, it is closed (awaited if necessary). After this call the mixin's internal session attribute is set to None.
+        """
         if self._session is not None and not getattr(self._session, "closed", False):
             close_result = self._session.close()
             if asyncio.iscoroutine(close_result):
@@ -178,8 +179,8 @@ class AsyncDownloadCoreMixin:
 
     async def __aenter__(self) -> "AsyncDownloadCoreMixin":
         """
-        Ensure an aiohttp session is created and return self for use as an async context manager.
-
+        Ensure an aiohttp ClientSession is available for the mixin.
+        
         Returns:
             AsyncDownloadCoreMixin: The mixin instance with a ready-to-use session.
         """
@@ -196,9 +197,9 @@ class AsyncDownloadCoreMixin:
 
     def _sync_download_fallback(self, url: str, target_path: Pathish) -> Optional[bool]:
         """
-        Optional fallback when async dependencies are unavailable.
-
-        Return None to indicate no fallback behavior.
+        Provide an optional synchronous fallback for environments without async dependencies.
+        
+        When implemented, perform a synchronous download of `url` to `target_path`. Return `True` if the download completed and the file is in place, `False` if the fallback attempted but failed, or `None` to indicate no synchronous fallback is available.
         """
         del url, target_path
         return None
@@ -211,10 +212,10 @@ class AsyncDownloadCoreMixin:
         filename: str,
     ) -> None:
         """
-        Invoke a progress callback with the current download progress and suppress any callback errors.
-
+        Call a progress callback with current download metrics and ignore any exceptions it raises.
+        
         Parameters:
-            callback (CoreProgressCallback): Callable receiving (downloaded, total, filename). May be synchronous or return a coroutine.
+            callback (CoreProgressCallback): Callable that accepts (downloaded, total, filename). May be synchronous or return an awaitable.
             downloaded (int): Number of bytes downloaded so far.
             total (Optional[int]): Total number of bytes if known, otherwise None.
             filename (str): Target filename being downloaded.
@@ -228,8 +229,8 @@ class AsyncDownloadCoreMixin:
 
     async def _async_cleanup_temp_file(self, temp_path: Path) -> None:
         """
-        Delete the temporary file at the given path if it exists.
-
+        Remove the temporary file at the specified path if it exists.
+        
         Parameters:
             temp_path (Path): Path to the temporary file to remove. If removal fails due to an OS error, the error is logged at debug level and suppressed.
         """
@@ -241,24 +242,23 @@ class AsyncDownloadCoreMixin:
 
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
-        Determine whether the local file at `file_path` is valid and the download can be skipped.
-
-        Parameters:
-            file_path (Path): Path to the local file to verify.
-
+        Decide whether an existing local file at `file_path` is valid so the download can be skipped.
+        
+        Must be implemented by subclasses to perform the actual verification.
+        
         Returns:
-            bool: `True` if the file is valid and the caller may skip downloading, `False` otherwise.
+            True if the file is valid and the caller may skip downloading, False otherwise.
         """
         raise NotImplementedError
 
     async def _async_save_file_hash(self, file_path: Path) -> None:
         """
-        Compute and persist a content hash for the given file.
-
-        Implementations should calculate a stable checksum (e.g., SHA-256) of the file at `file_path` and persist it according to the subclass's storage policy (for example, writing a sidecar file or updating a database). This method is expected to be implemented by concrete classes to record the downloaded file's hash for future verification.
-
+        Compute and persist a stable content hash for the given file.
+        
+        Implementations must compute a stable checksum (for example, SHA-256) of the file at `file_path` and persist that value according to the subclass's storage policy (for example, writing a sidecar file or updating a database) so it can be used for future verification.
+        
         Parameters:
-            file_path (Path): Path to the file whose hash should be computed and stored.
+            file_path (Path): Path to the file whose content hash should be computed and stored.
         """
         raise NotImplementedError
 
@@ -269,17 +269,18 @@ class AsyncDownloadCoreMixin:
         progress_callback: Optional[CoreProgressCallback] = None,
     ) -> bool:
         """
-        Download a file from `url` and save it to `target_path`, reporting progress if requested.
-
+        Download a file from a URL to the specified target path, using a temporary file and reporting progress.
+        
+        If the target already exists and is verified by the implementation, no download is performed. The function writes to a temporary file and atomically replaces the target on success.
+        
         Parameters:
             progress_callback (Optional[CoreProgressCallback]): Optional callable invoked with
-                (downloaded_bytes, total_bytes_or_None, filename) to report progress. May be
-                sync or async; errors raised by the callback are logged and do not stop the download.
-
+                (downloaded_bytes, total_bytes_or_None, filename) to report progress. The callback
+                may be synchronous or asynchronous; errors raised by the callback are suppressed.
+        
         Returns:
-            bool: `True` if the file is present at `target_path` after this call (downloaded or
-            already present and verified).
-
+            True if the file is present at `target_path` after this call (downloaded or already present and verified).
+        
         Raises:
             AsyncDownloadError: If the download or file save fails.
         """

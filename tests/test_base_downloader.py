@@ -923,8 +923,8 @@ class TestBaseDownloaderAsyncDownload:
 
         async def progress(downloaded, total, filename):
             """
-            Record download progress by collecting reported values into the enclosing test's callback list.
-
+            Append reported download progress values to the enclosing test's `callback_calls` list.
+            
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.
@@ -985,13 +985,13 @@ class TestBaseDownloaderAsyncDownload:
 
         def bad_callback(_downloaded, _total, _filename):
             """
-            Synchronous progress callback that always raises a ValueError.
-
+            Progress callback that always raises a ValueError.
+            
             Parameters:
-                downloaded (int): Number of bytes or units downloaded so far.
-                total (int | None): Total number of bytes or units expected, or None if unknown.
-                filename (str): Name of the file being downloaded.
-
+                _downloaded (int): Number of bytes or units downloaded so far.
+                _total (int | None): Total number of bytes or units expected, or None if unknown.
+                _filename (str): Name of the file being downloaded.
+            
             Raises:
                 ValueError: Always raised with the message "Callback error".
             """
@@ -1397,8 +1397,10 @@ class TestBaseDownloaderAsyncDownloadWithRetry:
 
         async def track_sleep(duration):
             """
-            Record a sleep duration by appending it to the shared `sleep_calls` list for later inspection.
-
+            Record a sleep duration for later inspection.
+            
+            Appends the given duration, in seconds, to the shared `sleep_calls` list.
+            
             Parameters:
                 duration (float): Sleep time in seconds to record.
             """
@@ -1431,8 +1433,8 @@ class TestBaseDownloaderAsyncDownloadWithRetry:
 
         async def progress(downloaded, total, filename):
             """
-            Report download progress for a file.
-
+            Report progress of an ongoing file download.
+            
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.

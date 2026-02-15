@@ -14,7 +14,15 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 async def _make_async_iter(items):
-    """Create an async iterator from the provided items."""
+    """
+    Create an asynchronous iterator that yields each value from the given iterable.
+    
+    Parameters:
+        items (Iterable): iterable of values to yield asynchronously.
+    
+    Returns:
+        AsyncIterator: an async generator that yields each item from `items` in order.
+    """
     for item in items:
         yield item
 
@@ -23,6 +31,19 @@ class ConcreteCoreDownloader(AsyncDownloadCoreMixin):
     """Concrete test implementation for AsyncDownloadCoreMixin."""
 
     def __init__(self, config: Optional[dict[str, Any]] = None):
+        """
+        Initialize the ConcreteCoreDownloader instance and its internal state.
+        
+        Parameters:
+            config (dict[str, Any], optional): Configuration mapping to customize downloader behavior. If omitted, an empty configuration is used.
+        
+        Attributes set:
+            config: The provided or default configuration.
+            _semaphore: Internal semaphore for concurrency control, initialized to None.
+            _session: HTTP client session placeholder, initialized to None.
+            verify_result (bool): Flag controlling verification behavior; defaults to False.
+            saved_paths (list[Path]): Records file paths saved via hashing; starts empty.
+        """
         self.config = config or {}
         self._semaphore = None
         self._session = None
@@ -30,10 +51,25 @@ class ConcreteCoreDownloader(AsyncDownloadCoreMixin):
         self.saved_paths: list[Path] = []
 
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
+        """
+        Determine whether an existing file at the given path should be treated as verified.
+        
+        Parameters:
+            file_path (Path): Path to the existing file to verify.
+        
+        Returns:
+            bool: `true` if the file is considered verified, `false` otherwise.
+        """
         del file_path
         return self.verify_result
 
     async def _async_save_file_hash(self, file_path: Path) -> None:
+        """
+        Record the given file path in the downloader's saved paths list for later verification.
+        
+        Parameters:
+            file_path (Path): Filesystem path of the saved file to record.
+        """
         self.saved_paths.append(file_path)
 
 
@@ -128,6 +164,20 @@ class TestAsyncCoreDownloadPaths:
         original_import = __import__
 
         def fake_import(name, *args, **kwargs):
+            """
+            Simulate a missing async library by raising ImportError for specific module names.
+            
+            Parameters:
+                name (str): The module name to import.
+                *args: Positional arguments forwarded to the underlying import function.
+                **kwargs: Keyword arguments forwarded to the underlying import function.
+            
+            Returns:
+                module: The imported module for names other than "aiofiles" and "aiohttp".
+            
+            Raises:
+                ImportError: If `name` is "aiofiles" or "aiohttp".
+            """
             if name in {"aiofiles", "aiohttp"}:
                 raise ImportError("missing async library")
             return original_import(name, *args, **kwargs)
@@ -149,6 +199,20 @@ class TestAsyncCoreDownloadPaths:
         original_import = __import__
 
         def fake_import(name, *args, **kwargs):
+            """
+            Simulate a missing async library by raising ImportError for specific module names.
+            
+            Parameters:
+                name (str): The module name to import.
+                *args: Positional arguments forwarded to the underlying import function.
+                **kwargs: Keyword arguments forwarded to the underlying import function.
+            
+            Returns:
+                module: The imported module for names other than "aiofiles" and "aiohttp".
+            
+            Raises:
+                ImportError: If `name` is "aiofiles" or "aiohttp".
+            """
             if name in {"aiofiles", "aiohttp"}:
                 raise ImportError("missing async library")
             return original_import(name, *args, **kwargs)
@@ -241,6 +305,14 @@ class TestAsyncCoreDownloadPaths:
             mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
 
             async def callback(downloaded, total, filename):
+                """
+                Record download progress by appending a (downloaded, total, filename) tuple to the captured `callback_calls` list.
+                
+                Parameters:
+                	downloaded (int): Number of bytes downloaded so far.
+                	total (int | None): Total number of bytes expected, or None if unknown.
+                	filename (str): Name of the file being downloaded.
+                """
                 callback_calls.append((downloaded, total, filename))
 
             result = await downloader.async_download(
