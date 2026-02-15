@@ -38,7 +38,7 @@ from .files import (
     _safe_rmtree,
     _sanitize_path_component,
 )
-from .github_source import GithubReleaseSource
+from .github_source import GithubReleaseSource, create_asset_from_github_data
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
@@ -347,57 +347,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
                     # Add assets to the release
                     for asset_data in assets_data:
-                        if not isinstance(asset_data, dict):
-                            logger.warning(
-                                "Skipping malformed Android asset in release %s",
-                                tag_name,
-                            )
-                            continue
-                        asset_dict = cast(Dict[str, Any], asset_data)
-                        asset_name = asset_dict.get("name")
-                        if not isinstance(asset_name, str) or not asset_name.strip():
-                            logger.warning(
-                                "Skipping Android asset with invalid name in release %s",
-                                tag_name,
-                            )
-                            continue
-                        raw_size = asset_dict.get("size")
-                        if not isinstance(raw_size, (int, str)):
-                            logger.warning(
-                                "Skipping Android asset %s with invalid size in release %s",
-                                asset_name,
-                                tag_name,
-                            )
-                            continue
-                        try:
-                            asset_size = int(raw_size)
-                        except (TypeError, ValueError):
-                            logger.warning(
-                                "Skipping Android asset %s with invalid size in release %s",
-                                asset_name,
-                                tag_name,
-                            )
-                            continue
-                        browser_download_url = asset_dict.get("browser_download_url")
-                        if (
-                            not isinstance(browser_download_url, str)
-                            or not browser_download_url.strip()
-                        ):
-                            logger.warning(
-                                "Skipping Android asset %s with invalid download URL in release %s",
-                                asset_name,
-                                tag_name,
-                            )
-                            continue
-                        clean_download_url = browser_download_url.strip()
-                        asset = Asset(
-                            name=asset_name,
-                            download_url=clean_download_url,
-                            size=asset_size,
-                            browser_download_url=clean_download_url,
-                            content_type=asset_dict.get("content_type"),
+                        asset = create_asset_from_github_data(
+                            asset_data,
+                            tag_name,
+                            asset_label="Android asset",
                         )
-                        release.assets.append(asset)
+                        if asset is not None:
+                            release.assets.append(asset)
 
                     if not release.assets:
                         logger.warning(

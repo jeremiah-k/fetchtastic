@@ -259,54 +259,84 @@ def create_release_from_github_data(release_data: Dict[str, Any]) -> Optional[Re
         return None
 
     for asset_data in assets_data:
-        if not isinstance(asset_data, dict):
-            logger.warning("Skipping malformed asset for release %s", tag_name)
-            continue
-        asset_dict = cast(Dict[str, Any], asset_data)
-        asset_name = asset_dict.get("name")
-        if not isinstance(asset_name, str) or not asset_name.strip():
-            logger.warning("Skipping asset with invalid name for release %s", tag_name)
-            continue
-        raw_size = asset_dict.get("size")
-        if not isinstance(raw_size, (int, str)):
-            logger.warning(
-                "Skipping asset %s with invalid size for release %s",
-                asset_name,
-                tag_name,
-            )
-            continue
-        try:
-            asset_size = int(raw_size)
-        except (TypeError, ValueError):
-            logger.warning(
-                "Skipping asset %s with invalid size for release %s",
-                asset_name,
-                tag_name,
-            )
-            continue
-        browser_download_url = asset_dict.get("browser_download_url")
-        if (
-            not isinstance(browser_download_url, str)
-            or not browser_download_url.strip()
-        ):
-            logger.warning(
-                "Skipping asset %s with invalid download URL for release %s",
-                asset_name,
-                tag_name,
-            )
-            continue
-        clean_download_url = browser_download_url.strip()
-        asset = Asset(
-            name=asset_name,
-            download_url=clean_download_url,
-            size=asset_size,
-            browser_download_url=clean_download_url,
-            content_type=asset_dict.get("content_type"),
-        )
-        release.assets.append(asset)
+        asset = create_asset_from_github_data(asset_data, tag_name)
+        if asset is not None:
+            release.assets.append(asset)
 
     if not release.assets:
         logger.warning("Skipping release %s with no valid assets", tag_name)
         return None
 
     return release
+
+
+def create_asset_from_github_data(
+    asset_data: Any,
+    release_tag: str,
+    *,
+    asset_label: str = "asset",
+) -> Optional[Asset]:
+    """
+    Create an Asset from raw GitHub API asset data with defensive validation.
+
+    Parameters:
+        asset_data (Any): Raw GitHub asset payload.
+        release_tag (str): Release tag used for validation warnings.
+        asset_label (str): Label used in warning messages.
+
+    Returns:
+        Optional[Asset]: Parsed Asset when valid, otherwise None.
+    """
+    if not isinstance(asset_data, dict):
+        logger.warning("Skipping malformed %s for release %s", asset_label, release_tag)
+        return None
+
+    asset_dict = cast(Dict[str, Any], asset_data)
+    asset_name = asset_dict.get("name")
+    if not isinstance(asset_name, str) or not asset_name.strip():
+        logger.warning(
+            "Skipping %s with invalid name for release %s",
+            asset_label,
+            release_tag,
+        )
+        return None
+
+    raw_size = asset_dict.get("size")
+    if not isinstance(raw_size, (int, str)):
+        logger.warning(
+            "Skipping %s %s with invalid size for release %s",
+            asset_label,
+            asset_name,
+            release_tag,
+        )
+        return None
+
+    try:
+        asset_size = int(raw_size)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Skipping %s %s with invalid size for release %s",
+            asset_label,
+            asset_name,
+            release_tag,
+        )
+        return None
+
+    browser_download_url = asset_dict.get("browser_download_url")
+    if not isinstance(browser_download_url, str) or not browser_download_url.strip():
+        logger.warning(
+            "Skipping %s %s with invalid download URL for release %s",
+            asset_label,
+            asset_name,
+            release_tag,
+        )
+        return None
+
+    clean_download_url = browser_download_url.strip()
+    return Asset(
+        name=asset_name,
+        download_url=clean_download_url,
+        size=asset_size,
+        browser_download_url=clean_download_url,
+        content_type=asset_dict.get("content_type"),
+    )

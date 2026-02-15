@@ -150,7 +150,7 @@ class AsyncDownloadCoreMixin:
         if aiohttp_module is None:
             import aiohttp as aiohttp_module  # type: ignore[import-not-found]
 
-        if self._session is None or getattr(self._session, "closed", False) is True:
+        if self._session is None or getattr(self._session, "closed", False):
             connector = aiohttp_module.TCPConnector(limit=self._get_max_concurrent())
             timeout = aiohttp_module.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
             self._session = aiohttp_module.ClientSession(
@@ -160,10 +160,7 @@ class AsyncDownloadCoreMixin:
 
     async def close(self) -> None:
         """Close the shared aiohttp session, if active."""
-        if (
-            self._session is not None
-            and getattr(self._session, "closed", False) is not True
-        ):
+        if self._session is not None and not getattr(self._session, "closed", False):
             close_result = self._session.close()
             if asyncio.iscoroutine(close_result):
                 await close_result
@@ -402,12 +399,13 @@ class AsyncDownloadCoreMixin:
             progress_callback (Optional[CoreProgressCallback]): Optional callback to report download progress.
 
         Returns:
-            `true` if the download succeeded, `false` otherwise.
+            `True` if the download succeeded, `False` otherwise.
 
         Raises:
             AsyncDownloadError: If a non-retryable download error occurs.
         """
         attempts = max_retries if max_retries is not None else self._get_max_retries()
+        attempts = max(0, attempts)
         delay = retry_delay if retry_delay is not None else self._get_retry_delay()
         last_error: Optional[AsyncDownloadError] = None
 

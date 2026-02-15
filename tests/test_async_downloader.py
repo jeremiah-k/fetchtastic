@@ -190,7 +190,7 @@ class TestGetTargetPathForRelease:
 class TestCallProgressCallback:
     """Test _call_progress_callback method."""
 
-    async def test_sync_callback(self, mocker):
+    async def test_sync_callback(self):
         """Test calling synchronous progress callback."""
         downloader = ConcreteAsyncDownloader()
         callback_calls = []
@@ -214,7 +214,7 @@ class TestCallProgressCallback:
         assert len(callback_calls) == 1
         assert callback_calls[0] == (1024, 2048, "test.bin")
 
-    async def test_async_callback(self, mocker):
+    async def test_async_callback(self):
         """Test calling async progress callback."""
         downloader = ConcreteAsyncDownloader()
         callback_calls = []
@@ -235,11 +235,11 @@ class TestCallProgressCallback:
         assert len(callback_calls) == 1
         assert callback_calls[0] == (1024, 2048, "test.bin")
 
-    async def test_callback_exception_handled(self, mocker):
+    async def test_callback_exception_handled(self):
         """Test that callback exceptions are handled gracefully."""
         downloader = ConcreteAsyncDownloader()
 
-        def bad_callback(downloaded, total, filename):
+        def bad_callback(_downloaded, _total, _filename):
             """
             Simulated progress callback that always fails by raising a ValueError.
 
