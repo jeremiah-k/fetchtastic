@@ -106,22 +106,23 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         Returns:
             bool: `True` if the file passed integrity checks, `False` otherwise.
         """
+        import zipfile
+
         try:
+            loop = asyncio.get_running_loop()
             if file_path.suffix.lower() == ".zip":
-                loop = asyncio.get_running_loop()
                 if not await loop.run_in_executor(None, is_zip_intact, str(file_path)):
                     return False
 
             # Verify hash
             from fetchtastic.utils import verify_file_integrity
 
-            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
                 None, verify_file_integrity, str(file_path)
             )
 
-        except OSError as e:
-            logger.debug(f"File verification failed for {file_path}: {e}")
+        except (OSError, zipfile.BadZipFile) as e:
+            logger.debug("File verification failed for %s: %s", file_path, e)
             return False
 
     async def _async_save_file_hash(self, file_path: Path) -> None:
@@ -204,7 +205,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                 is_retryable=e.is_retryable,
             )
         except Exception as e:
-            logger.exception(f"Error downloading {asset.name}: {e}")
+            logger.exception("Error downloading %s: %s", asset.name, e)
             return DownloadResult(
                 success=False,
                 release_tag=release.tag_name,
@@ -254,7 +255,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         # Convert exceptions to DownloadResult with error
         final_results: List[DownloadResult] = []
         for i, r in enumerate(results):
-            if isinstance(r, Exception):
+            if isinstance(r, BaseException):
                 spec: Any = downloads[i] if i < len(downloads) else None
                 release_tag = "<unknown>"
                 file_path: Pathish = Path("<unknown>")
@@ -308,7 +309,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                     )
                 )
             else:
-                final_results.append(r)  # type: ignore[arg-type]
+                final_results.append(r)
         return final_results
 
 

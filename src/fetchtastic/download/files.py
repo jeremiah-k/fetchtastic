@@ -281,10 +281,12 @@ def _is_release_complete(
                         logger.debug("Hash verification failed for %s", asset_path)
                         return False
                 else:
-                    with zipfile.ZipFile(asset_path, "r") as zf:
-                        if zf.testzip() is not None:
-                            logger.debug("Corrupted zip file detected: %s", asset_path)
-                            return False
+                    # Use is_zip_intact to check for corruption
+                    if not is_zip_intact(asset_path):
+                        logger.debug("Corrupted zip file detected: %s", asset_path)
+                        return False
+                    # Persist a hash so future checks use the faster hash path
+                    verify_file_integrity(asset_path)
                 actual_size = os.path.getsize(asset_path)
                 if expected_size is not None and actual_size != expected_size:
                     logger.debug(

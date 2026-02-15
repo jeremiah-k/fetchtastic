@@ -195,19 +195,18 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
             bool: True if the file is valid, False otherwise.
         """
         try:
+            loop = asyncio.get_running_loop()
             if file_path.suffix.lower() == ".zip":
-                loop = asyncio.get_running_loop()
                 if not await loop.run_in_executor(None, is_zip_intact, str(file_path)):
                     return False
 
             # Verify file integrity using existing sync utility
-            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
                 None, utils.verify_file_integrity, str(file_path)
             )
 
         except (OSError, zipfile.BadZipFile) as e:
-            logger.debug(f"File verification failed for {file_path}: {e}")
+            logger.debug("File verification failed for %s: %s", file_path, e)
             return False
 
     async def _async_save_hash(self, file_path: Path) -> None:

@@ -2697,18 +2697,23 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
         try:
             import win32clipboard  # type: ignore[import-untyped]
 
-            win32clipboard.OpenClipboard()
-            win32clipboard.EmptyClipboard()
+            clipboard_opened = False
             try:
-                # Try the newer API with explicit format
-                import win32con  # type: ignore[import-untyped]
+                win32clipboard.OpenClipboard()
+                clipboard_opened = True
+                win32clipboard.EmptyClipboard()
+                try:
+                    # Try the newer API with explicit format
+                    import win32con  # type: ignore[import-untyped]
 
-                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
-            except (ImportError, TypeError):
-                # Fall back to SetClipboardText for older versions or if win32con is missing attributes
-                set_clipboard_text = cast(Any, win32clipboard.SetClipboardText)
-                set_clipboard_text(text)
-            win32clipboard.CloseClipboard()
+                    win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+                except (ImportError, TypeError):
+                    # Fall back to SetClipboardText for older versions or if win32con is missing attributes
+                    set_clipboard_text = cast(Any, win32clipboard.SetClipboardText)
+                    set_clipboard_text(text)
+            finally:
+                if clipboard_opened:
+                    win32clipboard.CloseClipboard()
             return True
         except Exception as e:  # noqa: BLE001
             logger.error("Error copying to Windows clipboard: %s", e)

@@ -599,7 +599,12 @@ class AsyncGitHubClient:
                     is_retryable=False,
                 ) from e
             except AsyncDownloadError:
-                # Re-raise AsyncDownloadError without wrapping it
+                # Re-raise AsyncDownloadError without wrapping it, but clean up temp file first
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
                 raise
             except Exception as e:
                 # Catch-all for unexpected exceptions - clean up temp file

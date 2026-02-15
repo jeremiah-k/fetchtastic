@@ -182,7 +182,7 @@ class TestAsyncGitHubClientContextManager:
         assert client._session is None
         assert client._closed is True
 
-    async def test_close_without_session(self, mocker):
+    async def test_close_without_session(self):
         """Test close method when no session exists."""
         client = AsyncGitHubClient()
         client._session = None

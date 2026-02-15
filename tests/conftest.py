@@ -38,8 +38,13 @@ async def _async_block_network(*_args, **_kwargs):
     raise RuntimeError(_ASYNC_NETWORK_BLOCK_MSG)
 
 
-# Configure pytest-asyncio mode
-pytest_plugins = ("pytest_asyncio",)
+# Configure pytest-asyncio mode - only register if available
+try:
+    import pytest_asyncio  # noqa: F401
+
+    pytest_plugins = ("pytest_asyncio",)
+except ImportError:
+    pytest_plugins = ()  # type: ignore[misc]
 
 
 def pytest_configure(config):
@@ -234,8 +239,13 @@ def mock_async_response(mocker):
         response.json = AsyncMock(return_value=json_data or {})
 
         if content_chunks:
+
+            async def _async_iter_chunks():
+                for chunk in content_chunks:
+                    yield chunk
+
             mock_content = mocker.MagicMock()
-            mock_content.iter_chunked = mocker.Mock(return_value=content_chunks)
+            mock_content.iter_chunked = mocker.Mock(return_value=_async_iter_chunks())
             response.content = mock_content
 
         if raise_for_status:

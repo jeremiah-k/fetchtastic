@@ -188,7 +188,21 @@ def _pick_menu(
         clear_screen=clear_screen,
         quit_keys=quit_keys,
     )
-    start_picker = cast(Callable[[], tuple[Option, int] | list[Option]], picker.start)
+    # picker.start returns:
+    # - tuple[Option, int] for single-select
+    # - list[tuple[Option, int]] for multi-select
+    # - tuple[None, int] or list for empty/cancelled selections
+    # This matches pick==2.4.0 behavior verified against library docs/tests
+    start_picker = cast(
+        Callable[
+            [],
+            tuple[Option, int]
+            | list[tuple[Option, int]]
+            | tuple[None, int]
+            | list[Option],
+        ],
+        picker.start,
+    )
     return start_picker()
 
 
