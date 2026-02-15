@@ -41,6 +41,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 
+from .github_source import create_asset_from_github_data
 from .interfaces import Asset, Pathish, Release
 
 
@@ -395,43 +396,14 @@ class AsyncGitHubClient:
 
                 parsed_assets: List[Asset] = []
                 for asset in assets_data:
-                    if not isinstance(asset, dict):
-                        logger.warning(
-                            "Skipping malformed asset in release %s: expected dict, got %s",
-                            tag_name or "<unknown>",
-                            type(asset).__name__,
-                        )
-                        continue
-                    asset_name = asset.get("name", "")
-                    if not isinstance(asset_name, str):
-                        logger.warning(
-                            "Skipping asset in release %s with invalid name type %s",
-                            tag_name or "<unknown>",
-                            type(asset_name).__name__,
-                        )
-                        continue
-                    raw_size = asset.get("size", 0)
-                    try:
-                        asset_size = int(raw_size)
-                    except (TypeError, ValueError):
-                        logger.warning(
-                            "Using size=0 for asset %s in release %s due to invalid size value",
-                            asset_name or "<unknown>",
-                            tag_name or "<unknown>",
-                        )
-                        asset_size = 0
-                    browser_download_url = asset.get("browser_download_url")
-                    if not isinstance(browser_download_url, str):
-                        browser_download_url = ""
-                    parsed_assets.append(
-                        Asset(
-                            name=asset_name,
-                            download_url=browser_download_url,
-                            size=asset_size,
-                            browser_download_url=browser_download_url or None,
-                            content_type=asset.get("content_type"),
-                        )
+                    parsed_asset = create_asset_from_github_data(
+                        asset,
+                        tag_name,
+                        invalid_size_default=0,
+                        allow_invalid_download_url=True,
                     )
+                    if parsed_asset is not None:
+                        parsed_assets.append(parsed_asset)
 
                 release = Release(
                     tag_name=tag_name,
@@ -648,7 +620,7 @@ class AsyncGitHubClient:
             AsyncDownloadError: If a non-retryable error occurs or all retry attempts are exhausted.
         """
         last_error: Optional[Exception] = None
-        delay = retry_delay
+        delay = max(0.0, retry_delay)
 
         for attempt in range(max_retries + 1):
             try:

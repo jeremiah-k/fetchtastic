@@ -153,7 +153,13 @@ def pytest_runtest_setup():
 
 @pytest.fixture(autouse=True)
 def _mock_time_sleep(monkeypatch):
-    """Make time.sleep instant for all tests to prevent delays."""
+    """
+    Make time.sleep instant for all tests to prevent delays.
+
+    This fixture is intentionally global because many retry/backoff paths use
+    time.sleep(). Tests that require real timing behavior should explicitly
+    monkeypatch sleep back to the real implementation within the test.
+    """
     monkeypatch.setattr(time, "sleep", lambda *args, **kwargs: None)
 
 

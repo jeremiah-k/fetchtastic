@@ -1480,6 +1480,34 @@ class TestDownloadFileWithRetry:
         assert sleep_calls[0] == 1.0
         assert sleep_calls[1] == 2.0
 
+    async def test_download_with_retry_clamps_negative_retry_delay(
+        self, mocker, tmp_path
+    ):
+        """Negative retry delay should be clamped to 0.0 before sleeping."""
+        client = AsyncGitHubClient()
+
+        mocker.patch.object(
+            client,
+            "download_file",
+            new_callable=AsyncMock,
+            side_effect=[
+                AsyncDownloadError("retryable", is_retryable=True),
+                True,
+            ],
+        )
+        mock_sleep = mocker.patch("asyncio.sleep", AsyncMock())
+
+        target = tmp_path / "test.bin"
+        result = await client.download_file_with_retry(
+            "https://example.com/file.bin",
+            target,
+            max_retries=1,
+            retry_delay=-2.0,
+        )
+
+        assert result is True
+        mock_sleep.assert_awaited_once_with(0.0)
+
     async def test_download_with_retry_fallback_last_error_branch(
         self, mocker, tmp_path
     ):

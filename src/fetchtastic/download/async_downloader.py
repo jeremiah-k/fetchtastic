@@ -322,6 +322,7 @@ class AsyncDownloaderBase(AsyncDownloaderMixin):
         Parameters:
             config (Optional[Dict[str, Any]]): Configuration dictionary; if provided, used as-is. The download directory is taken from `config["DOWNLOAD_DIR"]` when present, otherwise it defaults to `~/meshtastic`.
         """
+        super().__init__()
         self.config = config or {}
         self.download_dir = self.config.get(
             "DOWNLOAD_DIR", os.path.expanduser("~/meshtastic")
@@ -345,6 +346,9 @@ async def download_with_progress(
 
     Returns:
         bool: `True` if the download succeeded, `False` otherwise.
+
+    Raises:
+        AsyncDownloadError: If the download fails due to HTTP, network, or filesystem errors.
     """
     downloader = AsyncDownloaderBase(config)
     try:

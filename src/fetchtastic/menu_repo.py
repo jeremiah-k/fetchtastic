@@ -773,12 +773,12 @@ def run_repository_downloader_menu(config: dict[str, Any]) -> list[str] | None:
         for result in download_results:
             if result.success:
                 successful_downloads.append(str(result.file_path))
-                logger.info(f"Successfully downloaded: {result.file_path}")
+                logger.info("Successfully downloaded: %s", result.file_path)
             else:
-                logger.error(f"Failed to download: {result.error_message}")
+                logger.error("Failed to download: %s", result.error_message)
 
         if successful_downloads:
-            logger.info(f"Successfully downloaded {len(successful_downloads)} files.")
+            logger.info("Successfully downloaded %d files.", len(successful_downloads))
             return successful_downloads
         else:
             logger.info("No files were downloaded successfully.")

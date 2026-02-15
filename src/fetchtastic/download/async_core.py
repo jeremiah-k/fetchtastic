@@ -7,6 +7,7 @@ AsyncDownloaderMixin.
 """
 
 import asyncio
+import inspect
 import os
 import time
 from pathlib import Path
@@ -220,7 +221,7 @@ class AsyncDownloadCoreMixin:
         """
         try:
             result = callback(downloaded, total, filename)
-            if asyncio.iscoroutine(result):
+            if inspect.isawaitable(result):
                 await result
         except Exception as e:
             logger.debug(f"Progress callback error: {e}")
@@ -418,6 +419,7 @@ class AsyncDownloadCoreMixin:
         delay = retry_delay if retry_delay is not None else self._get_retry_delay()
         delay = max(0.0, delay)
         last_error: Optional[AsyncDownloadError] = None
+        last_cause: Optional[Exception] = None
 
         for attempt in range(attempts + 1):
             try:
@@ -433,11 +435,12 @@ class AsyncDownloadCoreMixin:
                     retry_count=attempt,
                     is_retryable=attempt < attempts,
                 )
+                last_cause = None
                 if attempt == attempts:
                     logger.error(
                         f"Download failed permanently after {attempts + 1} attempts for {url}"
                     )
-                    raise last_error
+                    break
 
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
@@ -445,12 +448,13 @@ class AsyncDownloadCoreMixin:
                 )
             except AsyncDownloadError as e:
                 last_error = e
+                last_cause = None
                 if not e.is_retryable:
                     logger.error(f"Download failed permanently for {url}: {e.message}")
                     raise
                 if attempt == attempts:
                     logger.error(f"Download failed permanently for {url}: {e.message}")
-                    raise
+                    break
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
                     f"retrying in {delay:.1f}s: {e.message}"
@@ -462,13 +466,14 @@ class AsyncDownloadCoreMixin:
                     is_retryable=True,
                 )
                 last_error = wrapped_error
+                last_cause = e
                 if attempt == attempts:
                     logger.error(
                         "Download failed permanently for %s: %s",
                         url,
                         wrapped_error.message,
                     )
-                    raise wrapped_error from e
+                    break
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
                     f"retrying in {delay:.1f}s: {e}"
@@ -477,7 +482,9 @@ class AsyncDownloadCoreMixin:
             await asyncio.sleep(delay)
             delay *= backoff_factor
 
-        if last_error:
+        if last_error is not None:
+            if last_cause is not None:
+                raise last_error from last_cause
             raise last_error
         raise AsyncDownloadError(
             "Download failed unexpectedly without an error context",

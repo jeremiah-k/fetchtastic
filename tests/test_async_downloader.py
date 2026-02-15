@@ -251,6 +251,31 @@ class TestCallProgressCallback:
         # Should not raise
         await downloader._call_progress_callback(bad_callback, 1024, 2048, "test.bin")
 
+    async def test_awaitable_callback_result_is_awaited(self):
+        """Awaitable callback results (not only coroutine objects) should be awaited."""
+        downloader = ConcreteAsyncDownloader()
+
+        class AwaitableProgressResult:
+            def __init__(self) -> None:
+                self.awaited = False
+
+            def __await__(self):
+                self.awaited = True
+
+                async def _resolve():
+                    return None
+
+                return _resolve().__await__()
+
+        awaitable_result = AwaitableProgressResult()
+
+        def callback(_downloaded, _total, _filename):
+            return awaitable_result
+
+        await downloader._call_progress_callback(callback, 1024, 2048, "test.bin")
+
+        assert awaitable_result.awaited is True
+
 
 # =============================================================================
 # Async File Verification Tests (lines 231-266)

@@ -275,6 +275,8 @@ def create_asset_from_github_data(
     release_tag: str,
     *,
     asset_label: str = "asset",
+    invalid_size_default: Optional[int] = None,
+    allow_invalid_download_url: bool = False,
 ) -> Optional[Asset]:
     """
     Create an Asset from raw GitHub API asset data with defensive validation.
@@ -283,6 +285,10 @@ def create_asset_from_github_data(
         asset_data (Any): Raw GitHub asset payload.
         release_tag (str): Release tag used for validation warnings.
         asset_label (str): Label used in warning messages.
+        invalid_size_default (Optional[int]): Fallback size value to use when the asset size
+            is invalid. If `None`, invalid sizes cause the asset to be skipped.
+        allow_invalid_download_url (bool): If `True`, assets with missing/invalid download URL
+            values are retained with an empty download URL; otherwise they are skipped.
 
     Returns:
         Optional[Asset]: Parsed Asset when valid, otherwise None.
@@ -303,27 +309,48 @@ def create_asset_from_github_data(
 
     raw_size = asset_dict.get("size")
     if not isinstance(raw_size, (int, str)):
+        if invalid_size_default is None:
+            logger.warning(
+                "Skipping %s %s with invalid size for release %s",
+                asset_label,
+                asset_name,
+                release_tag,
+            )
+            return None
         logger.warning(
-            "Skipping %s %s with invalid size for release %s",
+            "Using size=%d for %s %s in release %s due to invalid size value",
+            invalid_size_default,
             asset_label,
             asset_name,
             release_tag,
         )
-        return None
-
-    try:
-        asset_size = int(raw_size)
-    except (TypeError, ValueError):
-        logger.warning(
-            "Skipping %s %s with invalid size for release %s",
-            asset_label,
-            asset_name,
-            release_tag,
-        )
-        return None
+        asset_size = invalid_size_default
+    else:
+        try:
+            asset_size = int(raw_size)
+        except (TypeError, ValueError):
+            if invalid_size_default is None:
+                logger.warning(
+                    "Skipping %s %s with invalid size for release %s",
+                    asset_label,
+                    asset_name,
+                    release_tag,
+                )
+                return None
+            logger.warning(
+                "Using size=%d for %s %s in release %s due to invalid size value",
+                invalid_size_default,
+                asset_label,
+                asset_name,
+                release_tag,
+            )
+            asset_size = invalid_size_default
 
     browser_download_url = asset_dict.get("browser_download_url")
-    if not isinstance(browser_download_url, str) or not browser_download_url.strip():
+    clean_download_url = (
+        browser_download_url.strip() if isinstance(browser_download_url, str) else ""
+    )
+    if not clean_download_url and not allow_invalid_download_url:
         logger.warning(
             "Skipping %s %s with invalid download URL for release %s",
             asset_label,
@@ -332,7 +359,6 @@ def create_asset_from_github_data(
         )
         return None
 
-    clean_download_url = browser_download_url.strip()
     return Asset(
         name=asset_name,
         download_url=clean_download_url,
