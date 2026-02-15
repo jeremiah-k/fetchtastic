@@ -724,6 +724,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 except (IOError, OSError):
                     logger.debug(f"Error checking zip file: {asset_path}")
                     return False
+            else:
+                # For non-zip files, verify the hash
+                if not self.verify(asset_path):
+                    logger.debug("Hash verification failed for %s", asset_path)
+                    return False
 
         return True
 

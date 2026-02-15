@@ -184,12 +184,12 @@ class TestCallProgressCallback:
         def sync_callback(downloaded, total, filename):
             """
             Record a single progress event into the test's callback_calls list.
-            
+
             Parameters:
                 downloaded: Number of bytes (or units) downloaded so far.
                 total: Total number of bytes (or units) expected, or None if unknown.
                 filename: Name of the file being downloaded.
-            
+
             Side effects:
                 Appends a tuple (downloaded, total, filename) to the outer-scope list `callback_calls`.
             """
@@ -208,7 +208,7 @@ class TestCallProgressCallback:
         async def async_callback(downloaded, total, filename):
             """
             Record a progress callback invocation by appending the tuple (downloaded, total, filename) to the shared list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total size in bytes, or None if unknown.
@@ -245,7 +245,7 @@ class TestCallProgressCallback:
             def __init__(self) -> None:
                 """
                 Initialize the instance and mark it as not yet awaited.
-                
+
                 Sets the `awaited` attribute to `False` to indicate the awaitable has not been awaited.
                 """
                 self.awaited = False
@@ -253,7 +253,7 @@ class TestCallProgressCallback:
             def __await__(self):
                 """
                 Make the instance awaitable; awaiting the instance completes immediately with no result.
-                
+
                 Returns:
                     An iterator for use with `await` that resolves to `None`.
                 """
@@ -262,7 +262,7 @@ class TestCallProgressCallback:
                 async def _resolve():
                     """
                     No-op coroutine used as a resolved placeholder.
-                    
+
                     This coroutine does nothing and completes immediately; await it when a resolved awaitable is required.
                     """
                     return None
@@ -274,14 +274,14 @@ class TestCallProgressCallback:
         def callback(_downloaded, _total, _filename):
             """
             Progress callback that forwards progress parameters and returns a precomputed result.
-            
+
             Parameters:
-            	_downloaded (int): Number of bytes downloaded so far.
-            	_total (int | None): Total number of bytes, or None if unknown.
-            	_filename (str): Target filename for the download.
-            
+                _downloaded (int): Number of bytes downloaded so far.
+                _total (int | None): Total number of bytes, or None if unknown.
+                _filename (str): Target filename for the download.
+
             Returns:
-            	The `awaitable_result` captured from the enclosing scope; may be an awaitable or a direct value.
+                The `awaitable_result` captured from the enclosing scope; may be an awaitable or a direct value.
             """
             return awaitable_result
 
@@ -335,7 +335,7 @@ class TestAsyncVerifyExistingFile:
 
         assert result is True
 
-    async def test_verify_zip_file_corrupted(self, tmp_path, mocker):
+    async def test_verify_zip_file_corrupted(self, tmp_path):
         """Test verification of corrupted zip file."""
         downloader = ConcreteAsyncDownloader()
 
@@ -347,7 +347,7 @@ class TestAsyncVerifyExistingFile:
 
         assert result is False
 
-    async def test_verify_file_not_exists(self, tmp_path, mocker):
+    async def test_verify_file_not_exists(self, tmp_path):
         """Test verification of non-existent file."""
         downloader = ConcreteAsyncDownloader()
 
@@ -633,7 +633,7 @@ class TestAsyncDownload:
         async def progress(downloaded, total, filename):
             """
             Record a progress callback invocation by appending a (downloaded, total, filename) tuple to the shared callback_calls list.
-            
+
             Parameters:
                 downloaded: Number of bytes downloaded so far.
                 total: Total number of bytes expected, or None if unknown.
@@ -912,7 +912,7 @@ class TestAsyncDownloadWithRetry:
         async def track_sleep(duration):
             """
             Append a sleep duration value to the shared `sleep_calls` list.
-            
+
             Parameters:
                 duration (float): Number of seconds to record; appended to the module-level `sleep_calls` list.
             """
@@ -1045,7 +1045,7 @@ class TestAsyncDownloadRelease:
         async def progress(downloaded, total, filename):
             """
             Record a progress callback invocation by appending a (downloaded, total, filename) tuple to the shared callback_calls list.
-            
+
             Parameters:
                 downloaded: Number of bytes downloaded so far.
                 total: Total number of bytes expected, or None if unknown.
@@ -1230,7 +1230,7 @@ class TestAsyncDownloadMultiple:
         async def progress(downloaded, total, filename):
             """
             Default no-op progress callback used during a download.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or `None` if unknown.
@@ -1332,14 +1332,14 @@ class TestAsyncDownloaderBase:
 class TestDownloadWithProgress:
     """Test download_with_progress utility function."""
 
-    async def test_download_with_progress_success(self, tmp_path, mocker):
+    async def test_download_with_progress_success(self, tmp_path):
         """Test successful download with progress function."""
         callback_calls = []
 
         async def progress(downloaded, total, filename):
             """
             Record a progress callback invocation by appending a (downloaded, total, filename) tuple to the shared callback_calls list.
-            
+
             Parameters:
                 downloaded: Number of bytes downloaded so far.
                 total: Total number of bytes expected, or None if unknown.
@@ -1400,7 +1400,7 @@ class TestDownloadWithProgress:
 
         assert result is True
 
-    async def test_download_with_progress_custom_config(self, tmp_path, mocker):
+    async def test_download_with_progress_custom_config(self, tmp_path):
         """Test download with custom config."""
         config = {"MAX_CONCURRENT_DOWNLOADS": 10}
 

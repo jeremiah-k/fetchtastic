@@ -55,12 +55,12 @@ from .version import VersionManager, is_prerelease_directory
 
 def is_connected_to_wifi() -> bool:
     """
-    Determine whether the device is connected to a Wi‑Fi network.
-    
-    On non‑Termux platforms this function assumes connectivity and returns `true`. On Termux it examines the output of the Termux Wi‑Fi API and returns `true` only when the API reports a supplicant state of "COMPLETED" and a non-empty IP address; any command, parsing, or execution error results in `false`.
-    
+    Determine whether the device is connected to a Wi-Fi network.
+
+    On non-Termux platforms this function assumes connectivity and returns `true`. On Termux it examines the output of the Termux Wi-Fi API and returns `true` only when the API reports a supplicant state of "COMPLETED" and a non-empty IP address; any command, parsing, or execution error results in `false`.
+
     Returns:
-        `true` if the device is (or is assumed to be) connected to Wi‑Fi, `false` otherwise.
+        `true` if the device is (or is assumed to be) connected to Wi-Fi, `false` otherwise.
     """
     if not is_termux():
         return True
@@ -340,10 +340,10 @@ class DownloadOrchestrator:
     def _ensure_firmware_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Ensure firmware releases are fetched (if needed) and return the cached list.
-        
+
         Parameters:
             limit (Optional[int]): Maximum number of releases to fetch when loading from the downloader; if None or larger than a previously fetched limit, the method may refetch to satisfy the requested amount.
-        
+
         Returns:
             List[Release]: The cached list of firmware releases (may be empty).
         """
@@ -379,13 +379,13 @@ class DownloadOrchestrator:
     ) -> List[bool]:
         """
         Check completeness of each release and return flags in the same order as the input.
-        
+
         Uses bounded thread parallelism when more than one release to reduce wall-clock time for I/O-heavy checks.
-        
+
         Parameters:
             releases (List[Release]): Releases to evaluate.
             checker (Callable[[Release], bool]): Callable that returns `True` if a release is complete, `False` otherwise.
-        
+
         Returns:
             List[bool]: A list where each element is `True` if the corresponding release is complete, `False` otherwise, aligned with `releases`.
         """
@@ -402,7 +402,7 @@ class DownloadOrchestrator:
     def _process_firmware_downloads(self) -> None:
         """
         Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
-        
+
         Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and prunes prerelease subdirectories that do not match the managed naming and versioning conventions.
         """
         try:

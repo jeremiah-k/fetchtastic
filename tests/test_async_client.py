@@ -397,12 +397,12 @@ class TestGetReleases:
         # Track what params were passed
         captured_params = {}
 
-        def capture_params(url, params=None):
+        def capture_params(_url, params=None):
             """
             Records the provided query parameters into the shared `captured_params` mapping and returns the preconfigured `mock_response`.
 
             Parameters:
-                params (dict | None): Query parameters passed for the request; may be None.
+                _params (dict | None): Query parameters passed for the request; may be None.
 
             Returns:
                 mock_response: The mock response object to be returned by the fake request.
@@ -984,14 +984,14 @@ class TestDownloadFile:
         # Track callback invocations
         callback_calls = []
 
-        async def progress_callback(downloaded, total, filename):
+        async def progress_callback(downloaded, total, _filename):
             """
             Append the observed download progress (downloaded, total) to the shared callback_calls list for tests.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int): Total number of bytes expected; may be 0 when unknown.
-                filename (str): Target filename for the download; unused by this test callback.
+                _filename (str): Target filename for the download; unused by this test callback.
             """
             callback_calls.append((downloaded, total))
 
@@ -1133,7 +1133,7 @@ class TestDownloadFile:
         def bad_callback(_downloaded, _total, _filename):
             """
             Callback that always raises a RuntimeError to simulate a failing progress callback.
-            
+
             Raises:
                 RuntimeError: Always raised with message "callback-failed".
             """
@@ -1293,13 +1293,13 @@ class TestDownloadFile:
         async def bad_iter(_chunk_size):
             """
             An async iterable stub that raises a RuntimeError as soon as iteration begins.
-            
+
             Parameters:
                 _chunk_size (int): Ignored placeholder for the requested chunk size.
-            
+
             Returns:
                 An async iterator of bytes chunks (no values are produced because iteration always raises).
-            
+
             Raises:
                 RuntimeError: Always raised with message "iter-broken" when the iterator is started.
             """
@@ -1466,7 +1466,7 @@ class TestDownloadFileWithRetry:
         async def track_sleep(duration):
             """
             Append a sleep duration to the shared test `sleep_calls` list.
-            
+
             Parameters:
                 duration (float): Duration in seconds to record.
             """
@@ -1684,7 +1684,7 @@ class TestDownloadFilesConcurrently:
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
                 Exit the asynchronous context and ensure the client is closed.
-                
+
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.
                     exc_val (BaseException | None): Exception instance raised inside the context, or None.
@@ -1736,7 +1736,7 @@ class TestDownloadFilesConcurrently:
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
                 Exit the asynchronous context and ensure the client is closed.
-                
+
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.
                     exc_val (BaseException | None): Exception instance raised inside the context, or None.

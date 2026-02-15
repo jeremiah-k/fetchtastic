@@ -578,10 +578,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             try:
                 if os.path.getsize(asset_path) != asset.size:
                     return False
-            except (OSError, TypeError) as e:
+                if not self.verify(asset_path):
+                    logger.debug("Hash verification failed for %s", asset.name)
+                    return False
+            except OSError as e:
                 logger.debug("Error checking asset size for %s: %s", asset.name, e)
                 return False
-        return True
 
     def cleanup_old_versions(
         self,

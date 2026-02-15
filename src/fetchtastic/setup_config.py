@@ -937,7 +937,11 @@ def _setup_android(
         config["ANDROID_VERSIONS_TO_KEEP"] = int(raw)
     except ValueError:
         print("Invalid number — keeping current value.")
-        config["ANDROID_VERSIONS_TO_KEEP"] = int(current_versions)
+        try:
+            config["ANDROID_VERSIONS_TO_KEEP"] = int(current_versions)
+        except (ValueError, TypeError):
+            print("Invalid number in current value — using default.")
+            config["ANDROID_VERSIONS_TO_KEEP"] = default_versions
     return config
 
 
@@ -1053,7 +1057,11 @@ def _setup_firmware(
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(raw)
     except ValueError:
         print("Invalid number — keeping current value.")
-        config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
+        try:
+            config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
+        except (ValueError, TypeError):
+            print("Invalid number in current value — using default.")
+            config["FIRMWARE_VERSIONS_TO_KEEP"] = default_versions
 
     # Prompt for keeping last beta
     # For non-interactive/CI runs, keep the existing value/default without auto-enabling.
@@ -2672,12 +2680,12 @@ def create_startup_shortcut() -> bool:
 def copy_to_clipboard_func(text: Optional[str]) -> bool:
     """
     Copy text to the system clipboard using a platform-appropriate method.
-    
+
     If `text` is `None`, the function performs no action and returns `False`.
-    
+
     Parameters:
         text (Optional[str]): The text to copy to the clipboard; may be `None`.
-    
+
     Returns:
         bool: `True` if the text was successfully copied to the clipboard, `False` otherwise.
     """
@@ -2832,9 +2840,9 @@ def install_crond() -> None:
 def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") -> None:
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
-    
+
     Removes any existing Fetchtastic scheduled entries (excluding `@reboot` lines) and writes a single cron entry for the chosen frequency, updating the current user's crontab. Unknown `frequency` values default to "hourly". This function does nothing on Windows.
-    
+
     Parameters:
         frequency (str): Key from CRON_SCHEDULES selecting the schedule preset (e.g., "hourly", "daily"); unknown keys default to "hourly".
         crontab_path (str): Path or command name for the `crontab` executable to use.
@@ -3019,12 +3027,12 @@ def remove_boot_script() -> None:
 def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Ensure an @reboot cron entry exists to run Fetchtastic's download command after system reboot.
-    
+
     Removes existing @reboot entries associated with Fetchtastic and adds a single
     `@reboot <path-to-fetchtastic> download  # fetchtastic` entry when the
     `fetchtastic` executable is found. Leaves the crontab unchanged on Windows or
     if the executable cannot be located; operational errors are logged.
-    
+
     Parameters:
         crontab_path (str): Filesystem path to the `crontab` command used to read and update the user's crontab.
     """
@@ -3093,9 +3101,9 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
 def remove_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Remove any @reboot cron entries that invoke or are labeled for Fetchtastic.
-    
+
     This is a no-op on Windows. On other platforms it reads the current user's crontab, removes lines that start with `@reboot` and either invoke Fetchtastic or contain a Fetchtastic label/comment, and writes the updated crontab back. Errors encountered while reading or writing are logged.
-    
+
     Parameters:
         crontab_path (str): Path to the `crontab` executable used to read and write the user's crontab.
     """
@@ -3156,10 +3164,10 @@ def remove_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
 def check_any_cron_jobs_exist(*, crontab_path: str = "crontab") -> bool:
     """
     Check whether the current user's crontab contains any entries.
-    
+
     Parameters:
         crontab_path (str): Path to the `crontab` executable used to list the user's crontab.
-    
+
     Returns:
         True if at least one cron entry exists for the current user, False otherwise.
     """
