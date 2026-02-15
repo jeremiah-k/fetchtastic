@@ -66,22 +66,16 @@ class GithubReleaseSource:
         parse_release_func: Callable[[Dict[str, Any]], Optional[Release]],
     ) -> List[Release]:
         """
-        Fetch releases from GitHub, using cache when available.
-
-        This method:
-        1. Builds a cache key from the URL and params
-        2. Attempts to read from cache
-        3. Fetches from GitHub API if not cached
-        4. Caches the raw response data
-        5. Parses releases using the provided callback function
-
+        Retrieve and parse GitHub releases, preferring cached data when available.
+        
+        Builds a cache key from the configured releases URL and the provided params, uses cached raw release data when valid, falls back to the GitHub API when not, and parses each release with the provided parser. Releases that are malformed or have no valid assets are skipped.
+        
         Parameters:
             params (Dict[str, Any]): Query parameters for the API request (e.g., {"per_page": 10}).
-            parse_release_func (Callable): A function that takes a raw release dict from the GitHub API
-                and returns a Release object, or None to skip the release.
-
+            parse_release_func (Callable[[Dict[str, Any]], Optional[Release]]): Function that converts a raw GitHub release dictionary into a Release object; return `None` to skip a release.
+        
         Returns:
-            List[Release]: List of parsed Release objects. Empty list on error or if no valid releases.
+            List[Release]: Parsed Release objects. Returns an empty list on error or if no valid releases are found.
         """
         try:
             url_key = self.cache_manager.build_url_cache_key(self.releases_url, params)
@@ -155,23 +149,13 @@ class GithubReleaseSource:
         self, params: Dict[str, Any]
     ) -> Optional[List[Dict[str, Any]]]:
         """
-        Fetch raw releases data from GitHub, using cache when available.
-
-        This method handles the common fetch-with-caching pattern without parsing:
-        1. Builds a cache key from the URL and params
-        2. Attempts to read from cache
-        3. Fetches from GitHub API if not cached
-        4. Caches the raw response data
-
-        Use this method when you need the raw release data for custom processing
-        (e.g., scanning loops that need to know the total count of releases returned).
-
+        Fetch raw release dictionaries from GitHub, using cached data when available.
+        
         Parameters:
             params (Dict[str, Any]): Query parameters for the API request (e.g., {"per_page": 10}).
-
+        
         Returns:
-            Optional[List[Dict[str, Any]]]: List of raw release dicts from the API,
-                or None on error or if invalid data received.
+            Optional[List[Dict[str, Any]]]: List of raw release dicts on success, or `None` if an error occurs or the API response is invalid.
         """
         try:
             url_key = self.cache_manager.build_url_cache_key(self.releases_url, params)

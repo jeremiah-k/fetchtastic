@@ -38,6 +38,15 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 # Helper to create async iterator from list
 async def _make_async_iter(items):
+    """
+    Asynchronously iterates over the provided iterable, yielding each element in order.
+    
+    Parameters:
+        items (iterable): An iterable of values to yield.
+    
+    Returns:
+        async iterator: An asynchronous iterator that yields the elements from `items` in their original order.
+    """
     for item in items:
         yield item
 
@@ -51,6 +60,14 @@ class ConcreteAsyncDownloader(AsyncDownloaderMixin):
     """Concrete implementation for testing the mixin."""
 
     def __init__(self, config=None):
+        """
+        Initialize the instance with an optional configuration and determine the download directory.
+        
+        Parameters:
+            config (dict | None): Optional configuration mapping. If provided, its "DOWNLOAD_DIR"
+                value will be used as the download directory; otherwise the default "~/meshtastic"
+                (expanded to the user's home directory) is used.
+        """
         self.config = config or {}
         self.download_dir = self.config.get(
             "DOWNLOAD_DIR", os.path.expanduser("~/meshtastic")
@@ -179,6 +196,17 @@ class TestCallProgressCallback:
         callback_calls = []
 
         def sync_callback(downloaded, total, filename):
+            """
+            Record download progress into the test's callback_calls list.
+            
+            Parameters:
+                downloaded (int): Number of bytes (or units) downloaded so far.
+                total (int | None): Total number of bytes (or units) expected, or None if unknown.
+                filename (str): Name of the file being downloaded.
+            
+            Side effects:
+                Appends a tuple (downloaded, total, filename) to the outer-scope list `callback_calls`.
+            """
             callback_calls.append((downloaded, total, filename))
 
         await downloader._call_progress_callback(sync_callback, 1024, 2048, "test.bin")
@@ -192,6 +220,14 @@ class TestCallProgressCallback:
         callback_calls = []
 
         async def async_callback(downloaded, total, filename):
+            """
+            Record a progress callback invocation by appending the provided values to a shared list.
+            
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int | None): Total size in bytes, or None if unknown.
+                filename (str): Target filename for the download.
+            """
             callback_calls.append((downloaded, total, filename))
 
         await downloader._call_progress_callback(async_callback, 1024, 2048, "test.bin")
@@ -204,6 +240,12 @@ class TestCallProgressCallback:
         downloader = ConcreteAsyncDownloader()
 
         def bad_callback(downloaded, total, filename):
+            """
+            Simulated progress callback that always fails by raising a ValueError.
+            
+            Raises:
+                ValueError: Indicates the callback failed (used to simulate a callback error).
+            """
             raise ValueError("Callback error")
 
         # Should not raise
@@ -547,6 +589,14 @@ class TestAsyncDownload:
         callback_calls = []
 
         async def progress(downloaded, total, filename):
+            """
+            Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
+            
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int | None): Total number of bytes expected, or None if unknown.
+                filename (str): Name of the file being downloaded.
+            """
             callback_calls.append((downloaded, total, filename))
 
         with (
@@ -817,6 +867,12 @@ class TestAsyncDownloadWithRetry:
         sleep_calls = []
 
         async def track_sleep(duration):
+            """
+            Record a sleep duration into the shared `sleep_calls` list.
+            
+            Parameters:
+                duration (float): Number of seconds that would have been slept; appended to `sleep_calls`.
+            """
             sleep_calls.append(duration)
 
         mocker.patch("asyncio.sleep", track_sleep)
@@ -936,6 +992,14 @@ class TestAsyncDownloadRelease:
         callback_calls = []
 
         async def progress(downloaded, total, filename):
+            """
+            Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
+            
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int | None): Total number of bytes expected, or None if unknown.
+                filename (str): Name of the file being downloaded.
+            """
             callback_calls.append((downloaded, total, filename))
 
         result = await downloader.async_download_release(
@@ -1088,6 +1152,14 @@ class TestAsyncDownloadMultiple:
         )
 
         async def progress(downloaded, total, filename):
+            """
+            Default no-op progress callback invoked during a download operation.
+            
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int | None): Total number of bytes expected, or None if unknown.
+                filename (str): Name of the file being downloaded.
+            """
             pass
 
         results = await downloader.async_download_multiple(
@@ -1189,6 +1261,14 @@ class TestDownloadWithProgress:
         callback_calls = []
 
         async def progress(downloaded, total, filename):
+            """
+            Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
+            
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int | None): Total number of bytes expected, or None if unknown.
+                filename (str): Name of the file being downloaded.
+            """
             callback_calls.append((downloaded, total, filename))
 
         # Mock the download

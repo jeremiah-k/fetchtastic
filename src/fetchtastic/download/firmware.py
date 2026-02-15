@@ -81,11 +81,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
-        Initialize the firmware downloader with runtime configuration and a cache manager.
-
+        Create a FirmwareReleaseDownloader configured with runtime settings and a cache manager.
+        
+        Initializes components required for firmware release discovery and management, including a GitHub release source, release history tracking, and device-hardware metadata handling.
+        
         Parameters:
-            config: Runtime configuration dict used to determine download directories, selected asset patterns, and feature flags (e.g., prerelease checks).
-            cache_manager: CacheManager used for cached API responses, tracking files, and remote directory listings.
+            config (Dict[str, Any]): Runtime configuration that controls download directories, selected asset patterns, feature flags (for example, prerelease handling), and device-hardware API settings.
+            cache_manager (CacheManager): Cache manager used for cached API responses, atomic JSON writes, remote repository listings, and deriving local cache file paths.
         """
         super().__init__(config)
         self.cache_manager = cache_manager

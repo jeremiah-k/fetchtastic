@@ -140,7 +140,11 @@ class TestLogUtils:
             assert (log_dir / "fetchtastic.log").exists()
 
     def test_rotating_file_handler_configuration(self):
-        """Test that rotating file handler is configured correctly."""
+        """
+        Verify the rotating file handler created by add_file_logging is present and configured with a 10 MB max size, five backups, and UTF-8 encoding.
+        
+        Asserts that log_utils._file_handler is not None and that its `maxBytes` equals 10 * 1024 * 1024, `backupCount` equals 5, and `encoding` equals "utf-8".
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             log_dir = Path(temp_dir)
             log_utils.add_file_logging(log_dir, "INFO")

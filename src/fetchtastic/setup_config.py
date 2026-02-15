@@ -2671,13 +2671,11 @@ def create_startup_shortcut() -> bool:
 
 def copy_to_clipboard_func(text: Optional[str]) -> bool:
     """
-    Copy the provided text to the system clipboard using a platform-appropriate mechanism.
-
-    Supports Termux, Windows (when win32 modules are available), macOS (pbcopy), and Linux (xclip or xsel). If no supported mechanism is available or an error occurs, nothing is copied.
-
+    Copy the given text to the system clipboard using a platform-appropriate method.
+    
     Parameters:
-        text (Optional[str]): The text to copy. If `None`, the function does nothing.
-
+        text (Optional[str]): Text to copy; if `None`, the function performs no action.
+    
     Returns:
         bool: `True` if the text was successfully copied to the clipboard, `False` otherwise.
     """

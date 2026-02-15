@@ -17,25 +17,23 @@ _ASYNC_NETWORK_BLOCK_MSG = (
 
 def _block_network(*_args, **_kwargs):
     """
-    Raise a RuntimeError indicating network access is blocked during tests.
-
-    This function is intended to replace network request callables and always raises a RuntimeError with the message stored in `_NETWORK_BLOCK_MSG`.
-
+    Prevent network calls in tests by raising a RuntimeError.
+    
     Raises:
-        RuntimeError: with `_NETWORK_BLOCK_MSG` explaining that network access is blocked and suggesting mocking requests or Session.request.
+        RuntimeError: with `_NETWORK_BLOCK_MSG` indicating that network access is blocked during tests.
     """
     raise RuntimeError(_NETWORK_BLOCK_MSG)
 
 
 async def _async_block_network(*_args, **_kwargs):
     """
-    Raise a RuntimeError indicating async network access is blocked during tests.
-
-    This async function is intended to replace async network request callables.
-
+    Prevent async network calls during tests by raising a RuntimeError.
+    
+    Intended to replace async network request callables (for example, aiohttp.ClientSession methods)
+    so tests do not perform real HTTP requests.
+    
     Raises:
-        RuntimeError: with `_ASYNC_NETWORK_BLOCK_MSG` explaining that async network
-            access is blocked and suggesting mocking aiohttp.ClientSession.
+        RuntimeError: `_ASYNC_NETWORK_BLOCK_MSG` explaining that async network access is blocked and suggesting mocking `aiohttp.ClientSession`.
     """
     raise RuntimeError(_ASYNC_NETWORK_BLOCK_MSG)
 
@@ -45,7 +43,13 @@ pytest_plugins = ("pytest_asyncio",)
 
 
 def pytest_configure(config):
-    """Configure pytest-asyncio with auto mode."""
+    """
+    Configure pytest-asyncio to enable automatic detection of asyncio-marked tests.
+    
+    Parameters:
+        config: pytest.Config
+            The pytest configuration object used to register the `asyncio` marker.
+    """
     config.addinivalue_line(
         "markers", "asyncio: mark test as an asyncio test (auto-detected)"
     )
@@ -54,9 +58,9 @@ def pytest_configure(config):
 @pytest.fixture(autouse=True)
 def _isolate_test_environment(tmp_path_factory, monkeypatch):
     """
-    Isolate all Fetchtastic test paths (cache/state/config/log/downloads) to a temp root.
-
-    This prevents pytest runs from touching real user directories.
+    Create an isolated temporary XDG and application directory layout and patch environment and configuration to use it for tests.
+    
+    This fixture creates temp directories for cache, state, config, data, downloads, and logs, sets XDG_* environment variables and FETCHTASTIC_DISABLE_FILE_LOGGING, patches platformdirs user_* functions to return the temp paths, and updates fetchtastic.setup_config constants (DOWNLOADS_DIR, DEFAULT_BASE_DIR, BASE_DIR, CONFIG_DIR, CONFIG_FILE, OLD_CONFIG_FILE) to point into the isolated structure.
     """
     base = tmp_path_factory.mktemp("fetchtastic")
     cache_dir = base / "cache"
@@ -113,9 +117,9 @@ def _isolate_test_environment(tmp_path_factory, monkeypatch):
 
 def pytest_runtest_setup():
     """
-    Disable real network requests during pytest runs by patching requests' HTTP entry points.
-
-    Patches requests.get, requests.post, requests.put, requests.delete, requests.head and requests.Session.request so that any call raises a RuntimeError with a message indicating network access is blocked during tests.
+    Prevent real network requests during tests by replacing HTTP entry points with blocking callables.
+    
+    Replaces common synchronous requests entry points and Session.request with a function that raises a RuntimeError indicating network access is blocked. If aiohttp is installed, replaces its top-level request and ClientSession HTTP methods with an async blocker; if aiohttp is not available, the function continues silently.
     """
     requests.get = _block_network
     requests.post = _block_network
@@ -156,9 +160,9 @@ def _mock_time_sleep(monkeypatch):
 @pytest.fixture
 def mock_aiohttp_session(mocker):
     """
-    Fixture providing a mock aiohttp ClientSession for testing async HTTP operations.
-
-    Yields a mock session that can be configured for specific test scenarios.
+    Provide a mock aiohttp.ClientSession for testing async HTTP operations.
+    
+    Yields a MagicMock configured with the aiohttp.ClientSession spec and with `closed` set to False.
     """
     import aiohttp
 
@@ -170,9 +174,10 @@ def mock_aiohttp_session(mocker):
 @pytest.fixture
 async def async_client(mock_aiohttp_session, mocker):
     """
-    Fixture providing an AsyncGitHubClient with a mocked session.
-
-    The client's session is pre-mocked to prevent network access.
+    Provides an AsyncGitHubClient instance configured for tests.
+    
+    Returns:
+        client (AsyncGitHubClient): A client whose `_session` is set to the provided mocked aiohttp session and whose `_semaphore` is a mock. The client is marked closed during fixture teardown.
     """
     from fetchtastic.download.async_client import AsyncGitHubClient
 
@@ -189,9 +194,16 @@ async def async_client(mock_aiohttp_session, mocker):
 @pytest.fixture
 def mock_async_response(mocker):
     """
-    Fixture providing a mock aiohttp ClientResponse for testing.
-
-    Returns a factory function to create configured mock responses.
+    Provide a factory that creates configured mock aiohttp.ClientResponse objects for tests.
+    
+    The returned factory can be called with parameters to set the response's status, headers,
+    json() return value, an iterable of content chunks for content.iter_chunked, and a
+    raise_for_status side effect.
+    
+    Returns:
+        factory (callable): A function that returns a mocked `aiohttp.ClientResponse` configured
+        with `status`, `headers`, `json()` behavior, optional `content.iter_chunked` chunks,
+        and a `raise_for_status` mock that can raise an exception when called.
     """
 
     def _create_response(
@@ -201,6 +213,19 @@ def mock_async_response(mocker):
         content_chunks=None,
         raise_for_status=None,
     ):
+        """
+        Create a mocked aiohttp.ClientResponse configured for tests.
+        
+        Parameters:
+            status (int): HTTP status code to expose on the response.
+            headers (dict | None): Headers mapping for the response; defaults to empty dict.
+            json_data (Any | None): Value that the response's asynchronous `json()` method will return.
+            content_chunks (Iterable[bytes] | None): Iterable returned by `response.content.iter_chunked(...)` to simulate streamed body chunks.
+            raise_for_status (Exception | callable | None): If provided, calling `response.raise_for_status()` will raise this exception (or call the callable). If `None`, `raise_for_status()` is a no-op.
+        
+        Returns:
+            A mock object compatible with `aiohttp.ClientResponse`, with `status`, `headers`, an async `json()` method, optional `content.iter_chunked`, and a mocked `raise_for_status()` behavior.
+        """
         import aiohttp
 
         response = AsyncMock(spec=aiohttp.ClientResponse)
@@ -295,7 +320,14 @@ def sample_release(sample_release_data):
 
 @pytest.fixture
 def sample_asset():
-    """Fixture providing a sample Asset object for testing."""
+    """
+    Provide a sample Asset instance representing a firmware asset for tests.
+    
+    The returned Asset is populated with a realistic name, download URLs, size, and content type to be used by tests needing a firmware-like asset.
+    
+    Returns:
+        Asset: An Asset object initialized with sample firmware metadata.
+    """
     from fetchtastic.download.interfaces import Asset
 
     return Asset(

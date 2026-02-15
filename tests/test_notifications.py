@@ -367,7 +367,11 @@ class TestNotificationEdgeCases:
         )
 
     def test_send_notification_empty_config(self):
-        """Test notification functions with empty/minimal config."""
+        """
+        Verify that no notification is sent when configuration is empty or minimal.
+        
+        Calls send_download_completion_notification with an empty config and empty download lists, and asserts that send_ntfy_notification is not invoked.
+        """
         with patch("fetchtastic.notifications.send_ntfy_notification") as mock_send:
             # Test with empty config - should not send notification
             notifications.send_download_completion_notification({}, [], [])

@@ -67,20 +67,17 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
 
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
-        Get the target path for a release file.
-
-        This method is expected to be provided by BaseDownloader.
-        Override in subclass if not using BaseDownloader.
-
+        Return the full filesystem path where a release asset should be saved, creating the release subdirectory if needed.
+        
         Parameters:
-            release_tag (str): The release tag/version.
-            file_name (str): The filename of the asset.
-
+            release_tag (str): Release tag or version used to create a versioned subdirectory (will be sanitized).
+            file_name (str): Asset file name to save (will be sanitized).
+        
         Returns:
-            str: Full path where the file should be saved.
-
+            str: Absolute path to the target file within the downloader's download directory.
+        
         Raises:
-            ValueError: If the release_tag or file_name contains unsafe path components.
+            ValueError: If `release_tag` or `file_name` contains unsafe path components and cannot be sanitized.
         """
         from .files import _sanitize_path_component
 
@@ -102,13 +99,12 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
 
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
-        Verify an existing file asynchronously.
-
-        Parameters:
-            file_path (Path): Path to the file to verify.
-
+        Check that a file is intact and matches expected integrity.
+        
+        Performs a ZIP content check when the file has a .zip extension and verifies the file's stored hash; returns `True` if all applicable integrity checks pass, `False` otherwise.
+        
         Returns:
-            bool: True if file is valid, False otherwise.
+            bool: `True` if the file passed integrity checks, `False` otherwise.
         """
         try:
             if file_path.suffix.lower() == ".zip":
@@ -116,6 +112,12 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                 loop = asyncio.get_running_loop()
 
                 def check_zip() -> bool:
+                    """
+                    Check whether the ZIP file referenced by `file_path` is intact and has no corrupt entries.
+                    
+                    Returns:
+                        True if the archive passes a ZIP integrity test, False otherwise.
+                    """
                     try:
                         with zipfile.ZipFile(file_path, "r") as zf:
                             return zf.testzip() is None
@@ -139,14 +141,19 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
 
     async def _async_save_file_hash(self, file_path: Path) -> None:
         """
-        Calculate and save file hash asynchronously.
-
+        Compute the file's SHA-256 hash and persist it using save_file_hash.
+        
         Parameters:
-            file_path (Path): Path to the file to hash.
+            file_path (Path): Path to the file whose SHA-256 hash will be computed and saved.
         """
         loop = asyncio.get_running_loop()
 
         def _compute_and_save() -> None:
+            """
+            Compute the SHA-256 hash for the file referenced by `file_path` in the surrounding scope and save it.
+            
+            If a hash is produced, calls `save_file_hash` with the file path string and the computed hash. Does not return a value.
+            """
             hash_value = calculate_sha256(str(file_path))
             if hash_value:
                 save_file_hash(str(file_path), hash_value)
@@ -160,16 +167,16 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         progress_callback: Optional[ProgressCallback] = None,
     ) -> DownloadResult:
         """
-        Download a release asset asynchronously.
-
+        Download a single asset from a release and return a DownloadResult describing the outcome.
+        
         Parameters:
-            release (Release): The release containing the asset.
-            asset (Asset): The asset to download.
-            progress_callback (Optional[ProgressCallback]):
-                Optional progress callback.
-
+            release (Release): Release containing the asset to download.
+            asset (Asset): Asset to download (provides `name`, `download_url`, and `size`).
+            progress_callback (Optional[ProgressCallback]): Optional callback invoked with progress updates.
+        
         Returns:
-            DownloadResult: Result of the download operation.
+            DownloadResult: On success, contains success=True and metadata (release_tag, file_path, download_url, file_size).
+            On failure, contains success=False and error details (error_message, error_type, http_status_code when available, and is_retryable).
         """
         # Get target path - this method is from BaseDownloader or defined above
         target_path = self.get_target_path_for_release(release.tag_name, asset.name)
@@ -229,20 +236,28 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         progress_callback: Optional[ProgressCallback] = None,
     ) -> List[DownloadResult]:
         """
-        Download multiple files concurrently.
-
+        Concurrently download multiple release assets and produce a DownloadResult for each requested spec.
+        
         Parameters:
-            downloads (List[Dict[str, Any]]): List of download specs with 'release' and 'asset'.
-            progress_callback (Optional[ProgressCallback]):
-                Optional progress callback for each download.
-
+            downloads (List[Dict[str, Any]]): Sequence of download specifications. Each spec must be a dict containing keys "release" and "asset" where `release.tag_name` (str) and `asset.name` (str) identify the target and `asset.download_url` (str) identifies the source when available.
+            progress_callback (Optional[ProgressCallback]): Optional per-download progress callback invoked with bytes received, optional total bytes, and a status message.
+        
         Returns:
-            List[DownloadResult]: Results for each download.
+            List[DownloadResult]: A result entry for each input spec in the same order. Successful downloads yield a DownloadResult with success=True and metadata; failed downloads yield a DownloadResult with success=False and populated error details (including whether the failure is considered retryable).
         """
         # Note: Concurrency is controlled by the semaphore in async_download_release
         # which calls async_download. Do NOT wrap with semaphore here to avoid deadlock.
 
         async def download_one(spec: Dict[str, Any]) -> DownloadResult:
+            """
+            Download a single release asset described by a download spec.
+            
+            Parameters:
+                spec (Dict[str, Any]): Dictionary containing at least the keys `"release"` (a Release object or identifier) and `"asset"` (an Asset object or identifier); these are passed to the async_download_release method.
+            
+            Returns:
+                DownloadResult: Result object describing success or failure and related metadata for the downloaded asset.
+            """
             return await self.async_download_release(
                 spec["release"],
                 spec["asset"],
@@ -319,10 +334,10 @@ class AsyncDownloaderBase(AsyncDownloaderMixin):
         config: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Initialize the async downloader.
-
+        Initialize the async downloader with an optional configuration and establish the download directory.
+        
         Parameters:
-            config (Optional[Dict[str, Any]]): Configuration dictionary.
+            config (Optional[Dict[str, Any]]): Configuration dictionary; if provided, used as-is. The download directory is taken from `config["DOWNLOAD_DIR"]` when present, otherwise it defaults to `~/meshtastic`.
         """
         self.config = config or {}
         self.download_dir = self.config.get(
@@ -337,28 +352,16 @@ async def download_with_progress(
     progress_callback: Optional[ProgressCallback] = None,
 ) -> bool:
     """
-    Convenience function for async download with progress tracking.
-
+    Download a URL to a local path while reporting progress.
+    
     Parameters:
-        url (str): URL to download from.
-        target_path (Pathish): Local path to save the file.
-        config (Optional[Dict[str, Any]]): Optional configuration.
-        progress_callback (Optional[ProgressCallback]): Optional progress callback.
-
+        url (str): The HTTP(S) URL to download.
+        target_path (Pathish): Local path where the downloaded file will be saved.
+        config (Optional[Dict[str, Any]]): Optional configuration for the downloader.
+        progress_callback (Optional[ProgressCallback]): Optional callback called as progress updates occur; called with (downloaded_bytes, total_bytes_or_None, filename).
+    
     Returns:
-        bool: True if download succeeded, False otherwise.
-
-    Example:
-        async def progress(downloaded, total, filename):
-            if total:
-                percent = (downloaded / total) * 100
-                print(f"{filename}: {percent:.1f}%")
-
-        await download_with_progress(
-            "https://example.com/file.bin",
-            "/path/to/file.bin",
-            progress_callback=progress
-        )
+        bool: `True` if the download succeeded, `False` otherwise.
     """
     downloader = AsyncDownloaderBase(config)
     try:
