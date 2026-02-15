@@ -151,16 +151,18 @@ class AsyncDownloadCoreMixin:
         Returns:
             Active aiohttp ClientSession instance.
         """
+        resolved_aiohttp: Any
         if aiohttp_module is None:
             import aiohttp as imported_aiohttp
 
-            aiohttp_module = imported_aiohttp
-        assert aiohttp_module is not None
+            resolved_aiohttp = imported_aiohttp
+        else:
+            resolved_aiohttp = aiohttp_module
 
         if self._session is None or getattr(self._session, "closed", False):
-            connector = aiohttp_module.TCPConnector(limit=self._get_max_concurrent())
-            timeout = aiohttp_module.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
-            self._session = aiohttp_module.ClientSession(
+            connector = resolved_aiohttp.TCPConnector(limit=self._get_max_concurrent())
+            timeout = resolved_aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
+            self._session = resolved_aiohttp.ClientSession(
                 connector=connector, timeout=timeout
             )
         return self._session
