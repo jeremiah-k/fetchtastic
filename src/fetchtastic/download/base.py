@@ -12,7 +12,6 @@ Supports both synchronous and asynchronous download operations:
 import asyncio
 import fnmatch
 import os
-import time
 import zipfile
 from abc import ABC
 from pathlib import Path
@@ -21,14 +20,10 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, cast
 from requests.exceptions import RequestException  # type: ignore[import-untyped]
 
 from fetchtastic import utils
-from fetchtastic.constants import (
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_REQUEST_TIMEOUT,
-)
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
-from .async_client import AsyncDownloadError
+from .async_core import AsyncDownloadCoreMixin
 from .cache import CacheManager
 from .files import FileOperations, _sanitize_path_component, strip_unwanted_chars
 from .interfaces import Asset, Downloader, DownloadResult, Pathish
@@ -46,7 +41,7 @@ _MISSING_HISTORY_MANAGER_MSG = (
 )
 
 
-class BaseDownloader(Downloader, ABC):
+class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     """
     Base implementation of the Downloader interface.
 
@@ -83,7 +78,7 @@ class BaseDownloader(Downloader, ABC):
         # Semaphore for concurrent download control (lazy-initialized)
         self._semaphore: Optional[asyncio.Semaphore] = None
         # Shared aiohttp session for async downloads (lazy-initialized)
-        self._async_session: Optional[Any] = None
+        self._session: Optional[Any] = None
 
     def get_download_dir(self) -> str:
         """
@@ -109,49 +104,9 @@ class BaseDownloader(Downloader, ABC):
         """
         return int(self.config.get("VERSIONS_TO_KEEP", 5))
 
-    def _get_max_concurrent(self) -> int:
-        """
-        Get the maximum concurrent downloads from config.
-
-        Returns:
-            int: Maximum concurrent downloads (default 5).
-        """
-        raw_value = self.config.get("MAX_CONCURRENT_DOWNLOADS", 5)
-        try:
-            parsed_value = int(raw_value)
-        except (TypeError, ValueError):
-            logger.warning(
-                "Invalid MAX_CONCURRENT_DOWNLOADS value %r; using default of 5",
-                raw_value,
-            )
-            return 5
-
-        if parsed_value <= 0:
-            logger.warning(
-                "MAX_CONCURRENT_DOWNLOADS must be >= 1; clamping %d to 1",
-                parsed_value,
-            )
-            return 1
-
-        return parsed_value
-
-    def _get_semaphore(self) -> asyncio.Semaphore:
-        """
-        Get or create the semaphore for concurrency control.
-
-        The semaphore is created once per instance and reused for all downloads,
-        ensuring proper concurrency limiting across multiple async_download calls.
-
-        Returns:
-            asyncio.Semaphore: Semaphore for limiting concurrent downloads.
-        """
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self._get_max_concurrent())
-        return self._semaphore
-
     async def _ensure_async_session(self, aiohttp_module: Optional[Any] = None) -> Any:
         """
-        Get or create a reusable aiohttp ClientSession for async downloads.
+        Backward-compatible alias to shared session creation.
 
         Parameters:
             aiohttp_module (Optional[Any]): Optional imported aiohttp module to reuse.
@@ -159,38 +114,12 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             Any: Active aiohttp ClientSession instance.
         """
-        if aiohttp_module is None:
-            import aiohttp as aiohttp_module  # type: ignore[import-not-found]
+        return await self._ensure_session(aiohttp_module)
 
-        if (
-            self._async_session is None
-            or getattr(self._async_session, "closed", False) is True
-        ):
-            timeout = aiohttp_module.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
-            connector = aiohttp_module.TCPConnector(limit=self._get_max_concurrent())
-            self._async_session = aiohttp_module.ClientSession(
-                timeout=timeout,
-                connector=connector,
-            )
-        return self._async_session
-
-    async def close(self) -> None:
-        """Close the shared async download session, if active."""
-        if (
-            self._async_session is not None
-            and getattr(self._async_session, "closed", False) is not True
-        ):
-            close_result = self._async_session.close()
-            if asyncio.iscoroutine(close_result):
-                await close_result
-        self._async_session = None
-
-    async def __aenter__(self) -> "BaseDownloader":
-        await self._ensure_async_session()
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.close()
+    def _sync_download_fallback(self, url: str, target_path: Pathish) -> Optional[bool]:
+        """Fallback to sync downloader when async dependencies are unavailable."""
+        logger.warning("Async libraries not available, falling back to sync download")
+        return self.download(url, target_path)
 
     def download(self, url: str, target_path: Pathish) -> bool:
         """
@@ -255,145 +184,9 @@ class BaseDownloader(Downloader, ABC):
                 progress_callback=progress
             )
         """
-        # Try to import async libraries first
-        try:
-            import aiofiles
-            import aiohttp
-
-            _aiohttp = aiohttp
-            _aiofiles = aiofiles
-        except ImportError:
-            # Fallback to sync download if async libs not available
-            logger.warning(
-                "Async libraries not available, falling back to sync download"
-            )
-            return self.download(url, target_path)
-
-        temp_path: Optional[Path] = None
-        target = Path(target_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-
-        # Check if file already exists and is valid
-        if target.exists():
-            if await self._async_verify_file(target):
-                logger.info(f"Skipped: {target.name} (already present & verified)")
-                return True
-
-        # Create temp file path
-        temp_path = target.with_suffix(f".tmp.{os.getpid()}.{int(time.time() * 1000)}")
-
-        # Use semaphore to limit concurrent downloads
-        async with self._get_semaphore():
-            try:
-                start_time = time.time()
-                downloaded = (
-                    0  # Initialize early to avoid UnboundLocalError on early exit
-                )
-                total_size = 0
-                session = await self._ensure_async_session(_aiohttp)
-
-                async with session.get(url) as response:
-                    # Handle HTTP errors with appropriate retryability
-                    if response.status >= 400:
-                        is_retryable = response.status >= 500
-                        raise AsyncDownloadError(
-                            f"HTTP error {response.status}",
-                            url=url,
-                            status_code=response.status,
-                            is_retryable=is_retryable,
-                        )
-
-                    content_length = response.headers.get("Content-Length")
-                    try:
-                        total_size = int(content_length) if content_length else 0
-                    except (TypeError, ValueError):
-                        total_size = 0
-
-                    async with _aiofiles.open(temp_path, "wb") as f:
-                        async for chunk in response.content.iter_chunked(
-                            DEFAULT_CHUNK_SIZE
-                        ):
-                            await f.write(chunk)
-                            downloaded += len(chunk)
-
-                            if progress_callback:
-                                try:
-                                    result = progress_callback(
-                                        downloaded, total_size or None, target.name
-                                    )
-                                    if asyncio.iscoroutine(result):
-                                        await result
-                                except Exception as cb_err:
-                                    logger.debug(f"Progress callback error: {cb_err}")
-
-                elapsed = time.time() - start_time
-                file_size_mb = downloaded / (1024 * 1024)
-                logger.debug(f"Downloaded {url} in {elapsed:.2f}s")
-
-                # Atomic replace to handle existing targets across platforms
-                temp_path.replace(target)
-
-                # Save file hash for verification
-                await self._async_save_hash(target)
-
-                if file_size_mb >= 1.0:
-                    logger.info(
-                        f"Successfully downloaded {target.name} ({file_size_mb:.1f} MB)"
-                    )
-                else:
-                    logger.info(
-                        f"Successfully downloaded {target.name} ({downloaded} bytes)"
-                    )
-
-                return True
-
-            except AsyncDownloadError:
-                # Re-raise AsyncDownloadError without wrapping it
-                if temp_path and temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except OSError:
-                        pass
-                raise
-
-            except _aiohttp.ClientError as e:
-                if temp_path and temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except OSError:
-                        pass
-                logger.error(f"Async download failed for {url}: {e}")
-                raise AsyncDownloadError(
-                    f"Network error: {e}",
-                    url=url,
-                    is_retryable=True,
-                ) from e
-
-            except OSError as e:
-                if temp_path and temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except OSError:
-                        pass
-                logger.error(f"Filesystem error saving {target_path}: {e}")
-                raise AsyncDownloadError(
-                    f"Filesystem error: {e}",
-                    url=url,
-                    is_retryable=False,
-                ) from e
-
-            except Exception as e:
-                if temp_path and temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except OSError:
-                        pass
-                logger.exception(f"Unexpected error downloading {url}: {e}")
-                raise AsyncDownloadError(
-                    f"Unexpected error: {e}",
-                    url=url,
-                    is_retryable=True,
-                ) from e
+        return await super().async_download(
+            url, target_path, progress_callback=progress_callback
+        )
 
     async def _async_verify_file(self, file_path: Path) -> bool:
         """
@@ -445,12 +238,33 @@ class BaseDownloader(Downloader, ABC):
 
         await loop.run_in_executor(None, _compute_and_save)
 
+    async def _async_verify_existing_file(self, file_path: Path) -> bool:
+        """
+        Adapter for shared async core verification hook.
+
+        Parameters:
+            file_path (Path): Path to the file to verify.
+
+        Returns:
+            bool: True if file is valid, False otherwise.
+        """
+        return await self._async_verify_file(file_path)
+
+    async def _async_save_file_hash(self, file_path: Path) -> None:
+        """
+        Adapter for shared async core hash persistence hook.
+
+        Parameters:
+            file_path (Path): Path to the file to hash.
+        """
+        await self._async_save_hash(file_path)
+
     async def async_download_with_retry(
         self,
         url: str,
         target_path: Pathish,
-        max_retries: int = 3,
-        retry_delay: float = 1.0,
+        max_retries: Optional[int] = 3,
+        retry_delay: Optional[float] = 1.0,
         backoff_factor: float = 2.0,
         progress_callback: Optional[AsyncProgressCallback] = None,
     ) -> bool:
@@ -460,8 +274,8 @@ class BaseDownloader(Downloader, ABC):
         Parameters:
             url (str): URL to download from.
             target_path (Pathish): Local path to save the file.
-            max_retries (int): Maximum number of retry attempts.
-            retry_delay (float): Initial delay between retries in seconds.
+            max_retries (Optional[int]): Maximum number of retry attempts.
+            retry_delay (Optional[float]): Initial delay between retries in seconds.
             backoff_factor (float): Multiplier for delay after each retry.
             progress_callback (Optional[AsyncProgressCallback]):
                 Optional callback for progress updates.
@@ -469,70 +283,14 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             bool: True if download succeeded, False otherwise.
         """
-        last_error: Optional[AsyncDownloadError] = None
-        delay = retry_delay
-
-        for attempt in range(max_retries + 1):
-            try:
-                result = await self.async_download(
-                    url, target_path, progress_callback=progress_callback
-                )
-                # Handle backward compatibility: if async_download returns False,
-                # treat as a retryable failure
-                if result:
-                    return True
-                # result is False - retry if we have attempts left
-                if attempt == max_retries:
-                    logger.error(
-                        f"Download failed permanently after {max_retries + 1} "
-                        f"attempts for {url}"
-                    )
-                    return False
-                logger.warning(
-                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for "
-                    f"{url}, retrying in {delay:.1f}s"
-                )
-                await asyncio.sleep(delay)
-                delay *= backoff_factor
-
-            except AsyncDownloadError as e:
-                last_error = e
-
-                # Don't retry if error is not retryable or we've exhausted retries
-                if not e.is_retryable or attempt == max_retries:
-                    logger.error(f"Download failed permanently for {url}: {e.message}")
-                    return False
-
-                logger.warning(
-                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}, "
-                    f"retrying in {delay:.1f}s: {e.message}"
-                )
-                await asyncio.sleep(delay)
-                delay *= backoff_factor
-
-            except Exception as e:
-                # Handle unexpected exceptions - wrap in AsyncDownloadError and retry
-                last_error = AsyncDownloadError(
-                    f"Unexpected error: {e}",
-                    url=url,
-                    is_retryable=True,
-                )
-
-                if attempt == max_retries:
-                    logger.error(f"Download failed permanently for {url}: {e}")
-                    return False
-
-                logger.warning(
-                    f"Download attempt {attempt + 1}/{max_retries + 1} failed for {url}, "
-                    f"retrying in {delay:.1f}s: {e}"
-                )
-                await asyncio.sleep(delay)
-                delay *= backoff_factor
-
-        # Should not reach here, but satisfy type checker
-        if last_error:
-            logger.error(f"Download failed permanently for {url}: {last_error.message}")
-        return False
+        return await super().async_download_with_retry(
+            url,
+            target_path,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            backoff_factor=backoff_factor,
+            progress_callback=progress_callback,
+        )
 
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
