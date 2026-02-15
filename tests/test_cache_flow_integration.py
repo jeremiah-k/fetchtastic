@@ -70,7 +70,7 @@ def test_cache_schema_mismatch_triggers_refresh(tmp_path):
     mock_response.json.return_value = fresh_releases_json
 
     with patch(
-        "fetchtastic.download.firmware.make_github_api_request",
+        "fetchtastic.download.github_source.make_github_api_request",
         return_value=mock_response,
     ) as mock_request:
         releases = downloader.get_releases(limit=8)

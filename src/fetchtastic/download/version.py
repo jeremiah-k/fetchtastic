@@ -9,7 +9,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
@@ -627,7 +627,8 @@ class VersionManager:
             version, release_type, additional_data=additional_data
         )
 
-        return cache_manager.atomic_write_json(file_path, tracking_data)
+        result = cache_manager.atomic_write_json(file_path, tracking_data)
+        return cast(bool, result)
 
     def read_version_tracking_file(
         self,
@@ -648,7 +649,7 @@ class VersionManager:
             Optional[Dict[str, Any]]: Parsed tracking data with keys normalized according to `backward_compatible_keys`,
             or `None` if the file does not exist or cannot be read.
         """
-        return cache_manager.read_json_with_backward_compatibility(
+        raw_data = cache_manager.read_json_with_backward_compatibility(
             file_path,
             backward_compatible_keys
             or {
@@ -656,6 +657,7 @@ class VersionManager:
                 "last_updated": "timestamp",
             },
         )
+        return cast(Optional[Dict[str, Any]], raw_data)
 
     def migrate_legacy_version_tracking(
         self,
@@ -675,9 +677,10 @@ class VersionManager:
         Returns:
             bool: `True` if migration succeeded, `False` otherwise.
         """
-        return cache_manager.migrate_legacy_cache_file(
+        result = cache_manager.migrate_legacy_cache_file(
             legacy_file_path, new_file_path, legacy_to_new_mapping
         )
+        return cast(bool, result)
 
     def validate_version_tracking_data(
         self, tracking_data: Dict[str, Any], required_keys: List[str]

@@ -18,6 +18,8 @@ from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 @pytest.fixture
 def test_config():
@@ -294,7 +296,7 @@ class TestFirmwareReleaseDownloader:
         """Test error handling with API failures."""
         with (
             patch(
-                "fetchtastic.download.firmware.make_github_api_request",
+                "fetchtastic.download.github_source.make_github_api_request",
                 side_effect=requests.RequestException("API Error"),
             ),
             patch(

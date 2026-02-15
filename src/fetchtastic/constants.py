@@ -79,6 +79,17 @@ DEFAULT_BACKOFF_FACTOR = 0.3
 DEFAULT_REQUEST_TIMEOUT = 30
 DEFAULT_CHUNK_SIZE = 8192
 
+# HTTP status code thresholds
+HTTP_STATUS_ERROR_THRESHOLD = 400  # Client/server error boundary
+HTTP_STATUS_RETRY_THRESHOLD = 500  # Server errors are retryable
+
+# File size constants
+BYTES_PER_MEGABYTE = 1024 * 1024  # 1 MB = 1,048,576 bytes
+FILE_SIZE_MB_LOGGING_THRESHOLD = 1.0  # Log in MB if >= this value
+
+# Rate limit defaults
+RATE_LIMIT_REMAINING_DEFAULT = 60  # GitHub default for unauthenticated
+
 
 # Directories that Fetchtastic manages and can safely clean
 MANAGED_DIRECTORIES = (

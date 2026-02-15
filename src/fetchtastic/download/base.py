@@ -3,14 +3,19 @@ Base Downloader Implementation
 
 This module provides the base implementation of the Downloader interface
 that can be extended by specific artifact downloaders.
+
+Supports both synchronous and asynchronous download operations:
+- download(): Synchronous file download
+- async_download(): Asynchronous file download with progress tracking
 """
 
+import asyncio
 import fnmatch
 import os
 import zipfile
 from abc import ABC
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, cast
 
 from requests.exceptions import RequestException  # type: ignore[import-untyped]
 
@@ -18,13 +23,22 @@ from fetchtastic import utils
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
+from .async_core import AsyncDownloadCoreMixin
 from .cache import CacheManager
-from .files import FileOperations, _sanitize_path_component, strip_unwanted_chars
+from .files import (
+    FileOperations,
+    _sanitize_path_component,
+    is_zip_intact,
+    strip_unwanted_chars,
+)
 from .interfaces import Asset, Downloader, DownloadResult, Pathish
 from .version import VersionManager
 
 if TYPE_CHECKING:
     from .interfaces import Release
+
+# Type alias for async progress callbacks
+AsyncProgressCallback = Callable[[int, Optional[int], str], Any]
 
 
 _MISSING_HISTORY_MANAGER_MSG = (
@@ -32,7 +46,7 @@ _MISSING_HISTORY_MANAGER_MSG = (
 )
 
 
-class BaseDownloader(Downloader, ABC):
+class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     """
     Base implementation of the Downloader interface.
 
@@ -66,14 +80,19 @@ class BaseDownloader(Downloader, ABC):
         self.download_dir = str(Path(self.get_download_dir()))
         self.versions_to_keep = self._get_versions_to_keep()
 
+        # Semaphore for concurrent download control (lazy-initialized)
+        self._semaphore: Optional[asyncio.Semaphore] = None
+        # Shared aiohttp session for async downloads (lazy-initialized)
+        self._session: Optional[Any] = None
+
     def get_download_dir(self) -> str:
         """
-        Return the configured download directory path.
+        Get the configured download directory.
 
-        If the configuration does not provide "DOWNLOAD_DIR", defaults to the user's home "meshtastic" directory.
+        If the configuration does not provide "DOWNLOAD_DIR", returns the default path "~/meshtastic".
 
         Returns:
-            download_dir (str): The resolved download directory path (e.g. '~/meshtastic' when not configured).
+            The resolved download directory path as a string.
         """
         return cast(
             str, self.config.get("DOWNLOAD_DIR", os.path.expanduser("~/meshtastic"))
@@ -89,6 +108,32 @@ class BaseDownloader(Downloader, ABC):
             int: Number of versions to keep.
         """
         return int(self.config.get("VERSIONS_TO_KEEP", 5))
+
+    async def _ensure_async_session(self, aiohttp_module: Optional[Any] = None) -> Any:
+        """
+        Backward-compatible alias to shared session creation.
+
+        Parameters:
+            aiohttp_module (Optional[Any]): Optional imported aiohttp module to reuse.
+
+        Returns:
+            Any: Active aiohttp ClientSession instance.
+        """
+        return await self._ensure_session(aiohttp_module)
+
+    def _sync_download_fallback(self, url: str, target_path: Pathish) -> Optional[bool]:
+        """
+        Call the synchronous downloader as a fallback when async support is unavailable.
+
+        Parameters:
+            url (str): URL of the resource to download.
+            target_path (Pathish): Destination path for the downloaded file.
+
+        Returns:
+            bool: `True` if the download succeeded, `False` otherwise.
+        """
+        logger.warning("Async libraries not available, falling back to sync download")
+        return self.download(url, target_path)
 
     def download(self, url: str, target_path: Pathish) -> bool:
         """
@@ -116,6 +161,121 @@ class BaseDownloader(Downloader, ABC):
         except (OSError, RequestException, ValueError) as e:
             logger.exception("Error downloading %s: %s", url, e)
             return False
+
+    async def async_download(
+        self,
+        url: str,
+        target_path: Pathish,
+        progress_callback: Optional[AsyncProgressCallback] = None,
+    ) -> bool:
+        """
+        Download a file to the specified target path with optional progress reporting.
+
+        Parameters:
+            url (str): Source URL of the file.
+            target_path (Pathish): Local path where the file will be saved.
+            progress_callback (Optional[AsyncProgressCallback]): Optional callback invoked with
+                (downloaded_bytes, total_bytes, filename) to report progress.
+
+        Returns:
+            `True` if the download succeeded, `False` otherwise.
+        """
+        return await super().async_download(
+            url, target_path, progress_callback=progress_callback
+        )
+
+    async def _async_verify_file(self, file_path: Path) -> bool:
+        """
+        Determine whether a file's contents are intact and not corrupted. For ZIP archives, performs an archive integrity test before general integrity verification.
+
+        Parameters:
+            file_path (Path): Path to the file to verify.
+
+        Returns:
+            bool: True if the file is valid, False otherwise.
+        """
+        try:
+            if file_path.suffix.lower() == ".zip":
+                loop = asyncio.get_running_loop()
+                if not await loop.run_in_executor(None, is_zip_intact, str(file_path)):
+                    return False
+
+            # Verify file integrity using existing sync utility
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None, utils.verify_file_integrity, str(file_path)
+            )
+
+        except (OSError, zipfile.BadZipFile) as e:
+            logger.debug(f"File verification failed for {file_path}: {e}")
+            return False
+
+    async def _async_save_hash(self, file_path: Path) -> None:
+        """
+        Asynchronously compute the file's SHA-256 hash and persist it alongside the file.
+
+        Parameters:
+            file_path (Path): Path to the file whose SHA-256 hash will be computed and saved.
+        """
+        loop = asyncio.get_running_loop()
+
+        def _compute_and_save() -> None:
+            """
+            Compute and persist the SHA-256 hash for the file referenced by the enclosing `file_path` variable.
+
+            If the hash is successfully computed, it is saved to the file's associated hash storage; otherwise no action is taken.
+            """
+            hash_value = utils.calculate_sha256(str(file_path))
+            if hash_value:
+                utils.save_file_hash(str(file_path), hash_value)
+
+        await loop.run_in_executor(None, _compute_and_save)
+
+    async def _async_verify_existing_file(self, file_path: Path) -> bool:
+        """
+        Verifies an existing file asynchronously.
+
+        @returns: `True` if the file is valid, `False` otherwise.
+        """
+        return await self._async_verify_file(file_path)
+
+    async def _async_save_file_hash(self, file_path: Path) -> None:
+        """
+        Persist the SHA-256 hash for the given file using the downloader's asynchronous hash saver.
+        """
+        await self._async_save_hash(file_path)
+
+    async def async_download_with_retry(
+        self,
+        url: str,
+        target_path: Pathish,
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
+        backoff_factor: float = 2.0,
+        progress_callback: Optional[AsyncProgressCallback] = None,
+    ) -> bool:
+        """
+        Download a file with retry logic and exponential backoff.
+
+        Parameters:
+            url (str): URL to download from.
+            target_path (Pathish): Local path to save the file.
+            max_retries (Optional[int]): Maximum retry attempts; `None` defers to configured/default value.
+            retry_delay (Optional[float]): Initial delay between retries in seconds; `None` defers to configured/default value.
+            backoff_factor (float): Multiplier applied to the delay after each retry (default: 2.0).
+            progress_callback (Optional[AsyncProgressCallback]): Optional callback for progress updates.
+
+        Returns:
+            bool: `True` if the download succeeded, `False` otherwise.
+        """
+        return await super().async_download_with_retry(
+            url,
+            target_path,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            backoff_factor=backoff_factor,
+            progress_callback=progress_callback,
+        )
 
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
@@ -503,11 +663,7 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             bool: `True` if the archive contains no corrupt members, `False` otherwise.
         """
-        try:
-            with zipfile.ZipFile(file_path, "r") as zf:
-                return zf.testzip() is None
-        except (IOError, zipfile.BadZipFile):
-            return False
+        return is_zip_intact(file_path)
 
     def is_asset_complete(self, release_tag: str, asset: Asset) -> bool:
         """
@@ -554,11 +710,12 @@ class BaseDownloader(Downloader, ABC):
         Raises:
             AttributeError: If the downloader does not have a release_history_manager.
         """
-        if not hasattr(self, "release_history_manager"):
+        manager = getattr(self, "release_history_manager", None)
+        if manager is None:
             raise AttributeError(
                 _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
             )
-        return self.release_history_manager.is_release_revoked(release)  # type: ignore[attr-defined]
+        return cast(bool, manager.is_release_revoked(release))
 
     def needs_download(
         self, release_tag: str, file_name: str, expected_size: int

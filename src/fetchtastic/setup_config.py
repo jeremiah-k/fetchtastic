@@ -14,7 +14,7 @@ import subprocess
 import sys
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, cast
 
 import platformdirs
 import yaml  # type: ignore[import-untyped]
@@ -172,10 +172,12 @@ CRON_SCHEDULES = {
 }
 
 # Import Windows-specific modules if on Windows
+winshell: Any = None
 if platform.system() == "Windows":
     try:
-        import winshell  # type: ignore[import-not-found]
+        import winshell as winshell_module  # type: ignore[import-not-found]
 
+        winshell = winshell_module
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
         WINDOWS_MODULES_AVAILABLE = False
@@ -2669,12 +2671,10 @@ def create_startup_shortcut() -> bool:
 
 def copy_to_clipboard_func(text: Optional[str]) -> bool:
     """
-    Copy the provided text to the system clipboard using a platform-appropriate mechanism.
-
-    Supports Termux, Windows (when win32 modules are available), macOS (pbcopy), and Linux (xclip or xsel). If no supported mechanism is available or an error occurs, nothing is copied.
+    Copy the given text to the system clipboard using a platform-appropriate method.
 
     Parameters:
-        text (Optional[str]): The text to copy. If `None`, the function does nothing.
+        text (Optional[str]): Text to copy; if `None`, the function performs no action.
 
     Returns:
         bool: `True` if the text was successfully copied to the clipboard, `False` otherwise.
@@ -2706,7 +2706,8 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                 win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
             except (ImportError, TypeError):
                 # Fall back to SetClipboardText for older versions or if win32con is missing attributes
-                win32clipboard.SetClipboardText(text)
+                set_clipboard_text = cast(Any, win32clipboard.SetClipboardText)
+                set_clipboard_text(text)
             win32clipboard.CloseClipboard()
             return True
         except Exception as e:  # noqa: BLE001
@@ -2821,7 +2822,7 @@ def install_crond() -> None:
 
 
 @cron_command_required
-def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
+def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") -> None:
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
 
@@ -2908,7 +2909,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
 
 
 @cron_command_required
-def remove_cron_job(*, crontab_path: str = "crontab"):
+def remove_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Remove Fetchtastic's non-@reboot cron entries from the current user's crontab.
 
@@ -3006,7 +3007,7 @@ def remove_boot_script() -> None:
 
 
 @cron_command_required
-def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
+def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Ensure an @reboot crontab entry exists to run the `fetchtastic download` command after system reboot.
 
@@ -3076,7 +3077,7 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
 
 
 @cron_command_required
-def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
+def remove_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
     """
     Remove any @reboot cron entries that run or are labeled for Fetchtastic.
 
@@ -3138,7 +3139,7 @@ def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
 
 
 @cron_check_command_required
-def check_any_cron_jobs_exist(*, crontab_path: str = "crontab"):
+def check_any_cron_jobs_exist(*, crontab_path: str = "crontab") -> bool:
     """
     Determine whether the current user's crontab contains any entries.
 
@@ -3179,7 +3180,7 @@ def check_boot_script_exists() -> bool:
 
 
 @cron_check_command_required
-def check_cron_job_exists(*, crontab_path: str = "crontab"):
+def check_cron_job_exists(*, crontab_path: str = "crontab") -> bool:
     """
     Determine whether any Fetchtastic cron entries exist in the current user's crontab (ignoring '@reboot' lines).
 

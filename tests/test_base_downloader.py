@@ -15,7 +15,7 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -24,6 +24,21 @@ from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
+
+# Helper to create async iterator from list (for mocking aiohttp iter_chunked)
+async def _make_async_iter(items):
+    """
+    Create an asynchronous iterator that yields each element from the given iterable.
+
+    Parameters:
+        items (iterable): An iterable of values to be yielded.
+
+    Returns:
+        An asynchronous iterator that yields each element from `items`.
+    """
+    for item in items:
+        yield item
 
 
 # Concrete implementation of BaseDownloader for testing
@@ -108,6 +123,27 @@ class TestBaseDownloaderInitialization:
         downloader = ConcreteDownloader(config)
 
         assert downloader._get_versions_to_keep() == 5
+
+    def test_get_max_concurrent_default(self):
+        """Test default max concurrent downloads."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        assert downloader._get_max_concurrent() == 5
+
+    def test_get_max_concurrent_invalid_fallback(self):
+        """Invalid max concurrent values should fall back to default."""
+        config = {"MAX_CONCURRENT_DOWNLOADS": "not-a-number"}
+        downloader = ConcreteDownloader(config)
+
+        assert downloader._get_max_concurrent() == 5
+
+    def test_get_max_concurrent_clamped_minimum(self):
+        """Values <= 0 should be clamped to avoid invalid semaphores."""
+        config = {"MAX_CONCURRENT_DOWNLOADS": 0}
+        downloader = ConcreteDownloader(config)
+
+        assert downloader._get_max_concurrent() == 1
 
 
 class TestBaseDownloaderDownload:
@@ -685,3 +721,734 @@ class TestBaseDownloaderManagers:
 
         assert manager is not None
         assert manager is downloader.cache_manager
+
+
+# =============================================================================
+# Async Download Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestBaseDownloaderAsyncDownload:
+    """Test async_download method."""
+
+    async def test_async_download_success(self, tmp_path, mocker):
+        """Test successful async download."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        # Mock aiohttp response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "12"}
+        mock_response.raise_for_status = Mock()
+
+        # Mock content iteration
+        mock_content = MagicMock()
+        mock_content.iter_chunked = Mock(
+            return_value=_make_async_iter([b"test content"])
+        )
+        mock_response.content = mock_content
+
+        # Mock aiohttp session
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            # Mock aiofiles
+            mock_file = AsyncMock()
+            with patch("aiofiles.open") as mock_open:
+                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+                mock_open.return_value.__aexit__ = AsyncMock()
+
+                # Mock _async_verify_file to return False (no existing file)
+                mocker.patch.object(
+                    downloader, "_async_verify_file", AsyncMock(return_value=False)
+                )
+                mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
+
+                target = tmp_path / "test.bin"
+                result = await downloader.async_download(
+                    "https://example.com/file.bin", target
+                )
+
+        assert result is True
+
+    async def test_async_download_reuses_shared_session(self, tmp_path, mocker):
+        """Multiple async downloads should reuse one session per downloader instance."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "4"}
+        mock_response.raise_for_status = Mock()
+        mock_content = MagicMock()
+        mock_content.iter_chunked = Mock(
+            side_effect=lambda *_args, **_kwargs: _make_async_iter([b"test"])
+        )
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        with (
+            patch(
+                "aiohttp.ClientSession", return_value=mock_session
+            ) as mock_session_cls,
+            patch("aiohttp.ClientTimeout"),
+            patch("aiohttp.TCPConnector"),
+        ):
+            mock_file = AsyncMock()
+            with patch("aiofiles.open") as mock_open:
+                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+                mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+
+                mocker.patch.object(
+                    downloader, "_async_verify_file", AsyncMock(return_value=False)
+                )
+                mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+                mocker.patch.object(Path, "replace", return_value=None)
+
+                result1 = await downloader.async_download(
+                    "https://example.com/file1.bin", tmp_path / "file1.bin"
+                )
+                result2 = await downloader.async_download(
+                    "https://example.com/file2.bin", tmp_path / "file2.bin"
+                )
+
+        assert result1 is True
+        assert result2 is True
+        assert mock_session_cls.call_count == 1
+
+    async def test_async_download_skips_existing_valid_file(self, tmp_path, mocker):
+        """Test that async download skips existing valid file."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        # Create existing file
+        existing_file = tmp_path / "existing.bin"
+        existing_file.write_bytes(b"existing content")
+
+        # Mock verification to return True
+        mocker.patch.object(
+            downloader, "_async_verify_file", AsyncMock(return_value=True)
+        )
+
+        result = await downloader.async_download(
+            "https://example.com/file.bin", existing_file
+        )
+
+        assert result is True
+
+    async def test_async_download_creates_parent_directory(self, tmp_path, mocker):
+        """Test that async download creates parent directories."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "12"}
+        mock_response.raise_for_status = Mock()
+
+        mock_content = MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            mock_file = AsyncMock()
+            with patch("aiofiles.open") as mock_open:
+                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+                mock_open.return_value.__aexit__ = AsyncMock()
+
+                mocker.patch.object(
+                    downloader, "_async_verify_file", AsyncMock(return_value=False)
+                )
+                mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
+
+                target = tmp_path / "subdir" / "nested" / "test.bin"
+                result = await downloader.async_download(
+                    "https://example.com/file.bin", target
+                )
+
+        assert result is True
+        assert target.parent.exists()
+
+    async def test_async_download_with_progress_callback(self, tmp_path, mocker):
+        """Test async download with progress callback."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "12"}
+        mock_response.raise_for_status = Mock()
+
+        # Create an async iterator for chunks
+        async def chunk_iterator(*_args, **_kwargs):
+            """
+            Yield a sequence of byte chunks suitable for testing async stream consumers.
+
+            Yields:
+                bytes: Sequential data chunks (`b"chunk1"`, `b"chunk2"`) to simulate streamed payloads.
+            """
+            for chunk in [b"chunk1", b"chunk2"]:
+                yield chunk
+
+        mock_content = MagicMock()
+        mock_content.iter_chunked = Mock(return_value=chunk_iterator())
+        mock_response.content = mock_content
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        callback_calls = []
+
+        async def progress(downloaded, total, filename):
+            """
+            Record download progress by collecting reported values into the enclosing test's callback list.
+
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int | None): Total number of bytes expected, or None if unknown.
+                filename (str): Name of the file being downloaded.
+            """
+            callback_calls.append((downloaded, total, filename))
+
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            mock_file = AsyncMock()
+            with patch("aiofiles.open") as mock_open:
+                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+                mock_open.return_value.__aexit__ = AsyncMock()
+
+                mocker.patch.object(
+                    downloader, "_async_verify_file", AsyncMock(return_value=False)
+                )
+                mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
+
+                target = tmp_path / "test.bin"
+                result = await downloader.async_download(
+                    "https://example.com/file.bin",
+                    target,
+                    progress_callback=progress,
+                )
+
+        assert result is True
+        assert len(callback_calls) == 2  # One per chunk
+
+    async def test_async_download_progress_callback_exception_handled(
+        self, tmp_path, mocker
+    ):
+        """Test that progress callback exceptions are handled gracefully."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "12"}
+        mock_response.raise_for_status = Mock()
+
+        mock_content = MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        def bad_callback(_downloaded, _total, _filename):
+            """
+            Synchronous progress callback that always raises a ValueError.
+
+            Parameters:
+                downloaded (int): Number of bytes or units downloaded so far.
+                total (int | None): Total number of bytes or units expected, or None if unknown.
+                filename (str): Name of the file being downloaded.
+
+            Raises:
+                ValueError: Always raised with the message "Callback error".
+            """
+            raise ValueError("Callback error")
+
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            mock_file = AsyncMock()
+            with patch("aiofiles.open") as mock_open:
+                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+                mock_open.return_value.__aexit__ = AsyncMock()
+
+                mocker.patch.object(
+                    downloader, "_async_verify_file", AsyncMock(return_value=False)
+                )
+                mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+
+                # Mock Path.replace to avoid actual filesystem operation
+                mocker.patch.object(Path, "replace", return_value=None)
+
+                target = tmp_path / "test.bin"
+                # Should not raise
+                result = await downloader.async_download(
+                    "https://example.com/file.bin",
+                    target,
+                    progress_callback=bad_callback,
+                )
+
+        assert result is True
+
+    async def test_async_download_fallback_when_async_libs_unavailable(self, tmp_path):
+        """Test fallback to sync download when async libs not available."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        target = tmp_path / "test.bin"
+
+        # Make aiohttp import fail
+        with patch.dict("sys.modules", {"aiohttp": None, "aiofiles": None}):
+            with patch.object(
+                downloader, "download", return_value=True
+            ) as mock_sync_download:
+                result = await downloader.async_download(
+                    "https://example.com/file.bin", target
+                )
+
+        assert result is True
+        mock_sync_download.assert_called_once()
+
+    async def test_async_download_client_error(self, tmp_path, mocker):
+        """Test async download handles client errors."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+        from aiohttp import ClientError
+
+        from fetchtastic.download.async_client import AsyncDownloadError
+
+        # Create a mock response that raises ClientError when entering context
+        mock_response = AsyncMock()
+        mock_response.__aenter__ = AsyncMock(
+            side_effect=ClientError("Connection failed")
+        )
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            mocker.patch.object(
+                downloader, "_async_verify_file", AsyncMock(return_value=False)
+            )
+
+            target = tmp_path / "test.bin"
+            # Errors during download should raise AsyncDownloadError
+            with pytest.raises(AsyncDownloadError) as exc_info:
+                await downloader.async_download("https://example.com/file.bin", target)
+            assert exc_info.value.is_retryable is True
+
+    async def test_async_download_os_error(self, tmp_path, mocker):
+        """Test async download handles OS errors."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+        from fetchtastic.download.async_client import AsyncDownloadError
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "12"}
+        mock_response.raise_for_status = Mock()
+
+        mock_content = MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            # Make file write fail
+            mock_file = AsyncMock()
+            mock_file.write = AsyncMock(side_effect=OSError("Disk full"))
+
+            with patch("aiofiles.open") as mock_open:
+                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+                mock_open.return_value.__aexit__ = AsyncMock()
+
+                mocker.patch.object(
+                    downloader, "_async_verify_file", AsyncMock(return_value=False)
+                )
+
+                target = tmp_path / "test.bin"
+                # OSError should raise AsyncDownloadError with is_retryable=False
+                with pytest.raises(AsyncDownloadError) as exc_info:
+                    await downloader.async_download(
+                        "https://example.com/file.bin", target
+                    )
+                assert exc_info.value.is_retryable is False
+
+    async def test_async_download_unexpected_exception(self, tmp_path, mocker):
+        """Test async download handles unexpected exceptions."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+        from fetchtastic.download.async_client import AsyncDownloadError
+
+        # Create a mock that raises RuntimeError when entering the response context
+        mock_response = AsyncMock()
+        mock_response.__aenter__ = AsyncMock(
+            side_effect=RuntimeError("Unexpected error")
+        )
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch("aiohttp.ClientTimeout"),
+        ):
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            mocker.patch.object(
+                downloader, "_async_verify_file", AsyncMock(return_value=False)
+            )
+
+            target = tmp_path / "test.bin"
+            # Unexpected exceptions should raise AsyncDownloadError
+            with pytest.raises(AsyncDownloadError):
+                await downloader.async_download("https://example.com/file.bin", target)
+
+
+# =============================================================================
+# Async Verify File Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestBaseDownloaderAsyncVerifyFile:
+    """Test _async_verify_file method."""
+
+    async def test_verify_regular_file_success(self, tmp_path, mocker):
+        """Test verification of regular file that passes."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        test_file = tmp_path / "test.bin"
+        test_file.write_bytes(b"test content")
+
+        mocker.patch("fetchtastic.utils.verify_file_integrity", return_value=True)
+
+        result = await downloader._async_verify_file(test_file)
+
+        assert result is True
+
+    async def test_verify_zip_file_valid(self, tmp_path, mocker):
+        """Test verification of valid zip file."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        zip_path = tmp_path / "test.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("file.txt", "content")
+
+        mocker.patch("fetchtastic.utils.verify_file_integrity", return_value=True)
+
+        result = await downloader._async_verify_file(zip_path)
+
+        assert result is True
+
+    async def test_verify_zip_file_corrupted(self, tmp_path):
+        """Test verification of corrupted zip file."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        # Create corrupted zip
+        zip_path = tmp_path / "corrupt.zip"
+        zip_path.write_bytes(b"not a valid zip file")
+
+        result = await downloader._async_verify_file(zip_path)
+
+        assert result is False
+
+    async def test_verify_file_os_error(self, tmp_path, mocker):
+        """Test verification handles OS errors."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        nonexistent = tmp_path / "nonexistent.bin"
+
+        mocker.patch(
+            "fetchtastic.utils.verify_file_integrity",
+            side_effect=OSError("File not found"),
+        )
+
+        result = await downloader._async_verify_file(nonexistent)
+
+        assert result is False
+
+
+# =============================================================================
+# Async Save Hash Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestBaseDownloaderAsyncSaveHash:
+    """Test _async_save_hash method."""
+
+    async def test_save_hash_success(self, tmp_path, mocker):
+        """Test saving file hash successfully."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        test_file = tmp_path / "test.bin"
+        test_file.write_bytes(b"test content")
+
+        mock_calculate = mocker.patch(
+            "fetchtastic.utils.calculate_sha256", return_value="abc123hash"
+        )
+        mock_save = mocker.patch("fetchtastic.utils.save_file_hash")
+
+        await downloader._async_save_hash(test_file)
+
+        mock_calculate.assert_called_once_with(str(test_file))
+        mock_save.assert_called_once_with(str(test_file), "abc123hash")
+
+    async def test_save_hash_no_hash_returned(self, tmp_path, mocker):
+        """Test saving hash when calculate_sha256 returns None."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+
+        test_file = tmp_path / "test.bin"
+        test_file.write_bytes(b"test content")
+
+        mock_calculate = mocker.patch(
+            "fetchtastic.utils.calculate_sha256", return_value=None
+        )
+        mock_save = mocker.patch("fetchtastic.utils.save_file_hash")
+
+        await downloader._async_save_hash(test_file)
+
+        mock_calculate.assert_called_once()
+        mock_save.assert_not_called()
+
+
+# =============================================================================
+# Async Download With Retry Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+class TestBaseDownloaderAsyncDownloadWithRetry:
+    """Test async_download_with_retry method."""
+
+    async def test_retry_success_first_attempt(self, tmp_path, mocker):
+        """Test successful download on first attempt."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_download = mocker.patch.object(
+            downloader, "async_download", AsyncMock(return_value=True)
+        )
+
+        target = tmp_path / "test.bin"
+        result = await downloader.async_download_with_retry(
+            "https://example.com/file.bin", target
+        )
+
+        assert result is True
+        mock_download.assert_called_once()
+
+    async def test_retry_success_after_failure(self, tmp_path, mocker):
+        """Test successful download after failure."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_download = mocker.patch.object(
+            downloader,
+            "async_download",
+            AsyncMock(side_effect=[False, True]),
+        )
+
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        target = tmp_path / "test.bin"
+        result = await downloader.async_download_with_retry(
+            "https://example.com/file.bin",
+            target,
+            max_retries=3,
+            retry_delay=0.1,
+        )
+
+        assert result is True
+        assert mock_download.call_count == 2
+
+    async def test_retry_exhausted(self, tmp_path, mocker):
+        """Test failure after exhausting all retries."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_download = mocker.patch.object(
+            downloader, "async_download", AsyncMock(return_value=False)
+        )
+
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        target = tmp_path / "test.bin"
+        result = await downloader.async_download_with_retry(
+            "https://example.com/file.bin",
+            target,
+            max_retries=2,
+            retry_delay=0.1,
+        )
+
+        assert result is False
+        assert mock_download.call_count == 3  # Initial + 2 retries
+
+    async def test_retry_exception_handling(self, tmp_path, mocker):
+        """Test handling exceptions during retry."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_download = mocker.patch.object(
+            downloader,
+            "async_download",
+            AsyncMock(side_effect=[Exception("Network error"), True]),
+        )
+
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        target = tmp_path / "test.bin"
+        result = await downloader.async_download_with_retry(
+            "https://example.com/file.bin",
+            target,
+            max_retries=3,
+            retry_delay=0.1,
+        )
+
+        assert result is True
+        assert mock_download.call_count == 2
+
+    async def test_retry_exponential_backoff(self, tmp_path, mocker):
+        """Test exponential backoff timing."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mocker.patch.object(
+            downloader,
+            "async_download",
+            AsyncMock(side_effect=[False, False, True]),
+        )
+
+        sleep_calls = []
+
+        async def track_sleep(duration):
+            """
+            Record a sleep duration by appending it to the shared `sleep_calls` list for later inspection.
+
+            Parameters:
+                duration (float): Sleep time in seconds to record.
+            """
+            sleep_calls.append(duration)
+
+        mocker.patch("asyncio.sleep", track_sleep)
+
+        target = tmp_path / "test.bin"
+        result = await downloader.async_download_with_retry(
+            "https://example.com/file.bin",
+            target,
+            max_retries=3,
+            retry_delay=1.0,
+            backoff_factor=2.0,
+        )
+
+        assert result is True
+        # Verify exponential backoff: 1.0, 2.0
+        assert sleep_calls[0] == 1.0
+        assert sleep_calls[1] == 2.0
+
+    async def test_retry_with_progress_callback(self, tmp_path, mocker):
+        """Test retry with progress callback passed through."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_download = mocker.patch.object(
+            downloader, "async_download", AsyncMock(return_value=True)
+        )
+
+        async def progress(downloaded, total, filename):
+            """
+            Report download progress for a file.
+
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int | None): Total number of bytes expected, or None if unknown.
+                filename (str): Name or path of the file being downloaded.
+            """
+            pass
+
+        target = tmp_path / "test.bin"
+        result = await downloader.async_download_with_retry(
+            "https://example.com/file.bin",
+            target,
+            progress_callback=progress,
+        )
+
+        assert result is True
+        # Verify progress callback was passed
+        assert mock_download.call_args[1]["progress_callback"] == progress

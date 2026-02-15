@@ -368,7 +368,7 @@ class RepositoryDownloader(BaseDownloader):
         """
         Remove all contents of the repository downloads directory under the configured downloads area.
 
-        Removes files, symbolic links, and subdirectories found in <download_dir>/<firmware-dir>/<repo_downloads_dir>. If the directory does not exist the function does nothing and reports success. Updates the instance's cleanup summary with counts of removed files and directories, any errors encountered, and an overall success flag.
+        Updates the instance's cleanup summary (`removed_files`, `removed_dirs`, `errors`, `success`). If the repository downloads directory does not exist no changes are made and the summary's `success` is set to True.
 
         Returns:
             bool: `True` if cleanup completed without errors, `False` otherwise.
@@ -407,8 +407,8 @@ class RepositoryDownloader(BaseDownloader):
             had_errors = False
             with os.scandir(repo_dir) as it:
                 for entry in it:
+                    entry_display = _format_entry_path(entry.path)
                     try:
-                        entry_display = _format_entry_path(entry.path)
                         if entry.is_file() or entry.is_symlink():
                             os.remove(entry.path)
                             logger.info("Removed file: %s", entry_display)
@@ -483,20 +483,21 @@ class RepositoryDownloader(BaseDownloader):
 
     def cleanup_old_versions(
         self,
-        _keep_limit: int,
+        keep_limit: int,
         cached_releases: Optional[List[Release]] = None,
         keep_last_beta: bool = False,
     ) -> None:
         """
         Clear the repository downloads directory, ignoring any retention limit.
 
-        The _keep_limit parameter is ignored because repository files are not versioned; this method removes all files under the repository downloads area.
+        The keep_limit parameter is ignored because repository files are not versioned; this method removes all files under the repository downloads area.
 
         Parameters:
-            _keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
+            keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
             cached_releases (Optional[List[Release]]): Unused for repository downloads; retained for signature compatibility.
             keep_last_beta (bool): Unused for repository downloads; retained for signature compatibility.
         """
+        del keep_limit  # intentionally unused (signature compatibility)
         del (
             cached_releases,
             keep_last_beta,
@@ -513,18 +514,19 @@ class RepositoryDownloader(BaseDownloader):
         """
         return "repository-latest"
 
-    def update_latest_release_tag(self, _release_tag: str) -> bool:
+    def update_latest_release_tag(self, release_tag: str) -> bool:
         """
         No-op updater for the repository's latest release tag.
 
         This method ignores the provided release tag because repository downloads are not versioned and always succeeds.
 
         Parameters:
-            _release_tag (str): Release tag value (ignored).
+            release_tag (str): Release tag value (ignored).
 
         Returns:
             bool: `True` always, indicating success.
         """
+        del release_tag  # intentionally unused (signature compatibility)
         # Repository downloads don't use version tracking
         return True
 
@@ -548,33 +550,35 @@ class RepositoryDownloader(BaseDownloader):
 
     def check_extraction_needed(
         self,
-        _file_path: str,
-        _extract_dir: str,
-        _patterns: List[str],
-        _exclude_patterns: List[str],
+        file_path: str,
+        extract_dir: str,
+        patterns: List[str],
+        exclude_patterns: List[str],
     ) -> bool:
         """
-        Indicates whether the given repository file requires extraction.
+        Determine whether extraction should be performed for a repository file.
 
-        Repository assets are not treated as archives, so extraction is not applicable.
+        Repository files are not treated as archives; extraction is not applicable.
 
         Returns:
-            `False` indicating extraction is not required for repository files.
+            False indicating extraction is not required for repository files.
         """
+        del file_path, extract_dir, patterns, exclude_patterns
         # Repository files are typically not archives, so extraction is never needed
         logger.debug(
             "Extraction need check called for repository file - not applicable"
         )
         return False
 
-    def should_download_release(self, _release_tag: str, _asset_name: str) -> bool:
+    def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
-        Indicates whether a repository release asset should be downloaded.
+        Always permit downloading of repository release assets.
 
-        Repository assets are always selected for download.
+        Repository downloads are not filtered by release tag or asset name; this method unconditionally approves downloads.
 
         Returns:
-            True for all repository assets, False otherwise.
+            `True` if the asset should be downloaded, `False` otherwise.
         """
+        del release_tag, asset_name
         # Repository downloads don't use pattern filtering in the same way
         return True

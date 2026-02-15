@@ -220,7 +220,7 @@ class TestFirmwareReleaseDownloader:
 
         assert downloader.ensure_release_notes(release) is None
 
-    @patch("fetchtastic.download.firmware.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
         # Mock cache to return None so it falls back to API
@@ -249,6 +249,69 @@ class TestFirmwareReleaseDownloader:
         assert len(releases) == 1
         assert releases[0].tag_name == "v1.0.0"
         assert releases[0].prerelease is False
+        assert len(releases[0].assets) == 1
+
+    @patch("fetchtastic.download.github_source.make_github_api_request")
+    def test_get_releases_skips_malformed_entries(self, mock_request, downloader):
+        """Malformed releases/assets should be skipped without dropping valid releases."""
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+        downloader.cache_manager.write_releases_cache_entry = Mock()
+
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {
+                # Missing tag_name
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "firmware-invalid.zip",
+                        "browser_download_url": "https://example.com/firmware-invalid.zip",
+                        "size": 100,
+                    }
+                ],
+            },
+            {
+                "tag_name": "v1.1.0",
+                "prerelease": False,
+                # Invalid size should skip this asset, then skip release (no valid assets)
+                "assets": [
+                    {
+                        "name": "firmware-bad-size.zip",
+                        "browser_download_url": "https://example.com/firmware-bad-size.zip",
+                        "size": "not-an-int",
+                    }
+                ],
+            },
+            {
+                "tag_name": "v1.1.1",
+                "prerelease": False,
+                # Blank download URL should skip this asset, then skip release.
+                "assets": [
+                    {
+                        "name": "firmware-no-url.zip",
+                        "browser_download_url": " ",
+                        "size": 500,
+                    }
+                ],
+            },
+            {
+                "tag_name": "v1.0.0",
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "firmware-rak4631.zip",
+                        "browser_download_url": "https://example.com/firmware-rak4631.zip",
+                        "size": 1000000,
+                    }
+                ],
+            },
+        ]
+        mock_request.return_value = mock_response
+
+        releases = downloader.get_releases(limit=10)
+
+        assert len(releases) == 1
+        assert releases[0].tag_name == "v1.0.0"
         assert len(releases[0].assets) == 1
 
     def test_get_assets_firmware_filtering(self, downloader):
@@ -685,7 +748,7 @@ class TestFirmwareReleaseDownloader:
         mock_scandir.assert_not_called()
         assert mock_logger.warning.called
 
-    @patch("fetchtastic.download.firmware.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_negative_limit(self, mock_api_request, downloader):
         """Test get_releases with negative limit uses default behavior."""
         # Mock API response

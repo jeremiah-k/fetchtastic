@@ -28,10 +28,9 @@ from fetchtastic.constants import (
     LATEST_ANDROID_RELEASE_JSON_FILE,
     MESHTASTIC_ANDROID_RELEASES_URL,
     RELEASE_SCAN_COUNT,
-    RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import make_github_api_request, matches_selected_patterns
+from fetchtastic.utils import matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager
@@ -39,6 +38,7 @@ from .files import (
     _safe_rmtree,
     _sanitize_path_component,
 )
+from .github_source import GithubReleaseSource, create_asset_from_github_data
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
@@ -59,15 +59,25 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
-        Create and configure the Meshtastic Android APK downloader.
+        Initialize the Meshtastic Android APK downloader and prepare its release sources, cache paths, and history manager.
 
         Parameters:
-            config (dict): Downloader configuration dictionary used to set behavior and paths.
-            cache_manager (CacheManager): Cache manager used to read/write cached API responses and tracking/metadata files.
+            config (dict): Downloader configuration used to control behavior, selection patterns, and storage locations.
+            cache_manager (CacheManager): Cache manager for reading/writing tracked release files and cached release data.
+
+        Detailed behavior:
+            - Creates a GithubReleaseSource configured for Meshtastic Android releases and exposes it as `github_source`.
+            - Determines and stores paths for latest-release and prerelease tracking files and for the release history file.
+            - Initializes a ReleaseHistoryManager for persistent release history management.
         """
         super().__init__(config)
         self.cache_manager = cache_manager
         self.android_releases_url = MESHTASTIC_ANDROID_RELEASES_URL
+        self.github_source = GithubReleaseSource(
+            releases_url=MESHTASTIC_ANDROID_RELEASES_URL,
+            cache_manager=cache_manager,
+            config=config,
+        )
         self.latest_release_file = LATEST_ANDROID_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
@@ -292,44 +302,32 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             while True:
                 params = {"per_page": scan_count}
-                url_key = self.cache_manager.build_url_cache_key(
-                    self.android_releases_url, params
-                )
-                releases_data = self.cache_manager.read_releases_cache_entry(
-                    url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
-                )
+                releases_data = self.github_source.fetch_raw_releases_data(params)
 
                 if releases_data is None:
-                    response = make_github_api_request(
-                        self.android_releases_url,
-                        self.config.get("GITHUB_TOKEN"),
-                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
-                        params=params,
-                    )
-                    releases_data = response.json() if hasattr(response, "json") else []
-                    if isinstance(releases_data, list):
-                        logger.debug(
-                            "Cached %d releases for %s (fetched from API)",
-                            len(releases_data),
-                            self.android_releases_url,
-                        )
-                    self.cache_manager.write_releases_cache_entry(
-                        url_key,
-                        releases_data if isinstance(releases_data, list) else [],
-                    )
-
-                if releases_data is None or not isinstance(releases_data, list):
-                    logger.error("Invalid releases data received from GitHub API")
                     return []
 
                 releases: List[Release] = []
                 stable_count = 0
                 for release_data in releases_data:
+                    if not isinstance(release_data, dict):
+                        logger.warning(
+                            "Skipping malformed Android release entry: expected dict, got %s",
+                            type(release_data).__name__,
+                        )
+                        continue
+
+                    assets_data = release_data.get("assets")
                     # Filter out releases without assets
-                    if not release_data.get("assets"):
+                    if not isinstance(assets_data, list) or not assets_data:
                         continue
 
                     tag_name = release_data.get("tag_name", "")
+                    if not isinstance(tag_name, str) or not tag_name.strip():
+                        logger.warning(
+                            "Skipping Android release with missing or invalid tag_name"
+                        )
+                        continue
                     if not _is_supported_android_release(
                         tag_name, version_manager=self.version_manager
                     ):
@@ -348,15 +346,21 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     )
 
                     # Add assets to the release
-                    for asset_data in release_data["assets"]:
-                        asset = Asset(
-                            name=asset_data["name"],
-                            download_url=asset_data["browser_download_url"],
-                            size=asset_data["size"],
-                            browser_download_url=asset_data.get("browser_download_url"),
-                            content_type=asset_data.get("content_type"),
+                    for asset_data in assets_data:
+                        asset = create_asset_from_github_data(
+                            asset_data,
+                            tag_name,
+                            asset_label="Android asset",
                         )
-                        release.assets.append(asset)
+                        if asset is not None:
+                            release.assets.append(asset)
+
+                    if not release.assets:
+                        logger.warning(
+                            "Skipping Android release %s with no valid assets",
+                            tag_name,
+                        )
+                        continue
 
                     releases.append(release)
                     if not release.prerelease:
@@ -546,13 +550,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def is_release_complete(self, release: Release) -> bool:
         """
-        Check whether all APK assets selected for the given release exist on disk and match their expected sizes.
+        Determine whether all APK assets selected for the given release are present on disk and match their expected sizes.
 
         Parameters:
             release (Release): Release whose APK assets are checked. Only assets that pass the downloader's selection rules are considered.
 
         Returns:
-            `true` if all selected assets are present and their file sizes equal the assets' expected sizes, `false` otherwise.
+            True if all selected assets are present and each file size equals the asset's expected size, False otherwise.
         """
         safe_tag = self._get_storage_tag_for_release(release)
 
@@ -574,7 +578,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             try:
                 if os.path.getsize(asset_path) != asset.size:
                     return False
-            except (OSError, TypeError):
+            except (OSError, TypeError) as e:
+                logger.debug("Error checking asset size for %s: %s", asset.name, e)
                 return False
         return True
 
@@ -639,10 +644,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 keep_limit = int(DEFAULT_ANDROID_VERSIONS_TO_KEEP)
             stable_releases = sorted(
                 [release for release in cached_releases if not release.prerelease],
-                key=lambda release: self.version_manager.get_release_tuple(
-                    release.tag_name
-                )
-                or (),
+                key=lambda release: (
+                    self.version_manager.get_release_tuple(release.tag_name) or ()
+                ),
                 reverse=True,
             )
             if not stable_releases:

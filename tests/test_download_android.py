@@ -296,7 +296,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
         assert path == expected
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
         mock_response = Mock()
@@ -327,7 +327,7 @@ class TestMeshtasticAndroidAppDownloader:
         assert len(releases[0].assets) == 1
         assert releases[0].assets[0].name == "meshtastic.apk"
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_filters_legacy_android_tags(self, mock_request, downloader):
         """Legacy pre-2.7.0 tags should be skipped entirely."""
         mock_response = Mock()
@@ -364,7 +364,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         assert [release.tag_name for release in releases] == ["v2.7.0"]
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_marks_legacy_prerelease_by_tag(
         self, mock_request, downloader
     ):
@@ -392,7 +392,70 @@ class TestMeshtasticAndroidAppDownloader:
         assert len(releases) == 1
         assert releases[0].prerelease is True
 
-    @patch("fetchtastic.download.android.make_github_api_request")
+    @patch("fetchtastic.download.github_source.make_github_api_request")
+    def test_get_releases_skips_malformed_entries(self, mock_request, downloader):
+        """Malformed Android releases/assets should be skipped while preserving valid entries."""
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {
+                # Missing tag_name
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "meshtastic-invalid.apk",
+                        "browser_download_url": "https://example.com/invalid.apk",
+                        "size": 100,
+                    }
+                ],
+            },
+            {
+                "tag_name": "v2.7.1",
+                "prerelease": False,
+                # Invalid size should skip this asset, then skip release
+                "assets": [
+                    {
+                        "name": "meshtastic-bad.apk",
+                        "browser_download_url": "https://example.com/bad.apk",
+                        "size": "oops",
+                    }
+                ],
+            },
+            {
+                "tag_name": "v2.7.2",
+                "prerelease": False,
+                # Blank download URL should skip this asset, then skip release
+                "assets": [
+                    {
+                        "name": "meshtastic-no-url.apk",
+                        "browser_download_url": "   ",
+                        "size": 1000000,
+                    }
+                ],
+            },
+            {
+                "tag_name": "v2.7.0",
+                "prerelease": False,
+                "published_at": "2023-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "meshtastic.apk",
+                        "browser_download_url": "https://example.com/meshtastic.apk",
+                        "size": 1000000,
+                    }
+                ],
+            },
+        ]
+        mock_request.return_value = mock_response
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+
+        releases = downloader.get_releases(limit=10)
+
+        assert len(releases) == 1
+        assert releases[0].tag_name == "v2.7.0"
+        assert len(releases[0].assets) == 1
+        assert releases[0].assets[0].name == "meshtastic.apk"
+
+    @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_api_error(self, mock_request, downloader):
         """Test handling of GitHub API errors."""
         mock_request.side_effect = requests.RequestException("API Error")

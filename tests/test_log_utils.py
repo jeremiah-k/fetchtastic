@@ -9,6 +9,8 @@ from rich.logging import RichHandler
 
 from fetchtastic import log_utils
 
+pytestmark = [pytest.mark.unit, pytest.mark.infrastructure]
+
 
 class TestLogUtils:
     """Test suite for log_utils module."""
@@ -70,7 +72,8 @@ class TestLogUtils:
         formatter = handler.formatter
 
         # DEBUG formatter should be clean and simple
-        assert "%(message)s" in formatter._fmt
+        assert formatter is not None
+        assert "%(message)s" in str(formatter._fmt)
 
         # Set to INFO level
         log_utils.set_log_level("INFO")
@@ -78,7 +81,7 @@ class TestLogUtils:
         formatter = handler.formatter
 
         # INFO formatter should be simpler
-        assert formatter._fmt == "%(message)s"
+        assert formatter is not None and formatter._fmt == "%(message)s"
 
     def test_add_file_logging(self):
         """Test adding file logging functionality."""
@@ -119,10 +122,12 @@ class TestLogUtils:
 
             # Test INFO level
             log_utils.add_file_logging(log_dir, "INFO")
+            assert log_utils._file_handler is not None
             assert log_utils._file_handler.level == logging.INFO
 
             # Test DEBUG level
             log_utils.add_file_logging(log_dir, "DEBUG")
+            assert log_utils._file_handler is not None
             assert log_utils._file_handler.level == logging.DEBUG
 
     def test_file_logging_creates_directory(self):
@@ -137,12 +142,17 @@ class TestLogUtils:
             assert (log_dir / "fetchtastic.log").exists()
 
     def test_rotating_file_handler_configuration(self):
-        """Test that rotating file handler is configured correctly."""
+        """
+        Verify the rotating file handler created by add_file_logging is present and configured with a 10 MB max size, five backups, and UTF-8 encoding.
+
+        Asserts that log_utils._file_handler is not None and that its `maxBytes` equals 10 * 1024 * 1024, `backupCount` equals 5, and `encoding` equals "utf-8".
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             log_dir = Path(temp_dir)
             log_utils.add_file_logging(log_dir, "INFO")
 
             handler = log_utils._file_handler
+            assert handler is not None
             assert handler.maxBytes == 10 * 1024 * 1024  # 10 MB
             assert handler.backupCount == 5
             assert handler.encoding == "utf-8"
@@ -175,11 +185,13 @@ class TestLogUtils:
         try:
             # Test INFO level with standard handler (should use INFO_LOG_FORMAT)
             log_utils.set_log_level("INFO")
+            assert standard_handler.formatter is not None
             assert standard_handler.formatter._fmt == log_utils.INFO_LOG_FORMAT
             assert standard_handler.formatter.datefmt == log_utils.LOG_DATE_FORMAT
 
             # Test DEBUG level with standard handler (should use DEBUG_LOG_FORMAT)
             log_utils.set_log_level("DEBUG")
+            assert standard_handler.formatter is not None
             assert standard_handler.formatter._fmt == log_utils.DEBUG_LOG_FORMAT
             assert standard_handler.formatter.datefmt == log_utils.LOG_DATE_FORMAT
         finally:
@@ -212,3 +224,77 @@ class TestLogUtils:
             assert log_utils.logger.level == logging.DEBUG
         except Exception as e:
             pytest.fail(f"set_log_level failed: {e}")
+
+    def test_add_file_logging_invalid_level(self):
+        """Test file logging with invalid level defaults to INFO."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir)
+            log_utils.add_file_logging(log_dir, "INVALID_LEVEL")
+
+            # Should default to INFO level
+            assert log_utils._file_handler is not None
+            assert log_utils._file_handler.level == logging.INFO
+
+    def test_logger_exception_method(self):
+        """Test that logger.exception method works correctly."""
+        with patch("fetchtastic.log_utils.logger.exception") as mock_exception:
+            try:
+                raise ValueError("Test exception")
+            except ValueError:
+                log_utils.logger.exception("Exception occurred")
+
+            mock_exception.assert_called_once_with("Exception occurred")
+
+    def test_set_log_level_edge_cases(self):
+        """Test set_log_level with edge case inputs."""
+        # Test with lowercase
+        log_utils.set_log_level("debug")
+        assert log_utils.logger.level == logging.DEBUG
+
+        # Test with mixed case
+        log_utils.set_log_level("Warning")
+        assert log_utils.logger.level == logging.WARNING
+
+        # Reset to INFO for other tests
+        log_utils.set_log_level("INFO")
+
+    def test_multiple_handlers_preserve_non_rich(self):
+        """Test that non-Rich handlers are preserved when setting log level."""
+        import io
+
+        stream = io.StringIO()
+        standard_handler = logging.StreamHandler(stream)
+        log_utils.logger.addHandler(standard_handler)
+
+        try:
+            # Set log level - should update all handlers
+            log_utils.set_log_level("DEBUG")
+
+            # Both handlers should have DEBUG level
+            assert standard_handler.level == logging.DEBUG
+        finally:
+            log_utils.logger.removeHandler(standard_handler)
+
+    def test_file_handler_with_debug_level(self):
+        """Test file handler configuration with DEBUG level."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir)
+            log_utils.add_file_logging(log_dir, "DEBUG")
+
+            handler = log_utils._file_handler
+            assert handler is not None
+            assert handler.level == logging.DEBUG
+
+            # Check formatter uses DEBUG format
+            assert handler.formatter is not None
+            assert handler.formatter._fmt == log_utils.DEBUG_LOG_FORMAT
+
+    def test_initialize_logger_idempotent(self):
+        """Test that _initialize_logger can be called multiple times safely."""
+        # Should not raise any errors
+        log_utils._initialize_logger()
+        initial_handlers = len(log_utils.logger.handlers)
+
+        log_utils._initialize_logger()
+        # Should still have same number of handlers (replaces them)
+        assert len(log_utils.logger.handlers) == initial_handlers

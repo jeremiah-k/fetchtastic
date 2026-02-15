@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fetchtastic"
-version = "0.10.3"
+version = "0.10.4"
 authors = [{ name = "Jeremiah K", email = "jeremiahk@gmx.com" }]
 description = "Meshtastic Firmware and APK Downloader"
 readme = "README.md"
@@ -30,11 +30,20 @@ dependencies = [
   "packaging",
   "platformdirs==4.5.1",
   "rich",
+  # Async support for parallel downloads
+  "aiohttp>=3.8.0",
+  "aiofiles>=23.1.0",
 ]
 
 [project.optional-dependencies]
 win = ["pywin32", "winshell"]
-test = ["pytest", "pytest-mock", "pytest-cov"]
+test = [
+  "pytest",
+  "pytest-mock",
+  "pytest-cov",
+  "pytest-asyncio>=0.21.0",
+  "aioresponses>=0.7.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/jeremiah-k/fetchtastic"
@@ -57,6 +66,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "performance: marks tests as performance benchmarks (deselect with '-m \"not performance\"')",

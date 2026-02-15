@@ -267,7 +267,7 @@ def _handle_download_subcommand(
     )
 
 
-def main():
+def main() -> None:
     # Logging is automatically initialized by importing log_utils
 
     """
@@ -562,13 +562,13 @@ def main():
 
 
 def show_help(
-    parser,
-    repo_parser,
-    repo_subparsers,
-    help_command,
-    help_subcommand,
-    main_subparsers=None,
-):
+    parser: argparse.ArgumentParser,
+    repo_parser: argparse.ArgumentParser,
+    repo_subparsers: Any,
+    help_command: str | None,
+    help_subcommand: str | None,
+    main_subparsers: Any = None,
+) -> None:
     """
     Show contextual CLI help for a specific command or subcommand.
 
@@ -638,7 +638,7 @@ def _require_interactive_or_test_clean(operation_name: str) -> bool:
     return True
 
 
-def run_clean():
+def run_clean() -> None:
     """
     Permanently remove Fetchtastic configuration, Fetchtastic-managed downloads, platform integrations, and logs after explicit interactive confirmation.
 
@@ -725,8 +725,11 @@ def run_clean():
     if platform.system() == "Windows":
         # Check if Windows modules are available
         windows_modules_available = False
+        winshell_module: Any | None = None
         try:
-            import winshell  # type: ignore[import]
+            import winshell as _winshell  # type: ignore[import-not-found]
+
+            winshell_module = _winshell
 
             windows_modules_available = True
         except ImportError:
@@ -776,7 +779,9 @@ def run_clean():
 
             # Remove startup shortcut
             try:
-                startup_folder = winshell.startup()  # type: ignore[name-defined]
+                if winshell_module is None:
+                    raise AttributeError("winshell module not available")
+                startup_folder = winshell_module.startup()
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
                 if os.path.exists(startup_shortcut_path):
                     os.remove(startup_shortcut_path)
@@ -859,8 +864,8 @@ def run_clean():
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
-        setup_config.remove_cron_job()  # type: ignore[call-arg]
-        setup_config.remove_reboot_cron_job()  # type: ignore[call-arg]
+        setup_config.remove_cron_job()
+        setup_config.remove_reboot_cron_job()
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")

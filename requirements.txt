@@ -6,3 +6,8 @@ urllib3==2.6.3
 packaging==24.2
 platformdirs==4.5.1
 rich==14.3.2
+
+# Async support for parallel downloads
+aiohttp>=3.8.0
+aiofiles>=23.1.0
+
