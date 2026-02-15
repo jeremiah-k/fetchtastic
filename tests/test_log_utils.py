@@ -81,7 +81,8 @@ class TestLogUtils:
         formatter = handler.formatter
 
         # INFO formatter should be simpler
-        assert formatter is not None and formatter._fmt == "%(message)s"
+        assert formatter is not None
+        assert formatter._fmt == "%(message)s"
 
     def test_add_file_logging(self):
         """Test adding file logging functionality."""
@@ -235,18 +236,6 @@ class TestLogUtils:
             assert log_utils._file_handler is not None
             assert log_utils._file_handler.level == logging.INFO
 
-    def test_logger_exception_method(self):
-        """
-        Verifies that logger.exception is invoked with the provided message when an exception is logged.
-        """
-        with patch("fetchtastic.log_utils.logger.exception") as mock_exception:
-            try:
-                raise ValueError("Test exception")
-            except ValueError:
-                log_utils.logger.exception("Exception occurred")
-
-            mock_exception.assert_called_once_with("Exception occurred")
-
     def test_set_log_level_edge_cases(self):
         """Test set_log_level with edge case inputs."""
         # Test with lowercase
@@ -256,9 +245,6 @@ class TestLogUtils:
         # Test with mixed case
         log_utils.set_log_level("Warning")
         assert log_utils.logger.level == logging.WARNING
-
-        # Reset to INFO for other tests
-        log_utils.set_log_level("INFO")
 
     def test_multiple_handlers_preserve_non_rich(self):
         """Test that non-Rich handlers are preserved when setting log level."""

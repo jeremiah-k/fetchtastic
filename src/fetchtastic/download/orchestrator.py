@@ -395,7 +395,7 @@ class DownloadOrchestrator:
         def _safe_check(r: Release) -> bool:
             try:
                 return checker(r)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 logger.debug(
                     "Release check failed for %s; treating as incomplete",
                     r.tag_name,

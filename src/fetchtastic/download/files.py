@@ -276,16 +276,21 @@ def _is_release_complete(
         # Check file size before format-specific integrity checks
         try:
             actual_size = os.path.getsize(asset_path)
-            if expected_size is not None and actual_size != expected_size:
+        except OSError:
+            return False
+        if expected_size is not None:
+            try:
+                normalized_expected_size = int(expected_size)
+            except (TypeError, ValueError):
+                return False
+            if actual_size != normalized_expected_size:
                 logger.debug(
                     "File size mismatch for %s: expected %s, got %s",
                     asset_path,
-                    expected_size,
+                    normalized_expected_size,
                     actual_size,
                 )
                 return False
-        except (OSError, TypeError):
-            return False
 
         if asset_name.lower().endswith(".zip"):
             try:

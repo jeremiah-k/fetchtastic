@@ -30,6 +30,8 @@ from fetchtastic.download.files import (
     strip_unwanted_chars,
 )
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 class TestStripUnwantedChars:
     """Test strip_unwanted_chars function."""
