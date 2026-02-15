@@ -273,6 +273,20 @@ def _is_release_complete(
             )
             return False
 
+        # Check file size before format-specific integrity checks
+        try:
+            actual_size = os.path.getsize(asset_path)
+            if expected_size is not None and actual_size != expected_size:
+                logger.debug(
+                    "File size mismatch for %s: expected %s, got %s",
+                    asset_path,
+                    expected_size,
+                    actual_size,
+                )
+                return False
+        except (OSError, TypeError):
+            return False
+
         if asset_name.lower().endswith(".zip"):
             try:
                 has_hash_baseline = load_file_hash(asset_path) is not None
@@ -286,30 +300,13 @@ def _is_release_complete(
                         logger.debug("Corrupted zip file detected: %s", asset_path)
                         return False
                     # Persist a hash so future checks use the faster hash path
-                    verify_file_integrity(asset_path)
-                actual_size = os.path.getsize(asset_path)
-                if expected_size is not None and actual_size != expected_size:
-                    logger.debug(
-                        "File size mismatch for %s: expected %s, got %s",
-                        asset_path,
-                        expected_size,
-                        actual_size,
-                    )
-                    return False
+                    if not verify_file_integrity(asset_path):
+                        logger.debug(
+                            "Could not persist hash baseline for %s; "
+                            "future checks will re-verify ZIP integrity",
+                            asset_path,
+                        )
             except (zipfile.BadZipFile, OSError, IOError, TypeError):
-                return False
-        else:
-            try:
-                actual_size = os.path.getsize(asset_path)
-                if expected_size is not None and actual_size != expected_size:
-                    logger.debug(
-                        "File size mismatch for %s: expected %s, got %s",
-                        asset_path,
-                        expected_size,
-                        actual_size,
-                    )
-                    return False
-            except (OSError, TypeError):
                 return False
 
     return True

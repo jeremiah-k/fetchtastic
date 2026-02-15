@@ -699,8 +699,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 # substantially faster than re-running ZIP member decompression.
                 has_hash_baseline = load_file_hash(asset_path) is not None
                 if has_hash_baseline:
-                    if not self.verify(asset_path):
-                        logger.debug("Hash verification failed for %s", asset_path)
+                    try:
+                        if not self.verify(asset_path):
+                            logger.debug("Hash verification failed for %s", asset_path)
+                            return False
+                    except OSError as e:
+                        logger.debug(
+                            "Error during hash verification for %s: %s", asset_path, e
+                        )
                         return False
                     continue
 

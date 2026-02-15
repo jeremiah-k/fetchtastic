@@ -186,7 +186,7 @@ async def async_client(mock_aiohttp_session, mocker):
     """
     from fetchtastic.download.async_client import AsyncGitHubClient
 
-    client = AsyncGitHubClient(github_token="test-token")
+    client = AsyncGitHubClient(github_token="test-token")  # noqa: S106
     client._session = mock_aiohttp_session
     client._semaphore = mocker.MagicMock()
 

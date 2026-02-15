@@ -168,30 +168,18 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         target_path = self.get_target_path_for_release(release.tag_name, asset.name)
 
         try:
-            success = await self.async_download_with_retry(
+            await self.async_download_with_retry(
                 asset.download_url,
                 target_path,
                 progress_callback=progress_callback,
             )
-
-            if success:
-                return DownloadResult(
-                    success=True,
-                    release_tag=release.tag_name,
-                    file_path=Path(target_path),
-                    download_url=asset.download_url,
-                    file_size=asset.size,
-                )
-            else:
-                return DownloadResult(
-                    success=False,
-                    release_tag=release.tag_name,
-                    file_path=Path(target_path),
-                    download_url=asset.download_url,
-                    error_message="Download failed",
-                    error_type=ERROR_TYPE_NETWORK,
-                    is_retryable=True,
-                )
+            return DownloadResult(
+                success=True,
+                release_tag=release.tag_name,
+                file_path=Path(target_path),
+                download_url=asset.download_url,
+                file_size=asset.size,
+            )
         except AsyncDownloadError as e:
             logger.error("Error downloading %s: %s", asset.name, e.message)
             return DownloadResult(
@@ -258,7 +246,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
             if isinstance(r, BaseException):
                 spec: Any = downloads[i] if i < len(downloads) else None
                 release_tag = "<unknown>"
-                file_path: Pathish = Path("<unknown>")
+                file_path: Optional[Pathish] = None
                 download_url: Optional[str] = None
                 is_retryable = False
                 error_message = str(r)
@@ -291,7 +279,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                                 )
                             )
                         except Exception:
-                            file_path = Path("<unknown>")
+                            file_path = None
                     else:
                         error_message = (
                             f"Invalid download spec: {spec!r}. Original error: {r}"

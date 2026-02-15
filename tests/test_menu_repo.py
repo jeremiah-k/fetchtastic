@@ -407,7 +407,9 @@ def test_run_repository_downloader_menu_no_selection(mocker):
     result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
 
     assert result is None
-    mock_logger.info.assert_called_once_with("No files selected for download.")
+    mock_logger.info.assert_called_once_with(
+        "No files selected for download (empty selection)."
+    )
 
 
 def test_run_repository_downloader_menu_non_dict_selection(mocker):
@@ -418,7 +420,9 @@ def test_run_repository_downloader_menu_non_dict_selection(mocker):
     result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
 
     assert result is None
-    mock_logger.info.assert_called_once_with("No files selected for download.")
+    mock_logger.info.assert_called_once_with(
+        "No files selected for download (invalid selection type)."
+    )
 
 
 def test_run_repository_downloader_menu_invalid_selection_payload(mocker):
@@ -432,7 +436,9 @@ def test_run_repository_downloader_menu_invalid_selection_payload(mocker):
     result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
 
     assert result is None
-    mock_logger.info.assert_called_once_with("No files selected for download.")
+    mock_logger.info.assert_called_once_with(
+        "No files selected for download (malformed selection structure)."
+    )
 
 
 def test_run_repository_downloader_menu_skips_malformed_file_entries(mocker):

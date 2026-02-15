@@ -725,15 +725,17 @@ def run_repository_downloader_menu(config: dict[str, Any]) -> list[str] | None:
         # Get user selection from the menu
         selected_files = run_menu(config)
         if not selected_files:
-            logger.info("No files selected for download.")
+            logger.info("No files selected for download (empty selection).")
             return None
         if not isinstance(selected_files, dict):
-            logger.info("No files selected for download.")
+            logger.info("No files selected for download (invalid selection type).")
             return None
         raw_files = selected_files.get("files")
         raw_directory = selected_files.get("directory")
         if not isinstance(raw_files, list) or not isinstance(raw_directory, str):
-            logger.info("No files selected for download.")
+            logger.info(
+                "No files selected for download (malformed selection structure)."
+            )
             return None
 
         # Create repository downloader instance

@@ -416,6 +416,7 @@ class AsyncDownloadCoreMixin:
         attempts = max_retries if max_retries is not None else self._get_max_retries()
         attempts = max(0, attempts)
         delay = retry_delay if retry_delay is not None else self._get_retry_delay()
+        delay = max(0.0, delay)
         last_error: Optional[AsyncDownloadError] = None
 
         for attempt in range(attempts + 1):

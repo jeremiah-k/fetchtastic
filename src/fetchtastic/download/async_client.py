@@ -11,6 +11,7 @@ Provides both:
 
 import asyncio
 import hashlib
+import inspect
 import os
 import time
 from contextlib import asynccontextmanager
@@ -553,7 +554,7 @@ class AsyncGitHubClient:
                                     result = progress_callback(
                                         downloaded, total_size or None, target.name
                                     )
-                                    if asyncio.iscoroutine(result):
+                                    if inspect.isawaitable(result):
                                         await result
                                 except Exception as cb_err:
                                     logger.debug(f"Progress callback error: {cb_err}")

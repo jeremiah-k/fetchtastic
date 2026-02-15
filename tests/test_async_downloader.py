@@ -927,10 +927,18 @@ class TestAsyncDownloadRelease:
         self, mocker, tmp_path, sample_release, sample_asset
     ):
         """Test failed release download."""
+        from fetchtastic.download.async_client import AsyncDownloadError
+
         downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_DIR": str(tmp_path)})
 
         mocker.patch.object(
-            downloader, "async_download_with_retry", AsyncMock(return_value=False)
+            downloader,
+            "async_download_with_retry",
+            AsyncMock(
+                side_effect=AsyncDownloadError(
+                    "Download failed", url=sample_asset.download_url, is_retryable=True
+                )
+            ),
         )
 
         result = await downloader.async_download_release(sample_release, sample_asset)

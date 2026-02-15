@@ -12,6 +12,7 @@ Tests the base downloader implementation including:
 """
 
 import os
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -1047,14 +1048,22 @@ class TestBaseDownloaderAsyncDownload:
 
         target = tmp_path / "test.bin"
 
-        # Make aiohttp import fail
-        with patch.dict("sys.modules", {"aiohttp": None, "aiofiles": None}):
-            with patch.object(
-                downloader, "download", return_value=True
-            ) as mock_sync_download:
-                result = await downloader.async_download(
-                    "https://example.com/file.bin", target
-                )
+        # Make aiohttp import fail by removing from sys.modules
+        saved_aiohttp = sys.modules.pop("aiohttp", None)
+        saved_aiofiles = sys.modules.pop("aiofiles", None)
+        try:
+            with patch.dict("sys.modules", {"aiohttp": None, "aiofiles": None}):
+                with patch.object(
+                    downloader, "download", return_value=True
+                ) as mock_sync_download:
+                    result = await downloader.async_download(
+                        "https://example.com/file.bin", target
+                    )
+        finally:
+            if saved_aiohttp is not None:
+                sys.modules["aiohttp"] = saved_aiohttp
+            if saved_aiofiles is not None:
+                sys.modules["aiofiles"] = saved_aiofiles
 
         assert result is True
         mock_sync_download.assert_called_once()
