@@ -348,10 +348,10 @@ class TestAsyncCoreRetryPaths:
 
         assert exc_info.value.message == "not-retryable"
 
-    async def test_retry_retryable_async_error_returns_false_at_final_attempt(
+    async def test_retry_retryable_async_error_raises_at_final_attempt(
         self, tmp_path, mocker
     ):
-        """Retryable AsyncDownloadError should return False after final attempt."""
+        """Retryable AsyncDownloadError should be re-raised at final attempt."""
         downloader = ConcreteCoreDownloader()
         mocker.patch.object(
             downloader,
@@ -359,18 +359,20 @@ class TestAsyncCoreRetryPaths:
             AsyncMock(side_effect=AsyncDownloadError("retryable", is_retryable=True)),
         )
 
-        result = await downloader.async_download_with_retry(
-            "https://example.com/file.bin",
-            tmp_path / "file.bin",
-            max_retries=0,
-        )
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await downloader.async_download_with_retry(
+                "https://example.com/file.bin",
+                tmp_path / "file.bin",
+                max_retries=0,
+            )
 
-        assert result is False
+        assert exc_info.value.message == "retryable"
+        assert exc_info.value.is_retryable is True
 
-    async def test_retry_unexpected_exception_returns_false_at_final_attempt(
+    async def test_retry_unexpected_exception_raises_at_final_attempt(
         self, tmp_path, mocker
     ):
-        """Unexpected exceptions should return False at final attempt."""
+        """Unexpected exceptions should be wrapped and raised at final attempt."""
         downloader = ConcreteCoreDownloader()
         mocker.patch.object(
             downloader,
@@ -378,13 +380,15 @@ class TestAsyncCoreRetryPaths:
             AsyncMock(side_effect=RuntimeError("boom")),
         )
 
-        result = await downloader.async_download_with_retry(
-            "https://example.com/file.bin",
-            tmp_path / "file.bin",
-            max_retries=0,
-        )
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await downloader.async_download_with_retry(
+                "https://example.com/file.bin",
+                tmp_path / "file.bin",
+                max_retries=0,
+            )
 
-        assert result is False
+        assert exc_info.value.message == "Unexpected error: boom"
+        assert exc_info.value.is_retryable is True
 
     async def test_retry_defensive_last_error_branch(self, tmp_path, mocker):
         """Exercise defensive last_error branch after loop exits."""
@@ -397,18 +401,19 @@ class TestAsyncCoreRetryPaths:
         mocker.patch("asyncio.sleep", AsyncMock())
         mocker.patch.object(async_core_module, "range", return_value=[1])
 
-        result = await downloader.async_download_with_retry(
-            "https://example.com/file.bin",
-            tmp_path / "file.bin",
-            max_retries=0,
-        )
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await downloader.async_download_with_retry(
+                "https://example.com/file.bin",
+                tmp_path / "file.bin",
+                max_retries=0,
+            )
 
-        assert result is False
+        assert exc_info.value.message == "retryable"
 
-    async def test_retry_unexpected_exception_warns_then_errors_on_final_attempt(
+    async def test_retry_unexpected_exception_warns_then_raises_on_final_attempt(
         self, tmp_path, mocker
     ):
-        """Unexpected exceptions should hit warning branch then final-error branch."""
+        """Unexpected exceptions should hit warning branch then raise on final attempt."""
         downloader = ConcreteCoreDownloader()
         mocker.patch.object(
             downloader,
@@ -417,11 +422,12 @@ class TestAsyncCoreRetryPaths:
         )
         mock_sleep = mocker.patch("asyncio.sleep", AsyncMock())
 
-        result = await downloader.async_download_with_retry(
-            "https://example.com/file.bin",
-            tmp_path / "file.bin",
-            max_retries=1,
-        )
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await downloader.async_download_with_retry(
+                "https://example.com/file.bin",
+                tmp_path / "file.bin",
+                max_retries=1,
+            )
 
-        assert result is False
+        assert exc_info.value.message == "Unexpected error: second"
         mock_sleep.assert_awaited_once()

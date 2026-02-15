@@ -759,7 +759,7 @@ class TestAsyncDownloadWithRetry:
         assert mock_download.call_count == 2
 
     async def test_retry_exhausted(self, mocker, tmp_path):
-        """Test failure after exhausting all retries."""
+        """Test raising AsyncDownloadError after exhausting all retries."""
         downloader = ConcreteAsyncDownloader()
 
         mock_download = mocker.patch.object(
@@ -769,14 +769,15 @@ class TestAsyncDownloadWithRetry:
         mocker.patch("asyncio.sleep", AsyncMock())
 
         target = tmp_path / "test.bin"
-        result = await downloader.async_download_with_retry(
-            "https://example.com/file.bin",
-            target,
-            max_retries=2,
-            retry_delay=0.1,
-        )
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await downloader.async_download_with_retry(
+                "https://example.com/file.bin",
+                target,
+                max_retries=2,
+                retry_delay=0.1,
+            )
 
-        assert result is False
+        assert "Download failed after 3/3 attempts" in exc_info.value.message
         assert mock_download.call_count == 3  # Initial + 2 retries
 
     async def test_retry_non_retryable_async_download_error_raises(

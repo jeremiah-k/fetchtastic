@@ -408,10 +408,10 @@ class AsyncDownloadCoreMixin:
             progress_callback (Optional[CoreProgressCallback]): Optional callback to report download progress.
 
         Returns:
-            `True` if the download succeeded, `False` otherwise.
+            bool: `True` if the download succeeded.
 
         Raises:
-            AsyncDownloadError: If a non-retryable download error occurs.
+            AsyncDownloadError: If a non-retryable download error occurs or retries are exhausted.
         """
         attempts = max_retries if max_retries is not None else self._get_max_retries()
         attempts = max(0, attempts)
@@ -426,11 +426,17 @@ class AsyncDownloadCoreMixin:
                 if result:
                     return True
 
+                last_error = AsyncDownloadError(
+                    f"Download failed after {attempt + 1}/{attempts + 1} attempts",
+                    url=url,
+                    retry_count=attempt,
+                    is_retryable=attempt < attempts,
+                )
                 if attempt == attempts:
                     logger.error(
                         f"Download failed permanently after {attempts + 1} attempts for {url}"
                     )
-                    return False
+                    raise last_error
 
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
@@ -443,24 +449,25 @@ class AsyncDownloadCoreMixin:
                     raise
                 if attempt == attempts:
                     logger.error(f"Download failed permanently for {url}: {e.message}")
-                    return False
+                    raise
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
                     f"retrying in {delay:.1f}s: {e.message}"
                 )
             except Exception as e:
-                last_error = AsyncDownloadError(
+                wrapped_error = AsyncDownloadError(
                     f"Unexpected error: {e}",
                     url=url,
                     is_retryable=True,
                 )
+                last_error = wrapped_error
                 if attempt == attempts:
                     logger.error(
                         "Download failed permanently for %s: %s",
                         url,
-                        last_error.message,
+                        wrapped_error.message,
                     )
-                    return False
+                    raise wrapped_error from e
                 logger.warning(
                     f"Download attempt {attempt + 1}/{attempts + 1} failed for {url}, "
                     f"retrying in {delay:.1f}s: {e}"
@@ -470,5 +477,9 @@ class AsyncDownloadCoreMixin:
             delay *= backoff_factor
 
         if last_error:
-            logger.error("Download failed for %s: %s", url, last_error.message)
-        return False
+            raise last_error
+        raise AsyncDownloadError(
+            "Download failed unexpectedly without an error context",
+            url=url,
+            is_retryable=False,
+        )
