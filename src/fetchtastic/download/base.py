@@ -82,12 +82,12 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     def get_download_dir(self) -> str:
         """
-        Return the configured download directory path.
-
-        If the configuration does not provide "DOWNLOAD_DIR", defaults to the user's home "meshtastic" directory.
-
+        Get the configured download directory.
+        
+        If the configuration does not provide "DOWNLOAD_DIR", returns the default path "~/meshtastic".
+        
         Returns:
-            download_dir (str): The resolved download directory path (e.g. '~/meshtastic' when not configured).
+            The resolved download directory path as a string.
         """
         return cast(
             str, self.config.get("DOWNLOAD_DIR", os.path.expanduser("~/meshtastic"))
@@ -117,7 +117,16 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         return await self._ensure_session(aiohttp_module)
 
     def _sync_download_fallback(self, url: str, target_path: Pathish) -> Optional[bool]:
-        """Fallback to sync downloader when async dependencies are unavailable."""
+        """
+        Call the synchronous downloader as a fallback when async support is unavailable.
+        
+        Parameters:
+            url (str): URL of the resource to download.
+            target_path (Pathish): Destination path for the downloaded file.
+        
+        Returns:
+            bool: `True` if the download succeeded, `False` otherwise.
+        """
         logger.warning("Async libraries not available, falling back to sync download")
         return self.download(url, target_path)
 
@@ -155,34 +164,16 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         progress_callback: Optional[AsyncProgressCallback] = None,
     ) -> bool:
         """
-        Download a file asynchronously to the specified target path.
-
-        This is the async variant of the download() method, supporting
-        parallel downloads and progress tracking.
-
+        Download a file to the specified target path with optional progress reporting.
+        
         Parameters:
-            url (str): URL to download from.
-            target_path (Pathish): Local path to save the file.
-            progress_callback (Optional[AsyncProgressCallback]):
-                Optional callback for progress updates. Called with
-                (downloaded_bytes, total_bytes, filename).
-
+            url (str): Source URL of the file.
+            target_path (Pathish): Local path where the file will be saved.
+            progress_callback (Optional[AsyncProgressCallback]): Optional callback invoked with
+                (downloaded_bytes, total_bytes, filename) to report progress.
+        
         Returns:
-            bool: True if download succeeded, False otherwise.
-
-        Raises:
-            AsyncDownloadError: If download fails (with is_retryable flag set appropriately).
-
-        Example:
-            async def progress(downloaded, total, filename):
-                if total:
-                    print(f"{filename}: {downloaded}/{total} bytes")
-
-            result = await downloader.async_download(
-                "https://example.com/file.bin",
-                "/path/to/file.bin",
-                progress_callback=progress
-            )
+            `true` if the download succeeded, `false` otherwise.
         """
         return await super().async_download(
             url, target_path, progress_callback=progress_callback
@@ -190,19 +181,24 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     async def _async_verify_file(self, file_path: Path) -> bool:
         """
-        Verify an existing file asynchronously.
-
+        Determine whether a file's contents are intact and not corrupted. For ZIP archives, performs an archive integrity test before general integrity verification.
+        
         Parameters:
             file_path (Path): Path to the file to verify.
-
+        
         Returns:
-            bool: True if file is valid, False otherwise.
+            bool: True if the file is valid, False otherwise.
         """
         try:
             if file_path.suffix.lower() == ".zip":
                 loop = asyncio.get_running_loop()
 
                 def check_zip() -> bool:
+                    """
+                    Check whether the ZIP archive referenced by `file_path` is intact.
+                    
+                    Performs a ZIP integrity test and returns `True` if no corrupt members are found, `False` if the archive is corrupt or not a valid ZIP file.
+                    """
                     try:
                         with zipfile.ZipFile(file_path, "r") as zf:
                             return zf.testzip() is None
@@ -224,14 +220,19 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     async def _async_save_hash(self, file_path: Path) -> None:
         """
-        Calculate and save file hash asynchronously.
-
+        Asynchronously compute the file's SHA-256 hash and persist it alongside the file.
+        
         Parameters:
-            file_path (Path): Path to the file to hash.
+            file_path (Path): Path to the file whose SHA-256 hash will be computed and saved.
         """
         loop = asyncio.get_running_loop()
 
         def _compute_and_save() -> None:
+            """
+            Compute and persist the SHA-256 hash for the file referenced by the enclosing `file_path` variable.
+            
+            If the hash is successfully computed, it is saved to the file's associated hash storage; otherwise no action is taken.
+            """
             hash_value = utils.calculate_sha256(str(file_path))
             if hash_value:
                 utils.save_file_hash(str(file_path), hash_value)
@@ -240,22 +241,15 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
 
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
-        Adapter for shared async core verification hook.
-
-        Parameters:
-            file_path (Path): Path to the file to verify.
-
-        Returns:
-            bool: True if file is valid, False otherwise.
+        Verifies an existing file asynchronously.
+        
+        @returns: `true` if the file is valid, `false` otherwise.
         """
         return await self._async_verify_file(file_path)
 
     async def _async_save_file_hash(self, file_path: Path) -> None:
         """
-        Adapter for shared async core hash persistence hook.
-
-        Parameters:
-            file_path (Path): Path to the file to hash.
+        Persist the SHA-256 hash for the given file using the downloader's asynchronous hash saver.
         """
         await self._async_save_hash(file_path)
 
@@ -269,19 +263,18 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         progress_callback: Optional[AsyncProgressCallback] = None,
     ) -> bool:
         """
-        Download a file asynchronously with retry logic and exponential backoff.
-
+        Download a file with retry logic and exponential backoff.
+        
         Parameters:
             url (str): URL to download from.
             target_path (Pathish): Local path to save the file.
-            max_retries (Optional[int]): Maximum number of retry attempts.
-            retry_delay (Optional[float]): Initial delay between retries in seconds.
-            backoff_factor (float): Multiplier for delay after each retry.
-            progress_callback (Optional[AsyncProgressCallback]):
-                Optional callback for progress updates.
-
+            max_retries (Optional[int]): Maximum number of retry attempts (default: 3).
+            retry_delay (Optional[float]): Initial delay between retries in seconds (default: 1.0).
+            backoff_factor (float): Multiplier applied to the delay after each retry (default: 2.0).
+            progress_callback (Optional[AsyncProgressCallback]): Optional callback for progress updates.
+        
         Returns:
-            bool: True if download succeeded, False otherwise.
+            bool: `true` if the download succeeded, `false` otherwise.
         """
         return await super().async_download_with_retry(
             url,

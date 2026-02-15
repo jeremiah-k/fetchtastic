@@ -367,9 +367,9 @@ class RepositoryDownloader(BaseDownloader):
     def clean_repository_directory(self) -> bool:
         """
         Remove all contents of the repository downloads directory under the configured downloads area.
-
-        Removes files, symbolic links, and subdirectories found in <download_dir>/<firmware-dir>/<repo_downloads_dir>. If the directory does not exist the function does nothing and reports success. Updates the instance's cleanup summary with counts of removed files and directories, any errors encountered, and an overall success flag.
-
+        
+        Updates the instance's cleanup summary (`removed_files`, `removed_dirs`, `errors`, `success`). If the repository downloads directory does not exist no changes are made and the summary's `success` is set to True.
+        
         Returns:
             bool: `True` if cleanup completed without errors, `False` otherwise.
         """
@@ -556,12 +556,12 @@ class RepositoryDownloader(BaseDownloader):
         exclude_patterns: List[str],
     ) -> bool:
         """
-        Indicates whether the given repository file requires extraction.
-
-        Repository assets are not treated as archives, so extraction is not applicable.
-
+        Determine whether extraction should be performed for a repository file.
+        
+        Repository files are not treated as archives; extraction is not applicable.
+        
         Returns:
-            `False` indicating extraction is not required for repository files.
+            False indicating extraction is not required for repository files.
         """
         del file_path, extract_dir, patterns, exclude_patterns
         # Repository files are typically not archives, so extraction is never needed
@@ -572,12 +572,12 @@ class RepositoryDownloader(BaseDownloader):
 
     def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
-        Indicates whether a repository release asset should be downloaded.
-
-        Repository assets are always selected for download.
-
+        Always permit downloading of repository release assets.
+        
+        Repository downloads are not filtered by release tag or asset name; this method unconditionally approves downloads.
+        
         Returns:
-            True for all repository assets, False otherwise.
+            `True` if the asset should be downloaded, `False` otherwise.
         """
         del release_tag, asset_name
         # Repository downloads don't use pattern filtering in the same way

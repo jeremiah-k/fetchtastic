@@ -53,14 +53,14 @@ class AsyncDownloadError(Exception):
         is_retryable: bool = False,
     ) -> None:
         """
-        Initialize an AsyncDownloadError.
-
+        Create an AsyncDownloadError carrying structured details about a failed asynchronous download.
+        
         Parameters:
-            message (str): Primary error message.
-            url (Optional[str]): URL that failed.
-            status_code (Optional[int]): HTTP status code if applicable.
-            retry_count (int): Number of retry attempts made.
-            is_retryable (bool): Whether the error can be retried.
+            message (str): Human-readable error message.
+            url (Optional[str]): The request URL that failed, if known.
+            status_code (Optional[int]): HTTP status code associated with the failure, if any.
+            retry_count (int): Number of retry attempts already performed.
+            is_retryable (bool): True if the error is considered retryable, False otherwise.
         """
         super().__init__(message)
         self.message = message
@@ -104,6 +104,20 @@ class AsyncGitHubClient:
         """
 
         def _clamp_positive(name: str, value: Any, default: int) -> int:
+            """
+            Normalize a value to a positive integer (minimum 1), falling back to a default on parse errors.
+            
+            Parameters:
+                name (str): Identifier used in warning messages when logging invalid or clamped values.
+                value (Any): Value to coerce to an integer.
+                default (int): Fallback integer returned when `value` cannot be parsed as an int.
+            
+            Returns:
+                int: The parsed integer if it is greater than or equal to 1; `default` if parsing fails; 1 if the parsed value is less than 1.
+            
+            Notes:
+                Logs a warning when parsing fails or when a value is clamped to 1.
+            """
             try:
                 parsed = int(value)
             except (TypeError, ValueError):
@@ -133,8 +147,8 @@ class AsyncGitHubClient:
 
     async def __aenter__(self) -> "AsyncGitHubClient":
         """
-        Async context manager entry - creates session and semaphore.
-
+        Enter the async context, ensuring the client session is initialized.
+        
         Returns:
             AsyncGitHubClient: The initialized client instance.
         """
@@ -142,7 +156,11 @@ class AsyncGitHubClient:
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Async context manager exit - closes session."""
+        """
+        Close the client's aiohttp session when exiting the async context.
+        
+        Ensures the underlying session is closed and the client is cleaned up.
+        """
         await self.close()
 
     async def _ensure_session(self) -> ClientSession:
@@ -168,10 +186,12 @@ class AsyncGitHubClient:
 
     def _get_default_headers(self) -> Dict[str, str]:
         """
-        Get default headers for GitHub API requests.
-
+        Builds default HTTP headers for GitHub API requests.
+        
+        Includes Accept, GitHub API version, and User-Agent headers. If the client was configured with a GitHub token, includes an Authorization header.
+        
         Returns:
-            Dict[str, str]: Headers dictionary with User-Agent and API version.
+            dict: HTTP headers to use for requests.
         """
         from fetchtastic.utils import get_user_agent
 
@@ -194,16 +214,13 @@ class AsyncGitHubClient:
     @asynccontextmanager
     async def _rate_limit_guard(self, token_hash: str) -> AsyncIterator[None]:
         """
-        Context manager to check rate limits before API calls.
-
+        Prevent API calls when the per-token GitHub rate limit is exhausted.
+        
         Parameters:
-            token_hash (str): Hash identifying the token being used.
-
-        Yields:
-            None
-
+            token_hash (str): Identifier for the token's rate-limit state.
+        
         Raises:
-            AsyncDownloadError: If rate limit is exceeded.
+            AsyncDownloadError: If the token's remaining requests are zero and the reset time is in the future.
         """
         remaining = self._rate_limit_remaining.get(token_hash, 60)
         reset_time = self._rate_limit_reset.get(token_hash)
@@ -405,11 +422,11 @@ class AsyncGitHubClient:
 
     def _update_rate_limits(self, token_hash: str, response: ClientResponse) -> None:
         """
-        Update rate limit tracking from response headers.
-
+        Parse rate-limit headers from an HTTP response and update the client's per-token rate-limit state.
+        
         Parameters:
-            token_hash (str): Token identifier for caching.
-            response (ClientResponse): The HTTP response to extract headers from.
+            token_hash (str): Key identifying the token whose rate-limit state will be updated.
+            response (ClientResponse): HTTP response from which `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers are read.
         """
         remaining = response.headers.get("X-RateLimit-Remaining")
         reset = response.headers.get("X-RateLimit-Reset")
@@ -436,20 +453,21 @@ class AsyncGitHubClient:
         progress_callback: Optional[Any] = None,
     ) -> bool:
         """
-        Download a file asynchronously with progress tracking.
-
+        Download a file to the given path with progress tracking and atomic replacement.
+        
         Parameters:
-            url (str): URL to download from.
-            target_path (Pathish): Local path to save the file.
-            chunk_size (int): Size of chunks for streaming download.
-            progress_callback (Optional[Any]): Optional callback for progress updates.
-                Signature: callback(downloaded: int, total: Optional[int], filename: str)
-
+            url (str): Source URL to download.
+            target_path (Pathish): Destination file path; parent directories will be created if missing.
+            chunk_size (int): Number of bytes to read per chunk.
+            progress_callback (Optional[callable]): Optional callback invoked with (downloaded: int, total: Optional[int], filename: str).
+                The callback may be a coroutine function; exceptions raised by the callback are logged and ignored.
+        
         Returns:
-            bool: True if download succeeded, False otherwise.
-
+            bool: `True` if the file was successfully downloaded and moved to `target_path`.
+        
         Raises:
-            AsyncDownloadError: If the download fails.
+            AsyncDownloadError: On HTTP, network, filesystem, or unexpected failures. The exception carries `url`, `status_code` (when available),
+                `is_retryable`, and `retry_count` metadata. Temporary files are removed on error.
         """
         session = await self._ensure_session()
         target = Path(target_path)
@@ -566,18 +584,21 @@ class AsyncGitHubClient:
         progress_callback: Optional[Any] = None,
     ) -> bool:
         """
-        Download a file with retry logic and exponential backoff.
-
+        Attempt to download a URL to a local path, retrying with exponential backoff on retryable failures.
+        
         Parameters:
-            url (str): URL to download from.
-            target_path (Pathish): Local path to save the file.
-            max_retries (int): Maximum number of retry attempts.
-            retry_delay (float): Initial delay between retries in seconds.
-            backoff_factor (float): Multiplier for delay after each retry.
-            progress_callback (Optional[Any]): Optional progress callback.
-
+            url (str): Source URL to download.
+            target_path (Pathish): Destination path where the file will be written.
+            max_retries (int): Maximum number of retry attempts after the initial try.
+            retry_delay (float): Initial delay in seconds before the first retry.
+            backoff_factor (float): Multiplier applied to the delay after each failed attempt.
+            progress_callback (Optional[Any]): Optional callable or coroutine called with progress updates.
+        
         Returns:
-            bool: True if download succeeded, False otherwise.
+            bool: `True` if the file was downloaded successfully.
+        
+        Raises:
+            AsyncDownloadError: If a non-retryable error occurs or all retry attempts are exhausted.
         """
         last_error: Optional[Exception] = None
         delay = retry_delay
@@ -613,18 +634,14 @@ async def create_async_client(
     max_concurrent: int = 5,
 ) -> AsyncIterator[AsyncGitHubClient]:
     """
-    Factory function to create an async client with proper resource management.
-
+    Provide a configured AsyncGitHubClient and ensure it is closed after use.
+    
     Parameters:
-        github_token (Optional[str]): GitHub token for authentication.
-        max_concurrent (int): Maximum concurrent operations.
-
-    Yields:
-        AsyncGitHubClient: Configured async client.
-
-    Example:
-        async with create_async_client(token) as client:
-            releases = await client.get_releases(url)
+        github_token (Optional[str]): GitHub personal access token used for Authorization header; if `None`, requests are unauthenticated.
+        max_concurrent (int): Maximum number of concurrent network operations the client will allow.
+    
+    Returns:
+        AsyncGitHubClient: Configured client instance; it will be closed when the context manager exits.
     """
     client = AsyncGitHubClient(github_token=github_token, max_concurrent=max_concurrent)
     try:

@@ -383,6 +383,15 @@ class TestGetReleases:
         captured_params = {}
 
         def capture_params(url, params=None):
+            """
+            Records the provided query parameters into the shared `captured_params` mapping and returns the preconfigured `mock_response`.
+            
+            Parameters:
+                params (dict | None): Query parameters passed for the request; may be None.
+            
+            Returns:
+                mock_response: The mock response object to be returned by the fake request.
+            """
             captured_params["params"] = params
             return mock_response
 
@@ -697,6 +706,15 @@ class TestUpdateRateLimits:
 
 # Helper to create async iterator from list
 async def _make_async_iter(items):
+    """
+    Asynchronously iterate over a synchronous iterable and yield each element.
+    
+    Parameters:
+        items (Iterable): A synchronous iterable whose elements will be yielded by the async iterator.
+    
+    Returns:
+        AsyncIterator: An asynchronous iterator that yields each element from `items`.
+    """
     for item in items:
         yield item
 
@@ -820,6 +838,14 @@ class TestDownloadFile:
         callback_calls = []
 
         async def progress_callback(downloaded, total, filename):
+            """
+            Record download progress for tests by appending seen values to the shared list.
+            
+            Parameters:
+                downloaded (int): Number of bytes downloaded so far.
+                total (int): Total number of bytes expected; may be 0 when unknown.
+                filename (str): Target filename for the download; not used by this callback.
+            """
             callback_calls.append((downloaded, total))
 
         target = tmp_path / "test.bin"
@@ -863,6 +889,14 @@ class TestDownloadFile:
         callback_calls = []
 
         async def progress_callback(downloaded, total, filename):
+            """
+            Record download progress by appending a (downloaded, total, filename) tuple to the outer `callback_calls` list.
+            
+            Parameters:
+                downloaded (int): Bytes downloaded so far.
+                total (int | None): Total bytes expected, or `None` if unknown.
+                filename (str): Name of the file being downloaded.
+            """
             callback_calls.append((downloaded, total, filename))
 
         target = tmp_path / "test.bin"
@@ -1048,6 +1082,12 @@ class TestDownloadFileWithRetry:
         sleep_calls = []
 
         async def track_sleep(duration):
+            """
+            Record a sleep duration into the shared test sleep_calls list.
+            
+            Parameters:
+                duration (float): Sleep duration in seconds to append to sleep_calls.
+            """
             sleep_calls.append(duration)
 
         mocker.patch("asyncio.sleep", track_sleep)
@@ -1178,9 +1218,23 @@ class TestDownloadFilesConcurrently:
 
         class MockClientContextManager:
             async def __aenter__(self):
+                """
+                Enter the asynchronous context and provide the mock client for use in tests.
+                
+                Returns:
+                    The mock client instance returned to the caller.
+                """
                 return mock_client
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
+                """
+                Exit the asynchronous context, ensuring the client is closed.
+                
+                Parameters:
+                    exc_type (type | None): Exception type raised inside the context, or None.
+                    exc_val (BaseException | None): Exception instance raised inside the context, or None.
+                    exc_tb (types.TracebackType | None): Traceback for the exception, or None.
+                """
                 return None
 
         mock_create_client = mocker.patch(
@@ -1216,9 +1270,23 @@ class TestDownloadFilesConcurrently:
 
         class MockClientContextManager:
             async def __aenter__(self):
+                """
+                Enter the asynchronous context and provide the mock client for use in tests.
+                
+                Returns:
+                    The mock client instance returned to the caller.
+                """
                 return mock_client
 
             async def __aexit__(self, exc_type, exc_val, exc_tb):
+                """
+                Exit the asynchronous context, ensuring the client is closed.
+                
+                Parameters:
+                    exc_type (type | None): Exception type raised inside the context, or None.
+                    exc_val (BaseException | None): Exception instance raised inside the context, or None.
+                    exc_tb (types.TracebackType | None): Traceback for the exception, or None.
+                """
                 return None
 
         mocker.patch(

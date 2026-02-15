@@ -54,13 +54,12 @@ from .version import VersionManager, is_prerelease_directory
 
 def is_connected_to_wifi() -> bool:
     """
-    Check if device is connected to Wi-Fi.
-
-    For Termux, it uses 'termux-wifi-connectioninfo'.
-    For other platforms, it currently assumes connected.
-
+    Determine whether the device is connected to a Wi‑Fi network.
+    
+    On non-Termux platforms this function assumes connectivity and returns `True`. On Termux it runs the `termux-wifi-connectioninfo` command (with a 5-second timeout) and returns `True` only if the command succeeds, the JSON output contains `"supplicant_state": "COMPLETED"`, and an `"ip"` value is present.
+    
     Returns:
-        bool: True if connected to Wi-Fi (or assumed to be), False otherwise.
+        `True` if the device is (or is assumed to be) connected to Wi‑Fi, `False` otherwise.
     """
     if not is_termux():
         return True
