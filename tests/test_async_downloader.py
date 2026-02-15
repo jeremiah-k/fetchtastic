@@ -40,10 +40,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 async def _make_async_iter(items):
     """
     Asynchronously iterates over the provided iterable, yielding each element in order.
-    
+
     Parameters:
         items (iterable): An iterable of values to yield.
-    
+
     Returns:
         async iterator: An asynchronous iterator that yields the elements from `items` in their original order.
     """
@@ -62,7 +62,7 @@ class ConcreteAsyncDownloader(AsyncDownloaderMixin):
     def __init__(self, config=None):
         """
         Initialize the instance with an optional configuration and determine the download directory.
-        
+
         Parameters:
             config (dict | None): Optional configuration mapping. If provided, its "DOWNLOAD_DIR"
                 value will be used as the download directory; otherwise the default "~/meshtastic"
@@ -198,12 +198,12 @@ class TestCallProgressCallback:
         def sync_callback(downloaded, total, filename):
             """
             Record download progress into the test's callback_calls list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes (or units) downloaded so far.
                 total (int | None): Total number of bytes (or units) expected, or None if unknown.
                 filename (str): Name of the file being downloaded.
-            
+
             Side effects:
                 Appends a tuple (downloaded, total, filename) to the outer-scope list `callback_calls`.
             """
@@ -222,7 +222,7 @@ class TestCallProgressCallback:
         async def async_callback(downloaded, total, filename):
             """
             Record a progress callback invocation by appending the provided values to a shared list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total size in bytes, or None if unknown.
@@ -242,7 +242,7 @@ class TestCallProgressCallback:
         def bad_callback(downloaded, total, filename):
             """
             Simulated progress callback that always fails by raising a ValueError.
-            
+
             Raises:
                 ValueError: Indicates the callback failed (used to simulate a callback error).
             """
@@ -455,7 +455,9 @@ class TestAsyncDownload:
         mock_response.headers = {"Content-Length": "4"}
         mock_response.raise_for_status = Mock()
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(
+            side_effect=lambda *a, **kw: _make_async_iter([b"test"])
+        )
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -591,7 +593,7 @@ class TestAsyncDownload:
         async def progress(downloaded, total, filename):
             """
             Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.
@@ -869,7 +871,7 @@ class TestAsyncDownloadWithRetry:
         async def track_sleep(duration):
             """
             Record a sleep duration into the shared `sleep_calls` list.
-            
+
             Parameters:
                 duration (float): Number of seconds that would have been slept; appended to `sleep_calls`.
             """
@@ -994,7 +996,7 @@ class TestAsyncDownloadRelease:
         async def progress(downloaded, total, filename):
             """
             Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.
@@ -1154,7 +1156,7 @@ class TestAsyncDownloadMultiple:
         async def progress(downloaded, total, filename):
             """
             Default no-op progress callback invoked during a download operation.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.
@@ -1263,7 +1265,7 @@ class TestDownloadWithProgress:
         async def progress(downloaded, total, filename):
             """
             Record a progress callback invocation by appending (downloaded, total, filename) to the shared callback_calls list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.

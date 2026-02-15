@@ -18,6 +18,8 @@ from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 @pytest.fixture
 def test_config():

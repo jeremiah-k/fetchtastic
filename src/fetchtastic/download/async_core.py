@@ -41,9 +41,9 @@ class AsyncDownloadCoreMixin:
     def _get_max_concurrent(self) -> int:
         """
         Determine the configured maximum number of concurrent downloads.
-        
+
         Reads the `MAX_CONCURRENT_DOWNLOADS` config value, validates it as an integer, uses 5 if invalid, and clamps values less than 1 to 1.
-        
+
         Returns:
             int: Maximum concurrent downloads as an int; guaranteed to be >= 1.
         """
@@ -69,9 +69,9 @@ class AsyncDownloadCoreMixin:
     def _get_max_retries(self) -> int:
         """
         Determine the maximum number of download retry attempts from configuration.
-        
+
         Reads the `MAX_DOWNLOAD_RETRIES` value from `self.config`, validates it as an integer, uses `DEFAULT_CONNECT_RETRIES` when the configured value is invalid, and clamps negative values to 0.
-        
+
         Returns:
             int: Maximum number of retry attempts.
         """
@@ -98,10 +98,10 @@ class AsyncDownloadCoreMixin:
     def _get_retry_delay(self) -> float:
         """
         Return the initial download retry delay read from the configuration.
-        
+
         Reads DOWNLOAD_RETRY_DELAY from self.config, defaults to 1.0 on missing or invalid values,
         and clamps negative values to 0.0.
-        
+
         Returns:
             float: Initial retry delay in seconds.
         """
@@ -127,7 +127,7 @@ class AsyncDownloadCoreMixin:
     def _get_semaphore(self) -> asyncio.Semaphore:
         """
         Lazily create and return a semaphore used to limit concurrent downloads.
-        
+
         Returns:
             asyncio.Semaphore: Semaphore initialized with the configured maximum concurrent downloads.
         """
@@ -138,12 +138,12 @@ class AsyncDownloadCoreMixin:
     async def _ensure_session(self, aiohttp_module: Optional[Any] = None) -> Any:
         """
         Ensure and return a reusable aiohttp ClientSession for downloads.
-        
+
         If no aiohttp module is provided, the function will import it dynamically. The returned session is created with a TCPConnector limited by the configured maximum concurrent downloads and a default request timeout.
-        
+
         Parameters:
             aiohttp_module (Optional[Any]): Optional aiohttp module to use instead of importing one.
-        
+
         Returns:
             Active aiohttp ClientSession instance.
         """
@@ -172,7 +172,7 @@ class AsyncDownloadCoreMixin:
     async def __aenter__(self) -> "AsyncDownloadCoreMixin":
         """
         Ensure an aiohttp session is created and return self for use as an async context manager.
-        
+
         Returns:
             AsyncDownloadCoreMixin: The mixin instance with a ready-to-use session.
         """
@@ -182,7 +182,7 @@ class AsyncDownloadCoreMixin:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """
         Close the mixin's shared HTTP session when exiting an async context.
-        
+
         This is called by the asynchronous context manager protocol to ensure the underlying session is closed and resources are released.
         """
         await self.close()
@@ -205,7 +205,7 @@ class AsyncDownloadCoreMixin:
     ) -> None:
         """
         Invoke a progress callback with the current download progress and suppress any callback errors.
-        
+
         Parameters:
             callback (CoreProgressCallback): Callable receiving (downloaded, total, filename). May be synchronous or return a coroutine.
             downloaded (int): Number of bytes downloaded so far.
@@ -222,7 +222,7 @@ class AsyncDownloadCoreMixin:
     async def _async_cleanup_temp_file(self, temp_path: Path) -> None:
         """
         Delete the temporary file at the given path if it exists.
-        
+
         Parameters:
             temp_path (Path): Path to the temporary file to remove. If removal fails due to an OS error, the error is logged at debug level and suppressed.
         """
@@ -235,10 +235,10 @@ class AsyncDownloadCoreMixin:
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
         Determine whether the local file at `file_path` is valid and the download can be skipped.
-        
+
         Parameters:
             file_path (Path): Path to the local file to verify.
-        
+
         Returns:
             bool: `true` if the file is valid and the caller may skip downloading, `false` otherwise.
         """
@@ -247,9 +247,9 @@ class AsyncDownloadCoreMixin:
     async def _async_save_file_hash(self, file_path: Path) -> None:
         """
         Compute and persist a content hash for the given file.
-        
+
         Implementations should calculate a stable checksum (e.g., SHA-256) of the file at `file_path` and persist it according to the subclass's storage policy (for example, writing a sidecar file or updating a database). This method is expected to be implemented by concrete classes to record the downloaded file's hash for future verification.
-        
+
         Parameters:
             file_path (Path): Path to the file whose hash should be computed and stored.
         """
@@ -263,16 +263,16 @@ class AsyncDownloadCoreMixin:
     ) -> bool:
         """
         Download a file from `url` and save it to `target_path`, reporting progress if requested.
-        
+
         Parameters:
             progress_callback (Optional[CoreProgressCallback]): Optional callable invoked with
                 (downloaded_bytes, total_bytes_or_None, filename) to report progress. May be
                 sync or async; errors raised by the callback are logged and do not stop the download.
-        
+
         Returns:
             bool: `True` if the file is present at `target_path` after this call (downloaded or
             already present and verified).
-        
+
         Raises:
             AsyncDownloadError: If the download or file save fails.
         """
@@ -392,7 +392,7 @@ class AsyncDownloadCoreMixin:
     ) -> bool:
         """
         Attempt to download a URL to the given target path using retry attempts with exponential backoff.
-        
+
         Parameters:
             url (str): Source URL to download.
             target_path (Pathish): Destination path for the downloaded file.
@@ -400,10 +400,10 @@ class AsyncDownloadCoreMixin:
             retry_delay (Optional[float]): Initial delay in seconds between retries; when None uses configured default.
             backoff_factor (float): Multiplier applied to the delay after each retry.
             progress_callback (Optional[CoreProgressCallback]): Optional callback to report download progress.
-        
+
         Returns:
             `true` if the download succeeded, `false` otherwise.
-        
+
         Raises:
             AsyncDownloadError: If a non-retryable download error occurs.
         """

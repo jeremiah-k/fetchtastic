@@ -30,10 +30,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 async def _make_async_iter(items):
     """
     Create an asynchronous iterator that yields each element from the given iterable.
-    
+
     Parameters:
         items (iterable): An iterable of values to be yielded.
-    
+
     Returns:
         An asynchronous iterator that yields each element from `items`.
     """
@@ -795,7 +795,9 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.headers = {"Content-Length": "4"}
         mock_response.raise_for_status = Mock()
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(
+            side_effect=lambda *a, **kw: _make_async_iter([b"test"])
+        )
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock()
@@ -913,7 +915,7 @@ class TestBaseDownloaderAsyncDownload:
         async def chunk_iterator(*args, **kwargs):
             """
             Yield a sequence of byte chunks suitable for testing async stream consumers.
-            
+
             Yields:
                 bytes: Sequential data chunks (`b"chunk1"`, `b"chunk2"`) to simulate streamed payloads.
             """
@@ -934,7 +936,7 @@ class TestBaseDownloaderAsyncDownload:
         async def progress(downloaded, total, filename):
             """
             Record download progress by collecting reported values into the enclosing test's callback list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.
@@ -996,12 +998,12 @@ class TestBaseDownloaderAsyncDownload:
         def bad_callback(downloaded, total, filename):
             """
             Synchronous progress callback that always raises a ValueError.
-            
+
             Parameters:
                 downloaded (int): Number of bytes or units downloaded so far.
                 total (int | None): Total number of bytes or units expected, or None if unknown.
                 filename (str): Name of the file being downloaded.
-            
+
             Raises:
                 ValueError: Always raised with the message "Callback error".
             """
@@ -1397,7 +1399,7 @@ class TestBaseDownloaderAsyncDownloadWithRetry:
         async def track_sleep(duration):
             """
             Record a sleep duration by appending it to the shared `sleep_calls` list for later inspection.
-            
+
             Parameters:
                 duration (float): Sleep time in seconds to record.
             """
@@ -1431,7 +1433,7 @@ class TestBaseDownloaderAsyncDownloadWithRetry:
         async def progress(downloaded, total, filename):
             """
             Report download progress for a file.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int | None): Total number of bytes expected, or None if unknown.

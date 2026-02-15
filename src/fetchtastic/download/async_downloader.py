@@ -68,14 +68,14 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
         Return the full filesystem path where a release asset should be saved, creating the release subdirectory if needed.
-        
+
         Parameters:
             release_tag (str): Release tag or version used to create a versioned subdirectory (will be sanitized).
             file_name (str): Asset file name to save (will be sanitized).
-        
+
         Returns:
             str: Absolute path to the target file within the downloader's download directory.
-        
+
         Raises:
             ValueError: If `release_tag` or `file_name` contains unsafe path components and cannot be sanitized.
         """
@@ -100,9 +100,9 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
         Check that a file is intact and matches expected integrity.
-        
+
         Performs a ZIP content check when the file has a .zip extension and verifies the file's stored hash; returns `True` if all applicable integrity checks pass, `False` otherwise.
-        
+
         Returns:
             bool: `True` if the file passed integrity checks, `False` otherwise.
         """
@@ -114,7 +114,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                 def check_zip() -> bool:
                     """
                     Check whether the ZIP file referenced by `file_path` is intact and has no corrupt entries.
-                    
+
                     Returns:
                         True if the archive passes a ZIP integrity test, False otherwise.
                     """
@@ -142,7 +142,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
     async def _async_save_file_hash(self, file_path: Path) -> None:
         """
         Compute the file's SHA-256 hash and persist it using save_file_hash.
-        
+
         Parameters:
             file_path (Path): Path to the file whose SHA-256 hash will be computed and saved.
         """
@@ -151,7 +151,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         def _compute_and_save() -> None:
             """
             Compute the SHA-256 hash for the file referenced by `file_path` in the surrounding scope and save it.
-            
+
             If a hash is produced, calls `save_file_hash` with the file path string and the computed hash. Does not return a value.
             """
             hash_value = calculate_sha256(str(file_path))
@@ -168,12 +168,12 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
     ) -> DownloadResult:
         """
         Download a single asset from a release and return a DownloadResult describing the outcome.
-        
+
         Parameters:
             release (Release): Release containing the asset to download.
             asset (Asset): Asset to download (provides `name`, `download_url`, and `size`).
             progress_callback (Optional[ProgressCallback]): Optional callback invoked with progress updates.
-        
+
         Returns:
             DownloadResult: On success, contains success=True and metadata (release_tag, file_path, download_url, file_size).
             On failure, contains success=False and error details (error_message, error_type, http_status_code when available, and is_retryable).
@@ -237,11 +237,11 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
     ) -> List[DownloadResult]:
         """
         Concurrently download multiple release assets and produce a DownloadResult for each requested spec.
-        
+
         Parameters:
             downloads (List[Dict[str, Any]]): Sequence of download specifications. Each spec must be a dict containing keys "release" and "asset" where `release.tag_name` (str) and `asset.name` (str) identify the target and `asset.download_url` (str) identifies the source when available.
             progress_callback (Optional[ProgressCallback]): Optional per-download progress callback invoked with bytes received, optional total bytes, and a status message.
-        
+
         Returns:
             List[DownloadResult]: A result entry for each input spec in the same order. Successful downloads yield a DownloadResult with success=True and metadata; failed downloads yield a DownloadResult with success=False and populated error details (including whether the failure is considered retryable).
         """
@@ -251,10 +251,10 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         async def download_one(spec: Dict[str, Any]) -> DownloadResult:
             """
             Download a single release asset described by a download spec.
-            
+
             Parameters:
                 spec (Dict[str, Any]): Dictionary containing at least the keys `"release"` (a Release object or identifier) and `"asset"` (an Asset object or identifier); these are passed to the async_download_release method.
-            
+
             Returns:
                 DownloadResult: Result object describing success or failure and related metadata for the downloaded asset.
             """
@@ -335,7 +335,7 @@ class AsyncDownloaderBase(AsyncDownloaderMixin):
     ) -> None:
         """
         Initialize the async downloader with an optional configuration and establish the download directory.
-        
+
         Parameters:
             config (Optional[Dict[str, Any]]): Configuration dictionary; if provided, used as-is. The download directory is taken from `config["DOWNLOAD_DIR"]` when present, otherwise it defaults to `~/meshtastic`.
         """
@@ -353,13 +353,13 @@ async def download_with_progress(
 ) -> bool:
     """
     Download a URL to a local path while reporting progress.
-    
+
     Parameters:
         url (str): The HTTP(S) URL to download.
         target_path (Pathish): Local path where the downloaded file will be saved.
         config (Optional[Dict[str, Any]]): Optional configuration for the downloader.
         progress_callback (Optional[ProgressCallback]): Optional callback called as progress updates occur; called with (downloaded_bytes, total_bytes_or_None, filename).
-    
+
     Returns:
         bool: `True` if the download succeeded, `False` otherwise.
     """

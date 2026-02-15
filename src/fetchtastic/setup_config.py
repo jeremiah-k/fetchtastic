@@ -2672,10 +2672,10 @@ def create_startup_shortcut() -> bool:
 def copy_to_clipboard_func(text: Optional[str]) -> bool:
     """
     Copy the given text to the system clipboard using a platform-appropriate method.
-    
+
     Parameters:
         text (Optional[str]): Text to copy; if `None`, the function performs no action.
-    
+
     Returns:
         bool: `True` if the text was successfully copied to the clipboard, `False` otherwise.
     """

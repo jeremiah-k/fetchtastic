@@ -385,10 +385,10 @@ class TestGetReleases:
         def capture_params(url, params=None):
             """
             Records the provided query parameters into the shared `captured_params` mapping and returns the preconfigured `mock_response`.
-            
+
             Parameters:
                 params (dict | None): Query parameters passed for the request; may be None.
-            
+
             Returns:
                 mock_response: The mock response object to be returned by the fake request.
             """
@@ -608,6 +608,32 @@ class TestGetReleases:
         assert exc_info.value.status_code == 403
         assert exc_info.value.is_retryable is False
 
+    async def test_get_releases_forbidden_invalid_rate_header(self, mocker):
+        """Invalid remaining header should be treated as generic forbidden."""
+        client = AsyncGitHubClient()
+
+        mock_session = mocker.MagicMock()
+        mock_session.get = mocker.MagicMock()
+
+        mock_response = AsyncMock()
+        mock_response.status = 403
+        mock_response.headers = {"X-RateLimit-Remaining": "not-a-number"}
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session.get.return_value = mock_response
+
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        with pytest.raises(AsyncDownloadError) as exc_info:
+            await client.get_releases("https://api.github.com/repos/test/test/releases")
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.is_retryable is False
+
     async def test_get_releases_http_error(self, mocker):
         """Test get_releases handles HTTP errors."""
         client = AsyncGitHubClient()
@@ -708,10 +734,10 @@ class TestUpdateRateLimits:
 async def _make_async_iter(items):
     """
     Asynchronously iterate over a synchronous iterable and yield each element.
-    
+
     Parameters:
         items (Iterable): A synchronous iterable whose elements will be yielded by the async iterator.
-    
+
     Returns:
         AsyncIterator: An asynchronous iterator that yields each element from `items`.
     """
@@ -840,7 +866,7 @@ class TestDownloadFile:
         async def progress_callback(downloaded, total, filename):
             """
             Record download progress for tests by appending seen values to the shared list.
-            
+
             Parameters:
                 downloaded (int): Number of bytes downloaded so far.
                 total (int): Total number of bytes expected; may be 0 when unknown.
@@ -891,7 +917,7 @@ class TestDownloadFile:
         async def progress_callback(downloaded, total, filename):
             """
             Record download progress by appending a (downloaded, total, filename) tuple to the outer `callback_calls` list.
-            
+
             Parameters:
                 downloaded (int): Bytes downloaded so far.
                 total (int | None): Total bytes expected, or `None` if unknown.
@@ -1084,7 +1110,7 @@ class TestDownloadFileWithRetry:
         async def track_sleep(duration):
             """
             Record a sleep duration into the shared test sleep_calls list.
-            
+
             Parameters:
                 duration (float): Sleep duration in seconds to append to sleep_calls.
             """
@@ -1220,7 +1246,7 @@ class TestDownloadFilesConcurrently:
             async def __aenter__(self):
                 """
                 Enter the asynchronous context and provide the mock client for use in tests.
-                
+
                 Returns:
                     The mock client instance returned to the caller.
                 """
@@ -1229,7 +1255,7 @@ class TestDownloadFilesConcurrently:
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
                 Exit the asynchronous context, ensuring the client is closed.
-                
+
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.
                     exc_val (BaseException | None): Exception instance raised inside the context, or None.
@@ -1272,7 +1298,7 @@ class TestDownloadFilesConcurrently:
             async def __aenter__(self):
                 """
                 Enter the asynchronous context and provide the mock client for use in tests.
-                
+
                 Returns:
                     The mock client instance returned to the caller.
                 """
@@ -1281,7 +1307,7 @@ class TestDownloadFilesConcurrently:
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 """
                 Exit the asynchronous context, ensuring the client is closed.
-                
+
                 Parameters:
                     exc_type (type | None): Exception type raised inside the context, or None.
                     exc_val (BaseException | None): Exception instance raised inside the context, or None.

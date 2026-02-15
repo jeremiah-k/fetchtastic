@@ -67,13 +67,13 @@ class GithubReleaseSource:
     ) -> List[Release]:
         """
         Retrieve and parse GitHub releases, preferring cached data when available.
-        
+
         Builds a cache key from the configured releases URL and the provided params, uses cached raw release data when valid, falls back to the GitHub API when not, and parses each release with the provided parser. Releases that are malformed or have no valid assets are skipped.
-        
+
         Parameters:
             params (Dict[str, Any]): Query parameters for the API request (e.g., {"per_page": 10}).
             parse_release_func (Callable[[Dict[str, Any]], Optional[Release]]): Function that converts a raw GitHub release dictionary into a Release object; return `None` to skip a release.
-        
+
         Returns:
             List[Release]: Parsed Release objects. Returns an empty list on error or if no valid releases are found.
         """
@@ -150,10 +150,10 @@ class GithubReleaseSource:
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Fetch raw release dictionaries from GitHub, using cached data when available.
-        
+
         Parameters:
             params (Dict[str, Any]): Query parameters for the API request (e.g., {"per_page": 10}).
-        
+
         Returns:
             Optional[List[Dict[str, Any]]]: List of raw release dicts on success, or `None` if an error occurs or the API response is invalid.
         """

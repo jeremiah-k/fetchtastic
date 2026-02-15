@@ -54,7 +54,7 @@ class AsyncDownloadError(Exception):
     ) -> None:
         """
         Create an AsyncDownloadError carrying structured details about a failed asynchronous download.
-        
+
         Parameters:
             message (str): Human-readable error message.
             url (Optional[str]): The request URL that failed, if known.
@@ -106,15 +106,15 @@ class AsyncGitHubClient:
         def _clamp_positive(name: str, value: Any, default: int) -> int:
             """
             Normalize a value to a positive integer (minimum 1), falling back to a default on parse errors.
-            
+
             Parameters:
                 name (str): Identifier used in warning messages when logging invalid or clamped values.
                 value (Any): Value to coerce to an integer.
                 default (int): Fallback integer returned when `value` cannot be parsed as an int.
-            
+
             Returns:
                 int: The parsed integer if it is greater than or equal to 1; `default` if parsing fails; 1 if the parsed value is less than 1.
-            
+
             Notes:
                 Logs a warning when parsing fails or when a value is clamped to 1.
             """
@@ -148,7 +148,7 @@ class AsyncGitHubClient:
     async def __aenter__(self) -> "AsyncGitHubClient":
         """
         Enter the async context, ensuring the client session is initialized.
-        
+
         Returns:
             AsyncGitHubClient: The initialized client instance.
         """
@@ -158,7 +158,7 @@ class AsyncGitHubClient:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """
         Close the client's aiohttp session when exiting the async context.
-        
+
         Ensures the underlying session is closed and the client is cleaned up.
         """
         await self.close()
@@ -187,9 +187,9 @@ class AsyncGitHubClient:
     def _get_default_headers(self) -> Dict[str, str]:
         """
         Builds default HTTP headers for GitHub API requests.
-        
+
         Includes Accept, GitHub API version, and User-Agent headers. If the client was configured with a GitHub token, includes an Authorization header.
-        
+
         Returns:
             dict: HTTP headers to use for requests.
         """
@@ -215,10 +215,10 @@ class AsyncGitHubClient:
     async def _rate_limit_guard(self, token_hash: str) -> AsyncIterator[None]:
         """
         Prevent API calls when the per-token GitHub rate limit is exhausted.
-        
+
         Parameters:
             token_hash (str): Identifier for the token's rate-limit state.
-        
+
         Raises:
             AsyncDownloadError: If the token's remaining requests are zero and the reset time is in the future.
         """
@@ -294,9 +294,13 @@ class AsyncGitHubClient:
                     self._update_rate_limits(token_hash, response)
 
                     if response.status == 403:
-                        remaining = int(
-                            response.headers.get("X-RateLimit-Remaining", 0)
-                        )
+                        raw_remaining = response.headers.get("X-RateLimit-Remaining")
+                        try:
+                            remaining = (
+                                int(raw_remaining) if raw_remaining is not None else 0
+                            )
+                        except (TypeError, ValueError):
+                            remaining = None
                         if remaining == 0:
                             reset_time = self._rate_limit_reset.get(token_hash)
                             raise AsyncDownloadError(
@@ -423,7 +427,7 @@ class AsyncGitHubClient:
     def _update_rate_limits(self, token_hash: str, response: ClientResponse) -> None:
         """
         Parse rate-limit headers from an HTTP response and update the client's per-token rate-limit state.
-        
+
         Parameters:
             token_hash (str): Key identifying the token whose rate-limit state will be updated.
             response (ClientResponse): HTTP response from which `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers are read.
@@ -454,17 +458,17 @@ class AsyncGitHubClient:
     ) -> bool:
         """
         Download a file to the given path with progress tracking and atomic replacement.
-        
+
         Parameters:
             url (str): Source URL to download.
             target_path (Pathish): Destination file path; parent directories will be created if missing.
             chunk_size (int): Number of bytes to read per chunk.
             progress_callback (Optional[callable]): Optional callback invoked with (downloaded: int, total: Optional[int], filename: str).
                 The callback may be a coroutine function; exceptions raised by the callback are logged and ignored.
-        
+
         Returns:
             bool: `True` if the file was successfully downloaded and moved to `target_path`.
-        
+
         Raises:
             AsyncDownloadError: On HTTP, network, filesystem, or unexpected failures. The exception carries `url`, `status_code` (when available),
                 `is_retryable`, and `retry_count` metadata. Temporary files are removed on error.
@@ -585,7 +589,7 @@ class AsyncGitHubClient:
     ) -> bool:
         """
         Attempt to download a URL to a local path, retrying with exponential backoff on retryable failures.
-        
+
         Parameters:
             url (str): Source URL to download.
             target_path (Pathish): Destination path where the file will be written.
@@ -593,10 +597,10 @@ class AsyncGitHubClient:
             retry_delay (float): Initial delay in seconds before the first retry.
             backoff_factor (float): Multiplier applied to the delay after each failed attempt.
             progress_callback (Optional[Any]): Optional callable or coroutine called with progress updates.
-        
+
         Returns:
             bool: `True` if the file was downloaded successfully.
-        
+
         Raises:
             AsyncDownloadError: If a non-retryable error occurs or all retry attempts are exhausted.
         """
@@ -635,11 +639,11 @@ async def create_async_client(
 ) -> AsyncIterator[AsyncGitHubClient]:
     """
     Provide a configured AsyncGitHubClient and ensure it is closed after use.
-    
+
     Parameters:
         github_token (Optional[str]): GitHub personal access token used for Authorization header; if `None`, requests are unauthenticated.
         max_concurrent (int): Maximum number of concurrent network operations the client will allow.
-    
+
     Returns:
         AsyncGitHubClient: Configured client instance; it will be closed when the context manager exits.
     """

@@ -83,9 +83,9 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     def get_download_dir(self) -> str:
         """
         Get the configured download directory.
-        
+
         If the configuration does not provide "DOWNLOAD_DIR", returns the default path "~/meshtastic".
-        
+
         Returns:
             The resolved download directory path as a string.
         """
@@ -119,11 +119,11 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     def _sync_download_fallback(self, url: str, target_path: Pathish) -> Optional[bool]:
         """
         Call the synchronous downloader as a fallback when async support is unavailable.
-        
+
         Parameters:
             url (str): URL of the resource to download.
             target_path (Pathish): Destination path for the downloaded file.
-        
+
         Returns:
             bool: `True` if the download succeeded, `False` otherwise.
         """
@@ -165,15 +165,15 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     ) -> bool:
         """
         Download a file to the specified target path with optional progress reporting.
-        
+
         Parameters:
             url (str): Source URL of the file.
             target_path (Pathish): Local path where the file will be saved.
             progress_callback (Optional[AsyncProgressCallback]): Optional callback invoked with
                 (downloaded_bytes, total_bytes, filename) to report progress.
-        
+
         Returns:
-            `true` if the download succeeded, `false` otherwise.
+            `True` if the download succeeded, `False` otherwise.
         """
         return await super().async_download(
             url, target_path, progress_callback=progress_callback
@@ -182,10 +182,10 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     async def _async_verify_file(self, file_path: Path) -> bool:
         """
         Determine whether a file's contents are intact and not corrupted. For ZIP archives, performs an archive integrity test before general integrity verification.
-        
+
         Parameters:
             file_path (Path): Path to the file to verify.
-        
+
         Returns:
             bool: True if the file is valid, False otherwise.
         """
@@ -196,7 +196,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
                 def check_zip() -> bool:
                     """
                     Check whether the ZIP archive referenced by `file_path` is intact.
-                    
+
                     Performs a ZIP integrity test and returns `True` if no corrupt members are found, `False` if the archive is corrupt or not a valid ZIP file.
                     """
                     try:
@@ -221,7 +221,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     async def _async_save_hash(self, file_path: Path) -> None:
         """
         Asynchronously compute the file's SHA-256 hash and persist it alongside the file.
-        
+
         Parameters:
             file_path (Path): Path to the file whose SHA-256 hash will be computed and saved.
         """
@@ -230,7 +230,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         def _compute_and_save() -> None:
             """
             Compute and persist the SHA-256 hash for the file referenced by the enclosing `file_path` variable.
-            
+
             If the hash is successfully computed, it is saved to the file's associated hash storage; otherwise no action is taken.
             """
             hash_value = utils.calculate_sha256(str(file_path))
@@ -242,8 +242,8 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     async def _async_verify_existing_file(self, file_path: Path) -> bool:
         """
         Verifies an existing file asynchronously.
-        
-        @returns: `true` if the file is valid, `false` otherwise.
+
+        @returns: `True` if the file is valid, `False` otherwise.
         """
         return await self._async_verify_file(file_path)
 
@@ -264,7 +264,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
     ) -> bool:
         """
         Download a file with retry logic and exponential backoff.
-        
+
         Parameters:
             url (str): URL to download from.
             target_path (Pathish): Local path to save the file.
@@ -272,9 +272,9 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
             retry_delay (Optional[float]): Initial delay between retries in seconds (default: 1.0).
             backoff_factor (float): Multiplier applied to the delay after each retry (default: 2.0).
             progress_callback (Optional[AsyncProgressCallback]): Optional callback for progress updates.
-        
+
         Returns:
-            bool: `true` if the download succeeded, `false` otherwise.
+            bool: `True` if the download succeeded, `False` otherwise.
         """
         return await super().async_download_with_retry(
             url,

@@ -60,11 +60,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
         Initialize the Meshtastic Android APK downloader and prepare its release sources, cache paths, and history manager.
-        
+
         Parameters:
             config (dict): Downloader configuration used to control behavior, selection patterns, and storage locations.
             cache_manager (CacheManager): Cache manager for reading/writing tracked release files and cached release data.
-        
+
         Detailed behavior:
             - Creates a GithubReleaseSource configured for Meshtastic Android releases and exposes it as `github_source`.
             - Determines and stores paths for latest-release and prerelease tracking files and for the release history file.
@@ -595,10 +595,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def is_release_complete(self, release: Release) -> bool:
         """
         Determine whether all APK assets selected for the given release are present on disk and match their expected sizes.
-        
+
         Parameters:
             release (Release): Release whose APK assets are checked. Only assets that pass the downloader's selection rules are considered.
-        
+
         Returns:
             True if all selected assets are present and each file size equals the asset's expected size, False otherwise.
         """

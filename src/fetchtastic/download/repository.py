@@ -367,9 +367,9 @@ class RepositoryDownloader(BaseDownloader):
     def clean_repository_directory(self) -> bool:
         """
         Remove all contents of the repository downloads directory under the configured downloads area.
-        
+
         Updates the instance's cleanup summary (`removed_files`, `removed_dirs`, `errors`, `success`). If the repository downloads directory does not exist no changes are made and the summary's `success` is set to True.
-        
+
         Returns:
             bool: `True` if cleanup completed without errors, `False` otherwise.
         """
@@ -557,9 +557,9 @@ class RepositoryDownloader(BaseDownloader):
     ) -> bool:
         """
         Determine whether extraction should be performed for a repository file.
-        
+
         Repository files are not treated as archives; extraction is not applicable.
-        
+
         Returns:
             False indicating extraction is not required for repository files.
         """
@@ -573,9 +573,9 @@ class RepositoryDownloader(BaseDownloader):
     def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
         Always permit downloading of repository release assets.
-        
+
         Repository downloads are not filtered by release tag or asset name; this method unconditionally approves downloads.
-        
+
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.
         """

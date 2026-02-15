@@ -9,6 +9,8 @@ from rich.logging import RichHandler
 
 from fetchtastic import log_utils
 
+pytestmark = [pytest.mark.unit, pytest.mark.infrastructure]
+
 
 class TestLogUtils:
     """Test suite for log_utils module."""
@@ -142,7 +144,7 @@ class TestLogUtils:
     def test_rotating_file_handler_configuration(self):
         """
         Verify the rotating file handler created by add_file_logging is present and configured with a 10 MB max size, five backups, and UTF-8 encoding.
-        
+
         Asserts that log_utils._file_handler is not None and that its `maxBytes` equals 10 * 1024 * 1024, `backupCount` equals 5, and `encoding` equals "utf-8".
         """
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -16,5 +16,18 @@ All test functionality has been migrated to the focused modules above.
 TODO: Remove this file in v0.11.0 after confirming all tests are discovered properly.
 """
 
+import pytest
+
+pytestmark = [
+    pytest.mark.unit,
+    pytest.mark.integration,
+    pytest.mark.slow,
+    pytest.mark.performance,
+    pytest.mark.core_downloads,
+    pytest.mark.user_interface,
+    pytest.mark.configuration,
+    pytest.mark.infrastructure,
+]
+
 # This file is intentionally minimal - all tests have been migrated to focused modules
 # See the list above for the new test locations
