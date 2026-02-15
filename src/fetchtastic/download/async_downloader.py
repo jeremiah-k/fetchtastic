@@ -14,7 +14,6 @@ Design:
 
 import asyncio
 import os
-import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
@@ -27,6 +26,7 @@ from fetchtastic.utils import calculate_sha256, save_file_hash
 
 from .async_client import AsyncDownloadError
 from .async_core import AsyncDownloadCoreMixin
+from .files import is_zip_intact
 from .interfaces import Asset, DownloadResult, Pathish, Release
 
 if TYPE_CHECKING:
@@ -108,23 +108,8 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         """
         try:
             if file_path.suffix.lower() == ".zip":
-                # ZipFile is sync, run in executor for non-blocking
                 loop = asyncio.get_running_loop()
-
-                def check_zip() -> bool:
-                    """
-                    Check whether the ZIP file referenced by `file_path` is intact and has no corrupt entries.
-
-                    Returns:
-                        True if the archive passes a ZIP integrity test, False otherwise.
-                    """
-                    try:
-                        with zipfile.ZipFile(file_path, "r") as zf:
-                            return zf.testzip() is None
-                    except zipfile.BadZipFile:
-                        return False
-
-                if not await loop.run_in_executor(None, check_zip):
+                if not await loop.run_in_executor(None, is_zip_intact, str(file_path)):
                     return False
 
             # Verify hash
@@ -135,7 +120,7 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
                 None, verify_file_integrity, str(file_path)
             )
 
-        except (OSError, zipfile.BadZipFile) as e:
+        except OSError as e:
             logger.debug(f"File verification failed for {file_path}: {e}")
             return False
 

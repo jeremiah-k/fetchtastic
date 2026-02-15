@@ -147,6 +147,23 @@ def _sanitize_path_component(component: str | None) -> str | None:
     return sanitized
 
 
+def is_zip_intact(file_path: str | Path) -> bool:
+    """
+    Check whether a ZIP archive is intact and has no corrupt entries.
+
+    Parameters:
+        file_path (str | Path): Path to the ZIP file to inspect.
+
+    Returns:
+        bool: `True` if the archive passes the ZIP integrity test, `False` otherwise.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            return zf.testzip() is None
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
     Return a list of safe prerelease subdirectory names found in the given directory.

@@ -25,7 +25,12 @@ from fetchtastic.utils import matches_selected_patterns
 
 from .async_core import AsyncDownloadCoreMixin
 from .cache import CacheManager
-from .files import FileOperations, _sanitize_path_component, strip_unwanted_chars
+from .files import (
+    FileOperations,
+    _sanitize_path_component,
+    is_zip_intact,
+    strip_unwanted_chars,
+)
 from .interfaces import Asset, Downloader, DownloadResult, Pathish
 from .version import VersionManager
 
@@ -192,20 +197,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         try:
             if file_path.suffix.lower() == ".zip":
                 loop = asyncio.get_running_loop()
-
-                def check_zip() -> bool:
-                    """
-                    Check whether the ZIP archive referenced by `file_path` is intact.
-
-                    Performs a ZIP integrity test and returns `True` if no corrupt members are found, `False` if the archive is corrupt or not a valid ZIP file.
-                    """
-                    try:
-                        with zipfile.ZipFile(file_path, "r") as zf:
-                            return zf.testzip() is None
-                    except zipfile.BadZipFile:
-                        return False
-
-                if not await loop.run_in_executor(None, check_zip):
+                if not await loop.run_in_executor(None, is_zip_intact, str(file_path)):
                     return False
 
             # Verify file integrity using existing sync utility
@@ -671,11 +663,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         Returns:
             bool: `True` if the archive contains no corrupt members, `False` otherwise.
         """
-        try:
-            with zipfile.ZipFile(file_path, "r") as zf:
-                return zf.testzip() is None
-        except (IOError, zipfile.BadZipFile):
-            return False
+        return is_zip_intact(file_path)
 
     def is_asset_complete(self, release_tag: str, asset: Asset) -> bool:
         """

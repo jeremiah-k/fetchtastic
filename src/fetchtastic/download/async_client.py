@@ -16,7 +16,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import aiofiles
 import aiohttp
@@ -36,9 +36,6 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 
 from .interfaces import Asset, Pathish, Release
-
-if TYPE_CHECKING:
-    pass
 
 
 class AsyncDownloadError(Exception):

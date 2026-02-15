@@ -10,3 +10,4 @@ rich==14.3.2
 # Async support for parallel downloads
 aiohttp>=3.8.0
 aiofiles>=23.1.0
+
