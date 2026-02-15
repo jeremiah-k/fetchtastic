@@ -102,12 +102,29 @@ class AsyncGitHubClient:
             max_concurrent (int): Maximum concurrent downloads (semaphore limit).
             connector_limit (int): Maximum total connections in the pool.
         """
+
+        def _clamp_positive(name: str, value: Any, default: int) -> int:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Invalid %s value %r; using default of %d",
+                    name,
+                    value,
+                    default,
+                )
+                return default
+            if parsed <= 0:
+                logger.warning("%s must be >= 1; clamping %d to 1", name, parsed)
+                return 1
+            return parsed
+
         self.github_token = github_token
         self.timeout = ClientTimeout(total=timeout)
-        self.max_concurrent = max_concurrent
-        self.connector_limit = connector_limit
+        self.max_concurrent = _clamp_positive("max_concurrent", max_concurrent, 5)
+        self.connector_limit = _clamp_positive("connector_limit", connector_limit, 10)
         self._session: Optional[ClientSession] = None
-        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._semaphore = asyncio.Semaphore(self.max_concurrent)
         self._closed: bool = False
 
         # Rate limit tracking

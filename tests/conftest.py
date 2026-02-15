@@ -126,6 +126,21 @@ def pytest_runtest_setup():
     requests.options = _block_network
     requests.Session.request = _block_network
 
+    try:
+        import aiohttp  # type: ignore[import-not-found]
+
+        aiohttp.request = _async_block_network
+        aiohttp.ClientSession.request = _async_block_network
+        aiohttp.ClientSession.get = _async_block_network
+        aiohttp.ClientSession.post = _async_block_network
+        aiohttp.ClientSession.put = _async_block_network
+        aiohttp.ClientSession.delete = _async_block_network
+        aiohttp.ClientSession.head = _async_block_network
+        aiohttp.ClientSession.patch = _async_block_network
+        aiohttp.ClientSession.options = _async_block_network
+    except ImportError:
+        pass
+
 
 @pytest.fixture(autouse=True)
 def _mock_time_sleep(monkeypatch):

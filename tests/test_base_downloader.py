@@ -715,7 +715,7 @@ class TestBaseDownloaderManagers:
 
 
 # =============================================================================
-# Async Download Tests (lines 130-249)
+# Async Download Tests
 # =============================================================================
 
 
@@ -775,6 +775,53 @@ class TestBaseDownloaderAsyncDownload:
                 )
 
         assert result is True
+
+    async def test_async_download_reuses_shared_session(self, tmp_path, mocker):
+        """Multiple async downloads should reuse one session per downloader instance."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = ConcreteDownloader(config)
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Length": "4"}
+        mock_response.raise_for_status = Mock()
+        mock_content = MagicMock()
+        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        with (
+            patch(
+                "aiohttp.ClientSession", return_value=mock_session
+            ) as mock_session_cls,
+            patch("aiohttp.ClientTimeout"),
+            patch("aiohttp.TCPConnector"),
+        ):
+            mock_file = AsyncMock()
+            with patch("aiofiles.open") as mock_open:
+                mock_open.return_value.__aenter__ = AsyncMock(return_value=mock_file)
+                mock_open.return_value.__aexit__ = AsyncMock(return_value=None)
+
+                mocker.patch.object(
+                    downloader, "_async_verify_file", AsyncMock(return_value=False)
+                )
+                mocker.patch.object(downloader, "_async_save_hash", AsyncMock())
+                mocker.patch.object(Path, "replace", return_value=None)
+
+                result1 = await downloader.async_download(
+                    "https://example.com/file1.bin", tmp_path / "file1.bin"
+                )
+                result2 = await downloader.async_download(
+                    "https://example.com/file2.bin", tmp_path / "file2.bin"
+                )
+
+        assert result1 is True
+        assert result2 is True
+        assert mock_session_cls.call_count == 1
 
     async def test_async_download_skips_existing_valid_file(self, tmp_path, mocker):
         """Test that async download skips existing valid file."""
@@ -979,11 +1026,15 @@ class TestBaseDownloaderAsyncDownload:
         """Test async download handles client errors."""
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = ConcreteDownloader(config)
+        from aiohttp import ClientError
+
         from fetchtastic.download.async_client import AsyncDownloadError
 
         # Create a mock response that raises ClientError when entering context
         mock_response = AsyncMock()
-        mock_response.__aenter__ = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_response.__aenter__ = AsyncMock(
+            side_effect=ClientError("Connection failed")
+        )
         mock_response.__aexit__ = AsyncMock()
 
         mock_session = AsyncMock()
@@ -1002,8 +1053,9 @@ class TestBaseDownloaderAsyncDownload:
 
             target = tmp_path / "test.bin"
             # Errors during download should raise AsyncDownloadError
-            with pytest.raises(AsyncDownloadError):
+            with pytest.raises(AsyncDownloadError) as exc_info:
                 await downloader.async_download("https://example.com/file.bin", target)
+            assert exc_info.value.is_retryable is True
 
     async def test_async_download_os_error(self, tmp_path, mocker):
         """Test async download handles OS errors."""
@@ -1086,7 +1138,7 @@ class TestBaseDownloaderAsyncDownload:
 
 
 # =============================================================================
-# Async Verify File Tests (lines 251-283)
+# Async Verify File Tests
 # =============================================================================
 
 
@@ -1154,7 +1206,7 @@ class TestBaseDownloaderAsyncVerifyFile:
 
 
 # =============================================================================
-# Async Save Hash Tests (lines 285-297)
+# Async Save Hash Tests
 # =============================================================================
 
 
@@ -1200,7 +1252,7 @@ class TestBaseDownloaderAsyncSaveHash:
 
 
 # =============================================================================
-# Async Download With Retry Tests (lines 299-345)
+# Async Download With Retry Tests
 # =============================================================================
 
 

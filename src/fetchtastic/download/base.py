@@ -82,6 +82,8 @@ class BaseDownloader(Downloader, ABC):
 
         # Semaphore for concurrent download control (lazy-initialized)
         self._semaphore: Optional[asyncio.Semaphore] = None
+        # Shared aiohttp session for async downloads (lazy-initialized)
+        self._async_session: Optional[Any] = None
 
     def get_download_dir(self) -> str:
         """
@@ -146,6 +148,49 @@ class BaseDownloader(Downloader, ABC):
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(self._get_max_concurrent())
         return self._semaphore
+
+    async def _ensure_async_session(self, aiohttp_module: Optional[Any] = None) -> Any:
+        """
+        Get or create a reusable aiohttp ClientSession for async downloads.
+
+        Parameters:
+            aiohttp_module (Optional[Any]): Optional imported aiohttp module to reuse.
+
+        Returns:
+            Any: Active aiohttp ClientSession instance.
+        """
+        if aiohttp_module is None:
+            import aiohttp as aiohttp_module  # type: ignore[import-not-found]
+
+        if (
+            self._async_session is None
+            or getattr(self._async_session, "closed", False) is True
+        ):
+            timeout = aiohttp_module.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
+            connector = aiohttp_module.TCPConnector(limit=self._get_max_concurrent())
+            self._async_session = aiohttp_module.ClientSession(
+                timeout=timeout,
+                connector=connector,
+            )
+        return self._async_session
+
+    async def close(self) -> None:
+        """Close the shared async download session, if active."""
+        if (
+            self._async_session is not None
+            and getattr(self._async_session, "closed", False) is not True
+        ):
+            close_result = self._async_session.close()
+            if asyncio.iscoroutine(close_result):
+                await close_result
+        self._async_session = None
+
+    async def __aenter__(self) -> "BaseDownloader":
+        await self._ensure_async_session()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.close()
 
     def download(self, url: str, target_path: Pathish) -> bool:
         """
@@ -241,44 +286,45 @@ class BaseDownloader(Downloader, ABC):
         async with self._get_semaphore():
             try:
                 start_time = time.time()
-                timeout = _aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT)
                 downloaded = (
                     0  # Initialize early to avoid UnboundLocalError on early exit
                 )
                 total_size = 0
+                session = await self._ensure_async_session(_aiohttp)
 
-                async with _aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url) as response:
-                        # Handle HTTP errors with appropriate retryability
-                        if response.status >= 400:
-                            is_retryable = response.status >= 500
-                            raise AsyncDownloadError(
-                                f"HTTP error {response.status}",
-                                url=url,
-                                status_code=response.status,
-                                is_retryable=is_retryable,
-                            )
+                async with session.get(url) as response:
+                    # Handle HTTP errors with appropriate retryability
+                    if response.status >= 400:
+                        is_retryable = response.status >= 500
+                        raise AsyncDownloadError(
+                            f"HTTP error {response.status}",
+                            url=url,
+                            status_code=response.status,
+                            is_retryable=is_retryable,
+                        )
 
-                        total_size = int(response.headers.get("Content-Length", 0))
+                    content_length = response.headers.get("Content-Length")
+                    try:
+                        total_size = int(content_length) if content_length else 0
+                    except (TypeError, ValueError):
+                        total_size = 0
 
-                        async with _aiofiles.open(temp_path, "wb") as f:
-                            async for chunk in response.content.iter_chunked(
-                                DEFAULT_CHUNK_SIZE
-                            ):
-                                await f.write(chunk)
-                                downloaded += len(chunk)
+                    async with _aiofiles.open(temp_path, "wb") as f:
+                        async for chunk in response.content.iter_chunked(
+                            DEFAULT_CHUNK_SIZE
+                        ):
+                            await f.write(chunk)
+                            downloaded += len(chunk)
 
-                                if progress_callback:
-                                    try:
-                                        result = progress_callback(
-                                            downloaded, total_size or None, target.name
-                                        )
-                                        if asyncio.iscoroutine(result):
-                                            await result
-                                    except Exception as cb_err:
-                                        logger.debug(
-                                            f"Progress callback error: {cb_err}"
-                                        )
+                            if progress_callback:
+                                try:
+                                    result = progress_callback(
+                                        downloaded, total_size or None, target.name
+                                    )
+                                    if asyncio.iscoroutine(result):
+                                        await result
+                                except Exception as cb_err:
+                                    logger.debug(f"Progress callback error: {cb_err}")
 
                 elapsed = time.time() - start_time
                 file_size_mb = downloaded / (1024 * 1024)

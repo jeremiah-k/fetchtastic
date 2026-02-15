@@ -119,6 +119,13 @@ class TestAsyncGitHubClientInitialization:
         # timeout is stored as ClientTimeout object
         assert client.timeout.total == 60.0
 
+    def test_init_clamps_non_positive_limits(self):
+        """Non-positive concurrency limits should be clamped to safe minimums."""
+        client = AsyncGitHubClient(max_concurrent=0, connector_limit=-3)
+
+        assert client.max_concurrent == 1
+        assert client.connector_limit == 1
+
 
 # =============================================================================
 # Async Context Manager Tests (lines 122-134)

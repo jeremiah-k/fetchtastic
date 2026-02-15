@@ -490,7 +490,7 @@ class RepositoryDownloader(BaseDownloader):
         """
         Clear the repository downloads directory, ignoring any retention limit.
 
-        The _keep_limit parameter is ignored because repository files are not versioned; this method removes all files under the repository downloads area.
+        The keep_limit parameter is ignored because repository files are not versioned; this method removes all files under the repository downloads area.
 
         Parameters:
             keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
