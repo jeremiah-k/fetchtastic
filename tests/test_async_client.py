@@ -25,6 +25,7 @@ from fetchtastic.download.async_client import (
     create_async_client,
     download_files_concurrently,
 )
+from tests.async_test_utils import make_async_iter
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
@@ -861,21 +862,6 @@ class TestUpdateRateLimits:
 # =============================================================================
 
 
-# Helper to create async iterator from list
-async def _make_async_iter(items):
-    """
-    Asynchronously iterate over a synchronous iterable and yield each element.
-
-    Parameters:
-        items (Iterable): A synchronous iterable whose elements will be yielded by the async iterator.
-
-    Returns:
-        AsyncIterator: An asynchronous iterator that yields each element from `items`.
-    """
-    for item in items:
-        yield item
-
-
 @pytest.mark.asyncio
 class TestDownloadFile:
     """Test download_file method."""
@@ -892,7 +878,7 @@ class TestDownloadFile:
         # Mock content iteration - iter_chunked returns async iterator
         mock_content = mocker.MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"test content"])
+            return_value=make_async_iter([b"test content"])
         )
         mock_response.content = mock_content
 
@@ -935,7 +921,7 @@ class TestDownloadFile:
         mock_response.headers = {"Content-Length": "12"}
 
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
@@ -974,7 +960,7 @@ class TestDownloadFile:
 
         mock_content = mocker.MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"chunk1", b"chunk2"])
+            return_value=make_async_iter([b"chunk1", b"chunk2"])
         )
         mock_response.content = mock_content
 
@@ -1029,7 +1015,7 @@ class TestDownloadFile:
         mock_response.headers = {"Content-Length": "chunked"}
 
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1125,7 +1111,7 @@ class TestDownloadFile:
         mock_response.status = 200
         mock_response.headers = {"Content-Length": "4"}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1164,7 +1150,7 @@ class TestDownloadFile:
         big_chunk = b"x" * (1024 * 1024)
         mock_response.headers = {"Content-Length": str(len(big_chunk))}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([big_chunk]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([big_chunk]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1198,7 +1184,7 @@ class TestDownloadFile:
         mock_response.status = 200
         mock_response.headers = {"Content-Length": "4"}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
@@ -1258,7 +1244,7 @@ class TestDownloadFile:
         mock_response.status = 200
         mock_response.headers = {"Content-Length": "4"}
         mock_content = mocker.MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)

@@ -23,23 +23,9 @@ import pytest
 from fetchtastic.download.base import BaseDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset
+from tests.async_test_utils import make_async_iter
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
-
-
-# Helper to create async iterator from list (for mocking aiohttp iter_chunked)
-async def _make_async_iter(items):
-    """
-    Create an asynchronous iterator that yields each element from the given iterable.
-
-    Parameters:
-        items (iterable): An iterable of values to be yielded.
-
-    Returns:
-        An asynchronous iterator that yields each element from `items`.
-    """
-    for item in items:
-        yield item
 
 
 # Concrete implementation of BaseDownloader for testing
@@ -747,7 +733,7 @@ class TestBaseDownloaderAsyncDownload:
         # Mock content iteration
         mock_content = MagicMock()
         mock_content.iter_chunked = Mock(
-            return_value=_make_async_iter([b"test content"])
+            return_value=make_async_iter([b"test content"])
         )
         mock_response.content = mock_content
 
@@ -797,7 +783,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.raise_for_status = Mock()
         mock_content = MagicMock()
         mock_content.iter_chunked = Mock(
-            side_effect=lambda *_args, **_kwargs: _make_async_iter([b"test"])
+            side_effect=lambda *_args, **_kwargs: make_async_iter([b"test"])
         )
         mock_response.content = mock_content
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
@@ -867,7 +853,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.raise_for_status = Mock()
 
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_session = AsyncMock()
@@ -989,7 +975,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.raise_for_status = Mock()
 
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_session = AsyncMock()
@@ -1115,7 +1101,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.raise_for_status = Mock()
 
         mock_content = MagicMock()
-        mock_content.iter_chunked = Mock(return_value=_make_async_iter([b"test"]))
+        mock_content.iter_chunked = Mock(return_value=make_async_iter([b"test"]))
         mock_response.content = mock_content
 
         mock_session = AsyncMock()

@@ -785,5 +785,5 @@ def run_repository_downloader_menu(config: dict[str, Any]) -> list[str] | None:
             return None
 
     except Exception as e:  # noqa: BLE001
-        logger.error(f"Error in repository downloader workflow: {e}", exc_info=True)
+        logger.error("Error in repository downloader workflow: %s", e, exc_info=True)
         return None

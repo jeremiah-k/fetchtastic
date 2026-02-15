@@ -247,7 +247,7 @@ class AsyncDownloadCoreMixin:
             file_path (Path): Path to the local file to verify.
 
         Returns:
-            bool: `true` if the file is valid and the caller may skip downloading, `false` otherwise.
+            bool: `True` if the file is valid and the caller may skip downloading, `False` otherwise.
         """
         raise NotImplementedError
 
