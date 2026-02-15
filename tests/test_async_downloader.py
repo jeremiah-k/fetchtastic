@@ -412,6 +412,7 @@ class TestAsyncDownload:
 
         # Mock aiohttp session
         mock_session = MagicMock()
+        mock_session.closed = False
         mock_session.get = MagicMock(return_value=mock_response)
 
         # Patch aiohttp
@@ -463,6 +464,7 @@ class TestAsyncDownload:
         mock_response.__aexit__ = AsyncMock(return_value=None)
 
         mock_session = MagicMock()
+        mock_session.closed = False
         mock_session.get = MagicMock(return_value=mock_response)
 
         with (

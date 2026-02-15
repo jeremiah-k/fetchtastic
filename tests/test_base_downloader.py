@@ -803,6 +803,7 @@ class TestBaseDownloaderAsyncDownload:
         mock_response.__aexit__ = AsyncMock()
 
         mock_session = MagicMock()
+        mock_session.closed = False
         mock_session.get = MagicMock(return_value=mock_response)
 
         with (
