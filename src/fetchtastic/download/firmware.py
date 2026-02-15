@@ -43,6 +43,8 @@ from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     download_file_with_retry,
+    load_file_hash,
+    make_github_api_request,
     matches_extract_patterns,
     matches_selected_patterns,
     verify_file_integrity,
@@ -678,41 +680,44 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
                 return False
 
+            try:
+                actual_size = os.path.getsize(asset_path)
+                expected_size = asset.size
+                if expected_size is not None and actual_size != expected_size:
+                    logger.debug(
+                        "File size mismatch for %s: expected %s, got %s",
+                        asset_path,
+                        expected_size,
+                        actual_size,
+                    )
+                    return False
+            except (OSError, TypeError):
+                logger.debug(f"Error checking file size for {asset_path}")
+                return False
+
             if asset.name.lower().endswith(".zip"):
+                # If a trusted hash baseline already exists, hash verification is
+                # substantially faster than re-running ZIP member decompression.
+                has_hash_baseline = load_file_hash(asset_path) is not None
+                if has_hash_baseline:
+                    if not self.verify(asset_path):
+                        logger.debug("Hash verification failed for %s", asset_path)
+                        return False
+                    continue
+
                 try:
                     with zipfile.ZipFile(asset_path, "r") as zf:
                         if zf.testzip() is not None:
                             logger.debug(f"Corrupted zip file detected: {asset_path}")
                             return False
-                    try:
-                        actual_size = os.path.getsize(asset_path)
-                        expected_size = asset.size
-                        if expected_size is not None:
-                            if actual_size != expected_size:
-                                logger.debug(
-                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
-                                )
-                                return False
-                    except (OSError, TypeError):
-                        logger.debug(f"Error checking file size for {asset_path}")
+                    if not self.verify(asset_path):
+                        logger.debug("Hash verification failed for %s", asset_path)
                         return False
                 except zipfile.BadZipFile:
                     logger.debug(f"Bad zip file detected: {asset_path}")
                     return False
                 except (IOError, OSError):
                     logger.debug(f"Error checking zip file: {asset_path}")
-                    return False
-            else:
-                try:
-                    actual_size = os.path.getsize(asset_path)
-                    expected_size = asset.size
-                    if expected_size is not None and actual_size != expected_size:
-                        logger.debug(
-                            f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
-                        )
-                        return False
-                except (OSError, TypeError):
-                    logger.debug(f"Error checking file size for {asset_path}")
                     return False
 
         return True
@@ -1316,11 +1321,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if not force_refresh and os.path.exists(target_path):
                     zip_ok = True
                     if name.lower().endswith(".zip"):
-                        try:
-                            with zipfile.ZipFile(target_path, "r") as zf:
-                                zip_ok = zf.testzip() is None
-                        except (zipfile.BadZipFile, IOError):
-                            zip_ok = False
+                        has_hash_baseline = load_file_hash(target_path) is not None
+                        if not has_hash_baseline:
+                            try:
+                                with zipfile.ZipFile(target_path, "r") as zf:
+                                    zip_ok = zf.testzip() is None
+                            except (zipfile.BadZipFile, IOError):
+                                zip_ok = False
 
                     if zip_ok and verify_file_integrity(target_path):
                         logger.debug(

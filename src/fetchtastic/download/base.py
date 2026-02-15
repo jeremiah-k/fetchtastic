@@ -715,7 +715,12 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
             raise AttributeError(
                 _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
             )
-        return cast(bool, manager.is_release_revoked(release))
+        is_release_revoked = getattr(manager, "is_release_revoked", None)
+        if not callable(is_release_revoked):
+            raise AttributeError(
+                _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
+            )
+        return bool(is_release_revoked(release))
 
     def needs_download(
         self, release_tag: str, file_name: str, expected_size: int

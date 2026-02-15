@@ -77,7 +77,7 @@ class MenuPicker(Picker[Option]):
         title_lines = len(self.get_title_lines(max_width=max_x))
         max_rows = int(max_y - self.position.y)
         step = max_rows - title_lines - 1
-        return max(1, step)
+        return max(1, int(step))
 
     def _is_action_option(self, option: Option) -> bool:
         """

@@ -724,20 +724,12 @@ def run_clean() -> None:
     # Windows-specific cleanup
     if platform.system() == "Windows":
         # Check if Windows modules are available
-        windows_modules_available = False
-        winshell_module: Any | None = None
-        try:
-            import winshell as _winshell  # type: ignore[import-not-found]
-
-            winshell_module = _winshell
-
-            windows_modules_available = True
-        except ImportError:
+        winshell_module = getattr(setup_config, "winshell", None)
+        if winshell_module is None:
             print(
                 "Windows modules not available. Some Windows-specific items may not be removed."
             )
-
-        if windows_modules_available:
+        else:
             # Remove Start Menu shortcuts
             windows_start_menu_folder = setup_config.WINDOWS_START_MENU_FOLDER
             if os.path.exists(windows_start_menu_folder):
@@ -779,8 +771,6 @@ def run_clean() -> None:
 
             # Remove startup shortcut
             try:
-                if winshell_module is None:
-                    raise AttributeError("winshell module not available")
                 startup_folder = winshell_module.startup()
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
                 if os.path.exists(startup_shortcut_path):

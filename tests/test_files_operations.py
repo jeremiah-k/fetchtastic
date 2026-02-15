@@ -233,6 +233,40 @@ class TestIsReleaseComplete:
         )
         assert result is False
 
+    def test_complete_release_uses_hash_baseline_for_zip(self, tmp_path, monkeypatch):
+        """When a hash baseline exists, ZIP validation should use hash verification."""
+        release_dir = tmp_path / "release"
+        release_dir.mkdir()
+        test_file = release_dir / "file1.zip"
+        test_file.write_bytes(b"not-a-zip-but-hash-verified")
+
+        verify_calls = {"count": 0}
+
+        def fake_verify(file_path: str) -> bool:
+            verify_calls["count"] += 1
+            return file_path == str(test_file)
+
+        def fail_zip_open(*_args, **_kwargs):
+            raise AssertionError(
+                "ZipFile should not be opened when hash baseline exists"
+            )
+
+        monkeypatch.setattr("fetchtastic.download.files.load_file_hash", lambda _p: "h")
+        monkeypatch.setattr(
+            "fetchtastic.download.files.verify_file_integrity", fake_verify
+        )
+        monkeypatch.setattr("fetchtastic.download.files.zipfile.ZipFile", fail_zip_open)
+
+        result = _is_release_complete(
+            {"assets": [{"name": "file1.zip", "size": test_file.stat().st_size}]},
+            str(release_dir),
+            [],
+            [],
+        )
+
+        assert result is True
+        assert verify_calls["count"] == 1
+
 
 class TestFileOperations:
     """Test FileOperations class."""

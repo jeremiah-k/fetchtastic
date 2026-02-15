@@ -4,6 +4,7 @@
 
 import json
 import os
+import zipfile
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import ANY, Mock, patch
@@ -1435,6 +1436,63 @@ class TestFirmwareReleaseDownloader:
 
         assert downloader.is_release_complete(release) is False
         assert mock_logger.debug.called
+
+    def test_is_release_complete_zip_uses_hash_baseline(
+        self, downloader, tmp_path, mocker
+    ):
+        """ZIP checks should use hash verification directly when a baseline hash exists."""
+        downloader.download_dir = str(tmp_path)
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        release = Release(tag_name="v1.2.3", prerelease=False)
+        asset_path = tmp_path / "firmware" / "v1.2.3" / "firmware-rak4631.zip"
+        asset_path.parent.mkdir(parents=True)
+        asset_path.write_bytes(b"zip bytes")
+        release.assets.append(
+            Asset(
+                name="firmware-rak4631.zip",
+                download_url="https://example.com/fw.zip",
+                size=asset_path.stat().st_size,
+            )
+        )
+
+        mocker.patch(
+            "fetchtastic.download.firmware.load_file_hash", return_value="hash"
+        )
+        verify_mock = mocker.patch.object(downloader, "verify", return_value=True)
+        zip_file_ctor = mocker.patch("fetchtastic.download.firmware.zipfile.ZipFile")
+
+        assert downloader.is_release_complete(release) is True
+        verify_mock.assert_called_once_with(str(asset_path))
+        zip_file_ctor.assert_not_called()
+
+    def test_is_release_complete_zip_without_hash_runs_zip_and_verify(
+        self, downloader, tmp_path, mocker
+    ):
+        """ZIP checks without a baseline hash should validate archive and then verify hash."""
+        downloader.download_dir = str(tmp_path)
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        release = Release(tag_name="v1.2.4", prerelease=False)
+        version_dir = tmp_path / "firmware" / "v1.2.4"
+        version_dir.mkdir(parents=True)
+        asset_path = version_dir / "firmware-rak4631.zip"
+        with zipfile.ZipFile(asset_path, "w") as zf:
+            zf.writestr("content.txt", "ok")
+
+        release.assets.append(
+            Asset(
+                name="firmware-rak4631.zip",
+                download_url="https://example.com/fw.zip",
+                size=asset_path.stat().st_size,
+            )
+        )
+
+        mocker.patch("fetchtastic.download.firmware.load_file_hash", return_value=None)
+        verify_mock = mocker.patch.object(downloader, "verify", return_value=True)
+
+        assert downloader.is_release_complete(release) is True
+        verify_mock.assert_called_once_with(str(asset_path))
 
     def test_extract_firmware_missing_zip(self, downloader):
         """Missing ZIP files should return a validation error result."""

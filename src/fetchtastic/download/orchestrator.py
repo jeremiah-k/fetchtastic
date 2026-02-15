@@ -11,8 +11,9 @@ import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests  # type: ignore[import-untyped]
 
@@ -86,12 +87,12 @@ def is_connected_to_wifi() -> bool:
         data = json.loads(output)
         if not isinstance(data, dict):
             return False
-        supplicant_state_raw = data.get("supplicant_state", "")
-        ip_address_raw = data.get("ip", "")
+        raw_supplicant_state = data.get("supplicant_state", "")
+        raw_ip_address = data.get("ip", "")
         supplicant_state = (
-            supplicant_state_raw if isinstance(supplicant_state_raw, str) else ""
+            raw_supplicant_state if isinstance(raw_supplicant_state, str) else ""
         )
-        ip_address = ip_address_raw if isinstance(ip_address_raw, str) else ""
+        ip_address = raw_ip_address if isinstance(raw_ip_address, str) else ""
         return supplicant_state == "COMPLETED" and ip_address != ""
     except json.JSONDecodeError as e:
         logger.warning(f"Error decoding JSON from termux-wifi-connectioninfo: {e}")
@@ -225,12 +226,19 @@ class DownloadOrchestrator:
             stable_releases = [r for r in android_releases if not r.prerelease]
             releases_to_process = stable_releases[:keep_count]
 
-            releases_to_download = []
             for release in releases_to_process:
                 self.android_downloader.ensure_release_notes(release)
                 suffix = self.android_downloader.format_release_log_suffix(release)
                 logger.info(f"Checking {release.tag_name}{suffix}…")
-                if self.android_downloader.is_release_complete(release):
+
+            completion_states = self._check_releases_complete(
+                releases_to_process, self.android_downloader.is_release_complete
+            )
+            releases_to_download = []
+            for release, is_complete in zip(
+                releases_to_process, completion_states, strict=True
+            ):
+                if is_complete:
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -346,6 +354,52 @@ class DownloadOrchestrator:
             limit=limit,
         )
 
+    def _get_release_check_workers(self) -> int:
+        """
+        Return the number of worker threads to use when checking release completeness.
+
+        Reads `MAX_PARALLEL_RELEASE_CHECKS` from configuration and falls back to 4.
+        Values below 1 or invalid values are clamped/fallback to safe defaults.
+
+        Returns:
+            int: Positive worker count for parallel release completeness checks.
+        """
+        raw_workers = self.config.get("MAX_PARALLEL_RELEASE_CHECKS", 4)
+        try:
+            return max(1, int(raw_workers))
+        except (TypeError, ValueError):
+            logger.debug(
+                "Invalid MAX_PARALLEL_RELEASE_CHECKS value %r; using default 4",
+                raw_workers,
+            )
+            return 4
+
+    def _check_releases_complete(
+        self, releases: List[Release], checker: Callable[[Release], bool]
+    ) -> List[bool]:
+        """
+        Evaluate release completeness for each release in stable input order.
+
+        Uses bounded thread parallelism when checking more than one release to
+        reduce total wall-clock time for I/O-heavy completeness checks.
+
+        Parameters:
+            releases (List[Release]): Releases to check.
+            checker (Callable[[Release], bool]): Callable that returns whether a release is complete.
+
+        Returns:
+            List[bool]: Completion flags aligned with `releases`.
+        """
+        if not releases:
+            return []
+
+        worker_count = min(len(releases), self._get_release_check_workers())
+        if worker_count <= 1:
+            return [checker(release) for release in releases]
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            return list(executor.map(checker, releases))
+
     def _process_firmware_downloads(self) -> None:
         """
         Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
@@ -399,11 +453,18 @@ class DownloadOrchestrator:
                 if most_recent_beta and most_recent_beta not in releases_to_process:
                     releases_to_process.append(most_recent_beta)
 
-            releases_to_download = []
             for release in releases_to_process:
                 suffix = self.firmware_downloader.format_release_log_suffix(release)
                 logger.info(f"Checking {release.tag_name}{suffix}…")
-                if self.firmware_downloader.is_release_complete(release):
+
+            completion_states = self._check_releases_complete(
+                releases_to_process, self.firmware_downloader.is_release_complete
+            )
+            releases_to_download = []
+            for release, is_complete in zip(
+                releases_to_process, completion_states, strict=True
+            ):
+                if is_complete:
                     self.firmware_downloader.ensure_release_notes(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
