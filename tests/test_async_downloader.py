@@ -15,11 +15,13 @@ Tests the async downloader mixin functionality including:
 import os
 import zipfile
 from pathlib import Path
+from typing import Any, Dict, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
 from fetchtastic.constants import (
+    DEFAULT_CONNECT_RETRIES,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_UNKNOWN,
 )
@@ -93,6 +95,16 @@ class TestConfigGetters:
         downloader = ConcreteAsyncDownloader(config={"MAX_DOWNLOAD_RETRIES": 3})
         assert downloader._get_max_retries() == 3
 
+    def test_get_max_retries_invalid_fallback(self):
+        """Invalid max retries should fall back to default."""
+        downloader = ConcreteAsyncDownloader(config={"MAX_DOWNLOAD_RETRIES": "oops"})
+        assert downloader._get_max_retries() == DEFAULT_CONNECT_RETRIES
+
+    def test_get_max_retries_clamped_minimum(self):
+        """Negative max retries should be clamped to zero."""
+        downloader = ConcreteAsyncDownloader(config={"MAX_DOWNLOAD_RETRIES": -2})
+        assert downloader._get_max_retries() == 0
+
     def test_get_retry_delay_default(self):
         """Test default retry delay."""
         downloader = ConcreteAsyncDownloader(config={})
@@ -102,6 +114,16 @@ class TestConfigGetters:
         """Test retry delay from config."""
         downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_RETRY_DELAY": 2.5})
         assert downloader._get_retry_delay() == 2.5
+
+    def test_get_retry_delay_invalid_fallback(self):
+        """Invalid retry delay should fall back to default."""
+        downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_RETRY_DELAY": "oops"})
+        assert downloader._get_retry_delay() == 1.0
+
+    def test_get_retry_delay_clamped_minimum(self):
+        """Negative retry delay should be clamped to zero."""
+        downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_RETRY_DELAY": -1.5})
+        assert downloader._get_retry_delay() == 0.0
 
 
 # =============================================================================
@@ -948,6 +970,39 @@ class TestAsyncDownloadMultiple:
         assert len(results) == 2
         assert results[0].success is True
         assert results[1].success is False
+
+    async def test_download_multiple_handles_malformed_specs(
+        self, mocker, tmp_path, sample_release, sample_asset
+    ):
+        """Malformed specs in gather exception path should produce fallback results."""
+        downloader = ConcreteAsyncDownloader(config={"DOWNLOAD_DIR": str(tmp_path)})
+
+        downloads = [
+            {"release": sample_release, "asset": sample_asset},
+            {"release": sample_release},  # missing asset
+            cast(Dict[str, Any], "not-a-dict"),
+        ]
+
+        mocker.patch.object(
+            downloader,
+            "async_download_release",
+            AsyncMock(
+                return_value=DownloadResult(
+                    success=True,
+                    release_tag=sample_release.tag_name,
+                    file_path=tmp_path / "firmware.bin",
+                )
+            ),
+        )
+
+        results = await downloader.async_download_multiple(downloads)
+
+        assert len(results) == 3
+        assert results[0].success is True
+        assert results[1].success is False
+        assert results[2].success is False
+        assert results[1].release_tag == "<unknown>"
+        assert results[2].release_tag == "<unknown>"
 
     async def test_download_multiple_with_progress_callback(
         self, mocker, tmp_path, sample_release, sample_asset

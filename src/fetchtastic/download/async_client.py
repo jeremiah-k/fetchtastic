@@ -234,6 +234,7 @@ class AsyncGitHubClient:
 
         Raises:
             AsyncDownloadError: If the API request fails.
+            ValueError: If `limit` is provided but is not an integer >= 0.
         """
         session = await self._ensure_session()
 
@@ -242,14 +243,30 @@ class AsyncGitHubClient:
             (self.github_token or "no-token").encode()
         ).hexdigest()[:16]
 
+        limit_int: Optional[int] = None
+        if limit is not None:
+            try:
+                limit_int = int(limit)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"limit must be an integer >= 0, got {limit!r}"
+                ) from exc
+            if limit_int < 0:
+                logger.warning(
+                    "Negative limit %r requested for %s; treating as 0",
+                    limit,
+                    url,
+                )
+                limit_int = 0
+
         # Handle limit=0 explicitly - return empty list instead of making API call
-        if limit == 0:
+        if limit_int == 0:
             logger.debug(f"limit=0 requested, returning empty list for {url}")
             return []
 
-        request_params = params or {}
-        if limit:
-            request_params["per_page"] = min(limit, 100)
+        request_params = dict(params) if params else {}
+        if limit_int is not None:
+            request_params["per_page"] = min(limit_int, 100)
 
         try:
             async with self._rate_limit_guard(token_hash):
@@ -691,7 +708,7 @@ async def download_files_concurrently(
 
         if tasks:
             gathered_results = await asyncio.gather(*tasks, return_exceptions=True)
-            for index, task_result in zip(task_indexes, gathered_results, strict=False):
+            for index, task_result in zip(task_indexes, gathered_results, strict=True):
                 results[index] = task_result
 
         # Return raw results to preserve exception information for debugging

@@ -71,7 +71,25 @@ class AsyncDownloadCoreMixin:
         Returns:
             int: Maximum retries (default 3).
         """
-        return int(self.config.get("MAX_DOWNLOAD_RETRIES", DEFAULT_CONNECT_RETRIES))
+        raw_value = self.config.get("MAX_DOWNLOAD_RETRIES", DEFAULT_CONNECT_RETRIES)
+        try:
+            parsed_value = int(raw_value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid MAX_DOWNLOAD_RETRIES value %r; using default %d",
+                raw_value,
+                DEFAULT_CONNECT_RETRIES,
+            )
+            return DEFAULT_CONNECT_RETRIES
+
+        if parsed_value < 0:
+            logger.warning(
+                "MAX_DOWNLOAD_RETRIES must be >= 0; clamping %d to 0",
+                parsed_value,
+            )
+            return 0
+
+        return parsed_value
 
     def _get_retry_delay(self) -> float:
         """
@@ -80,7 +98,24 @@ class AsyncDownloadCoreMixin:
         Returns:
             float: Initial retry delay in seconds.
         """
-        return float(self.config.get("DOWNLOAD_RETRY_DELAY", 1.0))
+        raw_value = self.config.get("DOWNLOAD_RETRY_DELAY", 1.0)
+        try:
+            parsed_value = float(raw_value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid DOWNLOAD_RETRY_DELAY value %r; using default 1.0",
+                raw_value,
+            )
+            return 1.0
+
+        if parsed_value < 0.0:
+            logger.warning(
+                "DOWNLOAD_RETRY_DELAY must be >= 0.0; clamping %.3f to 0.0",
+                parsed_value,
+            )
+            return 0.0
+
+        return parsed_value
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         """

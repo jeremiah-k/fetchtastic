@@ -394,6 +394,68 @@ class TestGetReleases:
 
         assert captured_params["params"]["per_page"] == 50
 
+    async def test_get_releases_does_not_mutate_input_params(
+        self, mocker, sample_release_data
+    ):
+        """Caller-provided params should not be mutated."""
+        client = AsyncGitHubClient()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.json = AsyncMock(return_value=sample_release_data)
+        mock_response.raise_for_status = Mock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_response)
+
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        params = {"q": "stable"}
+        await client.get_releases(
+            "https://api.github.com/repos/test/test/releases",
+            limit=10,
+            params=params,
+        )
+
+        assert params == {"q": "stable"}
+
+    async def test_get_releases_negative_limit_treated_as_zero(self, mocker):
+        """Negative limits should be normalized to 0 and return early."""
+        client = AsyncGitHubClient()
+        mock_session = AsyncMock()
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        releases = await client.get_releases(
+            "https://api.github.com/repos/test/test/releases", limit=-5
+        )
+
+        assert releases == []
+        mock_session.get.assert_not_called()
+
+    async def test_get_releases_invalid_limit_raises_value_error(self, mocker):
+        """Non-integer limits should raise a clear ValueError."""
+        client = AsyncGitHubClient()
+        mock_session = AsyncMock()
+        mocker.patch.object(
+            client, "_ensure_session", AsyncMock(return_value=mock_session)
+        )
+        mocker.patch("asyncio.sleep", AsyncMock())
+
+        with pytest.raises(ValueError):
+            await client.get_releases(
+                "https://api.github.com/repos/test/test/releases",
+                limit="abc",  # type: ignore[arg-type]
+            )
+
     async def test_get_releases_non_list_payload_returns_empty(self, mocker):
         """Non-list JSON payloads should be handled defensively."""
         client = AsyncGitHubClient()

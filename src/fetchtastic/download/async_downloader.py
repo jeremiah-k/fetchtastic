@@ -243,20 +243,47 @@ class AsyncDownloaderMixin(AsyncDownloadCoreMixin):
         final_results: List[DownloadResult] = []
         for i, r in enumerate(results):
             if isinstance(r, Exception):
-                spec = downloads[i]
+                spec: Any = downloads[i] if i < len(downloads) else None
+                release_tag = "<unknown>"
+                file_path: Pathish = Path("<unknown>")
+                download_url: Optional[str] = None
+                is_retryable = False
+                error_message = str(r)
+
+                if isinstance(spec, dict):
+                    release = spec.get("release")
+                    asset = spec.get("asset")
+
+                    if (
+                        release is not None
+                        and asset is not None
+                        and isinstance(getattr(release, "tag_name", None), str)
+                        and isinstance(getattr(asset, "name", None), str)
+                        and isinstance(getattr(asset, "download_url", None), str)
+                    ):
+                        release_tag = release.tag_name
+                        download_url = asset.download_url
+                        is_retryable = True
+                        try:
+                            file_path = Path(
+                                self.get_target_path_for_release(
+                                    release.tag_name, asset.name
+                                )
+                            )
+                        except Exception:
+                            file_path = Path("<unknown>")
+                    else:
+                        error_message = f"Invalid download spec: {r}"
+
                 final_results.append(
                     DownloadResult(
                         success=False,
-                        release_tag=spec["release"].tag_name,
-                        file_path=Path(
-                            self.get_target_path_for_release(
-                                spec["release"].tag_name, spec["asset"].name
-                            )
-                        ),
-                        download_url=spec["asset"].download_url,
-                        error_message=str(r),
+                        release_tag=release_tag,
+                        file_path=file_path,
+                        download_url=download_url,
+                        error_message=error_message,
                         error_type=ERROR_TYPE_UNKNOWN,
-                        is_retryable=True,
+                        is_retryable=is_retryable,
                     )
                 )
             else:

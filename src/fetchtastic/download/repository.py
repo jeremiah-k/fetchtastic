@@ -514,18 +514,19 @@ class RepositoryDownloader(BaseDownloader):
         """
         return "repository-latest"
 
-    def update_latest_release_tag(self, _release_tag: str) -> bool:
+    def update_latest_release_tag(self, release_tag: str) -> bool:
         """
         No-op updater for the repository's latest release tag.
 
         This method ignores the provided release tag because repository downloads are not versioned and always succeeds.
 
         Parameters:
-            _release_tag (str): Release tag value (ignored).
+            release_tag (str): Release tag value (ignored).
 
         Returns:
             bool: `True` always, indicating success.
         """
+        del release_tag  # intentionally unused (signature compatibility)
         # Repository downloads don't use version tracking
         return True
 
