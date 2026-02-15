@@ -228,10 +228,14 @@ class TestIsReleaseComplete:
 
         # Create a corrupted zip file
         test_file = release_dir / "file1.zip"
-        test_file.write_bytes(b"not a zip file")
+        content = b"not a zip file"
+        test_file.write_bytes(content)
 
         result = _is_release_complete(
-            {"assets": [{"name": "file1.zip", "size": 15}]}, str(release_dir), [], []
+            {"assets": [{"name": "file1.zip", "size": len(content)}]},
+            str(release_dir),
+            [],
+            [],
         )
         assert result is False
 

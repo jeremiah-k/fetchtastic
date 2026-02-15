@@ -750,6 +750,8 @@ def async_download_mocks(mocker):
                 side_effect=lambda *_args, **_kwargs: make_async_iter(resolved_chunks)
             )
         else:
+            # Single-use iterator for single-download tests; use fresh_iter_each_call=True
+            # when a test performs multiple downloads.
             mock_content.iter_chunked = Mock(
                 return_value=make_async_iter(resolved_chunks)
             )

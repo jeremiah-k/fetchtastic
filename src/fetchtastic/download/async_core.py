@@ -173,7 +173,7 @@ class AsyncDownloadCoreMixin:
         """
         if self._session is not None and not getattr(self._session, "closed", False):
             close_result = self._session.close()
-            if asyncio.iscoroutine(close_result):
+            if inspect.isawaitable(close_result):
                 await close_result
         self._session = None
 
