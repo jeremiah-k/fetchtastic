@@ -60,8 +60,14 @@ def test_cli_integration_main_with_config_parameter(mocker):
             ["apk"],
             ["new_apk"],
             [],
+            [],
+            [],
+            [],
+            [],
+            {},
             "fw_latest",
             "apk_latest",
+            "",
         ),
     )
 
@@ -80,7 +86,9 @@ def test_cli_integration_main_with_force_refresh(mocker):
         return_value=None,
     )
     run_download = mocker.patch.object(
-        integration, "run_download", return_value=([], [], [], [], [], "", "")
+        integration,
+        "run_download",
+        return_value=([], [], [], [], [], [], [], [], [], {}, "", "", ""),
     )
 
     integration.main(config=config, force_refresh=True)

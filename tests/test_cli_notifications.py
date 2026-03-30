@@ -25,6 +25,8 @@ def integration(mocker):
         "android": "v1.8.0",
         "firmware_prerelease": "firmware-2.8.0",
         "android_prerelease": "v1.8.0-rc1",
+        "desktop": "",
+        "desktop_prerelease": "",
     }
     return integration
 

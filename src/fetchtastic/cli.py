@@ -244,11 +244,15 @@ def _handle_download_subcommand(
         new_firmware_versions,
         downloaded_apks,
         new_apk_versions,
+        downloaded_desktop,
+        new_desktop_versions,
         downloaded_firmware_prereleases,
         downloaded_apk_prereleases,
+        downloaded_desktop_prereleases,
         failed_downloads,
         latest_firmware_version,
         latest_apk_version,
+        latest_desktop_version,
     ) = integration.main(config=config, force_refresh=args.force_download)
 
     elapsed = time.time() - start_time
@@ -257,13 +261,17 @@ def _handle_download_subcommand(
         elapsed_seconds=elapsed,
         downloaded_firmwares=downloaded_firmwares,
         downloaded_apks=downloaded_apks,
+        downloaded_desktop=downloaded_desktop,
         downloaded_firmware_prereleases=downloaded_firmware_prereleases,
         downloaded_apk_prereleases=downloaded_apk_prereleases,
+        downloaded_desktop_prereleases=downloaded_desktop_prereleases,
         failed_downloads=failed_downloads,
         latest_firmware_version=latest_firmware_version,
         latest_apk_version=latest_apk_version,
+        latest_desktop_version=latest_desktop_version,
         new_firmware_versions=new_firmware_versions,
         new_apk_versions=new_apk_versions,
+        new_desktop_versions=new_desktop_versions,
     )
 
 

@@ -11,8 +11,9 @@ import pytest
 import requests
 
 from fetchtastic.constants import (
+    ANDROID_DIR_NAME,
     APK_PRERELEASES_DIR_NAME,
-    APKS_DIR_NAME,
+    APP_DIR_NAME,
     FILE_TYPE_ANDROID_PRERELEASE,
 )
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
@@ -245,7 +246,11 @@ class TestMeshtasticAndroidAppDownloader:
         notes_file = Path(notes_path)
         assert notes_file.exists()
         assert str(notes_file).endswith(
-            os.path.join(APKS_DIR_NAME, "v2.7.10", "release_notes-v2.7.10.md")
+            os.path.join(
+                os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
+                "v2.7.10",
+                "release_notes-v2.7.10.md",
+            )
         )
 
     def test_ensure_release_notes_prerelease_dir(self, tmp_path):
@@ -265,7 +270,7 @@ class TestMeshtasticAndroidAppDownloader:
         notes_file = Path(notes_path)
         assert notes_file.exists()
         expected_suffix = os.path.join(
-            APKS_DIR_NAME,
+            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
             APK_PRERELEASES_DIR_NAME,
             "v2.7.10-open.1",
             "release_notes-v2.7.10-open.1.md",
@@ -277,7 +282,10 @@ class TestMeshtasticAndroidAppDownloader:
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
 
         expected = os.path.join(
-            str(tmp_path / "downloads"), APKS_DIR_NAME, "v1.0.0", "meshtastic.apk"
+            str(tmp_path / "downloads"),
+            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
+            "v1.0.0",
+            "meshtastic.apk",
         )
         assert path == expected
 
@@ -289,7 +297,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         expected = os.path.join(
             str(tmp_path / "downloads"),
-            APKS_DIR_NAME,
+            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
             APK_PRERELEASES_DIR_NAME,
             "v2.7.10-open.1",
             "meshtastic.apk",
@@ -531,7 +539,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         expected = os.path.join(
             downloader.download_dir,
-            APKS_DIR_NAME,
+            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
             APK_PRERELEASES_DIR_NAME,
             release.tag_name,
             asset.name,
@@ -661,14 +669,19 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         prerelease_tag = "v2.7.10-open.1"
-        misplaced = tmp_path / APKS_DIR_NAME / prerelease_tag
+        misplaced = (
+            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / prerelease_tag
+        )
         misplaced.mkdir(parents=True)
         expected_dir = (
-            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / prerelease_tag
+            tmp_path
+            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+            / APK_PRERELEASES_DIR_NAME
+            / prerelease_tag
         )
         expected_dir.mkdir(parents=True)
 
-        stable_dir = tmp_path / APKS_DIR_NAME / "v2.7.9"
+        stable_dir = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.9"
         stable_dir.mkdir(parents=True)
 
         releases = [
@@ -694,7 +707,7 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        android_dir = tmp_path / APKS_DIR_NAME
+        android_dir = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
         android_dir.mkdir(parents=True)
         mismatched_dir = android_dir / "v1.0.0-alpha"
         mismatched_dir.mkdir()
@@ -727,7 +740,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         # Ensure the base APK directory exists so cleanup logic proceeds.
-        (tmp_path / APKS_DIR_NAME).mkdir(parents=True)
+        (tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)).mkdir(parents=True)
 
         # Provide only prerelease entries so the stable list is empty.
         releases = [
@@ -758,19 +771,32 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        root_prerelease = tmp_path / APKS_DIR_NAME / "v2.7.10-open.1"
+        root_prerelease = (
+            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10-open.1"
+        )
         root_prerelease.mkdir(parents=True)
         prerelease_dir = (
-            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.2"
+            tmp_path
+            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+            / APK_PRERELEASES_DIR_NAME
+            / "v2.7.10-open.2"
         )
         prerelease_dir.mkdir(parents=True)
         misplaced_stable = (
-            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.9"
+            tmp_path
+            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+            / APK_PRERELEASES_DIR_NAME
+            / "v2.7.9"
         )
         misplaced_stable.mkdir(parents=True)
-        user_dir = tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "notes"
+        user_dir = (
+            tmp_path
+            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+            / APK_PRERELEASES_DIR_NAME
+            / "notes"
+        )
         user_dir.mkdir(parents=True)
-        stable_dir = tmp_path / APKS_DIR_NAME / "v2.7.10"
+        stable_dir = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
         stable_dir.mkdir(parents=True)
 
         releases = [
@@ -798,11 +824,11 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        v27_9 = tmp_path / APKS_DIR_NAME / "v2.7.9"
+        v27_9 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.9"
         v27_9.mkdir(parents=True)
-        v27_10 = tmp_path / APKS_DIR_NAME / "v2.7.10"
+        v27_10 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
         v27_10.mkdir(parents=True)
-        v28_0 = tmp_path / APKS_DIR_NAME / "v2.8.0"
+        v28_0 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.8.0"
         v28_0.mkdir(parents=True)
 
         releases = [
@@ -831,7 +857,9 @@ class TestMeshtasticAndroidAppDownloader:
     ):
         """Test cleanup returns when APK directory is missing."""
         releases = [Release(tag_name="v1.0.0", prerelease=False)]
-        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+        android_dir = os.path.join(
+            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+        )
 
         with patch(
             "fetchtastic.download.android.os.path.exists", return_value=False
@@ -851,7 +879,9 @@ class TestMeshtasticAndroidAppDownloader:
             return_value=[Release(tag_name="..", prerelease=True)]
         )
 
-        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+        android_dir = os.path.join(
+            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+        )
 
         def _exists(path):
             """
@@ -898,7 +928,9 @@ class TestMeshtasticAndroidAppDownloader:
             return_value=[Release(tag_name="v1.0.1-open.1", prerelease=True)]
         )
 
-        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+        android_dir = os.path.join(
+            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+        )
         prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
 
         entry_symlink = Mock()
@@ -950,7 +982,9 @@ class TestMeshtasticAndroidAppDownloader:
     ):
         """Test cleanup returns when prerelease directory is missing."""
         releases = [Release(tag_name="v1.0.0", prerelease=False)]
-        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+        android_dir = os.path.join(
+            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+        )
 
         def _exists(path):
             """

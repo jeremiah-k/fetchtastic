@@ -373,6 +373,10 @@ def test_cli_download_failed_downloads_reporting(mocker):
         failed_downloads,
         "",  # latest_firmware_version
         "",  # latest_apk_version
+        [],  # downloaded_library_releases
+        [],  # new_library_versions
+        [],  # downloaded_library_prereleases
+        [],  # skipped_downloads
     )
 
     mocker.patch(

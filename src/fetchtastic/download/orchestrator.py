@@ -28,6 +28,8 @@ from fetchtastic.constants import (
     ERROR_TYPE_UNKNOWN,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_DESKTOP,
+    FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
@@ -46,6 +48,7 @@ from fetchtastic.utils import cleanup_legacy_hash_sidecars
 from .android import MeshtasticAndroidAppDownloader
 from .base import BaseDownloader
 from .cache import CacheManager
+from .desktop import MeshtasticDesktopDownloader
 from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
@@ -114,7 +117,7 @@ class DownloadOrchestrator:
     Orchestrates the download pipeline for multiple artifact types.
 
     This class coordinates:
-    - Multiple downloaders (Android, Firmware, etc.)
+    - Multiple downloaders (Android, Firmware, Desktop, etc.)
     - Release fetching and filtering
     - Download execution and retry logic
     - Result aggregation and reporting
@@ -141,6 +144,9 @@ class DownloadOrchestrator:
         )
         self.firmware_downloader: FirmwareReleaseDownloader = FirmwareReleaseDownloader(
             config, self.cache_manager
+        )
+        self.desktop_downloader: MeshtasticDesktopDownloader = (
+            MeshtasticDesktopDownloader(config, self.cache_manager)
         )
 
         # Track results
@@ -187,6 +193,9 @@ class DownloadOrchestrator:
 
         # Process Android downloads
         self._process_android_downloads()
+
+        # Process desktop downloads
+        self._process_desktop_downloads()
 
         # Legacy parity: Repository downloads are handled separately through the interactive
         # "repo browse" command and are not part of the automatic download pipeline.
@@ -279,6 +288,38 @@ class DownloadOrchestrator:
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing Android downloads: {e}", exc_info=True)
 
+    def _process_desktop_downloads(self) -> None:
+        """
+        Coordinate discovery and retrieval of Meshtastic Desktop app releases.
+        """
+        try:
+            if not self.config.get("SAVE_DESKTOP_APP", False):
+                logger.info("Desktop app downloads are disabled in configuration")
+                return
+
+            logger.info("Scanning Desktop app releases")
+            desktop_releases = self.desktop_downloader.get_releases()
+            if not desktop_releases:
+                logger.info("No Desktop releases found")
+                return
+
+            for release in desktop_releases:
+                for asset in self.desktop_downloader.get_assets(release):
+                    if not self.desktop_downloader.should_download_asset(asset.name):
+                        continue
+                    result = self.desktop_downloader.download_desktop(release, asset)
+                    if result.success and not result.was_skipped:
+                        pass
+                    file_type = (
+                        FILE_TYPE_DESKTOP_PRERELEASE
+                        if release.prerelease
+                        else FILE_TYPE_DESKTOP
+                    )
+                    self._handle_download_result(result, file_type)
+
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.error(f"Error processing Desktop downloads: {e}", exc_info=True)
+
     def _ensure_android_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Return cached Android releases, fetching them once from the downloader if not already cached.
@@ -298,7 +339,11 @@ class DownloadOrchestrator:
 
     def _ensure_releases(
         self,
-        downloader: Union[MeshtasticAndroidAppDownloader, FirmwareReleaseDownloader],
+        downloader: Union[
+            MeshtasticAndroidAppDownloader,
+            FirmwareReleaseDownloader,
+            MeshtasticDesktopDownloader,
+        ],
         releases_attr: str,
         fetch_limit_attr: str,
         limit: Optional[int] = None,
@@ -934,6 +979,8 @@ class DownloadOrchestrator:
                 downloader = self.android_downloader
             elif file_type == "firmware":
                 downloader = self.firmware_downloader
+            elif file_type in ("desktop", "desktop_prerelease"):
+                downloader = self.desktop_downloader
 
             if downloader:
                 ok = downloader.download(url, target_path)
@@ -1071,6 +1118,11 @@ class DownloadOrchestrator:
                     result.file_type = FILE_TYPE_REPOSITORY
                 elif APKS_DIR_NAME in path_parts or file_path_str.endswith(".apk"):
                     result.file_type = FILE_TYPE_ANDROID
+                elif any(
+                    ext in file_path_str.lower()
+                    for ext in (".dmg", ".msi", ".exe", ".deb", ".rpm", ".appimage")
+                ):
+                    result.file_type = FILE_TYPE_DESKTOP
                 elif FIRMWARE_DIR_NAME in path_parts or file_path_str.endswith(
                     (".zip", ".bin", ".elf")
                 ):
@@ -1287,6 +1339,7 @@ class DownloadOrchestrator:
                 - "success_rate": overall success percentage as a float (0-100).
                 - "android_downloads": count of successful Android artifact downloads.
                 - "firmware_downloads": count of successful firmware artifact downloads.
+                - "desktop_downloads": count of successful Desktop artifact downloads.
                 - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
         """
         downloaded = [
@@ -1309,6 +1362,7 @@ class DownloadOrchestrator:
             "success_rate": self._calculate_success_rate(),
             "android_downloads": self._count_artifact_downloads(FILE_TYPE_ANDROID),
             "firmware_downloads": self._count_artifact_downloads(FILE_TYPE_FIRMWARE),
+            "desktop_downloads": self._count_artifact_downloads(FILE_TYPE_DESKTOP),
             # Repository downloads are not part of the automatic download pipeline.
             "repository_downloads": 0,
         }
@@ -1352,7 +1406,7 @@ class DownloadOrchestrator:
 
     def cleanup_old_versions(self) -> None:
         """
-        Prune locally stored Android and firmware artifacts according to configured retention settings and remove prerelease directories marked as deleted.
+        Prune locally stored Android, Desktop, and firmware artifacts according to configured retention settings and remove prerelease directories marked as deleted.
 
         This routine reads retention settings (e.g., `ANDROID_VERSIONS_TO_KEEP`, `FIRMWARE_VERSIONS_TO_KEEP`) and instructs the Android and firmware downloaders to remove older releases. When firmware retention is applied, the `KEEP_LAST_BETA` setting is honored if present. After pruning releases, it removes any prerelease directories that have been recorded as deleted. On filesystem or configuration-related errors (`OSError`, `ValueError`, `TypeError`) it logs an error.
         """
@@ -1374,6 +1428,11 @@ class DownloadOrchestrator:
                 keep_last_beta=keep_last_beta,
             )
             self._cleanup_deleted_prereleases()
+
+            # Clean up desktop versions
+            if self.config.get("SAVE_DESKTOP_APP", False):
+                desktop_keep = int(self.config.get("DESKTOP_VERSIONS_TO_KEEP", 2))
+                self.desktop_downloader.cleanup_old_versions(desktop_keep)
 
             logger.info("Old version cleanup completed")
 
