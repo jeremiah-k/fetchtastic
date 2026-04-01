@@ -984,8 +984,6 @@ def test_log_download_results_summary_logging_order(mocker):
         new_apk_versions=[],
     )
 
-    [str(call) for call in mock_logger.info.call_args_list]
-
     latest_version_calls = []
     for call_args in mock_logger.info.call_args_list:
         call_str = str(call_args)

@@ -191,9 +191,7 @@ def test_setup_downloads_partial_desktop_section(mocker):
         return_value={"selected_assets": ["*Meshtastic*AppImage*"]},
     )
 
-    updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=True, wants=wants
-    )
+    updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
     assert updated["SAVE_DESKTOP_APP"] is True
 
@@ -220,9 +218,7 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
     )
     mock_menu = mocker.patch("fetchtastic.menu_desktop.run_menu")
 
-    updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=True, wants=wants
-    )
+    updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
     assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
     mock_menu.assert_not_called()
@@ -250,9 +246,7 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
     )
     mocker.patch("fetchtastic.menu_desktop.run_menu")
 
-    updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=True, wants=wants
-    )
+    updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
     assert updated["SAVE_DESKTOP_APP"] is False  # Disabled because no selection
     assert updated["SELECTED_DESKTOP_ASSETS"] == []
@@ -281,9 +275,7 @@ def test_setup_downloads_desktop_no_selection(mocker):
         return_value=None,  # No selection made
     )
 
-    updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=False, wants=wants
-    )
+    updated, _, _ = _setup_downloads(config, is_partial_run=False, wants=wants)
 
     assert updated["SAVE_DESKTOP_APP"] is False
     assert updated["SELECTED_DESKTOP_ASSETS"] == []
@@ -348,9 +340,7 @@ def test_setup_downloads_backward_compat_old_key(mocker):
     )
     mock_menu = mocker.patch("fetchtastic.menu_desktop.run_menu")
 
-    updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=True, wants=wants
-    )
+    updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
     # Both old and new keys should be set after reading
     assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
@@ -364,7 +354,7 @@ def test_setup_downloads_backward_compat_old_key(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_disable_asset_downloads_desktop_with_message():
-    """Test _disable_asset_downloads with desktop asset type (line 684, 719-722)."""
+    """Test _disable_asset_downloads with firmware asset type (line 684, 719-722)."""
     from fetchtastic.setup_config import _disable_asset_downloads
 
     config = {
@@ -731,13 +721,14 @@ def test_setup_automation_windows_remove_shortcut(mocker):
     startup_folder = "C:\\Startup"
     mock_winshell.startup.return_value = startup_folder
 
+    mocker.patch("os.remove")
     mocker.patch(
         "os.path.exists",
-        side_effect=lambda path: path
-        == os.path.join(startup_folder, "Fetchtastic.lnk"),
+        side_effect=lambda path: (
+            path == os.path.join(startup_folder, "Fetchtastic.lnk")
+            or path == startup_folder
+        ),
     )
-    mocker.patch("os.remove")
-    mocker.patch("os.path.exists", return_value=True)
     mocker.patch(
         "builtins.input",
         side_effect=["y"],  # remove shortcut
@@ -981,14 +972,19 @@ def test_migrate_pip_to_pipx_local_pipx_fallback(mocker):
         "fetchtastic.setup_config.get_fetchtastic_installation_method",
         return_value="pip",
     )
-    mocker.patch("os.path.exists", return_value=True)
     mocker.patch("builtins.input", return_value="y")
 
     # First which call returns None (no pipx), second call also None
     which_side_effects = [None, None, "/usr/bin/pip"]  # pipx, local_pipx, pip
     mocker.patch("shutil.which", side_effect=which_side_effects)
-    mocker.patch("os.path.exists", return_value=True)  # local pipx exists
     mocker.patch("builtins.open", mock_open(read_data="config: data"))
+
+    # Use side_effect to return True for both config file and local pipx path
+    mocker.patch(
+        "os.path.exists",
+        side_effect=lambda path: path == setup_config.CONFIG_FILE
+        or ".local/bin/pipx" in path,
+    )
 
     mock_subprocess = mocker.patch("fetchtastic.setup_config.subprocess.run")
     mock_subprocess.return_value = MagicMock(returncode=0)

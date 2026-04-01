@@ -247,7 +247,8 @@ class TestMeshtasticAndroidAppDownloader:
         assert notes_file.exists()
         assert str(notes_file).endswith(
             os.path.join(
-                os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
+                APP_DIR_NAME,
+                ANDROID_DIR_NAME,
                 "v2.7.10",
                 "release_notes-v2.7.10.md",
             )

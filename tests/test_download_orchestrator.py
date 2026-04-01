@@ -1057,7 +1057,10 @@ class TestDownloadOrchestrator:
         symlink_target = tmp_path / "target"
         symlink_target.mkdir()
         symlink = prerelease_dir / "firmware-2.0.0.abcdef"
-        symlink.symlink_to(symlink_target)
+        try:
+            symlink.symlink_to(symlink_target)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
 
         orch.firmware_downloader.get_releases = Mock(
             return_value=[Release(tag_name="v1.0.0", prerelease=False)]

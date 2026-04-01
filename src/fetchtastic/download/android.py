@@ -167,9 +167,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         create_if_missing: bool,
     ) -> str:
         """
-        Resolve the release directory, preferring existing legacy `apks/...` paths when present.
+        Resolve the release directory, preferring the new `app/android/...` layout when present.
 
-        This keeps previously downloaded APKs valid after layout changes.
+        Falls back to legacy `apks/...` paths when the new layout directory is absent,
+        keeping previously downloaded APKs valid after layout changes.
         """
         preferred_base_dir = (
             os.path.join(
