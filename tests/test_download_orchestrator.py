@@ -2340,7 +2340,7 @@ class TestDownloadOrchestrator:
         orchestrator._log_download_summary = Mock()
 
         with patch("fetchtastic.download.orchestrator.is_termux", return_value=False):
-            result = orchestrator.run_download_pipeline()
+            orchestrator.run_download_pipeline()
 
         # Should proceed with downloads since is_termux returns False
         orchestrator._process_android_downloads.assert_called_once()
@@ -2429,19 +2429,19 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.download_apk.assert_called_once()
 
     def test_select_latest_release_all_unparseable_with_revoked(self, orchestrator):
-        """Test selecting latest when all versions unparseable but some revoked."""
+        """Test selecting latest when all versions unparsable but some revoked."""
         orchestrator.version_manager.get_release_tuple.return_value = None
         orchestrator.firmware_downloader.is_release_revoked.return_value = True
 
         releases = [
-            Release(tag_name="unparseable1", prerelease=False, assets=[]),
+            Release(tag_name="unparsable1", prerelease=False, assets=[]),
         ]
 
         selected = orchestrator._select_latest_release_by_version(releases)
 
         # Should return first release when none parseable
         assert selected is not None
-        assert selected.tag_name == "unparseable1"
+        assert selected.tag_name == "unparsable1"
 
     def test_handle_download_result_no_url(self, orchestrator):
         """Test handling failed download result without URL (early exit at 903)."""

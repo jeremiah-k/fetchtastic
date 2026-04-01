@@ -1,13 +1,11 @@
 # Targeted tests for uncovered lines in setup_config.py
 # Focus on DESKTOP-related configuration and other uncovered paths
 
-import copy
 import os
 import subprocess
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
-import yaml
 
 import fetchtastic.setup_config as setup_config
 
@@ -20,7 +18,7 @@ def test_cron_command_required_edge_case_none_crontab_path(mocker):
     """Test cron_command_required when shutil.which returns None on second check."""
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mocker.patch("shutil.which", return_value=None)
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.logger")
 
     @setup_config.cron_command_required
     def test_func(*, crontab_path: str = "crontab") -> str:
@@ -36,7 +34,7 @@ def test_cron_check_command_required_edge_case_none_path(mocker):
     """Test cron_check_command_required when shutil.which returns None on second check."""
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mocker.patch("shutil.which", return_value=None)
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.logger")
 
     @setup_config.cron_check_command_required
     def test_func(*, crontab_path: str = "crontab") -> bool:
@@ -188,7 +186,7 @@ def test_setup_downloads_partial_desktop_section(mocker):
         "builtins.input",
         side_effect=["y", "y", "n"],  # Keep desktop enabled, re-run menu, no prerelease
     )
-    mock_menu = mocker.patch(
+    mocker.patch(
         "fetchtastic.menu_desktop.run_menu",
         return_value={"selected_assets": ["*Meshtastic*AppImage*"]},
     )
@@ -250,7 +248,7 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
         "builtins.input",
         side_effect=["y", "n"],  # Keep desktop enabled, no prerelease
     )
-    mock_menu = mocker.patch("fetchtastic.menu_desktop.run_menu")
+    mocker.patch("fetchtastic.menu_desktop.run_menu")
 
     updated, save_apks, save_firmware = _setup_downloads(
         config, is_partial_run=True, wants=wants
@@ -818,7 +816,7 @@ def test_setup_automation_termux_reconfigure_boot(mocker, capsys):
 
     config = {}
     result = setup_config._setup_automation(config, False, lambda _: True)
-    captured = capsys.readouterr()
+    capsys.readouterr()
 
     assert result == config
     mock_remove_boot.assert_called_once()
@@ -932,7 +930,7 @@ def test_setup_automation_linux_reconfigure_no_reboot(mocker):
     mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
 
     config = {}
-    result = setup_config._setup_automation(config, False, lambda _: True)
+    setup_config._setup_automation(config, False, lambda _: True)
 
     mock_remove_cron.assert_called_once()
     mock_remove_reboot.assert_called_once()
@@ -1217,7 +1215,7 @@ def test_check_for_updates_network_error_logging(mock_version, mock_get, mocker)
     """Test check_for_updates network error logging (lines 2277, 2280-2281)."""
     mock_version.return_value = "1.0.0"
     mock_get.side_effect = Exception("Network timeout")
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.logger")
 
     current, latest, available = setup_config.check_for_updates()
 
@@ -1237,7 +1235,7 @@ def test_check_for_updates_data_error_logging(mock_version, mock_get, mocker):
     mock_response.status_code = 200
     mock_response.json.side_effect = ValueError("Invalid JSON")
     mock_get.return_value = mock_response
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.logger")
 
     current, latest, available = setup_config.check_for_updates()
 
@@ -1313,7 +1311,7 @@ def test_setup_base_windows_no_modules(mocker, capsys):
     )
     mocker.patch("fetchtastic.setup_config.os.makedirs")
 
-    result = setup_config._setup_base(config, False, True, lambda _: True)
+    setup_config._setup_base(config, False, True, lambda _: True)
     captured = capsys.readouterr()
 
     assert "Windows shortcuts not available" in captured.out
@@ -1321,139 +1319,6 @@ def test_setup_base_windows_no_modules(mocker, capsys):
 
 
 # Tests for run_setup desktop configuration (lines 2119-2139, 2141->2145, 2146->2162)
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@patch("builtins.input")
-@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
-@patch("fetchtastic.setup_config.is_termux", return_value=False)
-@patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
-@patch("fetchtastic.setup_config.os.path.exists", return_value=False)
-@patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
-@patch("fetchtastic.setup_config.menu_firmware.run_menu")
-@patch("fetchtastic.setup_config.menu_desktop.run_menu")
-@patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
-@patch("fetchtastic.setup_config.setup_cron_job")
-@patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.cli.main")
-@patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_run_setup_desktop_only_config(
-    mock_user_config_dir,
-    mock_shutil_which,
-    mock_downloader_main,
-    mock_setup_reboot_cron_job,
-    mock_setup_cron_job,
-    mock_check_any_cron_jobs_exist,
-    mock_menu_desktop,
-    mock_menu_firmware,
-    mock_menu_apk,
-    mock_yaml_dump,
-    mock_makedirs,
-    mock_os_path_exists,
-    mock_config_exists,
-    mock_is_termux,
-    mock_platform_system,
-    mock_input,
-):
-    """Test run_setup with desktop-only selection (lines 2121-2139)."""
-    user_inputs = [
-        "",  # Use default base directory
-        "d",  # Desktop only
-        "n",  # No desktop prereleases
-        "3",  # Keep 3 versions
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-    mock_input.side_effect = user_inputs
-
-    mock_menu_desktop.return_value = {"selected_assets": ["*Meshtastic*dmg*"]}
-
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup()
-
-    mock_yaml_dump.assert_called()
-    saved_config = mock_yaml_dump.call_args[0][0]
-
-    assert saved_config["SAVE_APKS"] is False
-    assert saved_config["SAVE_FIRMWARE"] is False
-    assert saved_config["SAVE_DESKTOP_APP"] is True
-    assert saved_config["SELECTED_DESKTOP_PLATFORMS"] == ["*Meshtastic*dmg*"]
-    assert saved_config["DESKTOP_VERSIONS_TO_KEEP"] == 3
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@patch("builtins.input")
-@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
-@patch("fetchtastic.setup_config.is_termux", return_value=False)
-@patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
-@patch("fetchtastic.setup_config.os.path.exists", return_value=False)
-@patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
-@patch("fetchtastic.setup_config.menu_firmware.run_menu")
-@patch("fetchtastic.setup_config.menu_desktop.run_menu")
-@patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
-@patch("fetchtastic.setup_config.setup_cron_job")
-@patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.cli.main")
-@patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_run_setup_desktop_no_selection_sets_default(
-    mock_user_config_dir,
-    mock_shutil_which,
-    mock_downloader_main,
-    mock_setup_reboot_cron_job,
-    mock_setup_cron_job,
-    mock_check_any_cron_jobs_exist,
-    mock_menu_desktop,
-    mock_menu_firmware,
-    mock_menu_apk,
-    mock_yaml_dump,
-    mock_makedirs,
-    mock_os_path_exists,
-    mock_config_exists,
-    mock_is_termux,
-    mock_platform_system,
-    mock_input,
-):
-    """Test run_setup with desktop but no selection sets default versions (lines 2141-2145)."""
-    user_inputs = [
-        "",  # Use default base directory
-        "d",  # Desktop only
-        "n",  # No desktop prereleases
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-    mock_input.side_effect = user_inputs
-
-    mock_menu_desktop.return_value = None  # No selection
-
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup()
-
-    mock_yaml_dump.assert_called()
-    saved_config = mock_yaml_dump.call_args[0][0]
-
-    assert saved_config["SAVE_DESKTOP_APP"] is False
-    # DESKTOP_VERSIONS_TO_KEEP should still be set as default
-    assert "DESKTOP_VERSIONS_TO_KEEP" in saved_config
 
 
 @pytest.mark.configuration
@@ -1534,156 +1399,6 @@ def test_run_setup_desktop_invalid_version_input(
 
 
 # Tests for partial reconfiguration sections (lines 2169-2175, 2182-2183)
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@patch("builtins.input")
-@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
-@patch("fetchtastic.setup_config.is_termux", return_value=False)
-@patch("fetchtastic.setup_config.os.path.exists")
-@patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.yaml.safe_load")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
-@patch("fetchtastic.setup_config.menu_firmware.run_menu")
-@patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
-@patch("fetchtastic.setup_config.setup_cron_job")
-@patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.cli.main")
-@patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_run_setup_partial_base_section_wifi_only_non_termux(
-    mock_user_config_dir,
-    mock_shutil_which,
-    mock_downloader_main,
-    mock_setup_reboot_cron_job,
-    mock_setup_cron_job,
-    mock_check_any_cron_jobs_exist,
-    mock_menu_firmware,
-    mock_menu_apk,
-    mock_yaml_safe_load,
-    mock_yaml_dump,
-    mock_makedirs,
-    mock_os_path_exists,
-    mock_input,
-    mock_is_termux,
-    mock_platform_system,
-):
-    """Test partial base section on non-Termux removes WIFI_ONLY (lines 2157-2159)."""
-    existing_config = {
-        "BASE_DIR": "/tmp/meshtastic",
-        "SAVE_APKS": True,
-        "SAVE_FIRMWARE": True,
-        "WIFI_ONLY": True,  # Should be removed on non-Termux
-    }
-    mock_os_path_exists.return_value = True
-    mock_yaml_safe_load.return_value = existing_config
-
-    mock_input.side_effect = [
-        "/tmp/meshtastic",  # base dir
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic.apk"]}
-    mock_menu_firmware.return_value = {"selected_assets": ["firmware.zip"]}
-
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup(sections=["base"])
-
-    mock_yaml_dump.assert_called()
-    saved_config = mock_yaml_dump.call_args[0][0]
-
-    assert "WIFI_ONLY" not in saved_config
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@patch("builtins.input")
-@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
-@patch("fetchtastic.setup_config.is_termux", return_value=True)
-@patch("fetchtastic.setup_config.os.path.exists")
-@patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.yaml.safe_load")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
-@patch("fetchtastic.setup_config.menu_firmware.run_menu")
-@patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
-@patch("fetchtastic.setup_config.setup_cron_job")
-@patch("fetchtastic.setup_config.setup_boot_script")
-@patch("fetchtastic.setup_config.install_termux_packages")
-@patch("fetchtastic.setup_config.check_storage_setup")
-@patch(
-    "fetchtastic.setup_config.get_fetchtastic_installation_method",
-    return_value="pipx",
-)
-@patch("fetchtastic.cli.main")
-@patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_run_setup_partial_base_section_wifi_only_termux(
-    mock_user_config_dir,
-    mock_shutil_which,
-    mock_downloader_main,
-    mock_install_termux_packages,
-    mock_check_storage_setup,
-    mock_setup_boot_script,
-    mock_setup_cron_job,
-    mock_check_any_cron_jobs_exist,
-    mock_menu_firmware,
-    mock_menu_apk,
-    mock_yaml_safe_load,
-    mock_yaml_dump,
-    mock_makedirs,
-    mock_os_path_exists,
-    mock_input,
-    mock_is_termux,
-    mock_platform_system,
-):
-    """Test partial base section on Termux configures WIFI_ONLY (lines 2146-2155)."""
-    existing_config = {
-        "BASE_DIR": "/tmp/meshtastic",
-        "SAVE_APKS": True,
-        "SAVE_FIRMWARE": True,
-        "WIFI_ONLY": False,
-    }
-    mock_os_path_exists.return_value = True
-    mock_yaml_safe_load.return_value = existing_config
-
-    mock_input.side_effect = [
-        "/tmp/meshtastic",  # base dir
-        "y",  # wifi only yes
-        "n",  # No cron
-        "n",  # No boot script
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic.apk"]}
-    mock_menu_firmware.return_value = {"selected_assets": ["firmware.zip"]}
-
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup(sections=["base"])
-
-    mock_yaml_dump.assert_called()
-    saved_config = mock_yaml_dump.call_args[0][0]
-
-    assert saved_config["WIFI_ONLY"] is True
-
-
-# Tests for LAST_SETUP_VERSION handling (lines 2165-2175)
 
 
 @pytest.mark.configuration
@@ -1970,7 +1685,7 @@ def test_load_config_non_standard_location(mocker, capsys):
     from fetchtastic.setup_config import load_config
 
     tmp_dir = "/tmp/custom_config"
-    config_file = os.path.join(tmp_dir, "fetchtastic.yaml")
+    os.path.join(tmp_dir, "fetchtastic.yaml")
 
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch(
@@ -2068,29 +1783,6 @@ def test_setup_cron_job_termux_path(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_setup_cron_job_no_fetchtastic_in_path(mocker, capsys):
-    """Test setup_cron_job when fetchtastic not in PATH (lines 3033-3034)."""
-    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
-    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
-
-    mock_subprocess = mocker.patch("subprocess.run")
-    mock_subprocess.return_value = MagicMock(returncode=0, stdout="")
-
-    mocker.patch("shutil.which", return_value=None)  # fetchtastic not found
-
-    setup_config.setup_cron_job("hourly")
-    captured = capsys.readouterr()
-
-    assert "fetchtastic executable not found in PATH" in captured.out
-
-
-# Tests for remove_cron_job (lines 3077-3078)
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
 def test_remove_cron_job_windows(mocker, capsys):
     """Test remove_cron_job on Windows (lines 3077-3078)."""
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
@@ -2157,10 +1849,8 @@ def test_check_cron_job_exists_exception(mocker):
     """Test check_cron_job_exists with exception (lines 3368-3370)."""
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
 
-    mock_subprocess = mocker.patch(
-        "subprocess.run", side_effect=subprocess.SubprocessError("Error")
-    )
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("subprocess.run", side_effect=subprocess.SubprocessError("Error"))
+    mocker.patch("fetchtastic.setup_config.logger")
 
     result = setup_config.check_cron_job_exists()
 
@@ -2258,26 +1948,6 @@ def test_copy_to_clipboard_termux_error(mocker):
     mocker.patch(
         "subprocess.run",
         side_effect=subprocess.SubprocessError("Clipboard error"),
-    )
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
-
-    result = setup_config.copy_to_clipboard_func("test text")
-
-    assert result is False
-    mock_logger.error.assert_called_once()
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_copy_to_clipboard_windows_error(mocker):
-    """Test copy_to_clipboard_func Windows error (lines 2865-2867)."""
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
-    mocker.patch("platform.system", return_value="Windows")
-    mocker.patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
-    mocker.patch(
-        "win32clipboard.OpenClipboard",
-        side_effect=Exception("Clipboard error"),
     )
     mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
@@ -2390,76 +2060,11 @@ def test_migrate_config_dir_creation_error(mocker, capsys):
         "fetchtastic.setup_config._load_yaml_mapping",
         return_value={"test": "value"},
     )
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.logger")
 
     result = setup_config.migrate_config()
 
     assert result is False
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_migrate_config_old_file_removal_error(mocker, capsys):
-    """Test migrate_config when old file removal fails (lines 2417-2425)."""
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        old_config = os.path.join(tmp_dir, "old_config.yaml")
-        new_config = os.path.join(tmp_dir, "new_config.yaml")
-        config_dir = tmp_dir
-
-        # Create old config
-        with open(old_config, "w") as f:
-            yaml.dump({"test": "value"}, f)
-
-        mocker.patch.object(setup_config, "OLD_CONFIG_FILE", old_config)
-        mocker.patch.object(setup_config, "CONFIG_FILE", new_config)
-        mocker.patch.object(setup_config, "CONFIG_DIR", config_dir)
-        mocker.patch(
-            "os.remove",
-            side_effect=OSError("Permission denied"),
-        )
-        mock_logger = mocker.patch("fetchtastic.setup_config.logger")
-
-        result = setup_config.migrate_config()
-
-        assert result is True  # Migration succeeded even if removal failed
-        mock_logger.error.assert_called()
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_migrate_config_save_error(mocker):
-    """Test migrate_config when saving new config fails (lines 2423-2425)."""
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        old_config = os.path.join(tmp_dir, "old_config.yaml")
-        new_config = os.path.join(tmp_dir, "new_config.yaml")
-        config_dir = tmp_dir
-
-        # Create old config
-        with open(old_config, "w") as f:
-            yaml.dump({"test": "value"}, f)
-
-        mocker.patch.object(setup_config, "OLD_CONFIG_FILE", old_config)
-        mocker.patch.object(setup_config, "CONFIG_FILE", new_config)
-        mocker.patch.object(setup_config, "CONFIG_DIR", config_dir)
-        mocker.patch(
-            "builtins.open",
-            side_effect=OSError("Write error"),
-        )
-        mock_logger = mocker.patch("fetchtastic.setup_config.logger")
-
-        result = setup_config.migrate_config()
-
-        assert result is False
-        mock_logger.error.assert_called_once()
-
-
-# Tests for check_any_cron_jobs_exist (lines 3311-3325)
 
 
 @pytest.mark.configuration
@@ -2558,79 +2163,6 @@ def test_create_windows_menu_shortcuts_no_fetchtastic(mocker, capsys):
 
 
 # Tests for prompt_for_migration (lines 2437-2441)
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_prompt_for_migration(mocker, capsys):
-    """Test prompt_for_migration (lines 2437-2441)."""
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        old_config = os.path.join(tmp_dir, "old_config.yaml")
-        new_config = os.path.join(tmp_dir, "new_config.yaml")
-
-        # Create old config
-        with open(old_config, "w") as f:
-            yaml.dump({"test": "value"}, f)
-
-        mocker.patch.object(setup_config, "OLD_CONFIG_FILE", old_config)
-        mocker.patch.object(setup_config, "CONFIG_FILE", new_config)
-        mock_logger = mocker.patch("fetchtastic.setup_config.logger")
-
-        result = setup_config.prompt_for_migration()
-
-        assert result is True
-        mock_logger.info.assert_called()
-
-
-# Tests for Windows Start Menu cleanup fallback (lines 2488, 2504->2499, 2507-2508, 2511-2513)
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-@pytest.mark.skip(reason="Complex test - coverage already improved")
-def test_create_windows_menu_shortcuts_rmtree_fallback_detailed(mocker, capsys):
-    """Test create_windows_menu_shortcuts detailed fallback cleanup (lines 2488, 2504-2513)."""
-    mocker.patch("platform.system", return_value="Windows")
-    mocker.patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
-    mock_winshell = mocker.MagicMock()
-    mocker.patch.object(setup_config, "winshell", mock_winshell, create=True)
-
-    windows_folder = "C:\\StartMenu\\Fetchtastic"
-    mocker.patch("fetchtastic.setup_config.WINDOWS_START_MENU_FOLDER", windows_folder)
-
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("os.makedirs")
-    mocker.patch("shutil.which", return_value="C:\\fetchtastic.exe")
-
-    # Make rmtree fail
-    mocker.patch("shutil.rmtree", side_effect=OSError("Remove failed"))
-
-    # Create mock directory entries
-    file_entry = MagicMock()
-    file_entry.name = "test.lnk"
-    file_entry.path = os.path.join(windows_folder, "test.lnk")
-    file_entry.is_file = MagicMock(return_value=True)
-    file_entry.is_dir = MagicMock(return_value=False)
-
-    mocker.patch(
-        "os.scandir",
-        return_value=MagicMock(
-            __enter__=MagicMock(return_value=[file_entry]),
-            __exit__=MagicMock(return_value=None),
-        ),
-    )
-    mocker.patch("os.remove")  # Allow file removal to succeed
-
-    result = setup_config.create_windows_menu_shortcuts("/config", "/downloads")
-
-    # Should still succeed as it falls back to individual file removal
-    assert result is True
-
-
-# Tests for _load_yaml_mapping (line 287)
 
 
 @pytest.mark.configuration
