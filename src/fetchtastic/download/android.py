@@ -798,27 +798,37 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     logger.info("Removing unexpected APK entry: %s", entry.name)
                     _safe_rmtree(entry.path, base_dir, entry.name)
 
+            # Compute union of existing entries across all android roots BEFORE the loop.
+            # This ensures the disjoint check considers the combined state of all roots,
+            # preventing the legacy root from being skipped when stable releases are in
+            # the preferred root but stale versions remain in the legacy root.
+            all_existing_entries: set[str] = set()
+            for android_dir in android_dirs:
+                try:
+                    with os.scandir(android_dir) as it:
+                        for entry in it:
+                            if not entry.is_symlink():
+                                all_existing_entries.add(entry.name)
+                except FileNotFoundError:
+                    pass
+
+            if (
+                keep_limit > 0
+                and expected_stable
+                and all_existing_entries
+                and expected_stable.isdisjoint(all_existing_entries)
+            ):
+                logger.warning(
+                    "Skipping APK cleanup: keep set does not match existing directories in any android root."
+                )
+                return
+
             for android_dir in android_dirs:
                 prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
                 try:
                     with os.scandir(android_dir) as it:
                         android_entries = list(it)
                 except FileNotFoundError:
-                    continue
-
-                existing_entries = {
-                    entry.name for entry in android_entries if not entry.is_symlink()
-                }
-                if (
-                    keep_limit > 0
-                    and expected_stable
-                    and existing_entries
-                    and expected_stable.isdisjoint(existing_entries)
-                ):
-                    logger.warning(
-                        "Skipping APK cleanup for %s: keep set does not match existing directories.",
-                        android_dir,
-                    )
                     continue
 
                 _remove_unexpected_entries(

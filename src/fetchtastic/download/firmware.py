@@ -704,49 +704,84 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 except (json.JSONDecodeError, IOError, OSError):
                     pass
 
-            success = self.download(asset.download_url, target_path)
-            if success:
-                if self.verify(target_path):
-                    logger.info("Downloaded manifest %s", asset.name)
-                    results.append(
-                        self.create_download_result(
-                            success=True,
-                            release_tag=release.tag_name,
-                            file_path=target_path,
-                            download_url=asset.download_url,
-                            file_size=asset.size,
-                            file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+            try:
+                success = self.download(asset.download_url, target_path)
+                if success:
+                    if self.verify(target_path):
+                        logger.info("Downloaded manifest %s", asset.name)
+                        results.append(
+                            self.create_download_result(
+                                success=True,
+                                release_tag=release.tag_name,
+                                file_path=target_path,
+                                download_url=asset.download_url,
+                                file_size=asset.size,
+                                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                            )
                         )
-                    )
+                    else:
+                        logger.error("Verification failed for manifest %s", asset.name)
+                        self.cleanup_file(target_path)
+                        results.append(
+                            self.create_download_result(
+                                success=False,
+                                release_tag=release.tag_name,
+                                file_path=target_path,
+                                error_message="Verification failed",
+                                download_url=asset.download_url,
+                                file_size=asset.size,
+                                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                is_retryable=True,
+                                error_type=ERROR_TYPE_VALIDATION,
+                            )
+                        )
                 else:
-                    logger.error("Verification failed for manifest %s", asset.name)
-                    self.cleanup_file(target_path)
+                    logger.error("Download failed for manifest %s", asset.name)
                     results.append(
                         self.create_download_result(
                             success=False,
                             release_tag=release.tag_name,
                             file_path=target_path,
-                            error_message="Verification failed",
+                            error_message="download(...) returned False",
                             download_url=asset.download_url,
                             file_size=asset.size,
                             file_type=FILE_TYPE_FIRMWARE_MANIFEST,
                             is_retryable=True,
-                            error_type=ERROR_TYPE_VALIDATION,
+                            error_type=ERROR_TYPE_NETWORK,
                         )
                     )
-            else:
-                logger.error("Download failed for manifest %s", asset.name)
+            except (requests.RequestException, OSError) as exc:
+                logger.exception("Error downloading manifest %s: %s", asset.name, exc)
+                self.cleanup_file(target_path)
                 results.append(
                     self.create_download_result(
                         success=False,
                         release_tag=release.tag_name,
                         file_path=target_path,
-                        error_message="download(...) returned False",
                         download_url=asset.download_url,
                         file_size=asset.size,
                         file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
                         is_retryable=True,
                         error_type=ERROR_TYPE_NETWORK,
+                    )
+                )
+            except ValueError as exc:
+                logger.exception(
+                    "Validation error for manifest %s: %s", asset.name, exc
+                )
+                self.cleanup_file(target_path)
+                results.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=release.tag_name,
+                        file_path=target_path,
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
+                        is_retryable=False,
+                        error_type=ERROR_TYPE_VALIDATION,
                     )
                 )
 
@@ -804,16 +839,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return None
 
-    def _parse_manifest_data(self, data: Dict[str, Any]) -> Optional[FirmwareManifest]:
+    def _parse_manifest_data(self, data: Any) -> Optional[FirmwareManifest]:
         """
         Parse raw manifest JSON data into a FirmwareManifest dataclass.
 
         Parameters:
-            data (Dict[str, Any]): Raw JSON manifest data.
+            data (Any): Raw JSON manifest data.
 
         Returns:
             Optional[FirmwareManifest]: Parsed manifest, or None if parsing fails.
         """
+        if not isinstance(data, dict):
+            logger.debug(
+                "Manifest data is not a dict, got %s: %s", type(data).__name__, data
+            )
+            return None
+
         try:
             return FirmwareManifest(
                 version=data.get("version"),

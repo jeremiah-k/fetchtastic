@@ -1100,11 +1100,11 @@ class DownloadOrchestrator:
 
         try:
             downloader: Optional[BaseDownloader] = None
-            if file_type == "android":
+            if file_type == FILE_TYPE_ANDROID:
                 downloader = self.android_downloader
-            elif file_type in ("firmware", FILE_TYPE_FIRMWARE_MANIFEST):
+            elif file_type in (FILE_TYPE_FIRMWARE, FILE_TYPE_FIRMWARE_MANIFEST):
                 downloader = self.firmware_downloader
-            elif file_type in ("desktop", "desktop_prerelease"):
+            elif file_type in (FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE):
                 downloader = self.desktop_downloader
 
             if downloader:
@@ -1556,7 +1556,11 @@ class DownloadOrchestrator:
 
             # Clean up desktop versions
             if self.config.get("SAVE_DESKTOP_APP", False):
-                desktop_keep = int(self.config.get("DESKTOP_VERSIONS_TO_KEEP", 2))
+                desktop_keep = int(
+                    self.config.get(
+                        "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+                    )
+                )
                 self.desktop_downloader.cleanup_old_versions(
                     desktop_keep, cached_releases=self.desktop_releases
                 )

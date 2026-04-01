@@ -35,31 +35,28 @@ def _get_platform_label(filename: str) -> str | None:
 
 def extract_wildcard_pattern(filename: str) -> str:
     """
-    Extract a wildcard pattern from a desktop asset filename.
+    Extract a normalized pattern from a desktop asset filename.
 
-    Strips the semantic version from the filename and replaces separators with
-    wildcards so the pattern can match across releases.
+    Strips the semantic version from the filename and normalizes to match the
+    format expected by matches_selected_patterns(). The result is lowercased
+    and contains no wildcards, suitable for direct substring matching.
 
     Examples:
-        Meshtastic-2.7.14-linux-x86_64.AppImage -> *Meshtastic*linux*x86_64*AppImage*
-        Meshtastic_x64_2.7.14.msi -> *Meshtastic_x64*msi*
-        Meshtastic-2.7.14.dmg -> *Meshtastic*dmg*
+        Meshtastic-2.7.14-linux-x86_64.AppImage -> meshtastic-linux-x86_64.appimage
+        Meshtastic_x64_2.7.14.msi -> meshtastic_x64.msi
+        Meshtastic-2.7.14.dmg -> meshtastic.dmg
     """
-    # Strip semantic version (with optional prerelease) and surrounding separators
+    # Strip semantic version (with optional prerelease) using the same regex as utils.py
     version_pattern = r"[-_]?\d+\.\d+\.\d+(?:[-.]?(?:rc|dev|b|beta|alpha)\d+)?"
     result = re.sub(version_pattern, "", filename)
 
-    # Replace remaining hyphens and dots with wildcards
-    result = re.sub(r"[-.]+", "*", result)
+    # Clean up double separators that might result from version removal
+    result = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], result)
 
-    # Collapse consecutive wildcards
-    result = re.sub(r"\*{2,}", "*", result)
+    # Normalize: lowercase for case-insensitive matching
+    result = result.lower()
 
-    # Strip leading/trailing wildcards for clean wrapping
-    result = result.strip("*")
-
-    # Wrap with wildcards for flexible matching
-    return f"*{result}*"
+    return result
 
 
 def fetch_desktop_assets() -> list[str]:

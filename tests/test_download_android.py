@@ -1006,7 +1006,11 @@ class TestMeshtasticAndroidAppDownloader:
             patch(
                 "fetchtastic.download.android.os.scandir",
                 side_effect=[
+                    # First: pre-loop scan to collect all_existing_entries
                     _scandir_context([entry_symlink, entry_allowed, entry_unexpected]),
+                    # Second: main loop scan for android_dir
+                    _scandir_context([entry_symlink, entry_allowed, entry_unexpected]),
+                    # Third: scan for prerelease_dir
                     _scandir_context([pre_allowed, pre_unexpected]),
                 ],
             ),
@@ -1050,7 +1054,9 @@ class TestMeshtasticAndroidAppDownloader:
         ):
             downloader.cleanup_prerelease_directories(cached_releases=releases)
 
-        mock_scandir.assert_called_once_with(android_dir)
+        # Scandir is called twice: once for pre-loop union scan, once for main loop
+        assert mock_scandir.call_count == 2
+        assert all(call.args[0] == android_dir for call in mock_scandir.call_args_list)
 
     def test_cleanup_prerelease_directories_handles_scandir_filenotfound(
         self, downloader

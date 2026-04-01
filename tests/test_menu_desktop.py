@@ -34,37 +34,37 @@ class TestGetPlatformLabel:
 class TestExtractWildcardPattern:
     def test_basic_version(self):
         result = menu_desktop.extract_wildcard_pattern("Meshtastic-2.7.14.dmg")
-        assert result == "*Meshtastic*dmg*"
+        assert result == "meshtastic.dmg"
 
     def test_linux_appimage(self):
         result = menu_desktop.extract_wildcard_pattern(
             "Meshtastic-2.7.14-linux-x86_64.AppImage"
         )
-        assert result == "*Meshtastic*linux*x86_64*AppImage*"
+        assert result == "meshtastic-linux-x86_64.appimage"
 
     def test_windows_msi(self):
         result = menu_desktop.extract_wildcard_pattern("Meshtastic_x64_2.7.14.msi")
-        assert result == "*Meshtastic_x64*msi*"
+        assert result == "meshtastic_x64.msi"
 
     def test_prerelease_version_rc(self):
         result = menu_desktop.extract_wildcard_pattern("Meshtastic-2.7.14-rc1.dmg")
-        assert result == "*Meshtastic*dmg*"
+        assert result == "meshtastic.dmg"
 
     def test_prerelease_version_dev(self):
         result = menu_desktop.extract_wildcard_pattern("Meshtastic-2.7.14.dev1.dmg")
-        assert result == "*Meshtastic*dmg*"
+        assert result == "meshtastic.dmg"
 
     def test_prerelease_version_beta(self):
         result = menu_desktop.extract_wildcard_pattern("Meshtastic-2.7.14beta1.dmg")
-        assert result == "*Meshtastic*dmg*"
+        assert result == "meshtastic.dmg"
 
     def test_prerelease_version_alpha(self):
         result = menu_desktop.extract_wildcard_pattern("Meshtastic-2.7.14-alpha1.dmg")
-        assert result == "*Meshtastic*dmg*"
+        assert result == "meshtastic.dmg"
 
     def test_prerelease_version_b(self):
         result = menu_desktop.extract_wildcard_pattern("Meshtastic-2.7.14b1.dmg")
-        assert result == "*Meshtastic*dmg*"
+        assert result == "meshtastic.dmg"
 
 
 class TestFetchDesktopAssetsErrorHandling:
@@ -165,13 +165,13 @@ class TestSelectAssets:
         mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
         mock_pattern = mocker.patch(
             "fetchtastic.menu_desktop.extract_wildcard_pattern",
-            return_value="*unknown*tar*gz*",
+            return_value="unknown.tar.gz",
         )
         mock_pick.return_value = [("  unknown.tar.gz", 3)]
 
         result = menu_desktop.select_assets(["Meshtastic-2.7.14.dmg", "unknown.tar.gz"])
 
-        assert result == {"selected_assets": ["*unknown*tar*gz*"]}
+        assert result == {"selected_assets": ["unknown.tar.gz"]}
         mock_pattern.assert_called_once_with("unknown.tar.gz")
 
     def test_index_out_of_range(self, mocker):
@@ -209,12 +209,12 @@ class TestRunMenuExceptionHandling:
         )
         mock_select = mocker.patch(
             "fetchtastic.menu_desktop.select_assets",
-            return_value={"selected_assets": ["*Meshtastic*dmg*"]},
+            return_value={"selected_assets": ["meshtastic.dmg"]},
         )
 
         result = menu_desktop.run_menu()
 
-        assert result == {"selected_assets": ["*Meshtastic*dmg*"]}
+        assert result == {"selected_assets": ["meshtastic.dmg"]}
         mock_fetch.assert_called_once()
         mock_select.assert_called_once_with(["Meshtastic-2.7.14.dmg"])
 
@@ -356,13 +356,13 @@ def test_select_assets_uses_pick_indices(mocker):
     mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
     mock_pattern = mocker.patch(
         "fetchtastic.menu_desktop.extract_wildcard_pattern",
-        return_value="*Meshtastic*dmg*",
+        return_value="meshtastic.dmg",
     )
     mock_pick.return_value = [("  Meshtastic-2.7.14.dmg", 1)]
 
     result = menu_desktop.select_assets(["Meshtastic-2.7.14.dmg"])
 
-    assert result == {"selected_assets": ["*Meshtastic*dmg*"]}
+    assert result == {"selected_assets": ["meshtastic.dmg"]}
     mock_pattern.assert_called_once_with("Meshtastic-2.7.14.dmg")
 
 

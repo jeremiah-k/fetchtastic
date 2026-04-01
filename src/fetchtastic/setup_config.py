@@ -24,6 +24,7 @@ from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_CHECK_APK_PRERELEASES,
+    DEFAULT_CHECK_DESKTOP_PRERELEASES,
     DEFAULT_EXTRACTION_PATTERNS,
     DEFAULT_KEEP_LAST_BETA,
     MESHTASTIC_DIR_NAME,
@@ -961,10 +962,10 @@ def _setup_downloads(
     # --- Desktop Prerelease Configuration ---
     if save_desktop and (not is_partial_run or wants("desktop")):
         check_desktop_prereleases_current = _coerce_bool(
-            config.get("CHECK_DESKTOP_PRERELEASES", True)
+            config.get("CHECK_DESKTOP_PRERELEASES", DEFAULT_CHECK_DESKTOP_PRERELEASES)
         )
         check_desktop_prereleases_default = (
-            "yes" if check_desktop_prereleases_current else "no"
+            "yes" if DEFAULT_CHECK_DESKTOP_PRERELEASES else "no"
         )
         check_desktop_prereleases_input = _safe_input(
             f"\nWould you like to check for and download pre-release desktop clients from GitHub? [y/n] (default: {check_desktop_prereleases_default}): ",
