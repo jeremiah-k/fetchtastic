@@ -519,7 +519,9 @@ class CacheManager:
         filtered = {k: v for k, v in params.items() if v is not None}
         if not filtered:
             return url
-        return f"{url}?{urlencode(filtered)}"
+        # Sort by key to ensure deterministic cache keys regardless of dict insertion order
+        sorted_items = sorted(filtered.items())
+        return f"{url}?{urlencode(sorted_items)}"
 
     def _get_releases_cache_file(self) -> str:
         """

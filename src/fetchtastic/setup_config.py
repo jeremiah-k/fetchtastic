@@ -913,7 +913,11 @@ def _setup_downloads(
                 )
                 or current_desktop_default
             )
-            save_desktop = _coerce_bool(choice)
+            # Only update if choice is a recognized boolean token
+            recognized_tokens = ("y", "n", "yes", "no", "true", "false", "1", "0")
+            if choice.lower() in recognized_tokens:
+                save_desktop = _coerce_bool(choice)
+            # else: leave save_desktop unchanged (preserve current setting on invalid input)
 
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
@@ -1028,6 +1032,7 @@ def _setup_downloads(
                     "No desktop assets selected. Desktop clients will not be downloaded."
                 )
                 config["SAVE_DESKTOP_APP"] = False
+                config["CHECK_DESKTOP_PRERELEASES"] = False
                 _clear_desktop_assets(config)
                 save_desktop = False
             else:
@@ -1041,6 +1046,7 @@ def _setup_downloads(
                 "No existing desktop selection found. Desktop clients will not be downloaded."
             )
             config["SAVE_DESKTOP_APP"] = False
+            config["CHECK_DESKTOP_PRERELEASES"] = False
             _clear_desktop_assets(config)
             save_desktop = False
 

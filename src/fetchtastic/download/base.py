@@ -106,6 +106,18 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         """
         return int(self.config.get("VERSIONS_TO_KEEP", 5))
 
+    def clear_cache(self) -> bool:
+        """
+        Clear all cached data managed by this downloader.
+
+        This delegates to the cache manager to remove all cached API responses,
+        release listings, and other cached data.
+
+        Returns:
+            bool: True if cache was cleared successfully, False otherwise.
+        """
+        return self.cache_manager.clear_all_caches()
+
     async def _ensure_async_session(self, aiohttp_module: Optional[Any] = None) -> Any:
         """
         Backward-compatible alias to shared session creation.

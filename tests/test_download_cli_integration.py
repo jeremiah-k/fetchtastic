@@ -10,10 +10,10 @@ from fetchtastic.download.files import _get_existing_prerelease_dirs
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_interface]
 
 
-def test_cli_integration_main_loads_config_and_runs(mocker):
+def test_cli_integration_main_loads_config_and_runs(mocker, tmp_path):
     """main should use provided config and delegate to run_download."""
     integration = DownloadCLIIntegration()
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
         return_value=None,
@@ -40,7 +40,7 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
 
     result = integration.main(config=config, include_desktop=True)
 
-    run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, False, True)
+    run_download.assert_called_once_with({"DOWNLOAD_DIR": str(tmp_path)}, False, True)
 
     # Unpack the 13-field tuple into named locals
     (
@@ -100,10 +100,10 @@ def test_cli_integration_main_with_config_parameter(mocker):
     assert result[0] == ["fw"]
 
 
-def test_cli_integration_main_with_force_refresh(mocker):
+def test_cli_integration_main_with_force_refresh(mocker, tmp_path):
     """main should pass force_refresh parameter to run_download."""
     integration = DownloadCLIIntegration()
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
         return_value=None,
@@ -116,7 +116,7 @@ def test_cli_integration_main_with_force_refresh(mocker):
 
     integration.main(config=config, force_refresh=True)
 
-    run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, True, False)
+    run_download.assert_called_once_with({"DOWNLOAD_DIR": str(tmp_path)}, True, False)
 
 
 def test_cli_integration_main_rejects_none_config(mocker):
@@ -274,17 +274,17 @@ def test_run_download_successful(mocker):
     assert any(call[0] == ("v2.0.0", "v1.9.0") for call in calls)
 
 
-def test_run_download_uses_tracked_desktop_version_for_new_detection(mocker):
+def test_run_download_uses_tracked_desktop_version_for_new_detection(mocker, tmp_path):
     """Desktop new-version detection should compare against tracked local desktop version."""
     integration = DownloadCLIIntegration()
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
 
     mock_orchestrator = MagicMock()
     mock_orchestrator.run_download_pipeline.return_value = (
         [
             MagicMock(
                 release_tag="v2.0.0",
-                file_path="/tmp/Meshtastic-2.0.0.dmg",
+                file_path=str(tmp_path / "Meshtastic-2.0.0.dmg"),
                 was_skipped=False,
                 file_type="desktop",
             )
@@ -417,7 +417,7 @@ def test_is_newer_version_equal():
     mock_version_manager.compare_versions.assert_called_once_with("v1.0", "v1.0")
 
 
-def test_get_failed_downloads():
+def test_get_failed_downloads(tmp_path):
     """get_failed_downloads should format failed downloads correctly."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -433,7 +433,7 @@ def test_get_failed_downloads():
 
     mock_manifest_failure = MagicMock()
     mock_manifest_failure.file_type = "firmware_manifest"
-    mock_manifest_failure.file_path = "/tmp/firmware-2.7.20.json"
+    mock_manifest_failure.file_path = str(tmp_path / "firmware-2.7.20.json")
     mock_manifest_failure.release_tag = "v2.7.20"
     mock_manifest_failure.download_url = "https://example.com/firmware-2.7.20.json"
     mock_manifest_failure.error_message = "Manifest download failed"
@@ -571,7 +571,9 @@ def test_validate_integration_fetch_failure():
 
 
 @pytest.mark.configuration
-def test_validate_integration_desktop_enabled_requires_desktop_releases(mocker):
+def test_validate_integration_desktop_enabled_requires_desktop_releases(
+    mocker, tmp_path
+):
     """Desktop-enabled validation should fail when desktop releases are unavailable."""
     integration = DownloadCLIIntegration()
     integration.config = {"SAVE_DESKTOP_APP": True}
@@ -583,7 +585,9 @@ def test_validate_integration_desktop_enabled_requires_desktop_releases(mocker):
     integration.android_downloader.get_releases.return_value = [MagicMock()]
     integration.firmware_downloader.get_releases.return_value = [MagicMock()]
     integration.desktop_downloader.get_releases.return_value = []
-    integration.android_downloader.get_download_dir.return_value = "/tmp/android"
+    integration.android_downloader.get_download_dir.return_value = str(
+        tmp_path / "android"
+    )
 
     mocker.patch("os.path.exists", return_value=True)
 
@@ -1113,7 +1117,7 @@ def test_get_tracked_desktop_versions_no_downloader(mocker):
 
     result = integration._get_tracked_desktop_versions()
 
-    assert result == {"desktop": None, "desktop_prerelease": None}
+    assert result == {"current": None, "prerelease": None}
 
 
 def test_get_tracked_desktop_versions_with_exceptions(mocker):
@@ -1128,16 +1132,16 @@ def test_get_tracked_desktop_versions_with_exceptions(mocker):
 
     result = integration._get_tracked_desktop_versions()
 
-    assert result == {"desktop": None, "desktop_prerelease": None}
+    assert result == {"current": None, "prerelease": None}
 
 
-def test_get_tracked_desktop_versions_non_string_return(mocker):
+def test_get_tracked_desktop_versions_non_string_return(mocker, tmp_path):
     """_get_tracked_desktop_versions should handle non-string returns (lines 234-237)."""
     integration = DownloadCLIIntegration()
     mock_desktop_downloader = mocker.MagicMock()
     mock_desktop_downloader.get_latest_release_tag.return_value = 123
-    mock_desktop_downloader.get_prerelease_tracking_file.return_value = (
-        "/tmp/desktop-prerelease.json"
+    mock_desktop_downloader.get_prerelease_tracking_file.return_value = str(
+        tmp_path / "desktop-prerelease.json"
     )
     mock_desktop_downloader.cache_manager.read_json.return_value = {
         "latest_version": 456
@@ -1149,16 +1153,16 @@ def test_get_tracked_desktop_versions_non_string_return(mocker):
 
     result = integration._get_tracked_desktop_versions()
 
-    assert result == {"desktop": None, "desktop_prerelease": None}
+    assert result == {"current": None, "prerelease": None}
 
 
-def test_get_tracked_desktop_versions_reads_prerelease_tracking_file(mocker):
+def test_get_tracked_desktop_versions_reads_prerelease_tracking_file(mocker, tmp_path):
     """_get_tracked_desktop_versions should read prerelease tag from local tracking file."""
     integration = DownloadCLIIntegration()
     mock_desktop_downloader = mocker.MagicMock()
     mock_desktop_downloader.get_latest_release_tag.return_value = "v2.7.20"
-    mock_desktop_downloader.get_prerelease_tracking_file.return_value = (
-        "/tmp/desktop-prerelease.json"
+    mock_desktop_downloader.get_prerelease_tracking_file.return_value = str(
+        tmp_path / "desktop-prerelease.json"
     )
     mock_desktop_downloader.cache_manager.read_json.return_value = {
         "latest_version": "v2.7.20-open.1"
@@ -1170,20 +1174,20 @@ def test_get_tracked_desktop_versions_reads_prerelease_tracking_file(mocker):
 
     result = integration._get_tracked_desktop_versions()
 
-    assert result == {"desktop": "v2.7.20", "desktop_prerelease": "v2.7.20-open.1"}
+    assert result == {"current": "v2.7.20", "prerelease": "v2.7.20-open.1"}
 
 
 def test_clear_caches_handles_error(mocker):
     """_clear_caches should handle and log errors (lines 250-258)."""
     integration = DownloadCLIIntegration()
     mock_android = mocker.MagicMock()
-    mock_android.cache_manager.clear_all_caches.side_effect = OSError("cache error")
+    mock_android.clear_cache.side_effect = OSError("cache error")
     integration.android_downloader = mock_android
 
     mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
     integration._clear_caches()
 
-    mock_logger.error.assert_called()
+    mock_logger.warning.assert_called()
 
 
 def test_clear_caches_no_android_downloader(mocker):
@@ -1533,10 +1537,10 @@ def test_get_version_manager_via_attribute(mocker):
     assert result == "version_manager_instance"
 
 
-def test_main_handles_exception(mocker):
+def test_main_handles_exception(mocker, tmp_path):
     """main should handle exceptions and return empty results (lines 772-780)."""
     integration = DownloadCLIIntegration()
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
 
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
@@ -1553,10 +1557,10 @@ def test_main_handles_exception(mocker):
     assert result == ([], [], [], [], [], [], [], "", "")
 
 
-def test_clear_cache_handles_exception(mocker):
+def test_clear_cache_handles_exception(mocker, tmp_path):
     """clear_cache should handle exceptions and return False (lines 798-806)."""
     integration = DownloadCLIIntegration()
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
 
     mocker.patch.object(
         integration,
@@ -1569,7 +1573,7 @@ def test_clear_cache_handles_exception(mocker):
     assert result is False
 
 
-def test_validate_integration_creates_directory(mocker):
+def test_validate_integration_creates_directory(mocker, tmp_path):
     """validate_integration should create missing download directory (line 882)."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -1578,7 +1582,9 @@ def test_validate_integration_creates_directory(mocker):
 
     integration.android_downloader.get_releases.return_value = [MagicMock()]
     integration.firmware_downloader.get_releases.return_value = [MagicMock()]
-    integration.android_downloader.get_download_dir.return_value = "/tmp/new_dir"
+    integration.android_downloader.get_download_dir.return_value = str(
+        tmp_path / "new_dir"
+    )
 
     mocker.patch("os.path.exists", return_value=False)
     mock_makedirs = mocker.patch("os.makedirs")
@@ -1586,7 +1592,7 @@ def test_validate_integration_creates_directory(mocker):
     result = integration.validate_integration()
 
     assert result is True
-    mock_makedirs.assert_called_once_with("/tmp/new_dir", exist_ok=True)
+    mock_makedirs.assert_called_once_with(str(tmp_path / "new_dir"), exist_ok=True)
 
 
 def test_validate_integration_handles_exception(mocker):

@@ -1472,8 +1472,7 @@ def test_run_setup_desktop_invalid_version_input(
             "d",  # Desktop only
             "n",  # No desktop prereleases
             "invalid",  # Invalid version input
-            "n",  # No wifi only question on non-termux path - wait, this IS termux
-            "y",  # wifi only
+            "y",  # Wi-Fi only
             "n",  # No cron
             "n",  # No boot script
             "n",  # No NTFY
@@ -1491,8 +1490,11 @@ def test_run_setup_desktop_invalid_version_input(
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
 
-        # Invalid input should fall back to default (2 for termux)
-        assert saved_config["DESKTOP_VERSIONS_TO_KEEP"] == 2
+        # Invalid input should fall back to the desktop retention default.
+        assert (
+            saved_config["DESKTOP_VERSIONS_TO_KEEP"]
+            == setup_config.DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+        )
     finally:
         # Restore original values
         setup_config.CONFIG_DIR = original_config_dir

@@ -248,8 +248,8 @@ class DownloadCLIIntegration:
         Return desktop tracking versions from local tracking files before a pipeline run.
 
         Returns:
-            Dict[str, Optional[str]]: Mapping with keys `desktop` and
-                `desktop_prerelease` representing locally tracked versions.
+            Dict[str, Optional[str]]: Mapping with keys `current` and
+                `prerelease` representing locally tracked versions.
         """
         tracked_desktop: Optional[str] = None
         tracked_desktop_prerelease: Optional[str] = None
@@ -284,8 +284,8 @@ class DownloadCLIIntegration:
             tracked_desktop_prerelease = None
 
         return {
-            "desktop": tracked_desktop,
-            "desktop_prerelease": tracked_desktop_prerelease,
+            "current": tracked_desktop,
+            "prerelease": tracked_desktop_prerelease,
         }
 
     def _clear_caches(self) -> None:
@@ -297,12 +297,12 @@ class DownloadCLIIntegration:
         try:
             # Clear shared cache manager (same instance used by all downloaders)
             if self.android_downloader:
-                self.android_downloader.cache_manager.clear_all_caches()
+                self.android_downloader.clear_cache()
 
             logger.info("All caches cleared")
 
         except (OSError, ValueError) as e:
-            logger.error(f"Error clearing caches: {e}")
+            logger.warning(f"Error clearing caches: {e}")
 
     def log_download_results_summary(
         self,
@@ -494,7 +494,11 @@ class DownloadCLIIntegration:
                 self.orchestrator.get_latest_versions(),
             )
         if tracked_versions:
-            latest_versions.update(tracked_versions)
+            # Map tracked version keys to expected latest_versions keys
+            if tracked_versions.get("current"):
+                latest_versions["desktop"] = tracked_versions["current"]
+            if tracked_versions.get("prerelease"):
+                latest_versions["desktop_prerelease"] = tracked_versions["prerelease"]
 
         current_android = latest_versions.get("android")
         current_firmware = latest_versions.get("firmware")
