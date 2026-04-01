@@ -1357,10 +1357,45 @@ class DownloadOrchestrator:
                 )
             ]
 
-            if client_app_downloads:
-                logger.info(f"Client apps: {len(client_app_downloads)} downloaded")
-            if firmware_downloads:
-                logger.info(f"Firmware: {len(firmware_downloads)} downloaded")
+            # Group failures by product category
+            client_app_failures = [
+                f
+                for f in self.failed_downloads
+                if f.file_type
+                in (
+                    FILE_TYPE_ANDROID,
+                    FILE_TYPE_ANDROID_PRERELEASE,
+                    FILE_TYPE_DESKTOP,
+                    FILE_TYPE_DESKTOP_PRERELEASE,
+                )
+            ]
+            firmware_failures = [
+                f
+                for f in self.failed_downloads
+                if f.file_type
+                in (
+                    FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                    FILE_TYPE_FIRMWARE_MANIFEST,
+                )
+            ]
+
+            if client_app_downloads or client_app_failures:
+                failure_part = (
+                    f", {len(client_app_failures)} failed"
+                    if client_app_failures
+                    else ""
+                )
+                logger.info(
+                    f"Client apps: {len(client_app_downloads)} downloaded{failure_part}"
+                )
+            if firmware_downloads or firmware_failures:
+                failure_part = (
+                    f", {len(firmware_failures)} failed" if firmware_failures else ""
+                )
+                logger.info(
+                    f"Firmware: {len(firmware_downloads)} downloaded{failure_part}"
+                )
         if skipped:
             logger.debug("Skipped %d existing assets", len(skipped))
 
