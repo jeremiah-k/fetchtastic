@@ -67,16 +67,14 @@ def _set_desktop_assets(config: dict, assets: list) -> None:
     """Set selected desktop assets in the new config key only, removing old key if it exists."""
     config["SELECTED_DESKTOP_ASSETS"] = assets
     # Remove old key if it exists (migration complete)
-    if "SELECTED_DESKTOP_PLATFORMS" in config:
-        del config["SELECTED_DESKTOP_PLATFORMS"]
+    config.pop("SELECTED_DESKTOP_PLATFORMS", None)
 
 
 def _clear_desktop_assets(config: dict) -> None:
     """Clear selected desktop assets and remove old config key if it exists."""
     config["SELECTED_DESKTOP_ASSETS"] = []
     # Remove old key if it exists
-    if "SELECTED_DESKTOP_PLATFORMS" in config:
-        del config["SELECTED_DESKTOP_PLATFORMS"]
+    config.pop("SELECTED_DESKTOP_PLATFORMS", None)
 
 
 def _migrate_desktop_asset_key(config: Dict[str, Any]) -> Dict[str, Any]:

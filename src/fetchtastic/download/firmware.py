@@ -664,6 +664,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         results: List[DownloadResult] = []
 
+        if self._filter_revoked_releases and self.is_release_revoked(release):
+            logger.info(
+                "Skipping revoked firmware manifests for %s because revoked filtering is enabled.",
+                release.tag_name,
+            )
+            return results
+
         try:
             storage_tag = self._get_release_storage_tag(release)
         except ValueError:

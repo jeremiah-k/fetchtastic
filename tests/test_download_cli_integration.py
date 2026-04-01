@@ -87,10 +87,6 @@ def test_cli_integration_main_with_config_parameter(mocker):
             ["new_apk"],
             [],
             [],
-            [],
-            [],
-            [],
-            [],
             "fw_latest",
             "apk_latest",
             "",
@@ -100,6 +96,7 @@ def test_cli_integration_main_with_config_parameter(mocker):
     result = integration.main(config=config)
 
     run_download.assert_called_once_with(config, False, False)
+    assert len(result) == 9
     assert result[0] == ["fw"]
 
 
@@ -573,6 +570,7 @@ def test_validate_integration_fetch_failure():
     assert result is False
 
 
+@pytest.mark.configuration
 def test_validate_integration_desktop_enabled_requires_desktop_releases(mocker):
     """Desktop-enabled validation should fail when desktop releases are unavailable."""
     integration = DownloadCLIIntegration()
@@ -592,6 +590,7 @@ def test_validate_integration_desktop_enabled_requires_desktop_releases(mocker):
     assert integration.validate_integration() is False
 
 
+@pytest.mark.configuration
 def test_get_migration_report_initialized(mocker):
     """get_migration_report should return status when components are initialized."""
     integration = DownloadCLIIntegration()
@@ -623,6 +622,7 @@ def test_get_migration_report_not_initialized():
     assert result["android_downloader_initialized"] is False
 
 
+@pytest.mark.configuration
 def test_get_migration_report_desktop_enabled_without_desktop_downloader():
     """Desktop-enabled migration report should not be completed without desktop init."""
     integration = DownloadCLIIntegration()

@@ -435,7 +435,7 @@ def test_disable_asset_downloads_apk_with_default_message(capsys):
         "CHECK_APK_PRERELEASES": True,
     }
 
-    updated, result = _disable_asset_downloads(config, "APK")
+    updated, _ = _disable_asset_downloads(config, "APK")
     captured = capsys.readouterr()
 
     assert "No APK assets selected" in captured.out
@@ -804,8 +804,9 @@ def test_setup_automation_windows_keep_shortcut(mocker, capsys):
 
     mocker.patch(
         "os.path.exists",
-        side_effect=lambda path: path
-        == os.path.join(startup_folder, "Fetchtastic.lnk"),
+        side_effect=lambda path: (
+            path == os.path.join(startup_folder, "Fetchtastic.lnk")
+        ),
     )
     mocker.patch(
         "builtins.input",
@@ -1032,8 +1033,9 @@ def test_migrate_pip_to_pipx_local_pipx_fallback(mocker):
     # Use side_effect to return True for both config file and local pipx path
     mocker.patch(
         "os.path.exists",
-        side_effect=lambda path: path == setup_config.CONFIG_FILE
-        or ".local/bin/pipx" in path,
+        side_effect=lambda path: (
+            path == setup_config.CONFIG_FILE or ".local/bin/pipx" in path
+        ),
     )
 
     mock_subprocess = mocker.patch("fetchtastic.setup_config.subprocess.run")

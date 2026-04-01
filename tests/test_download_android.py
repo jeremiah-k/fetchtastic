@@ -271,7 +271,8 @@ class TestMeshtasticAndroidAppDownloader:
         notes_file = Path(notes_path)
         assert notes_file.exists()
         expected_suffix = os.path.join(
-            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
+            APP_DIR_NAME,
+            ANDROID_DIR_NAME,
             APK_PRERELEASES_DIR_NAME,
             "v2.7.10-open.1",
             "release_notes-v2.7.10-open.1.md",
