@@ -162,7 +162,9 @@ class DownloadCLIIntegration:
             if force_refresh:
                 self._clear_caches()
 
-            tracked_versions = self._get_tracked_desktop_versions()
+            tracked_versions = (
+                self._get_tracked_desktop_versions() if include_desktop else None
+            )
 
             # Run the download pipeline
             success_results, _failed_results = orchestrator.run_download_pipeline()
@@ -259,10 +261,21 @@ class DownloadCLIIntegration:
                 tracked_desktop = None
 
             try:
-                tracked_desktop_prerelease = (
-                    self.desktop_downloader.get_latest_prerelease_tag()
-                )
-            except (OSError, ValueError, TypeError):
+                tracking_file = self.desktop_downloader.get_prerelease_tracking_file()
+                if (
+                    isinstance(tracking_file, str)
+                    and tracking_file
+                    and os.path.exists(tracking_file)
+                ):
+                    tracking_data = (
+                        self.desktop_downloader.cache_manager.read_json(tracking_file)
+                        or {}
+                    )
+                    if isinstance(tracking_data, dict):
+                        tracked_value = tracking_data.get("latest_version")
+                        if isinstance(tracked_value, str):
+                            tracked_desktop_prerelease = tracked_value
+            except (OSError, ValueError, TypeError, KeyError):
                 tracked_desktop_prerelease = None
 
         if not isinstance(tracked_desktop, str):

@@ -135,8 +135,8 @@ class TestCacheManagerReleasesOptimization:
                     found_log
                 ), "Expected 'Saved X releases to cache entry' debug log not found"
 
-    def test_build_url_cache_key_excludes_pagination_params(self):
-        """Test that build_url_cache_key excludes page but keeps per_page."""
+    def test_build_url_cache_key_includes_pagination_params(self):
+        """Test that build_url_cache_key includes both page and per_page."""
         base_url = "https://api.github.com/repos/meshtastic/firmware/releases"
 
         key1 = CacheManager.build_url_cache_key(base_url, {"per_page": 8})
@@ -151,8 +151,8 @@ class TestCacheManagerReleasesOptimization:
             key2 == f"{base_url}?per_page=10"
         ), "per_page should be included in cache key"
         assert (
-            key3 == f"{base_url}?per_page=10"
-        ), "page should be excluded, per_page should be included"
+            key3 == f"{base_url}?page=2&per_page=10"
+        ), "page and per_page should both be included in cache key"
         assert key4 == base_url, "no params should return base URL"
         assert key1 != key2, "Different per_page values should generate different keys"
-        assert key1 != key3, "page should be excluded from cache key"
+        assert key1 != key3, "Different page/per_page should generate different keys"

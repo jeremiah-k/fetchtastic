@@ -1121,7 +1121,7 @@ def test_get_tracked_desktop_versions_with_exceptions(mocker):
     integration = DownloadCLIIntegration()
     mock_desktop_downloader = mocker.MagicMock()
     mock_desktop_downloader.get_latest_release_tag.side_effect = OSError("io error")
-    mock_desktop_downloader.get_latest_prerelease_tag.side_effect = ValueError(
+    mock_desktop_downloader.get_prerelease_tracking_file.side_effect = ValueError(
         "value error"
     )
     integration.desktop_downloader = mock_desktop_downloader
@@ -1136,12 +1136,41 @@ def test_get_tracked_desktop_versions_non_string_return(mocker):
     integration = DownloadCLIIntegration()
     mock_desktop_downloader = mocker.MagicMock()
     mock_desktop_downloader.get_latest_release_tag.return_value = 123
-    mock_desktop_downloader.get_latest_prerelease_tag.return_value = None
+    mock_desktop_downloader.get_prerelease_tracking_file.return_value = (
+        "/tmp/desktop-prerelease.json"
+    )
+    mock_desktop_downloader.cache_manager.read_json.return_value = {
+        "latest_version": 456
+    }
+    mocker.patch(
+        "fetchtastic.download.cli_integration.os.path.exists", return_value=True
+    )
     integration.desktop_downloader = mock_desktop_downloader
 
     result = integration._get_tracked_desktop_versions()
 
     assert result == {"desktop": None, "desktop_prerelease": None}
+
+
+def test_get_tracked_desktop_versions_reads_prerelease_tracking_file(mocker):
+    """_get_tracked_desktop_versions should read prerelease tag from local tracking file."""
+    integration = DownloadCLIIntegration()
+    mock_desktop_downloader = mocker.MagicMock()
+    mock_desktop_downloader.get_latest_release_tag.return_value = "v2.7.20"
+    mock_desktop_downloader.get_prerelease_tracking_file.return_value = (
+        "/tmp/desktop-prerelease.json"
+    )
+    mock_desktop_downloader.cache_manager.read_json.return_value = {
+        "latest_version": "v2.7.20-open.1"
+    }
+    mocker.patch(
+        "fetchtastic.download.cli_integration.os.path.exists", return_value=True
+    )
+    integration.desktop_downloader = mock_desktop_downloader
+
+    result = integration._get_tracked_desktop_versions()
+
+    assert result == {"desktop": "v2.7.20", "desktop_prerelease": "v2.7.20-open.1"}
 
 
 def test_clear_caches_handles_error(mocker):

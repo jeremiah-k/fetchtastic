@@ -505,14 +505,18 @@ class CacheManager:
         Create a stable cache key by appending URL-encoded query parameters to base URL.
 
         Parameters:
-            params (Optional[dict[str, Any]]): Mapping of query parameter names to values; entries with value None are omitted. The 'page' pagination parameter is excluded as it doesn't affect the data identity, but 'per_page' is retained since it affects response content.
+            params (Optional[dict[str, Any]]): Mapping of query parameter names
+                to values; entries with value None are omitted. Pagination
+                parameters like `page` and `per_page` are retained because they
+                identify distinct API result sets.
 
         Returns:
-            The original `url` if `params` is None or contains no non-None values, otherwise, `url` followed by `?` and URL-encoded parameters (excluding 'page' pagination parameter).
+            The original `url` if `params` is None or contains no non-None values,
+            otherwise, `url` followed by `?` and URL-encoded parameters.
         """
         if not params:
             return url
-        filtered = {k: v for k, v in params.items() if v is not None and k != "page"}
+        filtered = {k: v for k, v in params.items() if v is not None}
         if not filtered:
             return url
         return f"{url}?{urlencode(filtered)}"
