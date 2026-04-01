@@ -19,7 +19,7 @@ from fetchtastic.utils import (
 PLATFORM_GROUPS = {
     "macOS": [".dmg"],
     "Windows": [".msi", ".exe"],
-    "Linux": [".deb", ".rpm", ".appimage", ".AppImage"],
+    "Linux": [".deb", ".rpm", ".appimage"],
 }
 
 
@@ -126,7 +126,7 @@ def fetch_desktop_assets() -> list[str]:
     # Fall back to first release if no better option found
     if best_release is None:
         logger.debug(
-            "No release with desktop assets found, falling back to first release"
+            "No release with desktop assets found in recent releases, trying first release (may not contain desktop assets)"
         )
         best_release = releases[0]
 

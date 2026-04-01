@@ -993,18 +993,19 @@ def _setup_downloads(
 
     # --- Desktop Prerelease Configuration ---
     if save_desktop and (not is_partial_run or wants("desktop")):
-        _coerce_bool(
+        check_desktop_prereleases_current = _coerce_bool(
             config.get("CHECK_DESKTOP_PRERELEASES", DEFAULT_CHECK_DESKTOP_PRERELEASES)
         )
         check_desktop_prereleases_default = (
-            "yes" if DEFAULT_CHECK_DESKTOP_PRERELEASES else "no"
+            "yes" if check_desktop_prereleases_current else "no"
         )
         check_desktop_prereleases_input = _safe_input(
             f"\nWould you like to check for and download pre-release desktop clients from GitHub? [y/n] (default: {check_desktop_prereleases_default}): ",
             default=check_desktop_prereleases_default,
         )
         config["CHECK_DESKTOP_PRERELEASES"] = _coerce_bool(
-            check_desktop_prereleases_input
+            check_desktop_prereleases_input,
+            default=check_desktop_prereleases_current,
         )
 
     # --- Channel Suffix Configuration ---

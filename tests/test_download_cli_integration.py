@@ -41,10 +41,28 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
     result = integration.main(config=config)
 
     run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, False)
-    assert result[0] == ["fw"]
-    assert result[10] == "fw_latest"
-    assert result[11] == "apk_latest"
-    assert result[12] == "desktop_latest"
+
+    # Unpack the 13-field tuple into named locals
+    (
+        downloaded_firmwares,
+        new_firmware_versions,
+        downloaded_apks,
+        new_apk_versions,
+        downloaded_desktop,
+        new_desktop_versions,
+        downloaded_firmware_prereleases,
+        downloaded_apk_prereleases,
+        downloaded_desktop_prereleases,
+        failed_downloads,
+        latest_firmware_version,
+        latest_apk_version,
+        latest_desktop_version,
+    ) = result
+
+    assert downloaded_firmwares == ["fw"]
+    assert latest_firmware_version == "fw_latest"
+    assert latest_apk_version == "apk_latest"
+    assert latest_desktop_version == "desktop_latest"
 
 
 def test_cli_integration_main_requires_config_argument():
@@ -216,19 +234,37 @@ def test_run_download_successful(mocker):
 
     # Verify conversion logic was exercised and result format
     assert len(result) == 13
-    assert result[0] == ["v1.0.0"]  # downloaded_firmwares (skipped one excluded)
-    assert result[1] == ["v1.0.0"]  # new_firmware_versions (newer than v0.9.0)
-    assert result[2] == ["v2.0.0"]  # downloaded_apks
-    assert result[3] == ["v2.0.0"]  # new_apk_versions (newer than v1.9.0)
-    assert result[4] == []  # downloaded_desktop
-    assert result[5] == []  # new_desktop_versions
-    assert result[6] == []  # downloaded_firmware_prereleases
-    assert result[7] == []  # downloaded_apk_prereleases
-    assert result[8] == []  # downloaded_desktop_prereleases
-    assert result[9] == []  # failed_downloads
-    assert result[10] == "v0.9.0"  # latest_firmware_version (from orchestrator)
-    assert result[11] == "v1.9.0"  # latest_apk_version (from orchestrator)
-    assert result[12] == ""  # latest_desktop_version (from orchestrator)
+
+    # Unpack the 13-field tuple into named locals
+    (
+        downloaded_firmwares,
+        new_firmware_versions,
+        downloaded_apks,
+        new_apk_versions,
+        downloaded_desktop,
+        new_desktop_versions,
+        downloaded_firmware_prereleases,
+        downloaded_apk_prereleases,
+        downloaded_desktop_prereleases,
+        failed_downloads,
+        latest_firmware_version,
+        latest_apk_version,
+        latest_desktop_version,
+    ) = result
+
+    assert downloaded_firmwares == ["v1.0.0"]  # skipped one excluded
+    assert new_firmware_versions == ["v1.0.0"]  # newer than v0.9.0
+    assert downloaded_apks == ["v2.0.0"]
+    assert new_apk_versions == ["v2.0.0"]  # newer than v1.9.0
+    assert downloaded_desktop == []
+    assert new_desktop_versions == []
+    assert downloaded_firmware_prereleases == []
+    assert downloaded_apk_prereleases == []
+    assert downloaded_desktop_prereleases == []
+    assert failed_downloads == []
+    assert latest_firmware_version == "v0.9.0"  # from orchestrator
+    assert latest_apk_version == "v1.9.0"  # from orchestrator
+    assert latest_desktop_version == ""  # from orchestrator
 
     # Verify version comparison was called for new version detection
     # Should be called for each downloaded item (2 times in this test)

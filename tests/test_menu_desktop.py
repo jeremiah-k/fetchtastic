@@ -167,7 +167,16 @@ class TestSelectAssets:
             "fetchtastic.menu_desktop.extract_wildcard_pattern",
             return_value="unknown.tar.gz",
         )
-        mock_pick.return_value = [("  unknown.tar.gz", 3)]
+
+        def pick_side_effect(options, *_args, **_kwargs):
+            selection = next(
+                (option, idx)
+                for idx, option in enumerate(options)
+                if option.strip() == "unknown.tar.gz"
+            )
+            return [selection]
+
+        mock_pick.side_effect = pick_side_effect
 
         result = menu_desktop.select_assets(["Meshtastic-2.7.14.dmg", "unknown.tar.gz"])
 
@@ -176,7 +185,12 @@ class TestSelectAssets:
 
     def test_index_out_of_range(self, mocker):
         mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
-        mock_pick.return_value = [("  Meshtastic-2.7.14.dmg", 999)]
+
+        def pick_side_effect(options, *_args, **_kwargs):
+            # Return an out-of-range index
+            return [("  Meshtastic-2.7.14.dmg", len(options) + 100)]
+
+        mock_pick.side_effect = pick_side_effect
 
         result = menu_desktop.select_assets(["Meshtastic-2.7.14.dmg"])
 
@@ -358,7 +372,16 @@ def test_select_assets_uses_pick_indices(mocker):
         "fetchtastic.menu_desktop.extract_wildcard_pattern",
         return_value="meshtastic.dmg",
     )
-    mock_pick.return_value = [("  Meshtastic-2.7.14.dmg", 1)]
+
+    def pick_side_effect(options, *_args, **_kwargs):
+        selection = next(
+            (option, idx)
+            for idx, option in enumerate(options)
+            if option.strip() == "Meshtastic-2.7.14.dmg"
+        )
+        return [selection]
+
+    mock_pick.side_effect = pick_side_effect
 
     result = menu_desktop.select_assets(["Meshtastic-2.7.14.dmg"])
 

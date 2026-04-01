@@ -309,11 +309,16 @@ class DownloadOrchestrator:
                 return
 
             self.desktop_downloader.update_release_history(desktop_releases)
-            keep_count = int(
-                self.config.get(
-                    "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
-                )
+            raw_keep = self.config.get(
+                "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
             )
+            try:
+                keep_count = max(0, int(raw_keep))
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"Invalid DESKTOP_VERSIONS_TO_KEEP value '{raw_keep}', using default {DEFAULT_DESKTOP_VERSIONS_TO_KEEP}"
+                )
+                keep_count = int(DEFAULT_DESKTOP_VERSIONS_TO_KEEP)
             stable_releases = [
                 release for release in desktop_releases if not release.prerelease
             ]
@@ -1613,11 +1618,16 @@ class DownloadOrchestrator:
 
             # Clean up desktop versions
             if self.config.get("SAVE_DESKTOP_APP", False):
-                desktop_keep = int(
-                    self.config.get(
-                        "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
-                    )
+                raw_desktop_keep = self.config.get(
+                    "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
                 )
+                try:
+                    desktop_keep = max(0, int(raw_desktop_keep))
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"Invalid DESKTOP_VERSIONS_TO_KEEP value '{raw_desktop_keep}', using default {DEFAULT_DESKTOP_VERSIONS_TO_KEEP}"
+                    )
+                    desktop_keep = int(DEFAULT_DESKTOP_VERSIONS_TO_KEEP)
                 self.desktop_downloader.cleanup_old_versions(
                     desktop_keep, cached_releases=self.desktop_releases
                 )
