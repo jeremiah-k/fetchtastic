@@ -1155,26 +1155,36 @@ class TestFirmwareReleaseDownloader:
 
         assert result is None
 
-    def test_get_manifest_for_device_skips_unparseable_manifest(
+    def test_get_manifest_for_device_skips_unparsable_manifest(
         self, downloader, tmp_path, mocker
     ):
-        """Manifests that fail to parse should be skipped."""
+        """Manifests that fail to parse should be skipped, continue to find valid ones."""
         downloader.download_dir = str(tmp_path)
         version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
         version_dir.mkdir(parents=True)
 
+        # Create two manifest files - one unparsable (returns None), one valid
         manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
         manifest1.write_text(
-            json.dumps({"hwModelSlug": "RAK4631"}),
+            json.dumps({"invalid": "data"}),
             encoding="utf-8",
         )
 
+        manifest2 = version_dir / "firmware-tbeam-2.7.20.abcdef1.mt.json"
+        manifest2.write_text(
+            json.dumps({"hwModelSlug": "T_BEAM", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        # Mock to return None for first manifest (unparsable), valid for second
         mocker.patch.object(
             downloader,
             "_parse_manifest_data",
             side_effect=[
-                None,
-                FirmwareManifest(version="2.7.20", hwModelSlug="RAK4631"),
+                None,  # First call - unparsable
+                FirmwareManifest(
+                    version="2.7.20", hwModelSlug="T_BEAM"
+                ),  # Second call - valid
             ],
         )
 
@@ -1182,7 +1192,7 @@ class TestFirmwareReleaseDownloader:
         result = downloader.get_manifest_for_device(release)
 
         assert result is not None
-        assert result.hwModelSlug == "RAK4631"
+        assert result.hwModelSlug == "T_BEAM"
 
     def test_matches_prerelease_selection_returns_true_without_patterns(
         self, downloader

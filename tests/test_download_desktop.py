@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -762,13 +761,23 @@ def test_cleanup_prerelease_directories_removes_unexpected(downloader, tmp_path)
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
     desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+
+    # Create expected version directory
     new_version = desktop_dir / "v2.7.20"
     new_version.mkdir()
     (new_version / "test.txt").write_text("new")
 
+    # Create unexpected (old) version directory
+    old_version = desktop_dir / "v2.7.19"
+    old_version.mkdir()
+    (old_version / "test.txt").write_text("old")
+
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
     downloader.cleanup_prerelease_directories(cached_releases=releases)
 
+    # Expected version should exist, unexpected should be removed
+    assert new_version.exists()
     assert not old_version.exists()
 
 
@@ -1067,11 +1076,9 @@ def test_should_download_prerelease_same_version(downloader, tmp_path):
     downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
     tracking_file = tmp_path / "cache" / "prerelease_desktop.json"
     tracking_file.parent.mkdir(parents=True)
+    tracking_file.write_text('{"latest_version": "v2.7.20-open.1"}')
 
     downloader.get_prerelease_tracking_file = Mock(return_value=str(tracking_file))
-    downloader.cache_manager.read_json = Mock(
-        return_value={"latest_version": "v2.7.20-open.1"}
-    )
     downloader.version_manager.compare_versions = Mock(return_value=0)
 
     result = downloader.should_download_prerelease("v2.7.20-open.1")
