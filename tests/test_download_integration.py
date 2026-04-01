@@ -115,6 +115,9 @@ class TestDownloadIntegration:
             patch.object(
                 orchestrator.firmware_downloader, "get_releases", return_value=[]
             ),
+            patch.object(
+                orchestrator.desktop_downloader, "get_releases", return_value=[]
+            ),
         ):
             versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)

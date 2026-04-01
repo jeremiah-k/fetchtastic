@@ -169,6 +169,7 @@ def test_run_download_successful(mocker):
     mock_orchestrator.get_latest_versions.return_value = {
         "firmware": "v0.9.0",
         "android": "v1.9.0",
+        "desktop": "",
     }
 
     # Mock version manager for comparisons
@@ -206,16 +207,20 @@ def test_run_download_successful(mocker):
     mock_orchestrator.get_latest_versions.assert_called()
 
     # Verify conversion logic was exercised and result format
-    assert len(result) == 9
+    assert len(result) == 13
     assert result[0] == ["v1.0.0"]  # downloaded_firmwares (skipped one excluded)
     assert result[1] == ["v1.0.0"]  # new_firmware_versions (newer than v0.9.0)
     assert result[2] == ["v2.0.0"]  # downloaded_apks
     assert result[3] == ["v2.0.0"]  # new_apk_versions (newer than v1.9.0)
-    assert result[4] == []  # downloaded_firmware_prereleases
-    assert result[5] == []  # downloaded_apk_prereleases
-    assert result[6] == []  # failed_downloads
-    assert result[7] == "v0.9.0"  # latest_firmware_version (from orchestrator)
-    assert result[8] == "v1.9.0"  # latest_apk_version (from orchestrator)
+    assert result[4] == []  # downloaded_desktop
+    assert result[5] == []  # new_desktop_versions
+    assert result[6] == []  # downloaded_firmware_prereleases
+    assert result[7] == []  # downloaded_apk_prereleases
+    assert result[8] == []  # downloaded_desktop_prereleases
+    assert result[9] == []  # failed_downloads
+    assert result[10] == "v0.9.0"  # latest_firmware_version (from orchestrator)
+    assert result[11] == "v1.9.0"  # latest_apk_version (from orchestrator)
+    assert result[12] == ""  # latest_desktop_version (from orchestrator)
 
     # Verify version comparison was called for new version detection
     # Should be called for each downloaded item (2 times in this test)
@@ -293,7 +298,7 @@ def test_run_download_handles_exception(mocker):
     result = integration.run_download(config=config, force_refresh=False)
 
     # Verify empty results are returned on error
-    assert result == ([], [], [], [], [], [], [], "", "")
+    assert result == ([], [], [], [], [], [], [], [], [], [], "", "", "")
 
 
 def test_is_newer_version_equal():
@@ -713,8 +718,11 @@ def test_convert_results_to_legacy_format_with_file_type_categorization():
         _new_firmware_versions,
         downloaded_apks,
         _new_apk_versions,
+        _downloaded_desktop,
+        _new_desktop_versions,
         _downloaded_firmware_prereleases,
         _downloaded_apk_prereleases,
+        _downloaded_desktop_prereleases,
     ) = integration._convert_results_to_legacy_format(results)
 
     # Verify file type categorization worked correctly
@@ -784,8 +792,11 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
         _new_fw,
         downloaded_apks,
         new_apks,
+        _downloaded_desktop,
+        _new_desktop_versions,
         _downloaded_firmware_prereleases,
         downloaded_apk_prereleases,
+        _downloaded_desktop_prereleases,
     ) = integration._convert_results_to_legacy_format(results)
 
     assert new_apks == []
@@ -852,8 +863,11 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
         new_fw,
         _downloaded_apks,
         _new_apks,
+        _downloaded_desktop,
+        _new_desktop_versions,
         downloaded_firmware_prereleases,
         _downloaded_apk_prereleases,
+        _downloaded_desktop_prereleases,
     ) = integration._convert_results_to_legacy_format(results)
 
     assert new_fw == []

@@ -85,6 +85,12 @@ class FirmwareManifest:
     supportLevel: Optional[int] = None
     """Support level indicator (1 = actively supported)"""
 
+    has_mui: Optional[bool] = None
+    """Whether the firmware image includes MUI assets."""
+
+    has_inkhud: Optional[bool] = None
+    """Whether the firmware image includes InkHUD assets."""
+
     files: list[dict[str, Any]] = field(default_factory=list)
     """List of firmware files with metadata (name, md5, bytes)"""
 

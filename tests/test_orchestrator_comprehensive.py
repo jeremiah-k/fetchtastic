@@ -363,6 +363,7 @@ class TestDownloadOrchestrator:
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions."""
         orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.desktop_releases = []
         with (
             patch.object(
                 orchestrator.firmware_downloader,
@@ -387,6 +388,9 @@ class TestDownloadOrchestrator:
             ),
             patch.object(
                 orchestrator.firmware_downloader, "get_releases", return_value=[]
+            ),
+            patch.object(
+                orchestrator.desktop_downloader, "get_releases", return_value=[]
             ),
             patch.object(orchestrator, "_manage_prerelease_tracking"),
         ):

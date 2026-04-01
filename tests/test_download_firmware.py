@@ -12,7 +12,12 @@ from unittest.mock import ANY, Mock, patch
 import pytest
 
 from fetchtastic import log_utils
-from fetchtastic.constants import FIRMWARE_DIR_NAME, RELEASE_SCAN_COUNT
+from fetchtastic.constants import (
+    FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FIRMWARE_DIR_NAME,
+    RELEASE_SCAN_COUNT,
+)
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
@@ -837,6 +842,122 @@ class TestFirmwareReleaseDownloader:
 
         assert len(listing) == 2
         downloader.cache_manager.get_repo_contents.assert_called_once()
+
+    def test_download_manifests_includes_release_manifest_json(
+        self, downloader, tmp_path
+    ):
+        """Both per-device *.mt.json and release-level firmware-*.json files should be downloaded."""
+        downloader.download_dir = str(tmp_path)
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).parent.mkdir(parents=True, exist_ok=True)
+            Path(target).write_text("{}", encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-rak4631-2.7.20.abcdef0.mt.json",
+                    download_url="https://example.invalid/rak.mt.json",
+                    size=100,
+                ),
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=200,
+                ),
+                Asset(
+                    name="firmware-rak4631-2.7.20.abcdef0.zip",
+                    download_url="https://example.invalid/rak.zip",
+                    size=300,
+                ),
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 2
+        assert all(result.success for result in results)
+        assert all(
+            result.file_type == FILE_TYPE_FIRMWARE_MANIFEST for result in results
+        )
+        downloaded_names = sorted(
+            Path(str(result.file_path)).name for result in results
+        )
+        assert downloaded_names == [
+            "firmware-2.7.20.abcdef0.json",
+            "firmware-rak4631-2.7.20.abcdef0.mt.json",
+        ]
+
+    def test_parse_manifest_data_includes_ui_flags(self, downloader):
+        """Manifest parsing should preserve has_mui and has_inkhud fields."""
+        parsed = downloader._parse_manifest_data(
+            {
+                "version": "2.7.20.abcdef0",
+                "hwModelSlug": "RAK4631",
+                "has_mui": True,
+                "has_inkhud": False,
+            }
+        )
+
+        assert parsed is not None
+        assert parsed.has_mui is True
+        assert parsed.has_inkhud is False
+
+    @patch("fetchtastic.download.firmware.download_file_with_retry", return_value=True)
+    def test_download_prerelease_assets_keeps_release_manifest_with_pattern_filter(
+        self, _mock_download, downloader, tmp_path
+    ):
+        """Release-level prerelease manifest should be kept even when selected patterns are narrow."""
+        downloader.download_dir = str(tmp_path)
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "firmware-rak4631-2.7.20.abcdef0.mt.json",
+                    "download_url": "https://example.invalid/rak.mt.json",
+                    "size": 120,
+                },
+                {
+                    "type": "file",
+                    "name": "firmware-2.7.20.abcdef0.json",
+                    "download_url": "https://example.invalid/release.json",
+                    "size": 180,
+                },
+                {
+                    "type": "file",
+                    "name": "firmware-tbeam-2.7.20.abcdef0.zip",
+                    "download_url": "https://example.invalid/tbeam.zip",
+                    "size": 500,
+                },
+            ]
+        )
+        downloader.device_manager.is_device_pattern = Mock(return_value=False)
+
+        successes, failures, any_downloaded = downloader.download_prerelease_assets(
+            "firmware-2.7.20.abcdef0",
+            selected_patterns=["rak4631"],
+            exclude_patterns=[],
+            force_refresh=True,
+        )
+
+        assert failures == []
+        assert any_downloaded is True
+        assert all(
+            result.file_type == FILE_TYPE_FIRMWARE_PRERELEASE for result in successes
+        )
+        downloaded_names = sorted(
+            Path(str(result.file_path)).name for result in successes
+        )
+        assert downloaded_names == [
+            "firmware-2.7.20.abcdef0.json",
+            "firmware-rak4631-2.7.20.abcdef0.mt.json",
+        ]
 
     @patch("os.scandir")
     @patch("shutil.rmtree")

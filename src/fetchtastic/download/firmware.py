@@ -625,12 +625,36 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 error_type=error_type,
             )
 
+    def _is_release_manifest_name(self, asset_name: str) -> bool:
+        """
+        Determine whether an asset name is the release-level firmware manifest JSON.
+
+        Examples of accepted names include `firmware-2.7.20.6658ec2.json`.
+        Per-device manifests (`*.mt.json`) are excluded by this helper.
+        """
+        asset_name_lower = asset_name.lower()
+        return (
+            asset_name_lower.startswith(FIRMWARE_DIR_PREFIX)
+            and asset_name_lower.endswith(".json")
+            and not asset_name_lower.endswith(FIRMWARE_MANIFEST_EXTENSION)
+        )
+
+    def _is_manifest_asset_name(self, asset_name: str) -> bool:
+        """
+        Return True when an asset is either a per-device (`.mt.json`) or release-level JSON manifest.
+        """
+        asset_name_lower = asset_name.lower()
+        return asset_name_lower.endswith(
+            FIRMWARE_MANIFEST_EXTENSION
+        ) or self._is_release_manifest_name(asset_name_lower)
+
     def download_manifests(self, release: Release) -> List[DownloadResult]:
         """
-        Download .mt.json manifest files for a firmware release.
+        Download firmware manifest files for a firmware release.
 
-        Manifest files contain metadata about firmware variants including
-        hardware model, display name, support level, and file checksums.
+        This includes:
+        - Per-device manifests (`*.mt.json`) with hardware/file metadata.
+        - Release-level manifests (`firmware-<version>.json`) with target lists.
 
         Parameters:
             release (Release): Release whose manifest files should be downloaded.
@@ -651,7 +675,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
 
         for asset in release.assets:
-            if not asset.name or not asset.name.endswith(FIRMWARE_MANIFEST_EXTENSION):
+            if not asset.name or not self._is_manifest_asset_name(asset.name):
                 continue
 
             target_path = os.path.join(version_dir, asset.name)
@@ -795,6 +819,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 activelySupported=data.get("activelySupported"),
                 displayName=data.get("displayName"),
                 supportLevel=data.get("supportLevel"),
+                has_mui=data.get("has_mui"),
+                has_inkhud=data.get("has_inkhud"),
                 files=data.get("files", []),
                 part=data.get("part", []),
                 raw_data=data,
@@ -1411,6 +1437,28 @@ class FirmwareReleaseDownloader(BaseDownloader):
             for pattern in patterns or []
         )
 
+    def _matches_prerelease_selection(
+        self, filename: str, selected_patterns: List[str]
+    ) -> bool:
+        """
+        Determine whether a prerelease filename should be selected by include patterns.
+
+        Selection rules:
+        - If no patterns are configured, all files are eligible.
+        - Files matching legacy prerelease extraction patterns are eligible.
+        - Release-level manifest JSON (`firmware-<version>.json`) is always eligible
+          so target metadata remains available even with narrow pattern filters.
+        """
+        if not selected_patterns:
+            return True
+
+        if matches_extract_patterns(
+            filename, selected_patterns, device_manager=self.device_manager
+        ):
+            return True
+
+        return self._is_release_manifest_name(filename)
+
     def _fetch_prerelease_directory_listing(
         self,
         prerelease_dir: str,
@@ -1488,9 +1536,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     "Skipping pre-release file %s (matched exclude pattern)", name
                 )
                 continue
-            if selected_patterns and not matches_extract_patterns(
-                name, selected_patterns, device_manager=self.device_manager
-            ):
+            if not self._matches_prerelease_selection(name, selected_patterns):
                 continue
             matching.append(item)
 
