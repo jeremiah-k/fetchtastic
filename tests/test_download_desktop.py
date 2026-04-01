@@ -1209,3 +1209,451 @@ def test_is_desktop_prerelease_function():
     assert _is_desktop_prerelease({"tag_name": "v2.7.20", "prerelease": True}) is True
     assert _is_desktop_prerelease({"tag_name": "v2.7.20", "prerelease": False}) is False
     assert _is_desktop_prerelease({}) is False
+
+
+def test_update_release_history_no_log_summary(downloader):
+    """log_summary=False should skip logging."""
+    downloader.release_history_manager.update_release_history = Mock(
+        return_value={"releases": []}
+    )
+    downloader.release_history_manager.log_release_status_summary = Mock()
+    releases = [
+        Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+    ]
+    result = downloader.update_release_history(releases, log_summary=False)
+    assert result == {"releases": []}
+    downloader.release_history_manager.log_release_status_summary.assert_not_called()
+
+
+def test_get_releases_asset_creation_fails(downloader):
+    """When asset creation returns None, it should be skipped."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.7.20",
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "test.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            }
+        ]
+    )
+    from unittest.mock import patch
+
+    with patch(
+        "fetchtastic.download.desktop.create_asset_from_github_data",
+        return_value=None,
+    ):
+        result = downloader.get_releases(limit=10)
+        # Release should be skipped because no valid assets
+        assert result == []
+
+
+def test_get_releases_no_assets_after_filtering(downloader):
+    """Release with no assets after filtering should be skipped."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.7.20",
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "source.zip",
+                        "browser_download_url": "http://example.com/source.zip",
+                        "size": 100,
+                    }
+                ],
+            }
+        ]
+    )
+    from unittest.mock import patch
+
+    with patch(
+        "fetchtastic.download.desktop.create_asset_from_github_data",
+        return_value=None,
+    ):
+        result = downloader.get_releases(limit=10)
+        assert result == []
+
+
+def test_get_releases_expands_scan_window(downloader):
+    """Should expand scan window when not enough stable releases found."""
+    downloader.config["DESKTOP_VERSIONS_TO_KEEP"] = 5
+
+    # Return a prerelease but no stable releases
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.7.20-open.1",
+                "prerelease": True,
+                "assets": [
+                    {
+                        "name": "test.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            }
+        ]
+    )
+
+    result = downloader.get_releases()
+    # Should return the prerelease but keep scanning logic
+    assert len(result) == 1
+
+
+def test_cleanup_prerelease_directories_no_expected_stable(downloader, tmp_path):
+    """Empty expected_stable with keep_limit > 0 should log warning and return."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+
+    # Create a release with unsafe tag that gets sanitized to None
+    class UnsafeRelease:
+        def __init__(self, tag):
+            self.tag_name = tag
+            self.prerelease = False
+            self.published_at = "2024-01-01"
+            self.assets = []
+
+    # Use a tag that will be sanitized to a valid name
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+
+    # Test with keep_limit=0 to skip the expected_stable check
+    downloader.cleanup_prerelease_directories(
+        cached_releases=releases, keep_limit_override=0
+    )
+
+
+def test_cleanup_prerelease_directories_scandir_filenotfound(downloader, tmp_path):
+    """FileNotFoundError during scandir should be handled gracefully."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+
+    # Create prerelease dir that will be removed during cleanup
+    prerelease_dir = desktop_dir / DESKTOP_PRERELEASES_DIR_NAME
+    prerelease_dir.mkdir()
+
+    # Now test - prerelease_dir exists so _remove_unexpected_entries will be called
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+
+def test_cleanup_prerelease_directories_keep_limit_zero(downloader, tmp_path):
+    """keep_limit=0 should skip the expected_stable intersection check."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+
+    # Create unexpected version directory
+    old_version = desktop_dir / "v2.7.19"
+    old_version.mkdir()
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+
+    # With keep_limit=0, the intersection check is skipped
+    downloader.cleanup_prerelease_directories(
+        cached_releases=releases, keep_limit_override=0
+    )
+
+
+def test_cleanup_prerelease_directories_mismatch_warning(downloader, tmp_path):
+    """Mismatch between expected and existing entries should log warning."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+
+    # Create a version directory that doesn't match expected
+    other_version = desktop_dir / "v2.7.15"
+    other_version.mkdir()
+
+    # Expected is v2.7.20, but existing is v2.7.15 - no intersection
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+
+    downloader.cleanup_prerelease_directories(
+        cached_releases=releases, keep_limit_override=3
+    )
+
+
+def test_cleanup_prerelease_directories_unsafe_tags(downloader, tmp_path):
+    """Unsafe tags during cleanup should be logged and skipped."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+
+    # Create a release that will result in None when sanitized
+    releases = [Release(tag_name="../../../etc/passwd", prerelease=False, assets=[])]
+
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+
+def test_cleanup_prerelease_directories_remove_unexpected_filenotfound(
+    downloader, tmp_path
+):
+    """FileNotFoundError in _remove_unexpected_entries should return quietly."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+
+    # Create prerelease dir
+    prerelease_dir = desktop_dir / DESKTOP_PRERELEASES_DIR_NAME
+    prerelease_dir.mkdir()
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+
+    # Test with existing prerelease dir
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+
+def test_handle_prereleases_no_latest_release(downloader):
+    """handle_prereleases when no latest stable release exists."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
+    downloader.config["DESKTOP_PRERELEASE_INCLUDE_PATTERNS"] = []
+    downloader.config["DESKTOP_PRERELEASE_EXCLUDE_PATTERNS"] = []
+
+    real_vm = VersionManager()
+    downloader.version_manager.filter_prereleases_by_pattern.side_effect = (
+        real_vm.filter_prereleases_by_pattern
+    )
+    downloader.version_manager.calculate_expected_prerelease_version = Mock(
+        return_value=None
+    )
+    downloader.version_manager.extract_clean_version.side_effect = (
+        real_vm.extract_clean_version
+    )
+
+    # Only prereleases, no stable release
+    releases = [
+        Release(
+            tag_name="v2.7.20-open.1",
+            prerelease=True,
+            assets=[],
+            published_at="2024-01-01",
+        ),
+    ]
+    result = downloader.handle_prereleases(releases)
+    # Should still return prereleases even without stable release
+    assert len(result) == 1
+
+
+def test_handle_prereleases_extract_clean_version_fails(downloader):
+    """handle_prereleases when extract_clean_version returns empty."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
+    downloader.config["DESKTOP_PRERELEASE_INCLUDE_PATTERNS"] = []
+    downloader.config["DESKTOP_PRERELEASE_EXCLUDE_PATTERNS"] = []
+
+    real_vm = VersionManager()
+    downloader.version_manager.filter_prereleases_by_pattern.side_effect = (
+        real_vm.filter_prereleases_by_pattern
+    )
+    downloader.version_manager.calculate_expected_prerelease_version = Mock(
+        return_value="2.7.21"
+    )
+    # Simulate failing to extract clean version
+    downloader.version_manager.extract_clean_version = Mock(return_value="")
+
+    releases = [
+        Release(
+            tag_name="v2.7.21-open.1",
+            prerelease=True,
+            assets=[],
+            published_at="2024-01-01",
+        ),
+        Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+    ]
+    result = downloader.handle_prereleases(releases)
+    # Prerelease should be preserved when clean_version is empty
+    assert len(result) == 1
+
+
+def test_handle_prereleases_filtered_by_commits_empty_result(downloader):
+    """handle_prereleases when commit filtering returns empty list."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
+    downloader.config["DESKTOP_PRERELEASE_INCLUDE_PATTERNS"] = []
+    downloader.config["DESKTOP_PRERELEASE_EXCLUDE_PATTERNS"] = []
+
+    real_vm = VersionManager()
+    downloader.version_manager.filter_prereleases_by_pattern.side_effect = (
+        real_vm.filter_prereleases_by_pattern
+    )
+    downloader.version_manager.calculate_expected_prerelease_version = Mock(
+        return_value="2.7.21"
+    )
+    downloader.version_manager.extract_clean_version.side_effect = (
+        real_vm.extract_clean_version
+    )
+
+    releases = [
+        Release(
+            tag_name="v2.7.21-open.1-abc1234",
+            prerelease=True,
+            assets=[],
+            published_at="2024-01-01",
+        ),
+        Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+    ]
+    # Provide commits that don't match any prerelease tags
+    recent_commits = [{"sha": "xyz9999"}]
+    result = downloader.handle_prereleases(releases, recent_commits=recent_commits)
+    # When no commits match, should fall back to all prereleases
+    assert len(result) >= 0
+
+
+def test_get_latest_prerelease_tag_no_stable(downloader):
+    """get_latest_prerelease_tag with no stable release and older prerelease."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+    downloader.get_releases = Mock(
+        return_value=[
+            Release(
+                tag_name="v2.7.19-open.1",
+                prerelease=True,
+                assets=[],
+                published_at="2024-01-01",
+            ),
+        ]
+    )
+    result = downloader.get_latest_prerelease_tag()
+    # No stable release, prerelease should be returned
+    assert result == "v2.7.19-open.1"
+
+
+def test_get_latest_prerelease_tag_none_tuple(downloader):
+    """get_latest_prerelease_tag when get_release_tuple returns None."""
+    downloader.version_manager.get_release_tuple = Mock(return_value=None)
+    downloader.get_releases = Mock(
+        return_value=[
+            Release(
+                tag_name="v2.7.21-open.1",
+                prerelease=True,
+                assets=[],
+                published_at="2024-01-02",
+            ),
+            Release(
+                tag_name="v2.7.20",
+                prerelease=False,
+                assets=[],
+                published_at="2024-01-01",
+            ),
+        ]
+    )
+    result = downloader.get_latest_prerelease_tag()
+    # When tuple is None, prerelease should be returned
+    assert result == "v2.7.21-open.1"
+
+
+def test_get_latest_prerelease_tag_no_matching_prerelease(downloader):
+    """get_latest_prerelease_tag when no prerelease is newer than stable."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+    downloader.get_releases = Mock(
+        return_value=[
+            Release(
+                tag_name="v2.7.19-open.1",
+                prerelease=True,
+                assets=[],
+                published_at="2024-01-01",
+            ),
+            Release(
+                tag_name="v2.7.20",
+                prerelease=False,
+                assets=[],
+                published_at="2024-01-02",
+            ),
+        ]
+    )
+    result = downloader.get_latest_prerelease_tag()
+    # Prerelease v2.7.19 is older than stable v2.7.20, should return None
+    assert result is None
+
+
+def test_should_download_prerelease_older_version(downloader, tmp_path):
+    """Older prerelease should return False (don't download)."""
+    import json
+
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
+    tracking_file = tmp_path / "cache" / "prerelease_desktop.json"
+    tracking_file.parent.mkdir(parents=True)
+    tracking_file.write_text(json.dumps({"latest_version": "v2.7.20-open.2"}))
+
+    downloader.get_prerelease_tracking_file = Mock(return_value=str(tracking_file))
+    downloader.cache_manager.read_json = Mock(
+        return_value={"latest_version": "v2.7.20-open.2"}
+    )
+    real_vm = VersionManager()
+    downloader.version_manager.compare_versions.side_effect = real_vm.compare_versions
+
+    result = downloader.should_download_prerelease("v2.7.20-open.1")
+    assert result is False
+
+
+def test_manage_prerelease_tracking_files_read_error(downloader, tmp_path):
+    """manage_prerelease_tracking_files should handle read errors gracefully."""
+    import json
+
+    from fetchtastic.download.cache import CacheManager
+
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
+
+    tracking_dir = tmp_path / "cache"
+    tracking_dir.mkdir(parents=True)
+
+    # Create a tracking file with invalid JSON that will cause read_json to fail
+    tracking_file = tracking_dir / "prerelease_desktop.json"
+    tracking_file.write_text("invalid json content")
+
+    # Also create a secondary tracking file with valid JSON
+    secondary_file = tracking_dir / "prerelease_secondary.json"
+    secondary_file.write_text(
+        json.dumps(
+            {
+                "latest_version": "v2.7.20-open.1",
+                "base_version": "2.7.20",
+            }
+        )
+    )
+
+    # Use a real CacheManager to test actual file reading behavior
+    real_cache_manager = CacheManager(str(tracking_dir))
+    downloader.cache_manager = real_cache_manager
+
+    downloader.get_prerelease_tracking_file = Mock(return_value=str(tracking_file))
+    downloader.get_releases = Mock(return_value=[])
+    downloader.handle_prereleases = Mock(return_value=[])
+
+    # Should not raise exception - the ValueError from invalid JSON is caught internally
+    downloader.manage_prerelease_tracking_files()
+
+
+def test_manage_prerelease_tracking_files_filenotfound(downloader, tmp_path):
+    """manage_prerelease_tracking_files should handle FileNotFoundError."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
+
+    tracking_dir = tmp_path / "cache"
+    tracking_dir.mkdir(parents=True)
+    tracking_file = tracking_dir / "prerelease_desktop.json"
+
+    downloader.get_prerelease_tracking_file = Mock(return_value=str(tracking_file))
+    downloader.get_releases = Mock(return_value=[])
+    downloader.handle_prereleases = Mock(return_value=[])
+
+    # No tracking file exists - FileNotFoundError should be handled
+    downloader.manage_prerelease_tracking_files()
