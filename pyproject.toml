@@ -135,7 +135,9 @@ core_downloads = [
   "src/fetchtastic/download/async_downloader.py",
   "src/fetchtastic/download/async_core.py",
   "src/fetchtastic/download/async_client.py",
-  "src/fetchtastic/downloader.py",
+  "src/fetchtastic/download/repository.py",
+  "src/fetchtastic/device_hardware.py",
+  "src/fetchtastic/client_release_discovery.py",
   "src/fetchtastic/repo_downloader.py",
   "src/fetchtastic/utils.py",
 ]
@@ -145,11 +147,13 @@ user_interface = [
   "src/fetchtastic/menu_desktop.py",
   "src/fetchtastic/menu_firmware.py",
   "src/fetchtastic/menu_repo.py",
+  "src/fetchtastic/notifications.py",
 ]
 configuration = ["src/fetchtastic/setup_config.py"]
 infrastructure = [
   "src/fetchtastic/log_utils.py",
   "src/fetchtastic/constants.py",
+  "src/fetchtastic/exceptions.py",
   "src/fetchtastic/download/__init__.py",
   "src/fetchtastic/download/interfaces.py",
   "src/fetchtastic/download/config_utils.py",
