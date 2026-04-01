@@ -1377,6 +1377,64 @@ def test_get_releases_expands_scan_window(downloader):
     assert len(stable_releases) == 10
 
 
+def test_get_releases_stops_on_repeated_page_payload(downloader):
+    """Repeated full-page payloads should stop pagination to avoid endless scans."""
+
+    repeated_page = [
+        {
+            "tag_name": f"v2.7.{40 - i}-open.1",
+            "prerelease": True,
+            "assets": [
+                {
+                    "name": "Meshtastic.dmg",
+                    "browser_download_url": "http://example.com/test.dmg",
+                    "size": 100,
+                }
+            ],
+        }
+        for i in range(RELEASE_SCAN_COUNT)
+    ]
+
+    mock_fetch = Mock(side_effect=[repeated_page, repeated_page])
+    downloader.github_source.fetch_raw_releases_data = mock_fetch
+
+    result = downloader.get_releases()
+
+    assert mock_fetch.call_count == 2
+    assert len(result) == RELEASE_SCAN_COUNT
+    assert all(r.prerelease for r in result)
+
+
+def test_get_releases_stops_at_configured_max_pages(downloader):
+    """Pagination should stop at configured max pages when stable target isn't reached."""
+    downloader.config["DESKTOP_RELEASE_SCAN_MAX_PAGES"] = 3
+
+    def _page(page_num: int) -> list[dict]:
+        return [
+            {
+                "tag_name": f"v2.7.{70 - (page_num * 10) - i}-open.1",
+                "prerelease": True,
+                "assets": [
+                    {
+                        "name": "Meshtastic.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            }
+            for i in range(RELEASE_SCAN_COUNT)
+        ]
+
+    mock_fetch = Mock(side_effect=[_page(1), _page(2), _page(3), _page(4)])
+    downloader.github_source.fetch_raw_releases_data = mock_fetch
+
+    result = downloader.get_releases()
+
+    assert mock_fetch.call_count == 3
+    assert len(result) == RELEASE_SCAN_COUNT * 3
+    assert all(r.prerelease for r in result)
+
+
 def test_cleanup_prerelease_directories_no_expected_stable(downloader, tmp_path):
     """Empty expected_stable with keep_limit > 0 should log warning and return."""
     real_vm = VersionManager()

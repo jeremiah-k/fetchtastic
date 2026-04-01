@@ -6,6 +6,7 @@ This module implements the specific downloader for Meshtastic Desktop applicatio
 
 import fnmatch
 import json
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -312,10 +313,20 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     return []
                 scan_count = min(max_scan, limit)
 
+            # Bound pagination to avoid long-running scans when a repository has
+            # many pages but very few eligible Desktop installer releases.
+            desired_release_window = max(min_stable_releases * 2, RELEASE_SCAN_COUNT)
+            min_pages = max(2, math.ceil(desired_release_window / max(1, scan_count)))
+            configured_max_pages = int(
+                self.config.get("DESKTOP_RELEASE_SCAN_MAX_PAGES", min_pages)
+            )
+            max_pages = max(min_pages, configured_max_pages)
+
             releases: List[Release] = []
             stable_count = 0
             skipped_legacy_count = 0
             page = 1
+            seen_page_signatures: set[tuple[str, ...]] = set()
 
             while True:
                 params = {"per_page": scan_count, "page": page}
@@ -323,6 +334,25 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
                 if releases_data is None:
                     return []
+
+                page_signature = tuple(
+                    str(item.get("tag_name", ""))
+                    for item in releases_data
+                    if isinstance(item, dict)
+                )
+                if page_signature and page_signature in seen_page_signatures:
+                    logger.debug(
+                        "Desktop scan detected repeated release page payload at page %d; stopping scan.",
+                        page,
+                    )
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
+                    return releases
+                if page_signature:
+                    seen_page_signatures.add(page_signature)
 
                 for release_data in releases_data:
                     if not isinstance(release_data, dict):
@@ -401,6 +431,20 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     if limit is None and stable_count < min_stable_releases:
                         logger.debug(
                             "Desktop scan found fewer stable releases than configured target; returning all eligible releases."
+                        )
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
+                    return releases
+
+                if page >= max_pages:
+                    if limit is None and stable_count < min_stable_releases:
+                        logger.debug(
+                            "Desktop scan reached max pages (%d) before finding target stable count (%d); returning eligible releases.",
+                            max_pages,
+                            min_stable_releases,
                         )
                     if skipped_legacy_count > 0:
                         logger.debug(
