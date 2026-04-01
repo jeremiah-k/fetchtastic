@@ -913,9 +913,7 @@ class TestMeshtasticAndroidAppDownloader:
             patch(
                 "fetchtastic.download.android.os.path.isdir", return_value=False
             ) as mock_isdir,
-            patch(
-                "fetchtastic.download.android.os.path.islink", return_value=False
-            ) as mock_islink,
+            patch("fetchtastic.download.android.os.path.islink", return_value=False),
         ):
             downloader.cleanup_prerelease_directories(cached_releases=releases)
 
@@ -953,9 +951,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         with (
             patch("fetchtastic.download.android.logger") as mock_logger,
-            patch(
-                "fetchtastic.download.android.os.path.isdir", side_effect=_isdir
-            ) as mock_isdir,
+            patch("fetchtastic.download.android.os.path.isdir", side_effect=_isdir),
             patch("fetchtastic.download.android.os.path.islink", return_value=False),
             patch(
                 "fetchtastic.download.android.os.scandir",
@@ -1070,9 +1066,7 @@ class TestMeshtasticAndroidAppDownloader:
             return path == android_dir
 
         with (
-            patch(
-                "fetchtastic.download.android.os.path.isdir", side_effect=_isdir
-            ) as mock_isdir,
+            patch("fetchtastic.download.android.os.path.isdir", side_effect=_isdir),
             patch("fetchtastic.download.android.os.path.islink", return_value=False),
             patch(
                 "fetchtastic.download.android.os.scandir",

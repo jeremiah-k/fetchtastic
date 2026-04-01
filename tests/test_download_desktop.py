@@ -1313,7 +1313,7 @@ def test_get_releases_expands_scan_window(downloader):
     def mock_fetch_side_effect(*args, **kwargs):
         call_tracker["count"] += 1
         params = args[0] if args else kwargs.get("params", {})
-        page = params.get("page", 1)
+        params.get("page", 1)
 
         if call_tracker["count"] == 1:
             # First call (page=1): return 20 prereleases (with -open suffix), all >= 2.7.14
