@@ -116,7 +116,7 @@ def test_get_releases_uses_retention_default_for_scan_window(downloader):
 
     assert releases == []
     downloader.github_source.fetch_raw_releases_data.assert_called_once_with(
-        {"per_page": RELEASE_SCAN_COUNT}
+        {"per_page": RELEASE_SCAN_COUNT, "page": 1}
     )
 
 
@@ -474,8 +474,16 @@ def test_should_download_asset_pattern_mismatch(downloader):
 
 def test_should_download_asset_backward_compat_old_key(downloader):
     """Backward compatibility: Old SELECTED_DESKTOP_PLATFORMS key should still work."""
-    downloader.config["SELECTED_DESKTOP_ASSETS"] = None  # Ensure new key is not set
+    downloader.config.pop("SELECTED_DESKTOP_ASSETS", None)
     downloader.config["SELECTED_DESKTOP_PLATFORMS"] = ["*.dmg"]
+    result = downloader.should_download_asset("test.dmg")
+    assert result is True
+
+
+def test_should_download_asset_new_key_presence_prevents_legacy_fallback(downloader):
+    """Explicit empty new key should not fall back to legacy selections."""
+    downloader.config["SELECTED_DESKTOP_ASSETS"] = []
+    downloader.config["SELECTED_DESKTOP_PLATFORMS"] = ["*.exe"]
     result = downloader.should_download_asset("test.dmg")
     assert result is True
 
@@ -917,9 +925,8 @@ def test_handle_prereleases_filters_by_patterns(downloader):
         Release(tag_name="v2.7.20", prerelease=False, assets=[]),
     ]
     result = downloader.handle_prereleases(releases)
-    # Pattern "*-open*" uses glob syntax but filtering uses substring matching,
-    # so it won't match any prereleases (expected behavior is empty result)
-    assert len(result) == 0
+    assert len(result) == 1
+    assert result[0].tag_name == "v2.7.20-open.1"
 
 
 def test_handle_prereleases_with_expected_base(downloader):

@@ -20,8 +20,8 @@ class _DummyVersionManager:
     def __init__(self, mapping: dict[str, tuple[int, ...] | None]):
         self._mapping = mapping
 
-    def get_release_tuple(self, tag_name: str) -> tuple[int, ...] | None:
-        return self._mapping.get(tag_name)
+    def get_release_tuple(self, version: str | None) -> tuple[int, ...] | None:
+        return self._mapping.get(version or "")
 
 
 def test_is_android_asset_name():
@@ -33,12 +33,8 @@ def test_is_android_asset_name():
 def test_is_desktop_asset_name():
     assert is_desktop_asset_name("Meshtastic-2.7.14.dmg") is True
     assert is_desktop_asset_name("Meshtastic_x64_2.7.14.MSI") is True
-    assert (
-        is_desktop_asset_name("Meshtastic-2.7.14.AppImage") is False
-    )  # Case-sensitive exclusion
-    assert (
-        is_desktop_asset_name("Meshtastic-2.7.14.appimage") is True
-    )  # Lowercase is allowed
+    assert is_desktop_asset_name("Meshtastic-2.7.14.AppImage") is True
+    assert is_desktop_asset_name("Meshtastic-2.7.14.appimage") is True
     assert is_desktop_asset_name("Meshtastic.apk") is False
 
 

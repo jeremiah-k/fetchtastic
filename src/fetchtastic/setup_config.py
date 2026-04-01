@@ -79,6 +79,30 @@ def _clear_desktop_assets(config: dict) -> None:
         del config["SELECTED_DESKTOP_PLATFORMS"]
 
 
+def _migrate_desktop_asset_key(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize legacy desktop asset selection key to SELECTED_DESKTOP_ASSETS.
+
+    If SELECTED_DESKTOP_ASSETS already exists it remains authoritative (with None
+    normalized to []). Otherwise, SELECTED_DESKTOP_PLATFORMS is migrated to the new
+    key and then removed.
+    """
+    if "SELECTED_DESKTOP_ASSETS" in config:
+        if config.get("SELECTED_DESKTOP_ASSETS") is None:
+            config["SELECTED_DESKTOP_ASSETS"] = []
+        config.pop("SELECTED_DESKTOP_PLATFORMS", None)
+        return config
+
+    if "SELECTED_DESKTOP_PLATFORMS" in config:
+        legacy_value = config.get("SELECTED_DESKTOP_PLATFORMS")
+        config["SELECTED_DESKTOP_ASSETS"] = (
+            legacy_value if isinstance(legacy_value, list) else []
+        )
+        del config["SELECTED_DESKTOP_PLATFORMS"]
+
+    return config
+
+
 def _safe_input(prompt: str, *, default: str = "") -> str:
     """
     Safely get user input with EOFError handling for non-interactive environments.
@@ -99,6 +123,21 @@ def _safe_input(prompt: str, *, default: str = "") -> str:
         return response or default
     except (EOFError, KeyboardInterrupt):
         return default
+
+
+def _parse_non_negative_int(value: Any) -> Optional[int]:
+    """
+    Parse a non-negative integer from the given value.
+
+    Returns None for invalid or negative values.
+    """
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
 
 
 def _crontab_available() -> bool:
@@ -2163,15 +2202,14 @@ def run_setup(
         raw = _safe_input(
             prompt_text, default=str(current_desktop_versions)
         ).strip() or str(current_desktop_versions)
-        try:
-            config["DESKTOP_VERSIONS_TO_KEEP"] = int(raw)
-        except ValueError:
+        parsed_keep_count = _parse_non_negative_int(raw)
+        if parsed_keep_count is None:
             print("Invalid number — keeping current value.")
-            try:
-                config["DESKTOP_VERSIONS_TO_KEEP"] = int(current_desktop_versions)
-            except (ValueError, TypeError):
+            parsed_keep_count = _parse_non_negative_int(current_desktop_versions)
+            if parsed_keep_count is None:
                 print("Invalid number in current value — using default.")
-                config["DESKTOP_VERSIONS_TO_KEEP"] = DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+                parsed_keep_count = DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+        config["DESKTOP_VERSIONS_TO_KEEP"] = parsed_keep_count
     else:
         if not save_desktop:
             config.setdefault(
@@ -3436,6 +3474,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         config = _load_yaml_mapping(config_path)
         if config is None:
             return None
+        config = _migrate_desktop_asset_key(config)
 
         # Update global variables
         BASE_DIR = directory
@@ -3452,6 +3491,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             config = _load_yaml_mapping(CONFIG_FILE)
             if config is None:
                 return None
+            config = _migrate_desktop_asset_key(config)
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:
@@ -3464,6 +3504,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             config = _load_yaml_mapping(OLD_CONFIG_FILE)
             if config is None:
                 return None
+            config = _migrate_desktop_asset_key(config)
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:

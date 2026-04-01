@@ -754,7 +754,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             return False
 
         expected_assets = [
-            asset for asset in release.assets if self.should_download_asset(asset.name)
+            asset
+            for asset in self.get_assets(release)
+            if self.should_download_asset(asset.name)
         ]
 
         if not expected_assets:

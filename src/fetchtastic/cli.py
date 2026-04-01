@@ -257,8 +257,21 @@ def _normalize_download_main_result(raw_result: Any) -> tuple[
     ]
     items = list(raw_result) if isinstance(raw_result, (tuple, list)) else []
 
-    for index, value in enumerate(items[: len(defaults)]):
-        defaults[index] = value
+    # Legacy 9-item shape (pre-desktop fields) needs explicit remapping because
+    # desktop slots were inserted in the middle of the tuple contract.
+    if len(items) == 9:
+        defaults[0] = items[0]  # downloaded_firmwares
+        defaults[1] = items[1]  # new_firmware_versions
+        defaults[2] = items[2]  # downloaded_apks
+        defaults[3] = items[3]  # new_apk_versions
+        defaults[6] = items[4]  # downloaded_firmware_prereleases
+        defaults[7] = items[5]  # downloaded_apk_prereleases
+        defaults[9] = items[6]  # failed_downloads
+        defaults[10] = items[7]  # latest_firmware_version
+        defaults[11] = items[8]  # latest_apk_version
+    else:
+        for index, value in enumerate(items[: len(defaults)]):
+            defaults[index] = value
 
     for index in range(10):
         if not isinstance(defaults[index], list):

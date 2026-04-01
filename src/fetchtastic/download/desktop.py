@@ -312,16 +312,18 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     return []
                 scan_count = min(max_scan, limit)
 
+            releases: List[Release] = []
+            stable_count = 0
+            skipped_legacy_count = 0
+            page = 1
+
             while True:
-                params = {"per_page": scan_count}
+                params = {"per_page": scan_count, "page": page}
                 releases_data = self.github_source.fetch_raw_releases_data(params)
 
                 if releases_data is None:
                     return []
 
-                releases: List[Release] = []
-                stable_count = 0
-                skipped_legacy_count = 0
                 for release_data in releases_data:
                     if not isinstance(release_data, dict):
                         logger.warning(
@@ -379,15 +381,14 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
                     # Respect limit if specified
                     if limit is not None and len(releases) >= limit:
-                        break
+                        if skipped_legacy_count > 0:
+                            logger.debug(
+                                "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                                skipped_legacy_count,
+                            )
+                        return releases
 
-                if limit is not None:
-                    return releases
-
-                if (
-                    stable_count >= min_stable_releases
-                    or len(releases_data) < scan_count
-                ):
+                if limit is None and stable_count >= min_stable_releases:
                     if skipped_legacy_count > 0:
                         logger.debug(
                             "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
@@ -395,10 +396,12 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         )
                     return releases
 
-                if scan_count >= max_scan:
-                    logger.debug(
-                        "Desktop scan found no eligible stable desktop releases within the current window; prerelease-only state may be expected."
-                    )
+                # No more pages available from API.
+                if len(releases_data) < scan_count:
+                    if limit is None and stable_count < min_stable_releases:
+                        logger.debug(
+                            "Desktop scan found fewer stable releases than configured target; returning all eligible releases."
+                        )
                     if skipped_legacy_count > 0:
                         logger.debug(
                             "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
@@ -406,7 +409,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         )
                     return releases
 
-                scan_count = min(max_scan, scan_count * 2)
+                page += 1
 
         except (
             requests.RequestException,
@@ -447,12 +450,12 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.
         """
-        # Check both old and new config keys for backward compatibility
-        selected = (
-            self.config.get("SELECTED_DESKTOP_ASSETS")
-            or self.config.get("SELECTED_DESKTOP_PLATFORMS")
-            or []
-        )
+        # Check both old and new config keys for backward compatibility.
+        # Prefer the new key by presence so an intentional empty list remains authoritative.
+        if "SELECTED_DESKTOP_ASSETS" in self.config:
+            selected = self.config.get("SELECTED_DESKTOP_ASSETS") or []
+        else:
+            selected = self.config.get("SELECTED_DESKTOP_PLATFORMS") or []
         exclude = self._get_exclude_patterns()
 
         if exclude and any(
@@ -690,8 +693,9 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     release
                     for release in cached_releases
                     if not release.prerelease
-                    and self.version_manager.get_release_tuple(release.tag_name)
-                    is not None
+                    and _is_supported_desktop_release(
+                        release.tag_name, version_manager=self.version_manager
+                    )
                 ],
                 key=lambda release: (
                     self.version_manager.get_release_tuple(release.tag_name) or ()

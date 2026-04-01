@@ -708,6 +708,26 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 success = self.download(asset.download_url, target_path)
                 if success:
                     if self.verify(target_path):
+                        try:
+                            with open(target_path, "r", encoding="utf-8") as f:
+                                json.load(f)
+                        except (json.JSONDecodeError, OSError, ValueError):
+                            logger.error("Malformed manifest %s", asset.name)
+                            self.cleanup_file(target_path)
+                            results.append(
+                                self.create_download_result(
+                                    success=False,
+                                    release_tag=release.tag_name,
+                                    file_path=target_path,
+                                    error_message="Manifest JSON is invalid",
+                                    download_url=asset.download_url,
+                                    file_size=asset.size,
+                                    file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                    is_retryable=True,
+                                    error_type=ERROR_TYPE_VALIDATION,
+                                )
+                            )
+                            continue
                         logger.info("Downloaded manifest %s", asset.name)
                         results.append(
                             self.create_download_result(
@@ -750,7 +770,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             error_type=ERROR_TYPE_NETWORK,
                         )
                     )
-            except (requests.RequestException, OSError) as exc:
+            except requests.RequestException as exc:
                 logger.exception("Error downloading manifest %s: %s", asset.name, exc)
                 self.cleanup_file(target_path)
                 results.append(
@@ -764,6 +784,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         error_message=str(exc),
                         is_retryable=True,
                         error_type=ERROR_TYPE_NETWORK,
+                    )
+                )
+            except OSError as exc:
+                logger.exception("Error downloading manifest %s: %s", asset.name, exc)
+                self.cleanup_file(target_path)
+                results.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=release.tag_name,
+                        file_path=target_path,
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
+                        is_retryable=False,
+                        error_type=ERROR_TYPE_FILESYSTEM,
                     )
                 )
             except ValueError as exc:

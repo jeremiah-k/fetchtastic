@@ -464,6 +464,13 @@ class TestPrereleaseFiltering:
         )
         assert result == ["v1.2.3-rc1", "v1.2.4-beta1"]
 
+    def test_filter_prereleases_glob_patterns(self):
+        """Glob-style include patterns should be supported."""
+        vm = VersionManager()
+        prereleases = ["v2.7.20-open.1", "v2.7.20-closed.1"]
+        result = vm.filter_prereleases_by_pattern(prereleases, ["*-open*"], [])
+        assert result == ["v2.7.20-open.1"]
+
 
 class TestVersionTracking:
     """Test version tracking functionality."""

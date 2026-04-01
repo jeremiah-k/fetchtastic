@@ -5,6 +5,7 @@ This module provides version parsing, comparison, and tracking utilities
 that are used across all downloaders for consistent version handling.
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -520,16 +521,27 @@ class VersionManager:
         exclude_patterns: List[str],
     ) -> List[str]:
         """
-        Filter prerelease versions by case-insensitive substring include/exclude patterns.
+        Filter prerelease versions by include/exclude patterns.
+
+        Patterns are matched case-insensitively. If a pattern contains glob
+        metacharacters (`*`, `?`, `[]`), glob matching is used; otherwise simple
+        substring matching is used.
 
         Parameters:
             prereleases (List[str]): Candidate prerelease version strings.
-            include_patterns (List[str]): Substring patterns; if empty, all prereleases are considered included.
-            exclude_patterns (List[str]): Substring patterns; any prerelease containing an exclude pattern is omitted.
+            include_patterns (List[str]): Include patterns; if empty, all prereleases are considered included.
+            exclude_patterns (List[str]): Exclude patterns; any prerelease matching an exclude pattern is omitted.
 
         Returns:
-            List[str]: Prereleases that match at least one include pattern (or all when include_patterns is empty) and do not match any exclude pattern. Matching is case-insensitive and uses simple substring containment.
+            List[str]: Prereleases that match at least one include pattern (or all when include_patterns is empty) and do not match any exclude pattern.
         """
+
+        def _matches(version_lower: str, pattern: str) -> bool:
+            pattern_lower = pattern.lower()
+            if any(ch in pattern_lower for ch in "*?[]"):
+                return fnmatch.fnmatch(version_lower, pattern_lower)
+            return pattern_lower in version_lower
+
         filtered = []
 
         for prerelease in prereleases:
@@ -541,14 +553,14 @@ class VersionManager:
                 include_match = True
             else:
                 for pattern in include_patterns:
-                    if pattern.lower() in version_lower:
+                    if _matches(version_lower, pattern):
                         include_match = True
                         break
 
             # Check exclude patterns
             exclude_match = False
             for pattern in exclude_patterns:
-                if pattern.lower() in version_lower:
+                if _matches(version_lower, pattern):
                     exclude_match = True
                     break
 

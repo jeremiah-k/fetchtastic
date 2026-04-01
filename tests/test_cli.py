@@ -1410,34 +1410,34 @@ def test_copy_to_clipboard_func_unsupported_platform(mocker):
 @pytest.mark.unit
 @pytest.mark.infrastructure
 def test_normalize_download_main_result_short_tuple_pads_with_defaults():
-    """Test that short tuple input (fewer than 13 items) is padded with defaults."""
+    """Legacy 9-item tuple should remap into the 13-item shape."""
     # 9-item legacy tuple
     short_tuple = (
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        "",
-        "",
+        ["fw"],
+        ["new-fw"],
+        ["apk"],
+        ["new-apk"],
+        ["fw-pre"],
+        ["apk-pre"],
+        [{"error": "boom"}],
+        "fw-latest",
+        "apk-latest",
     )
     result = cli._normalize_download_main_result(short_tuple)
     assert len(result) == 13
-    assert result[0] == []
-    assert result[1] == []
-    assert result[2] == []
-    assert result[3] == []
+    assert result[0] == ["fw"]
+    assert result[1] == ["new-fw"]
+    assert result[2] == ["apk"]
+    assert result[3] == ["new-apk"]
     assert result[4] == []
     assert result[5] == []
-    assert result[6] == []
-    assert result[7] == []
+    assert result[6] == ["fw-pre"]
+    assert result[7] == ["apk-pre"]
     assert result[8] == []
-    assert result[9] == []  # padded with default
-    assert result[10] == ""  # padded with default
-    assert result[11] == ""  # padded with default
-    assert result[12] == ""  # padded with default
+    assert result[9] == [{"error": "boom"}]
+    assert result[10] == "fw-latest"
+    assert result[11] == "apk-latest"
+    assert result[12] == ""
 
 
 @pytest.mark.unit

@@ -33,6 +33,7 @@ from fetchtastic.constants import (
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
     FILE_TYPE_UNKNOWN,
@@ -1170,7 +1171,12 @@ class DownloadOrchestrator:
             downloader: Optional[BaseDownloader] = None
             if file_type in (FILE_TYPE_ANDROID, FILE_TYPE_ANDROID_PRERELEASE):
                 downloader = self.android_downloader
-            elif file_type in (FILE_TYPE_FIRMWARE, FILE_TYPE_FIRMWARE_MANIFEST):
+            elif file_type in (
+                FILE_TYPE_FIRMWARE,
+                FILE_TYPE_FIRMWARE_PRERELEASE,
+                FILE_TYPE_FIRMWARE_MANIFEST,
+                FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+            ):
                 downloader = self.firmware_downloader
             elif file_type in (FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE):
                 downloader = self.desktop_downloader
@@ -1422,6 +1428,7 @@ class DownloadOrchestrator:
                 if r.file_type
                 in (
                     FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                     FILE_TYPE_FIRMWARE_MANIFEST,
                 )
@@ -1445,6 +1452,7 @@ class DownloadOrchestrator:
                 if f.file_type
                 in (
                     FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                     FILE_TYPE_FIRMWARE_MANIFEST,
                 )

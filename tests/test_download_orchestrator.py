@@ -371,6 +371,7 @@ class TestDownloadOrchestrator:
 
         # Mock the processing methods
         orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
@@ -380,6 +381,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._process_firmware_downloads.assert_called_once()
         orchestrator._process_android_downloads.assert_called_once()
+        orchestrator._process_desktop_downloads.assert_called_once()
         orchestrator._enhance_download_results_with_metadata.assert_called_once()
         orchestrator._retry_failed_downloads.assert_called_once()
         orchestrator._log_download_summary.assert_called_once_with(1000.0)
@@ -388,6 +390,7 @@ class TestDownloadOrchestrator:
         """Test pipeline execution skips disabled components."""
         # Mock the processing methods
         orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
@@ -408,6 +411,7 @@ class TestDownloadOrchestrator:
 
         # Processing methods should still be called (they check internally)
         orchestrator._process_android_downloads.assert_called_once()
+        orchestrator._process_desktop_downloads.assert_called_once()
         orchestrator._process_firmware_downloads.assert_called_once()
 
     def test_process_android_downloads(self, orchestrator):

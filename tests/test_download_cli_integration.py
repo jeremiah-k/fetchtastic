@@ -45,15 +45,15 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
     # Unpack the 13-field tuple into named locals
     (
         downloaded_firmwares,
-        new_firmware_versions,
-        downloaded_apks,
-        new_apk_versions,
-        downloaded_desktop,
-        new_desktop_versions,
-        downloaded_firmware_prereleases,
-        downloaded_apk_prereleases,
-        downloaded_desktop_prereleases,
-        failed_downloads,
+        _new_firmware_versions,
+        _downloaded_apks,
+        _new_apk_versions,
+        _downloaded_desktop,
+        _new_desktop_versions,
+        _downloaded_firmware_prereleases,
+        _downloaded_apk_prereleases,
+        _downloaded_desktop_prereleases,
+        _failed_downloads,
         latest_firmware_version,
         latest_apk_version,
         latest_desktop_version,
@@ -569,6 +569,25 @@ def test_validate_integration_fetch_failure():
     assert result is False
 
 
+def test_validate_integration_desktop_enabled_requires_desktop_releases(mocker):
+    """Desktop-enabled validation should fail when desktop releases are unavailable."""
+    integration = DownloadCLIIntegration()
+    integration.config = {"SAVE_DESKTOP_APP": True}
+    integration.orchestrator = MagicMock()
+    integration.android_downloader = MagicMock()
+    integration.firmware_downloader = MagicMock()
+    integration.desktop_downloader = MagicMock()
+
+    integration.android_downloader.get_releases.return_value = [MagicMock()]
+    integration.firmware_downloader.get_releases.return_value = [MagicMock()]
+    integration.desktop_downloader.get_releases.return_value = []
+    integration.android_downloader.get_download_dir.return_value = "/tmp/android"
+
+    mocker.patch("os.path.exists", return_value=True)
+
+    assert integration.validate_integration() is False
+
+
 def test_get_migration_report_initialized(mocker):
     """get_migration_report should return status when components are initialized."""
     integration = DownloadCLIIntegration()
@@ -598,6 +617,22 @@ def test_get_migration_report_not_initialized():
 
     assert result["status"] == "not_initialized"
     assert result["android_downloader_initialized"] is False
+
+
+def test_get_migration_report_desktop_enabled_without_desktop_downloader():
+    """Desktop-enabled migration report should not be completed without desktop init."""
+    integration = DownloadCLIIntegration()
+    integration.config = {"SAVE_DESKTOP_APP": True}
+    integration.orchestrator = MagicMock()
+    integration.android_downloader = MagicMock()
+    integration.firmware_downloader = MagicMock()
+    integration.desktop_downloader = None
+
+    result = integration.get_migration_report()
+
+    assert result["status"] == "not_initialized"
+    assert result["desktop_enabled"] is True
+    assert result["desktop_downloader_initialized"] is False
 
 
 def test_fallback_to_legacy():

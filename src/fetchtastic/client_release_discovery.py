@@ -15,7 +15,7 @@ _DESKTOP_EXTENSIONS_LOWER = tuple(ext.lower() for ext in DESKTOP_EXTENSIONS)
 class SupportsReleaseTuple(Protocol):
     """Protocol for version manager objects used in minimum-version checks."""
 
-    def get_release_tuple(self, tag_name: str) -> tuple[int, ...] | None:
+    def get_release_tuple(self, version: Optional[str]) -> tuple[int, ...] | None:
         """Return parsed version tuple for a tag, or None when unparsable."""
 
 
@@ -26,9 +26,6 @@ def is_android_asset_name(asset_name: str) -> bool:
 
 def is_desktop_asset_name(asset_name: str) -> bool:
     """Return True when the filename is a recognized Desktop installer asset."""
-    # Explicitly reject .AppImage (case-sensitive) before lowercasing
-    if asset_name.endswith(".AppImage"):
-        return False
     return asset_name.lower().endswith(_DESKTOP_EXTENSIONS_LOWER)
 
 

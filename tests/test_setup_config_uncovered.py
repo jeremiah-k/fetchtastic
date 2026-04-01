@@ -6,6 +6,7 @@ import subprocess
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
+import requests
 
 import fetchtastic.setup_config as setup_config
 
@@ -74,6 +75,15 @@ def test_get_desktop_assets_prefers_new_key_even_when_empty():
     }
 
     assert setup_config._get_desktop_assets(config) == []
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_parse_non_negative_int_rejects_negative():
+    """Negative values should be rejected by non-negative parser."""
+    assert setup_config._parse_non_negative_int("3") == 3
+    assert setup_config._parse_non_negative_int("-1") is None
+    assert setup_config._parse_non_negative_int("invalid") is None
 
 
 @pytest.mark.configuration
@@ -321,7 +331,7 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
         return_value={"selected_assets": ["meshtastic.apk"]},
     )
 
-    updated, save_apks, save_firmware = _setup_downloads(
+    updated, _save_apks, _save_firmware = _setup_downloads(
         config, is_partial_run=False, wants=wants
     )
 
@@ -1289,7 +1299,7 @@ def test_setup_notifications_non_termux_clipboard_fail(mocker, capsys):
 def test_check_for_updates_network_error_logging(mock_version, mock_get, mocker):
     """Test check_for_updates network error logging (lines 2277, 2280-2281)."""
     mock_version.return_value = "1.0.0"
-    mock_get.side_effect = Exception("Network timeout")
+    mock_get.side_effect = requests.RequestException("Network timeout")
     mocker.patch("fetchtastic.setup_config.logger")
 
     current, latest, available = setup_config.check_for_updates()
@@ -1796,6 +1806,49 @@ def test_load_config_directory_yaml_error(mocker):
     result = load_config(tmp_dir)
 
     assert result is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_migrates_legacy_desktop_asset_key(mocker):
+    """load_config should migrate SELECTED_DESKTOP_PLATFORMS to SELECTED_DESKTOP_ASSETS."""
+    from fetchtastic.setup_config import load_config
+
+    tmp_dir = "/tmp/custom_config"
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch(
+        "fetchtastic.setup_config._load_yaml_mapping",
+        return_value={"SELECTED_DESKTOP_PLATFORMS": ["meshtastic.dmg"]},
+    )
+
+    result = load_config(tmp_dir)
+
+    assert result is not None
+    assert result["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
+    assert "SELECTED_DESKTOP_PLATFORMS" not in result
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_new_desktop_asset_key_stays_authoritative(mocker):
+    """load_config should keep new key value even when legacy key is present."""
+    from fetchtastic.setup_config import load_config
+
+    tmp_dir = "/tmp/custom_config"
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch(
+        "fetchtastic.setup_config._load_yaml_mapping",
+        return_value={
+            "SELECTED_DESKTOP_ASSETS": [],
+            "SELECTED_DESKTOP_PLATFORMS": ["legacy-value"],
+        },
+    )
+
+    result = load_config(tmp_dir)
+
+    assert result is not None
+    assert result["SELECTED_DESKTOP_ASSETS"] == []
+    assert "SELECTED_DESKTOP_PLATFORMS" not in result
 
 
 # Tests for _configure_cron_job (lines 1334-1340)

@@ -47,6 +47,8 @@ def mock_apk_assets_mixed_case():
     ]
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_fetch_apk_assets(mocker, mock_apk_assets):
     """Test fetching APK assets from GitHub."""
     mock_response = mocker.MagicMock()
@@ -65,6 +67,8 @@ def test_fetch_apk_assets(mocker, mock_apk_assets):
     assert assets[0]["name"] == "meshtastic-app-debug-2.7.4.apk"
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_fetch_apk_assets_case_insensitive(mocker, mock_apk_assets_mixed_case):
     """Test fetching APK assets with case-insensitive extension matching."""
     mock_response = mocker.MagicMock()
@@ -82,6 +86,8 @@ def test_fetch_apk_assets_case_insensitive(mocker, mock_apk_assets_mixed_case):
     assert "some-other-file.txt" not in asset_names
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_fetch_apk_assets_prefers_stable_release_with_apk_assets(mocker):
     """When both prerelease and stable have APK assets, stable should be preferred."""
     mock_response = mocker.MagicMock()
@@ -105,6 +111,8 @@ def test_fetch_apk_assets_prefers_stable_release_with_apk_assets(mocker):
     assert assets == [{"name": "meshtastic-stable.apk", "size": 2}]
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_fetch_apk_assets_scans_past_non_apk_first_release(mocker):
     """Release selection should skip entries without APK assets."""
     mock_response = mocker.MagicMock()
@@ -128,6 +136,8 @@ def test_fetch_apk_assets_scans_past_non_apk_first_release(mocker):
     assert assets == [{"name": "meshtastic.apk", "size": 20}]
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_normalize_apk_assets_ignores_non_string_names():
     """Normalization should drop entries with non-string names."""
     normalized = menu_apk._normalize_apk_assets(

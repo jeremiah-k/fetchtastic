@@ -16,7 +16,11 @@ from fetchtastic.menu_desktop import (
 )
 from fetchtastic.utils import matches_selected_patterns
 
-pytestmark = [pytest.mark.unit]
+pytestmark = [
+    pytest.mark.unit,
+    pytest.mark.core_downloads,
+    pytest.mark.user_interface,
+]
 
 
 class TestExtractWildcardPatternRealWorldFilenames:

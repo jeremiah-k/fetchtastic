@@ -119,8 +119,11 @@ class TestDownloadIntegration:
                 orchestrator.desktop_downloader, "get_releases", return_value=[]
             ),
         ):
+            orchestrator.config["SAVE_DESKTOP_APP"] = True
             versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
+        assert versions["desktop"] is None
+        assert versions["desktop_prerelease"] is None
 
     def test_error_handling_in_pipeline(self, orchestrator):
         """Test error handling in the download pipeline."""

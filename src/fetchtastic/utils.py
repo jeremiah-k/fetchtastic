@@ -35,10 +35,10 @@ from fetchtastic.log_utils import logger  # Import the new logger
 
 # Precompiled regexes for version stripping
 MODERN_VER_RX = re.compile(
-    r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|b|beta|alpha)\d*)?(?=[-_.]|$)"
+    r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|b|alpha)\d*)?(?=[-_.]|$)"
 )
 LEGACY_VER_RX = re.compile(
-    r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|b|beta|alpha)\d*)?(?=[-_.]|$)"
+    r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|b|alpha)\d*)?(?=[-_.]|$)"
 )
 
 # Precompiled regex for punctuation stripping (performance optimization)

@@ -860,10 +860,12 @@ class DownloadCLIIntegration:
         Returns:
             bool: `True` if all checks pass, `False` otherwise.
         """
+        desktop_enabled = bool((self.config or {}).get("SAVE_DESKTOP_APP", False))
         if (
             not self.orchestrator
             or not self.android_downloader
             or not self.firmware_downloader
+            or (desktop_enabled and not self.desktop_downloader)
         ):
             return False
 
@@ -871,8 +873,15 @@ class DownloadCLIIntegration:
             # Check that basic functionality works
             android_releases = self.android_downloader.get_releases(limit=1)
             firmware_releases = self.firmware_downloader.get_releases(limit=1)
+            desktop_releases = []
+            if desktop_enabled and self.desktop_downloader:
+                desktop_releases = self.desktop_downloader.get_releases(limit=1)
 
-            if not android_releases or not firmware_releases:
+            if (
+                not android_releases
+                or not firmware_releases
+                or (desktop_enabled and not desktop_releases)
+            ):
                 logger.warning("Integration validation: Could not fetch releases")
                 return False
 
@@ -910,11 +919,20 @@ class DownloadCLIIntegration:
                 - statistics (Dict[str, Any]): current download statistics from get_download_statistics().
                 - repository_support (bool): included only when `status` is "not_initialized" and set to False.
         """
-        if self.orchestrator and self.android_downloader and self.firmware_downloader:
+        desktop_enabled = bool((self.config or {}).get("SAVE_DESKTOP_APP", False))
+        desktop_initialized = self.desktop_downloader is not None
+        if (
+            self.orchestrator
+            and self.android_downloader
+            and self.firmware_downloader
+            and (not desktop_enabled or desktop_initialized)
+        ):
             return {
                 "status": "completed",
                 "android_downloader_initialized": True,
                 "firmware_downloader_initialized": True,
+                "desktop_downloader_initialized": desktop_initialized,
+                "desktop_enabled": desktop_enabled,
                 "orchestrator_initialized": True,
                 "configuration_valid": self._validate_configuration(),
                 "download_directory_exists": self._check_download_directory(),
@@ -925,6 +943,8 @@ class DownloadCLIIntegration:
             "status": "not_initialized",
             "android_downloader_initialized": False,
             "firmware_downloader_initialized": False,
+            "desktop_downloader_initialized": desktop_initialized,
+            "desktop_enabled": desktop_enabled,
             "orchestrator_initialized": False,
             "configuration_valid": False,
             "download_directory_exists": False,
@@ -1016,6 +1036,18 @@ class DownloadCLIIntegration:
         logger.info(
             f"Firmware Downloader: {'Initialized' if report.get('firmware_downloader_initialized') else 'Not initialized'}"
         )
+        desktop_enabled = bool(report.get("desktop_enabled", False))
+        if desktop_enabled:
+            logger.info(
+                "Desktop Downloader: %s",
+                (
+                    "Initialized"
+                    if report.get("desktop_downloader_initialized")
+                    else "Not initialized"
+                ),
+            )
+        else:
+            logger.info("Desktop Downloader: Disabled")
         logger.info(
             f"Orchestrator: {'Initialized' if report.get('orchestrator_initialized') else 'Not initialized'}"
         )
