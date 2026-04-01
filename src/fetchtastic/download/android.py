@@ -13,6 +13,12 @@ from typing import Any, Dict, List, Optional, cast
 
 import requests  # type: ignore[import-untyped]
 
+from fetchtastic.client_release_discovery import (
+    is_android_asset_name,
+    is_android_prerelease_tag,
+    is_release_at_or_above_minimum,
+    is_release_prerelease,
+)
 from fetchtastic.constants import (
     ANDROID_DIR_NAME,
     ANDROID_RELEASE_HISTORY_JSON_FILE,
@@ -464,7 +470,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         # Filter for APK files only
         assets = release.assets or []
-        return [asset for asset in assets if asset.name.lower().endswith(".apk")]
+        return [asset for asset in assets if is_android_asset_name(asset.name)]
 
     def get_download_url(self, asset: Asset) -> str:
         """
@@ -1230,7 +1236,7 @@ def _is_apk_prerelease_by_name(tag_name: str) -> bool:
     Returns:
         True if the tag contains "-open" or "-closed" (case-insensitive), False otherwise.
     """
-    return "-open" in (tag_name or "").lower() or "-closed" in (tag_name or "").lower()
+    return is_android_prerelease_tag(tag_name)
 
 
 MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
@@ -1248,17 +1254,11 @@ def _is_supported_android_release(
     avoid blocking future formats.
     """
     manager = version_manager or VersionManager()
-    version_tuple = manager.get_release_tuple(tag_name)
-    if not version_tuple:
-        return True
-
-    max_len = max(len(version_tuple), len(MIN_ANDROID_TRACKED_VERSION))
-    padded_version = version_tuple + (0,) * (max_len - len(version_tuple))
-    padded_minimum = MIN_ANDROID_TRACKED_VERSION + (0,) * (
-        max_len - len(MIN_ANDROID_TRACKED_VERSION)
+    return is_release_at_or_above_minimum(
+        tag_name,
+        minimum_version=MIN_ANDROID_TRACKED_VERSION,
+        version_manager=manager,
     )
-
-    return padded_version >= padded_minimum
 
 
 def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
@@ -1271,7 +1271,7 @@ def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
     Returns:
         bool: `True` if the release is identified as an APK prerelease (by legacy tag name patterns or the GitHub `prerelease` flag), `False` otherwise.
     """
-    tag_name = (release or {}).get("tag_name", "")
-    is_legacy_prerelease = _is_apk_prerelease_by_name(tag_name)
-    is_github_prerelease = (release or {}).get("prerelease", False)
-    return is_legacy_prerelease or is_github_prerelease
+    return is_release_prerelease(
+        release or {},
+        tag_prerelease_matcher=is_android_prerelease_tag,
+    )

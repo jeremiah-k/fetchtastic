@@ -6,8 +6,13 @@ from typing import Any, Dict, Union, cast
 import requests  # type: ignore[import-untyped]
 from pick import pick
 
+from fetchtastic.client_release_discovery import (
+    extract_matching_asset_dicts,
+    is_android_asset_name,
+    is_android_prerelease_tag,
+    select_best_release_with_assets,
+)
 from fetchtastic.constants import (
-    APK_EXTENSION,
     BYTES_PER_MEGABYTE,
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
@@ -75,21 +80,21 @@ def fetch_apk_assets() -> list[Dict[str, Any]]:
     if not isinstance(releases, list) or not releases:
         logger.warning("No Android releases found from GitHub API.")
         return []
-    latest_release = releases[0] or {}
-    assets = latest_release.get("assets", []) or []
-    if not isinstance(assets, list):
-        logger.warning("Invalid assets data from GitHub API.")
+    max_releases_to_scan = min(10, len(releases))
+    selected_release = select_best_release_with_assets(
+        releases,
+        asset_name_matcher=is_android_asset_name,
+        tag_prerelease_matcher=is_android_prerelease_tag,
+        max_releases_to_scan=max_releases_to_scan,
+    )
+    if selected_release is None:
+        logger.warning("No Android releases with APK assets found in recent scan.")
         return []
 
-    asset_list: list[Dict[str, Any]] = []
-    for asset in assets:
-        if not isinstance(asset, dict):
-            continue
-        asset_name = asset.get("name")
-        if not asset_name or not asset_name.lower().endswith(APK_EXTENSION):
-            continue
-        asset_size = asset.get("size", 0)
-        asset_list.append({"name": asset_name, "size": asset_size})
+    asset_list = extract_matching_asset_dicts(
+        selected_release,
+        asset_name_matcher=is_android_asset_name,
+    )
 
     asset_list.sort(key=lambda item: item["name"])
     return asset_list

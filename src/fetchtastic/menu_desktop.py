@@ -7,8 +7,14 @@ from typing import cast
 import requests  # type: ignore[import-untyped]
 from pick import pick
 
+from fetchtastic.client_release_discovery import (
+    extract_matching_asset_names,
+    is_desktop_asset_name,
+    is_desktop_prerelease_tag,
+    is_release_prerelease,
+    select_best_release_with_assets,
+)
 from fetchtastic.constants import (
-    DESKTOP_EXTENSIONS,
     MESHTASTIC_DESKTOP_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
@@ -84,66 +90,29 @@ def fetch_desktop_assets() -> list[str]:
         logger.warning("No releases found from GitHub API.")
         return []
 
-    # Scan recent releases to find best one with desktop assets
     max_releases_to_scan = min(10, len(releases))
-    best_release = None
-
-    for i, release in enumerate(releases[:max_releases_to_scan]):
-        if not isinstance(release, dict):
-            continue
-
-        assets = release.get("assets", []) or []
-        if not isinstance(assets, list) or not assets:
-            tag_name = release.get("tag_name", f"#{i}")
-            logger.debug(f"Release {tag_name} has no assets, skipping")
-            continue
-
-        # Check if this release has any desktop assets
-        has_desktop = False
-        for asset in assets:
-            if not isinstance(asset, dict):
-                continue
-            asset_name = asset.get("name", "")
-            if asset_name and any(
-                asset_name.lower().endswith(ext.lower()) for ext in DESKTOP_EXTENSIONS
-            ):
-                has_desktop = True
-                break
-
-        if has_desktop:
-            is_prerelease = release.get("prerelease", False)
-            if best_release is None or (
-                not is_prerelease and best_release.get("prerelease", False)
-            ):
-                best_release = release
-                # If we found a stable release with assets, prefer it
-                if not is_prerelease:
-                    logger.debug(
-                        f"Found stable release with desktop assets: {release.get('tag_name')}"
-                    )
-                    break
-
-    # Fall back to first release if no better option found
-    if best_release is None:
-        logger.debug(
-            "No release with desktop assets found in recent releases, trying first release (may not contain desktop assets)"
-        )
-        best_release = releases[0]
-
-    assets = best_release.get("assets", []) or []
-    if not isinstance(assets, list):
-        logger.warning("Invalid assets data from GitHub API.")
+    selected_release = select_best_release_with_assets(
+        releases,
+        asset_name_matcher=is_desktop_asset_name,
+        tag_prerelease_matcher=is_desktop_prerelease_tag,
+        max_releases_to_scan=max_releases_to_scan,
+    )
+    if selected_release is None:
+        logger.warning("No releases with desktop assets found in recent scan.")
         return []
-    asset_names: list[str] = []
-    for asset in assets:
-        if not isinstance(asset, dict):
-            continue
-        asset_name = asset.get("name")
-        if not asset_name:
-            continue
-        asset_name_lower = asset_name.lower()
-        if any(asset_name_lower.endswith(ext.lower()) for ext in DESKTOP_EXTENSIONS):
-            asset_names.append(asset_name)
+
+    selected_tag = selected_release.get("tag_name", "<unknown>")
+    if is_release_prerelease(
+        selected_release, tag_prerelease_matcher=is_desktop_prerelease_tag
+    ):
+        logger.debug("Using prerelease with desktop assets: %s", selected_tag)
+    else:
+        logger.debug("Using stable release with desktop assets: %s", selected_tag)
+
+    asset_names = extract_matching_asset_names(
+        selected_release,
+        asset_name_matcher=is_desktop_asset_name,
+    )
 
     asset_names.sort()
 

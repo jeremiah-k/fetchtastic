@@ -82,6 +82,52 @@ def test_fetch_apk_assets_case_insensitive(mocker, mock_apk_assets_mixed_case):
     assert "some-other-file.txt" not in asset_names
 
 
+def test_fetch_apk_assets_prefers_stable_release_with_apk_assets(mocker):
+    """When both prerelease and stable have APK assets, stable should be preferred."""
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v2.8.0-open.1",
+            "prerelease": True,
+            "assets": [{"name": "meshtastic-prerelease.apk", "size": 1}],
+        },
+        {
+            "tag_name": "v2.7.20",
+            "prerelease": False,
+            "assets": [{"name": "meshtastic-stable.apk", "size": 2}],
+        },
+    ]
+    mock_make_request = mocker.patch("fetchtastic.menu_apk.make_github_api_request")
+    mock_make_request.return_value = mock_response
+
+    assets = menu_apk.fetch_apk_assets()
+
+    assert assets == [{"name": "meshtastic-stable.apk", "size": 2}]
+
+
+def test_fetch_apk_assets_scans_past_non_apk_first_release(mocker):
+    """Release selection should skip entries without APK assets."""
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v2.7.21",
+            "prerelease": False,
+            "assets": [{"name": "notes.txt", "size": 10}],
+        },
+        {
+            "tag_name": "v2.7.20",
+            "prerelease": False,
+            "assets": [{"name": "meshtastic.apk", "size": 20}],
+        },
+    ]
+    mock_make_request = mocker.patch("fetchtastic.menu_apk.make_github_api_request")
+    mock_make_request.return_value = mock_response
+
+    assets = menu_apk.fetch_apk_assets()
+
+    assert assets == [{"name": "meshtastic.apk", "size": 20}]
+
+
 @pytest.mark.parametrize(
     "filename, expected",
     [

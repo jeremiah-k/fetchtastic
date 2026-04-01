@@ -160,6 +160,46 @@ class TestFetchDesktopAssetsErrorHandling:
         mock_logger.debug.assert_any_call("Fetched 1 releases from GitHub API")
 
 
+def test_fetch_desktop_assets_prefers_stable_release_with_desktop_assets(mocker):
+    """When both prerelease and stable have desktop assets, stable should be preferred."""
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = [
+        {
+            "tag_name": "v2.8.0-open.1",
+            "prerelease": True,
+            "assets": [{"name": "Meshtastic-2.8.0-open.1.dmg"}],
+        },
+        {
+            "tag_name": "v2.7.20",
+            "prerelease": False,
+            "assets": [{"name": "Meshtastic-2.7.20.dmg"}],
+        },
+    ]
+    mock_request = mocker.patch("fetchtastic.menu_desktop.make_github_api_request")
+    mock_request.return_value = mock_response
+
+    result = menu_desktop.fetch_desktop_assets()
+
+    assert result == ["Meshtastic-2.7.20.dmg"]
+
+
+def test_fetch_desktop_assets_no_fallback_when_no_desktop_assets(mocker):
+    """No desktop assets in scanned releases should return empty list."""
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = [
+        {"tag_name": "v2.7.20", "assets": [{"name": "notes.txt"}]},
+        {"tag_name": "v2.7.19", "assets": [{"name": "checksums.sha256"}]},
+    ]
+    mock_request = mocker.patch("fetchtastic.menu_desktop.make_github_api_request")
+    mock_request.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_desktop.logger")
+
+    result = menu_desktop.fetch_desktop_assets()
+
+    assert result == []
+    mock_logger.warning.assert_called_once()
+
+
 class TestSelectAssets:
     def test_other_category_handling(self, mocker):
         mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
