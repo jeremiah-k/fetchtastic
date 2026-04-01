@@ -260,6 +260,71 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_partial_keeps_existing_apk_patterns_with_fdroid_compat(
+    mocker,
+):
+    """Keeping existing APK patterns should auto-expand legacy/split F-Droid compatibility."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["app-fdroid-release.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "n", "n"],
+    )
+    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "android"
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-universal-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker):
+    """Selecting split F-Droid APKs should include legacy fallback pattern."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["existing.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "y", "n"],
+    )
+    mocker.patch(
+        "fetchtastic.menu_apk.run_menu",
+        return_value={"selected_assets": ["app-fdroid-arm64-v8a-release.apk"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "android"
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_partial_skips_all_prompts(mocker):
     """No prompts should be shown when no sections are selected."""
     from fetchtastic.setup_config import _setup_downloads

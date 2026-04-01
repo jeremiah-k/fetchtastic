@@ -512,6 +512,33 @@ def test_matches_selected_patterns_handles_renamed_android_assets():
     )
 
 
+def test_expand_apk_selected_patterns_adds_split_variants_for_legacy_fdroid():
+    """Legacy F-Droid APK patterns should expand to include split architecture variants."""
+    from fetchtastic.utils import expand_apk_selected_patterns
+
+    expanded = expand_apk_selected_patterns(["app-fdroid-release.apk"])
+
+    assert "app-fdroid-release.apk" in expanded
+    assert "app-fdroid-universal-release.apk" in expanded
+    assert "app-fdroid-arm64-v8a-release.apk" in expanded
+    assert "app-fdroid-armeabi-v7a-release.apk" in expanded
+    assert "app-fdroid-x86-release.apk" in expanded
+    assert "app-fdroid-x86_64-release.apk" in expanded
+
+
+def test_expand_apk_selected_patterns_adds_legacy_for_split_variants():
+    """Split F-Droid APK patterns should include legacy fallback patterns."""
+    from fetchtastic.utils import expand_apk_selected_patterns
+
+    expanded = expand_apk_selected_patterns(["app-fdroid-arm64-v8a-release.apk"])
+
+    assert "app-fdroid-arm64-v8a-release.apk" in expanded
+    assert "app-fdroid-release.apk" in expanded
+    assert "fdroidRelease.apk" in expanded
+    # Split-to-legacy expansion should not force unrelated split architectures.
+    assert "app-fdroid-x86-release.apk" not in expanded
+
+
 def test_legacy_strip_version_numbers():
     """Directly test legacy normalization which preserves the separator before versions."""
     from fetchtastic.utils import legacy_strip_version_numbers

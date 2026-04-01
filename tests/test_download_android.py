@@ -565,6 +565,22 @@ class TestMeshtasticAndroidAppDownloader:
         # Asset doesn't match selected patterns
         assert downloader.should_download_asset("meshtastic-arm.apk") is False
 
+    def test_should_download_asset_legacy_fdroid_matches_split_assets(self, downloader):
+        """Legacy F-Droid selection should match newer split F-Droid assets."""
+        downloader.config["SELECTED_APK_ASSETS"] = ["app-fdroid-release.apk"]
+
+        assert (
+            downloader.should_download_asset("app-fdroid-arm64-v8a-release.apk") is True
+        )
+        assert downloader.should_download_asset("app-fdroid-x86_64-release.apk") is True
+
+    def test_should_download_asset_split_fdroid_matches_legacy_asset(self, downloader):
+        """Split F-Droid selection should still match legacy single F-Droid assets."""
+        downloader.config["SELECTED_APK_ASSETS"] = ["app-fdroid-arm64-v8a-release.apk"]
+
+        assert downloader.should_download_asset("app-fdroid-release.apk") is True
+        assert downloader.should_download_asset("app-fdroid-x86-release.apk") is False
+
     def test_should_download_asset_excluded(self, downloader):
         """Test asset exclusion logic."""
         # Asset matches exclude patterns

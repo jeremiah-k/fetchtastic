@@ -39,7 +39,7 @@ from fetchtastic.constants import (
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import matches_selected_patterns
+from fetchtastic.utils import expand_apk_selected_patterns, matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager
@@ -608,7 +608,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.
         """
-        selected = self.config.get("SELECTED_APK_ASSETS") or []
+        selected = expand_apk_selected_patterns(
+            self.config.get("SELECTED_APK_ASSETS") or []
+        )
         exclude = self._get_exclude_patterns()
 
         if exclude and any(

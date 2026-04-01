@@ -44,6 +44,21 @@ LEGACY_VER_RX = re.compile(
 # Precompiled regex for punctuation stripping (performance optimization)
 _PUNC_RX = re.compile(r"[^a-z0-9]+")
 
+# Android APK pattern compatibility between legacy single F-Droid asset naming
+# and newer architecture-split F-Droid naming.
+_ANDROID_FDROID_SPLIT_PATTERNS = (
+    "app-fdroid-universal-release.apk",
+    "app-fdroid-arm64-v8a-release.apk",
+    "app-fdroid-armeabi-v7a-release.apk",
+    "app-fdroid-x86-release.apk",
+    "app-fdroid-x86_64-release.apk",
+)
+_ANDROID_FDROID_LEGACY_PATTERNS = (
+    "app-fdroid-release.apk",
+    "fdroidRelease.apk",
+)
+_ANDROID_FDROID_ARCH_MARKERS = ("arm64", "armeabi", "x8664", "x86", "universal")
+
 # Cache for the User-Agent string to avoid repeated metadata lookups
 _USER_AGENT_CACHE = None
 
@@ -1337,6 +1352,81 @@ def legacy_strip_version_numbers(filename: str) -> str:
     legacy = LEGACY_VER_RX.sub(r"\1", filename)
     legacy = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], legacy)
     return legacy
+
+
+def _classify_fdroid_apk_pattern(pattern: str) -> Optional[str]:
+    """
+    Classify an APK pattern as legacy/split F-Droid naming, or None.
+
+    Returns:
+        Optional[str]: "legacy" for non-architecture F-Droid release patterns,
+            "split" for architecture-suffixed F-Droid patterns, else None.
+    """
+    token = _PUNC_RX.sub("", pattern.lower())
+    if "fdroid" not in token or "release" not in token:
+        return None
+    if any(marker in token for marker in _ANDROID_FDROID_ARCH_MARKERS):
+        return "split"
+    return "legacy"
+
+
+def expand_apk_selected_patterns(selected_patterns: Optional[List[str]]) -> List[str]:
+    """
+    Expand selected APK patterns for cross-generation F-Droid naming compatibility.
+
+    Compatibility rules:
+    - If a legacy F-Droid pattern is selected (for example `app-fdroid-release.apk`
+      or `fdroidRelease.apk`), add the newer architecture-split F-Droid APK patterns.
+    - If any split F-Droid pattern is selected, add legacy F-Droid patterns so older
+      releases continue matching until users intentionally reconfigure.
+
+    The function is idempotent and preserves user-provided order while appending only
+    missing compatibility entries (case-insensitive de-duplication).
+
+    Parameters:
+        selected_patterns (Optional[List[str]]): Selected APK include patterns.
+
+    Returns:
+        List[str]: Expanded pattern list.
+    """
+    if not selected_patterns:
+        return []
+
+    expanded: List[str] = []
+    seen: set[str] = set()
+
+    def _append_unique(value: str) -> None:
+        item = value.strip()
+        if not item:
+            return
+        key = item.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        expanded.append(item)
+
+    for raw_pattern in selected_patterns:
+        if isinstance(raw_pattern, str):
+            _append_unique(raw_pattern)
+
+    if not expanded:
+        return []
+
+    classifications = {
+        classification
+        for pattern in expanded
+        if (classification := _classify_fdroid_apk_pattern(pattern)) is not None
+    }
+
+    if "legacy" in classifications:
+        for pattern in _ANDROID_FDROID_SPLIT_PATTERNS:
+            _append_unique(pattern)
+
+    if "split" in classifications:
+        for pattern in _ANDROID_FDROID_LEGACY_PATTERNS:
+            _append_unique(pattern)
+
+    return expanded
 
 
 def matches_selected_patterns(

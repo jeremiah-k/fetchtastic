@@ -33,6 +33,7 @@ from fetchtastic.constants import (
     WINDOWS_SHORTCUT_FILE,
 )
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import expand_apk_selected_patterns
 
 # Recommended default exclude patterns for firmware extraction
 # These patterns exclude specialized variants and debug files that most users don't need
@@ -99,6 +100,16 @@ def _migrate_desktop_asset_key(config: Dict[str, Any]) -> Dict[str, Any]:
         del config["SELECTED_DESKTOP_PLATFORMS"]
 
     return config
+
+
+def _set_apk_assets(config: dict, assets: list) -> None:
+    """
+    Store selected APK assets with compatibility expansion for naming migrations.
+
+    This preserves user-chosen patterns while appending compatibility patterns that
+    bridge legacy and architecture-split F-Droid naming schemes.
+    """
+    config["SELECTED_APK_ASSETS"] = expand_apk_selected_patterns(assets)
 
 
 def _safe_input(prompt: str, *, default: str = "") -> str:
@@ -972,13 +983,15 @@ def _setup_downloads(
             if not selected_assets:
                 config, save_apks = _disable_asset_downloads(config, "APK")
             else:
-                config["SELECTED_APK_ASSETS"] = selected_assets
+                _set_apk_assets(config, selected_assets)
         elif not config.get("SELECTED_APK_ASSETS"):
             config, save_apks = _disable_asset_downloads(
                 config,
                 "APK",
                 "No existing APK selection found. APKs will not be downloaded.",
             )
+        else:
+            _set_apk_assets(config, config.get("SELECTED_APK_ASSETS") or [])
 
     # --- APK Pre-release Configuration ---
     if save_apks and (not is_partial_run or wants("android")):
