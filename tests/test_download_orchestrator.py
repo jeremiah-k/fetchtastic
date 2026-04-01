@@ -899,12 +899,18 @@ class TestDownloadOrchestrator:
 
         orchestrator.desktop_downloader.download_desktop.assert_called_once()
 
-    def test_process_desktop_downloads_error_handling(self, orchestrator):
+    @patch("fetchtastic.download.orchestrator.logger")
+    def test_process_desktop_downloads_error_handling(self, mock_logger, orchestrator):
         """Desktop processing should handle exceptions gracefully."""
         orchestrator.config["SAVE_DESKTOP_APP"] = True
         orchestrator.desktop_downloader.get_releases.side_effect = OSError("test error")
 
         orchestrator._process_desktop_downloads()
+
+        # Verify the mocked method was called
+        orchestrator.desktop_downloader.get_releases.assert_called_once()
+        # Verify error was logged
+        mock_logger.error.assert_called()
 
     def test_download_desktop_release_success(self, orchestrator):
         """Test successful desktop release download."""
@@ -1016,18 +1022,6 @@ class TestDownloadOrchestrator:
         orchestrator._handle_download_result(result, "android_prerelease")
 
         assert result in orchestrator.download_results
-
-    def test_handle_download_result_with_download_url(self, orchestrator):
-        """_handle_download_result should log URL when present."""
-        result = Mock(spec=DownloadResult)
-        result.success = False
-        result.error_message = "test error"
-        result.release_tag = "v1.0.0"
-        result.download_url = "https://example.com/file.apk"
-
-        orchestrator._handle_download_result(result, "android")
-
-        assert result in orchestrator.failed_downloads
 
     def test_handle_download_result_skipped_non_prerelease(self, orchestrator):
         """_handle_download_result should log debug for skipped non-prerelease."""

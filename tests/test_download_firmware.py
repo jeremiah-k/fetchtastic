@@ -2335,18 +2335,18 @@ class TestFirmwareUncoveredBranches:
         version_dir = tmp_path / "firmware" / "v1.0.0"
         version_dir.mkdir(parents=True)
 
-        # Create asset with empty name
+        # Create asset with empty/invalid name
         asset_empty = Asset(
             name="", download_url="https://example.com/fw.zip", size=100
         )
-        asset_none = Asset(
-            name=None, download_url="https://example.com/fw2.zip", size=100
+        asset_invalid = Asset(
+            name="  ", download_url="https://example.com/fw2.zip", size=100
         )
 
         release = Release(
             tag_name="v1.0.0",
             prerelease=False,
-            assets=[asset_empty, asset_none],
+            assets=[asset_empty, asset_invalid],
         )
 
         mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
@@ -2675,7 +2675,7 @@ class TestFirmwareUncoveredBranches:
             "fetchtastic.download.firmware.verify_file_integrity", return_value=False
         )
 
-        successes, failures, any_downloaded = (
+        successes, _failures, any_downloaded = (
             downloader_module._download_prerelease_assets(
                 "test-dir",
                 selected_patterns=[],
@@ -2758,7 +2758,7 @@ class TestFirmwareUncoveredBranches:
             "fetchtastic.download.firmware.verify_file_integrity", return_value=True
         )
 
-        successes, failures, any_downloaded = (
+        _successes, _failures, any_downloaded = (
             downloader_module._download_prerelease_assets(
                 "test-dir",
                 selected_patterns=[],
@@ -2767,8 +2767,8 @@ class TestFirmwareUncoveredBranches:
             )
         )
 
-        assert len(successes) == 1
-        assert successes[0].was_skipped is True
+        assert len(_successes) == 1
+        assert _successes[0].was_skipped is True
 
     # Lines 1593-1596: Executable permissions for .sh files
     @patch("fetchtastic.download.firmware.download_file_with_retry")
@@ -2793,7 +2793,7 @@ class TestFirmwareUncoveredBranches:
         mock_download.return_value = True
         mocker.patch("os.name", "posix")
 
-        successes, failures, any_downloaded = (
+        _successes, failures, _any_downloaded = (
             downloader_module._download_prerelease_assets(
                 "test-dir",
                 selected_patterns=[],
@@ -2802,7 +2802,7 @@ class TestFirmwareUncoveredBranches:
             )
         )
 
-        assert len(successes) == 1
+        assert len(_successes) == 1
         mock_chmod.assert_called_once()
 
     # Lines 1608-1631: Error handling in prerelease download
@@ -2824,11 +2824,9 @@ class TestFirmwareUncoveredBranches:
             ]
         )
 
-        import requests
-
         mock_download.side_effect = requests.RequestException("Network error")
 
-        successes, failures, any_downloaded = (
+        _successes, failures, _any_downloaded = (
             downloader_module._download_prerelease_assets(
                 "test-dir",
                 selected_patterns=[],

@@ -1005,12 +1005,15 @@ def test_migrate_pip_to_pipx_pipx_not_found_after_install(mocker, capsys):
         "fetchtastic.setup_config.get_fetchtastic_installation_method",
         return_value="pip",
     )
-    mocker.patch("os.path.exists", return_value=True)
     mocker.patch("builtins.input", return_value="y")
 
     # pipx never found
     mocker.patch("shutil.which", return_value=None)
-    mocker.patch("os.path.exists", return_value=False)  # local pipx doesn't exist
+    # Use side_effect to return True for config file check, False for local pipx check
+    mocker.patch(
+        "os.path.exists",
+        side_effect=lambda path: path == setup_config.CONFIG_FILE,
+    )
     mocker.patch("builtins.open", mock_open(read_data="config: data"))
 
     mock_subprocess = mocker.patch("fetchtastic.setup_config.subprocess.run")
@@ -1068,10 +1071,15 @@ def test_migrate_pip_to_pipx_migration_failure(mocker, capsys):
     mocker.patch("builtins.open", mock_open(read_data="config: data"))
 
     mock_subprocess = mocker.patch("fetchtastic.setup_config.subprocess.run")
-    # Make pipx install fail
-    mock_subprocess.side_effect = subprocess.CalledProcessError(
-        1, "pipx", stderr=b"Install failed"
-    )
+
+    # Let earlier steps succeed; fail only the pipx install call
+    def run_side_effect(cmd, *args, **kwargs):
+        # Check if this is the pipx install command
+        if isinstance(cmd, list) and len(cmd) >= 2 and cmd[1] == "install":
+            raise subprocess.CalledProcessError(1, "pipx", stderr=b"Install failed")
+        return MagicMock(returncode=0, stderr="")
+
+    mock_subprocess.side_effect = run_side_effect
 
     result = setup_config.migrate_pip_to_pipx()
     captured = capsys.readouterr()
@@ -1363,6 +1371,7 @@ def test_setup_base_windows_no_modules(mocker, capsys):
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.menu_desktop.run_menu")
+@patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
@@ -1388,6 +1397,7 @@ def test_run_setup_desktop_invalid_version_input(
     mock_setup_reboot_cron_job,
     mock_setup_cron_job,
     mock_check_any_cron_jobs_exist,
+    mock_check_cron_job_exists,
     mock_menu_desktop,
     mock_menu_firmware,
     mock_menu_apk,
@@ -1442,6 +1452,7 @@ def test_run_setup_desktop_invalid_version_input(
 @patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
@@ -1458,6 +1469,7 @@ def test_run_setup_version_package_not_found(
     mock_setup_reboot_cron_job,
     mock_setup_cron_job,
     mock_check_any_cron_jobs_exist,
+    mock_check_cron_job_exists,
     mock_menu_firmware,
     mock_menu_apk,
     mock_yaml_dump,
@@ -1520,6 +1532,7 @@ def test_run_setup_version_package_not_found(
 @patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
@@ -1536,6 +1549,7 @@ def test_run_setup_version_other_error(
     mock_setup_reboot_cron_job,
     mock_setup_cron_job,
     mock_check_any_cron_jobs_exist,
+    mock_check_cron_job_exists,
     mock_menu_firmware,
     mock_menu_apk,
     mock_yaml_dump,
@@ -1596,6 +1610,7 @@ def test_run_setup_version_other_error(
 @patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
@@ -1612,6 +1627,7 @@ def test_run_setup_config_dir_creation_error(
     mock_setup_reboot_cron_job,
     mock_setup_cron_job,
     mock_check_any_cron_jobs_exist,
+    mock_check_cron_job_exists,
     mock_menu_firmware,
     mock_menu_apk,
     mock_yaml_dump,
