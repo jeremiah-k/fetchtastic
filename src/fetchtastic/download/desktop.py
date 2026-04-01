@@ -297,7 +297,9 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         try:
             max_scan = GITHUB_MAX_PER_PAGE
             min_stable_releases = int(
-                self.config.get("DESKTOP_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
+                self.config.get(
+                    "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+                )
             )
             scan_count = min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
             if limit is not None:
@@ -570,14 +572,20 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         """
         safe_tag = self._get_storage_tag_for_release(release)
 
-        version_dir = os.path.join(
-            self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME, safe_tag
+        is_prerelease = self._is_desktop_prerelease(release)
+        base_dir = (
+            self._get_prerelease_base_dir()
+            if is_prerelease
+            else os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
         )
+        version_dir = os.path.join(base_dir, safe_tag)
         if not os.path.isdir(version_dir):
             return False
 
         expected_assets = [
-            asset for asset in release.assets if self.should_download_asset(asset.name)
+            asset
+            for asset in self.get_assets(release)
+            if self.should_download_asset(asset.name)
         ]
 
         if not expected_assets:

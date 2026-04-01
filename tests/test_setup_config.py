@@ -1794,12 +1794,13 @@ def test_section_shortcuts_mapping():
     assert SECTION_SHORTCUTS["b"] == "base"
     assert SECTION_SHORTCUTS["a"] == "android"
     assert SECTION_SHORTCUTS["f"] == "firmware"
+    assert SECTION_SHORTCUTS["d"] == "desktop"
     assert SECTION_SHORTCUTS["n"] == "notifications"
     assert SECTION_SHORTCUTS["m"] == "automation"
     assert SECTION_SHORTCUTS["g"] == "github"
 
     # Test that all expected shortcuts exist
-    expected_shortcuts = {"b", "a", "f", "n", "m", "g"}
+    expected_shortcuts = {"b", "a", "f", "d", "n", "m", "g"}
     assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
 
 
@@ -1813,6 +1814,7 @@ def test_setup_section_choices():
         "base",
         "android",
         "firmware",
+        "desktop",
         "notifications",
         "automation",
         "github",
@@ -1842,6 +1844,18 @@ def test_prompt_for_setup_sections_shortcuts(mock_input):
     mock_input.return_value = "f, a"
     result = _prompt_for_setup_sections()
     assert result == {"firmware", "android"}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_desktop_shortcut(mock_input):
+    """Test _prompt_for_setup_sections accepts desktop shortcut."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "d"
+    result = _prompt_for_setup_sections()
+    assert result == {"desktop"}
 
 
 @pytest.mark.configuration

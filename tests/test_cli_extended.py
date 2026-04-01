@@ -409,6 +409,57 @@ def test_cli_download_failed_downloads_reporting(mocker):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
+def test_cli_download_legacy_result_shape_is_normalized(mocker):
+    """CLI should tolerate legacy/short integration tuple shapes."""
+    mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
+    mocker.patch("urllib3.connection.HTTPSConnection")
+    mocker.patch("urllib3.connection.HTTPConnection")
+    mocker.patch("requests.get", return_value=mocker.MagicMock())
+    mocker.patch("requests.Session.get", return_value=mocker.MagicMock())
+
+    mock_integration = mocker.MagicMock()
+    # Legacy shape (9 fields) previously caused ValueError during unpacking.
+    mock_integration.main.return_value = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        "",
+        "",
+    )
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/config.yaml")
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
+        return_value=mock_integration,
+    )
+    mocker.patch("fetchtastic.log_utils.set_log_level")
+    mocker.patch("fetchtastic.utils.reset_api_tracking")
+    mocker.patch("time.time", return_value=1234567890)
+    mocker.patch(
+        "fetchtastic.utils.get_api_request_summary", return_value={"total_requests": 0}
+    )
+    mocker.patch("fetchtastic.log_utils.logger")
+
+    with patch("sys.argv", ["fetchtastic", "download"]):
+        cli.main()
+
+    mock_integration.log_download_results_summary.assert_called_once()
+    kwargs = mock_integration.log_download_results_summary.call_args.kwargs
+    assert kwargs["failed_downloads"] == []
+    assert kwargs["latest_firmware_version"] == ""
+    assert kwargs["latest_apk_version"] == ""
+    assert kwargs["latest_desktop_version"] == ""
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
 def test_run_repo_clean_config_missing(mocker):
     """Test run_repo_clean when config is missing."""
     mocker.patch.dict(os.environ, {"FETCHTASTIC_ALLOW_TEST_CLEAN": "1"})

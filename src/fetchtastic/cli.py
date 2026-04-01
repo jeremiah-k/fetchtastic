@@ -219,6 +219,71 @@ def _perform_cache_clear(
     return success
 
 
+def _normalize_download_main_result(raw_result: Any) -> tuple[
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[Dict[str, Any]],
+    str,
+    str,
+    str,
+]:
+    """
+    Normalize integration.main() output to a stable 13-item shape.
+
+    Accepts older/shorter tuple shapes from mocks or legacy code paths and pads
+    missing values with safe defaults.
+    """
+    defaults: list[Any] = [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        "",
+        "",
+        "",
+    ]
+    items = list(raw_result) if isinstance(raw_result, (tuple, list)) else []
+
+    for index, value in enumerate(items[: len(defaults)]):
+        defaults[index] = value
+
+    for index in range(10):
+        if not isinstance(defaults[index], list):
+            defaults[index] = []
+    for index in range(10, 13):
+        if not isinstance(defaults[index], str):
+            defaults[index] = ""
+
+    return (
+        defaults[0],
+        defaults[1],
+        defaults[2],
+        defaults[3],
+        defaults[4],
+        defaults[5],
+        defaults[6],
+        defaults[7],
+        defaults[8],
+        defaults[9],
+        defaults[10],
+        defaults[11],
+        defaults[12],
+    )
+
+
 def _handle_download_subcommand(
     args: argparse.Namespace,
     integration: download_cli_integration.DownloadCLIIntegration,
@@ -239,6 +304,7 @@ def _handle_download_subcommand(
         return
 
     start_time = time.time()
+    raw_result = integration.main(config=config, force_refresh=args.force_download)
     (
         downloaded_firmwares,
         new_firmware_versions,
@@ -253,7 +319,7 @@ def _handle_download_subcommand(
         latest_firmware_version,
         latest_apk_version,
         latest_desktop_version,
-    ) = integration.main(config=config, force_refresh=args.force_download)
+    ) = _normalize_download_main_result(raw_result)
 
     elapsed = time.time() - start_time
     integration.log_download_results_summary(

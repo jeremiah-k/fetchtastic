@@ -328,7 +328,7 @@ class TestMenuAPKEdgeCases:
 
             result = menu_apk.fetch_apk_assets()
 
-            assert result == ["app.apk"]
+            assert result == [{"name": "app.apk", "size": 0}]
 
     def test_select_assets_empty_selection(self):
         """Test select_assets with empty user selection."""

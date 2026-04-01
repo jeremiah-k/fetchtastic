@@ -304,6 +304,43 @@ class TestMeshtasticAndroidAppDownloader:
         )
         assert path == expected
 
+    def test_get_target_path_for_release_prefers_existing_legacy_dir(
+        self, downloader, tmp_path
+    ):
+        """Existing legacy `apks/<tag>` directories should be reused."""
+        legacy_dir = tmp_path / "downloads" / "apks" / "v1.0.0"
+        legacy_dir.mkdir(parents=True)
+
+        path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
+
+        assert path == str(legacy_dir / "meshtastic.apk")
+
+    def test_is_release_complete_uses_legacy_release_directory(
+        self, downloader, tmp_path
+    ):
+        """Completeness checks should consider legacy `apks/<tag>` directories."""
+        downloader.config["SELECTED_APK_ASSETS"] = []
+        downloader.verify = Mock(return_value=True)
+
+        legacy_dir = tmp_path / "downloads" / "apks" / "v1.0.0"
+        legacy_dir.mkdir(parents=True)
+        asset_path = legacy_dir / "meshtastic-universal.apk"
+        asset_path.write_bytes(b"apk!")
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="meshtastic-universal.apk",
+                    download_url="https://example.invalid/apk",
+                    size=4,
+                )
+            ],
+        )
+
+        assert downloader.is_release_complete(release) is True
+
     @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
@@ -860,13 +897,16 @@ class TestMeshtasticAndroidAppDownloader:
         android_dir = os.path.join(
             downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
         )
+        legacy_android_dir = os.path.join(downloader.download_dir, "apks")
 
         with patch(
             "fetchtastic.download.android.os.path.exists", return_value=False
         ) as mock_exists:
             downloader.cleanup_prerelease_directories(cached_releases=releases)
 
-        mock_exists.assert_called_once_with(android_dir)
+        assert mock_exists.call_count == 2
+        checked_paths = {call.args[0] for call in mock_exists.call_args_list}
+        assert checked_paths == {android_dir, legacy_android_dir}
 
     def test_cleanup_prerelease_directories_warns_on_unsafe_tags(self, tmp_path):
         """Test cleanup warns on unsafe release and prerelease tags."""
@@ -959,7 +999,10 @@ class TestMeshtasticAndroidAppDownloader:
         pre_unexpected.is_symlink.return_value = False
 
         with (
-            patch("fetchtastic.download.android.os.path.exists", return_value=True),
+            patch(
+                "fetchtastic.download.android.os.path.exists",
+                side_effect=lambda path: path in {android_dir, prerelease_dir},
+            ),
             patch(
                 "fetchtastic.download.android.os.scandir",
                 side_effect=[

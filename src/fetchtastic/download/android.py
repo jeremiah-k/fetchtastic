@@ -17,6 +17,7 @@ from fetchtastic.constants import (
     ANDROID_DIR_NAME,
     ANDROID_RELEASE_HISTORY_JSON_FILE,
     APK_PRERELEASES_DIR_NAME,
+    APKS_DIR_NAME,
     APP_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     ERROR_TYPE_FILESYSTEM,
@@ -124,13 +125,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     release_tag
                 ) or self.version_manager.is_prerelease_version(release_tag)
 
-        base_dir = (
-            self._get_prerelease_base_dir()
-            if is_prerelease
-            else os.path.join(self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME)
+        version_dir = self._resolve_release_dir(
+            safe_release,
+            is_prerelease=bool(is_prerelease),
+            create_if_missing=True,
         )
-        version_dir = os.path.join(base_dir, safe_release)
-        os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
 
     def _get_prerelease_base_dir(self) -> str:
@@ -145,6 +144,60 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         )
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
+
+    def _get_legacy_android_base_dir(self) -> str:
+        """
+        Return the legacy Android stable base directory (`<download_dir>/apks`).
+        """
+        return os.path.join(self.download_dir, APKS_DIR_NAME)
+
+    def _get_legacy_prerelease_base_dir(self) -> str:
+        """
+        Return the legacy Android prerelease base directory (`<download_dir>/apks/prereleases`).
+        """
+        return os.path.join(
+            self._get_legacy_android_base_dir(), APK_PRERELEASES_DIR_NAME
+        )
+
+    def _resolve_release_dir(
+        self,
+        safe_release: str,
+        *,
+        is_prerelease: bool,
+        create_if_missing: bool,
+    ) -> str:
+        """
+        Resolve the release directory, preferring existing legacy `apks/...` paths when present.
+
+        This keeps previously downloaded APKs valid after layout changes.
+        """
+        preferred_base_dir = (
+            os.path.join(
+                self.download_dir,
+                APP_DIR_NAME,
+                ANDROID_DIR_NAME,
+                APK_PRERELEASES_DIR_NAME,
+            )
+            if is_prerelease
+            else os.path.join(self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME)
+        )
+        legacy_base_dir = (
+            self._get_legacy_prerelease_base_dir()
+            if is_prerelease
+            else self._get_legacy_android_base_dir()
+        )
+
+        preferred_release_dir = os.path.join(preferred_base_dir, safe_release)
+        legacy_release_dir = os.path.join(legacy_base_dir, safe_release)
+
+        if os.path.isdir(preferred_release_dir):
+            return preferred_release_dir
+        if os.path.isdir(legacy_release_dir):
+            return legacy_release_dir
+
+        if create_if_missing:
+            os.makedirs(preferred_release_dir, exist_ok=True)
+        return preferred_release_dir
 
     def _is_android_prerelease(self, release: Release) -> bool:
         """
@@ -240,12 +293,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         storage_tag = self._get_storage_tag_for_release(release)
 
-        base_dir = (
-            self._get_prerelease_base_dir()
-            if is_prerelease
-            else os.path.join(self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME)
+        release_dir = self._resolve_release_dir(
+            storage_tag,
+            is_prerelease=is_prerelease,
+            create_if_missing=True,
         )
-        release_dir = os.path.join(base_dir, storage_tag)
+        base_dir = os.path.dirname(release_dir)
         return self._write_release_notes(
             release_dir=release_dir,
             release_tag=release.tag_name,
@@ -563,8 +616,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         safe_tag = self._get_storage_tag_for_release(release)
 
-        version_dir = os.path.join(
-            self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME, safe_tag
+        version_dir = self._resolve_release_dir(
+            safe_tag,
+            is_prerelease=self._is_android_prerelease(release),
+            create_if_missing=False,
         )
         if not os.path.isdir(version_dir):
             return False
@@ -635,13 +690,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             if not cached_releases:
                 return
 
-            android_dir = os.path.join(
+            preferred_android_dir = os.path.join(
                 self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME
             )
-            if not os.path.exists(android_dir):
+            legacy_android_dir = self._get_legacy_android_base_dir()
+            android_dirs = [
+                directory
+                for directory in (preferred_android_dir, legacy_android_dir)
+                if os.path.exists(directory)
+            ]
+            if not android_dirs:
                 return
-
-            prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
             raw_keep_limit = (
                 keep_limit_override
                 if keep_limit_override is not None
@@ -739,36 +798,39 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     logger.info("Removing unexpected APK entry: %s", entry.name)
                     _safe_rmtree(entry.path, base_dir, entry.name)
 
-            try:
-                with os.scandir(android_dir) as it:
-                    android_entries = list(it)
-            except FileNotFoundError:
-                return
+            for android_dir in android_dirs:
+                prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
+                try:
+                    with os.scandir(android_dir) as it:
+                        android_entries = list(it)
+                except FileNotFoundError:
+                    continue
 
-            existing_entries = {
-                entry.name for entry in android_entries if not entry.is_symlink()
-            }
-            if (
-                keep_limit > 0
-                and expected_stable
-                and existing_entries
-                and expected_stable.isdisjoint(existing_entries)
-            ):
-                logger.warning(
-                    "Skipping APK cleanup: keep set does not match existing directories."
+                existing_entries = {
+                    entry.name for entry in android_entries if not entry.is_symlink()
+                }
+                if (
+                    keep_limit > 0
+                    and expected_stable
+                    and existing_entries
+                    and expected_stable.isdisjoint(existing_entries)
+                ):
+                    logger.warning(
+                        "Skipping APK cleanup for %s: keep set does not match existing directories.",
+                        android_dir,
+                    )
+                    continue
+
+                _remove_unexpected_entries(
+                    android_dir,
+                    expected_stable | {APK_PRERELEASES_DIR_NAME},
+                    entries=android_entries,
                 )
-                return
 
-            _remove_unexpected_entries(
-                android_dir,
-                expected_stable | {APK_PRERELEASES_DIR_NAME},
-                entries=android_entries,
-            )
+                if not os.path.exists(prerelease_dir):
+                    continue
 
-            if not os.path.exists(prerelease_dir):
-                return
-
-            _remove_unexpected_entries(prerelease_dir, expected_prerelease)
+                _remove_unexpected_entries(prerelease_dir, expected_prerelease)
         except (OSError, ValueError) as exc:
             logger.error("Error cleaning up APK prerelease directories: %s", exc)
 

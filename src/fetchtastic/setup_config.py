@@ -204,6 +204,7 @@ SETUP_SECTION_CHOICES: Set[str] = {
     "base",  # Base directory and environment-specific options
     "android",  # Android APK download preferences
     "firmware",  # Firmware download preferences (including prereleases/extraction)
+    "desktop",  # Desktop client download preferences
     "notifications",  # NTFY configuration
     "automation",  # Cron/startup automation choices
     "github",  # GitHub API token configuration
@@ -213,6 +214,7 @@ SECTION_SHORTCUTS = {
     "b": "base",
     "a": "android",
     "f": "firmware",
+    "d": "desktop",
     "n": "notifications",
     "m": "automation",
     "g": "github",
@@ -656,6 +658,7 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
     print("  [b] base           — base directory and general settings")
     print("  [a] android        — Android APK download preferences")
     print("  [f] firmware       — firmware download preferences")
+    print("  [d] desktop        — Desktop client download preferences")
     print("  [n] notifications  — NTFY server/topic settings")
     print("  [m] automation     — scheduled/automatic execution options")
     print("  [g] github         — GitHub API token (rate-limit boost)")

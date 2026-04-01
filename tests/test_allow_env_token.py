@@ -11,6 +11,22 @@ from fetchtastic.download.cli_integration import DownloadCLIIntegration
 
 pytestmark = [pytest.mark.user_interface, pytest.mark.unit]
 
+MOCK_RUN_DOWNLOAD_RESULT = (
+    ["fw"],
+    ["new_fw"],
+    ["apk"],
+    ["new_apk"],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    "fw",
+    "apk",
+    "desktop",
+)
+
 
 @pytest.fixture
 def integration():
@@ -41,21 +57,7 @@ def test_allow_env_token_true_uses_environment_token(integration, mock_config):
         with patch.object(
             integration,
             "run_download",
-            return_value=(
-                ["fw"],
-                ["new_fw"],
-                ["apk"],
-                ["new_apk"],
-                [],
-                "fw",
-                "apk",
-                [],
-                0,
-                0,
-                True,
-                {},
-                [],
-            ),
+            return_value=MOCK_RUN_DOWNLOAD_RESULT,
         ):
             integration.main(mock_config, force_refresh=False)
 
@@ -79,21 +81,7 @@ def test_allow_env_token_false_ignores_environment_token(integration, mock_confi
         with patch.object(
             integration,
             "run_download",
-            return_value=(
-                ["fw"],
-                ["new_fw"],
-                ["apk"],
-                ["new_apk"],
-                [],
-                "fw",
-                "apk",
-                [],
-                0,
-                0,
-                True,
-                {},
-                [],
-            ),
+            return_value=MOCK_RUN_DOWNLOAD_RESULT,
         ):
             integration.main(mock_config, force_refresh=False)
 
@@ -114,21 +102,7 @@ def test_config_token_overrides_environment_token(integration, mock_config):
         with patch.object(
             integration,
             "run_download",
-            return_value=(
-                ["fw"],
-                ["new_fw"],
-                ["apk"],
-                ["new_apk"],
-                [],
-                "fw",
-                "apk",
-                [],
-                0,
-                0,
-                True,
-                {},
-                [],
-            ),
+            return_value=MOCK_RUN_DOWNLOAD_RESULT,
         ):
             integration.main(mock_config, force_refresh=False)
 
@@ -145,21 +119,7 @@ def test_allow_env_token_missing_defaults_to_true(integration, mock_config):
         with patch.object(
             integration,
             "run_download",
-            return_value=(
-                ["fw"],
-                ["new_fw"],
-                ["apk"],
-                ["new_apk"],
-                [],
-                "fw",
-                "apk",
-                [],
-                0,
-                0,
-                True,
-                {},
-                [],
-            ),
+            return_value=MOCK_RUN_DOWNLOAD_RESULT,
         ):
             integration.main(mock_config, force_refresh=False)
 
@@ -177,21 +137,7 @@ def test_no_token_when_env_disabled_and_no_config(integration, mock_config):
         with patch.object(
             integration,
             "run_download",
-            return_value=(
-                ["fw"],
-                ["new_fw"],
-                ["apk"],
-                ["new_apk"],
-                [],
-                "fw",
-                "apk",
-                [],
-                0,
-                0,
-                True,
-                {},
-                [],
-            ),
+            return_value=MOCK_RUN_DOWNLOAD_RESULT,
         ):
             integration.main(mock_config, force_refresh=False)
 

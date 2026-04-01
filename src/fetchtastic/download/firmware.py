@@ -672,32 +672,36 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
             return results
 
-        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
-
         for asset in release.assets:
             if not asset.name or not self._is_manifest_asset_name(asset.name):
                 continue
 
-            target_path = os.path.join(version_dir, asset.name)
+            target_path = self.get_target_path_for_release(storage_tag, asset.name)
 
             if os.path.exists(target_path):
                 try:
                     with open(target_path, "r", encoding="utf-8") as f:
                         json.load(f)
-                    logger.debug("Manifest %s already exists and is valid", asset.name)
-                    results.append(
-                        self.create_download_result(
-                            success=True,
-                            release_tag=release.tag_name,
-                            file_path=target_path,
-                            download_url=asset.download_url,
-                            file_size=asset.size,
-                            file_type=FILE_TYPE_FIRMWARE_MANIFEST,
-                            was_skipped=True,
-                        )
+                    size_matches = asset.size is None or (
+                        os.path.getsize(target_path) == asset.size
                     )
-                    continue
-                except (json.JSONDecodeError, IOError):
+                    if size_matches:
+                        logger.debug(
+                            "Manifest %s already exists and is valid", asset.name
+                        )
+                        results.append(
+                            self.create_download_result(
+                                success=True,
+                                release_tag=release.tag_name,
+                                file_path=target_path,
+                                download_url=asset.download_url,
+                                file_size=asset.size,
+                                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                was_skipped=True,
+                            )
+                        )
+                        continue
+                except (json.JSONDecodeError, IOError, OSError):
                     pass
 
             success = self.download(asset.download_url, target_path)

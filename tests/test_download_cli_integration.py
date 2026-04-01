@@ -27,8 +27,14 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
             ["apk"],
             ["new_apk"],
             [],
+            [],
+            [],
+            [],
+            [],
+            [],
             "fw_latest",
             "apk_latest",
+            "desktop_latest",
         ),
     )
 
@@ -36,7 +42,9 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
 
     run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, False)
     assert result[0] == ["fw"]
-    assert result[5] == "fw_latest"
+    assert result[10] == "fw_latest"
+    assert result[11] == "apk_latest"
+    assert result[12] == "desktop_latest"
 
 
 def test_cli_integration_main_requires_config_argument():
@@ -64,7 +72,7 @@ def test_cli_integration_main_with_config_parameter(mocker):
             [],
             [],
             [],
-            {},
+            [],
             "fw_latest",
             "apk_latest",
             "",
@@ -88,7 +96,7 @@ def test_cli_integration_main_with_force_refresh(mocker):
     run_download = mocker.patch.object(
         integration,
         "run_download",
-        return_value=([], [], [], [], [], [], [], [], [], {}, "", "", ""),
+        return_value=([], [], [], [], [], [], [], [], [], [], "", "", ""),
     )
 
     integration.main(config=config, force_refresh=True)
@@ -231,6 +239,60 @@ def test_run_download_successful(mocker):
     assert any(call[0] == ("v2.0.0", "v1.9.0") for call in calls)
 
 
+def test_run_download_uses_tracked_desktop_version_for_new_detection(mocker):
+    """Desktop new-version detection should compare against tracked local desktop version."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run_download_pipeline.return_value = (
+        [
+            MagicMock(
+                release_tag="v2.0.0",
+                file_path="/tmp/Meshtastic-2.0.0.dmg",
+                was_skipped=False,
+                file_type="desktop",
+            )
+        ],
+        [],
+    )
+    mock_orchestrator.cleanup_old_versions.return_value = None
+    mock_orchestrator.update_version_tracking.return_value = None
+    # Remote/latest value matches downloaded tag and should not be used for "new".
+    mock_orchestrator.get_latest_versions.return_value = {
+        "firmware": "",
+        "android": "",
+        "firmware_prerelease": "",
+        "android_prerelease": "",
+        "desktop": "v2.0.0",
+        "desktop_prerelease": "",
+    }
+
+    mock_version_manager = MagicMock()
+    mock_version_manager.compare_versions.side_effect = lambda version1, version2: (
+        1 if (version1, version2) == ("v2.0.0", "v1.9.0") else 0
+    )
+    mock_android_downloader = MagicMock()
+    mock_android_downloader.get_version_manager.return_value = mock_version_manager
+    mock_orchestrator.android_downloader = mock_android_downloader
+    mock_orchestrator.firmware_downloader = MagicMock()
+
+    mock_desktop_downloader = MagicMock()
+    mock_desktop_downloader.get_latest_release_tag.return_value = "v1.9.0"
+    mock_desktop_downloader.get_latest_prerelease_tag.return_value = ""
+    mock_orchestrator.desktop_downloader = mock_desktop_downloader
+
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+
+    result = integration.run_download(config=config, force_refresh=False)
+
+    assert result[4] == ["v2.0.0"]  # downloaded_desktop
+    assert result[5] == ["v2.0.0"]  # new_desktop_versions
+
+
 def test_log_download_results_summary_logs_history_summary(mocker):
     """Summary logging should emit firmware history summaries when available."""
     integration = DownloadCLIIntegration()
@@ -332,19 +394,33 @@ def test_get_failed_downloads():
     mock_failure.is_retryable = True
     mock_failure.http_status_code = 404
 
-    integration.orchestrator.failed_downloads = [mock_failure]
+    mock_manifest_failure = MagicMock()
+    mock_manifest_failure.file_type = "firmware_manifest"
+    mock_manifest_failure.file_path = "/tmp/firmware-2.7.20.json"
+    mock_manifest_failure.release_tag = "v2.7.20"
+    mock_manifest_failure.download_url = "https://example.com/firmware-2.7.20.json"
+    mock_manifest_failure.error_message = "Manifest download failed"
+    mock_manifest_failure.is_retryable = False
+    mock_manifest_failure.http_status_code = 500
+
+    integration.orchestrator.failed_downloads = [mock_failure, mock_manifest_failure]
 
     result = integration.get_failed_downloads()
 
-    assert len(result) == 1
-    failure = result[0]
-    assert failure["file_name"] == "firmware.zip"
-    assert failure["release_tag"] == "v1.0"
-    assert failure["url"] == "https://example.com/firmware.zip"
-    assert failure["type"] == "Firmware"
-    assert failure["error"] == "Download failed"
-    assert failure["retryable"] is True
-    assert failure["http_status"] == 404
+    assert len(result) == 2
+    firmware_failure = result[0]
+    assert firmware_failure["file_name"] == "firmware.zip"
+    assert firmware_failure["release_tag"] == "v1.0"
+    assert firmware_failure["url"] == "https://example.com/firmware.zip"
+    assert firmware_failure["type"] == "Firmware"
+    assert firmware_failure["error"] == "Download failed"
+    assert firmware_failure["retryable"] is True
+    assert firmware_failure["http_status"] == 404
+
+    manifest_failure = result[1]
+    assert manifest_failure["file_name"] == "firmware-2.7.20.json"
+    assert manifest_failure["release_tag"] == "v2.7.20"
+    assert manifest_failure["type"] == "Firmware Manifest"
 
 
 def test_get_failed_downloads_no_orchestrator():

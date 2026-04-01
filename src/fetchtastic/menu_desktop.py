@@ -1,20 +1,20 @@
 # src/fetchtastic/menu_desktop.py
 
 import json
+import re
 from typing import cast
 
 import requests  # type: ignore[import-untyped]
 from pick import pick
 
 from fetchtastic.constants import (
-    MESHTASTIC_ANDROID_RELEASES_URL,
+    DESKTOP_EXTENSIONS,
+    MESHTASTIC_DESKTOP_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     make_github_api_request,
 )
-
-DESKTOP_EXTENSIONS = (".dmg", ".msi", ".exe", ".deb", ".rpm", ".appimage", ".AppImage")
 
 PLATFORM_GROUPS = {
     "macOS": [".dmg"],
@@ -33,9 +33,9 @@ def _get_platform_label(filename: str) -> str | None:
     return None
 
 
-def extract_base_name(filename: str) -> str:
+def extract_wildcard_pattern(filename: str) -> str:
     """
-    Extract a version-flexible base name pattern from a desktop asset filename.
+    Extract a wildcard pattern from a desktop asset filename.
 
     Strips the semantic version from the filename and replaces separators with
     wildcards so the pattern can match across releases.
@@ -45,8 +45,6 @@ def extract_base_name(filename: str) -> str:
         Meshtastic_x64_2.7.14.msi -> *Meshtastic_x64*msi*
         Meshtastic-2.7.14.dmg -> *Meshtastic*dmg*
     """
-    import re
-
     # Strip semantic version (with optional prerelease) and surrounding separators
     version_pattern = r"[-_]?\d+\.\d+\.\d+(?:[-.]?(?:rc|dev|b|beta|alpha)\d+)?"
     result = re.sub(version_pattern, "", filename)
@@ -66,14 +64,14 @@ def extract_base_name(filename: str) -> str:
 
 def fetch_desktop_assets() -> list[str]:
     """
-    Retrieve desktop client filenames from the latest Meshtastic Android release on GitHub.
+    Retrieve desktop client filenames from the latest Meshtastic Desktop release on GitHub.
 
     Returns:
         list[str]: Alphabetically sorted desktop asset filenames from the latest release.
                    Empty list if no releases or matching assets are found.
     """
     try:
-        response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
+        response = make_github_api_request(MESHTASTIC_DESKTOP_RELEASES_URL)
     except requests.RequestException as e:
         logger.error(f"Failed to fetch desktop assets from GitHub API: {e}")
         return []
@@ -93,15 +91,18 @@ def fetch_desktop_assets() -> list[str]:
     if not isinstance(assets, list):
         logger.warning("Invalid assets data from GitHub API.")
         return []
-    asset_names = sorted(
-        [
-            asset_name
-            for asset in assets
-            if isinstance(asset, dict)
-            and (asset_name := asset.get("name"))
-            and any(asset_name.endswith(ext) for ext in DESKTOP_EXTENSIONS)
-        ]
-    )
+    asset_names: list[str] = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        asset_name = asset.get("name")
+        if not asset_name:
+            continue
+        asset_name_lower = asset_name.lower()
+        if any(asset_name_lower.endswith(ext.lower()) for ext in DESKTOP_EXTENSIONS):
+            asset_names.append(asset_name)
+
+    asset_names.sort()
 
     return asset_names
 
@@ -112,7 +113,7 @@ def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
 
     Displays the provided desktop filenames for multi-selection, grouped by platform
     (macOS, Windows, Linux). For each chosen filename this function computes a
-    base-name pattern using `extract_base_name` and returns a dictionary with
+    base-name pattern using `extract_wildcard_pattern` and returns a dictionary with
     selected patterns.
 
     Parameters:
@@ -154,18 +155,13 @@ Note: Options are grouped by platform (macOS, Windows, Linux)."""
     selected_options = pick(
         display_options, title, multiselect=True, min_selection_count=0, indicator="*"
     )
-    selected_display = [
-        option[0] for option in cast(list[tuple[str, int]], selected_options)
-    ]
-
-    # Map display strings back to asset names, skipping group labels
     selected_assets = []
-    for display_str in selected_display:
-        stripped = display_str.strip()
-        if stripped.startswith("---") or not stripped:
+    for _display_str, index in cast(list[tuple[str, int]], selected_options):
+        if index < 0 or index >= len(option_map):
             continue
-        if stripped in [a for a in assets]:
-            selected_assets.append(stripped)
+        asset_name = option_map[index]
+        if asset_name:
+            selected_assets.append(asset_name)
 
     if not selected_assets:
         print("No desktop files selected. Desktop clients will not be downloaded.")
@@ -173,7 +169,7 @@ Note: Options are grouped by platform (macOS, Windows, Linux)."""
 
     base_patterns = []
     for asset_name in selected_assets:
-        pattern = extract_base_name(asset_name)
+        pattern = extract_wildcard_pattern(asset_name)
         base_patterns.append(pattern)
     return {"selected_assets": base_patterns}
 
@@ -192,6 +188,9 @@ def run_menu() -> dict[str, list[str]] | None:
     """
     try:
         assets = fetch_desktop_assets()
+        if not assets:
+            print("No desktop files found. Desktop clients will not be downloaded.")
+            return None
         selected_result = select_assets(assets)
         if selected_result is None:
             return None

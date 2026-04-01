@@ -50,13 +50,14 @@ def _format_file_size(size_bytes: int) -> str:
     return f"{size_mb:.1f} MB"
 
 
-def fetch_apk_assets() -> list[str]:
+def fetch_apk_assets() -> list[Dict[str, Any]]:
     """
     Retrieve APK asset info from the latest Meshtastic Android release on GitHub.
 
     Returns:
-        list[str]: List of APK filenames sorted alphabetically.
-            Empty list if no releases or matching assets are found.
+        list[Dict[str, Any]]: List of APK assets as dicts with `name` and `size`,
+            sorted alphabetically by name. Empty list if no releases or matching
+            assets are found.
     """
     try:
         response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
@@ -80,16 +81,17 @@ def fetch_apk_assets() -> list[str]:
         logger.warning("Invalid assets data from GitHub API.")
         return []
 
-    asset_list: list[str] = []
+    asset_list: list[Dict[str, Any]] = []
     for asset in assets:
         if not isinstance(asset, dict):
             continue
         asset_name = asset.get("name")
         if not asset_name or not asset_name.lower().endswith(APK_EXTENSION):
             continue
-        asset_list.append(asset_name)
+        asset_size = asset.get("size", 0)
+        asset_list.append({"name": asset_name, "size": asset_size})
 
-    asset_list.sort()
+    asset_list.sort(key=lambda item: item["name"])
     return asset_list
 
 
@@ -136,7 +138,8 @@ def select_assets(
     If no assets are selected, the function prints a short message and returns `None`.
 
     Parameters:
-        assets (list[dict]): List of dicts with 'name' and 'size' keys for APK assets.
+        assets (list[Union[str, dict]]): APK assets as filenames or dict entries
+            containing `name` and optional `size`.
 
     Returns:
         dict[str, list[str]] | None: `{"selected_assets": [base_pattern, ...]}` when
@@ -210,6 +213,9 @@ def run_menu() -> dict[str, list[str]] | None:
     """
     try:
         assets = fetch_apk_assets()
+        if not assets:
+            print("No APK files found. APKs will not be downloaded.")
+            return None
         selected_result = select_assets(assets)
         if selected_result is None:
             return None

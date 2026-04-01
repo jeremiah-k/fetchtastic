@@ -55,13 +55,14 @@ def test_fetch_apk_assets(mocker, mock_apk_assets):
     mock_make_request.return_value = mock_response
 
     assets = menu_apk.fetch_apk_assets()
+    asset_names = [asset["name"] for asset in assets]
 
     assert len(assets) == 3
-    assert "meshtastic-app-release-2.7.4.apk" in assets
-    assert "meshtastic-app-debug-2.7.4.apk" in assets
-    assert "nRF_Connect_Device_Manager-release-2.7.4.apk" in assets
+    assert "meshtastic-app-release-2.7.4.apk" in asset_names
+    assert "meshtastic-app-debug-2.7.4.apk" in asset_names
+    assert "nRF_Connect_Device_Manager-release-2.7.4.apk" in asset_names
     # Check sorting
-    assert assets[0] == "meshtastic-app-debug-2.7.4.apk"
+    assert assets[0]["name"] == "meshtastic-app-debug-2.7.4.apk"
 
 
 def test_fetch_apk_assets_case_insensitive(mocker, mock_apk_assets_mixed_case):
@@ -72,12 +73,13 @@ def test_fetch_apk_assets_case_insensitive(mocker, mock_apk_assets_mixed_case):
     mock_make_request.return_value = mock_response
 
     assets = menu_apk.fetch_apk_assets()
+    asset_names = [asset["name"] for asset in assets]
 
     assert len(assets) == 3
-    assert "meshtastic-app-release-2.7.4.apk" in assets
-    assert "meshtastic-app-debug-2.7.4.APK" in assets
-    assert "meshtastic-app-beta-2.7.4.Apk" in assets
-    assert "some-other-file.txt" not in assets
+    assert "meshtastic-app-release-2.7.4.apk" in asset_names
+    assert "meshtastic-app-debug-2.7.4.APK" in asset_names
+    assert "meshtastic-app-beta-2.7.4.Apk" in asset_names
+    assert "some-other-file.txt" not in asset_names
 
 
 @pytest.mark.parametrize(
@@ -111,7 +113,8 @@ def test_select_assets(mocker):
 def test_run_menu(mocker):
     """Test the main menu orchestration."""
     mock_fetch = mocker.patch(
-        "fetchtastic.menu_apk.fetch_apk_assets", return_value=["asset1.apk"]
+        "fetchtastic.menu_apk.fetch_apk_assets",
+        return_value=[{"name": "asset1.apk", "size": 123}],
     )
     mock_select = mocker.patch(
         "fetchtastic.menu_apk.select_assets",
@@ -122,12 +125,24 @@ def test_run_menu(mocker):
     result = menu_apk.run_menu()
     assert result == {"selected_assets": ["base-pattern"]}
     mock_fetch.assert_called_once()
-    mock_select.assert_called_once_with(["asset1.apk"])
+    mock_select.assert_called_once_with([{"name": "asset1.apk", "size": 123}])
 
     # 2. User selects nothing
     mock_select.return_value = None
     result = menu_apk.run_menu()
     assert result is None
+
+
+def test_run_menu_empty_assets_returns_none(mocker):
+    """run_menu should return None without calling select_assets when no assets exist."""
+    mock_fetch = mocker.patch("fetchtastic.menu_apk.fetch_apk_assets", return_value=[])
+    mock_select = mocker.patch("fetchtastic.menu_apk.select_assets")
+
+    result = menu_apk.run_menu()
+
+    assert result is None
+    mock_fetch.assert_called_once()
+    mock_select.assert_not_called()
 
 
 def test_fetch_apk_assets_error_handling(mocker):
@@ -176,10 +191,12 @@ def test_fetch_apk_assets_debug_logging(mocker, mock_apk_assets):
     mock_logger = mocker.patch("fetchtastic.menu_apk.logger")
 
     assets = menu_apk.fetch_apk_assets()
+    asset_names = [asset["name"] for asset in assets]
 
     # Should log debug message about fetched releases
     mock_logger.debug.assert_called_with("Fetched 1 Android releases from GitHub API")
     assert len(assets) == 3
+    assert "meshtastic-app-release-2.7.4.apk" in asset_names
 
 
 def test_fetch_apk_assets_debug_logging_no_list_response(mocker):

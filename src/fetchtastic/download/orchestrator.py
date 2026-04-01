@@ -1244,7 +1244,7 @@ class DownloadOrchestrator:
                 elif APKS_DIR_NAME in path_parts or file_path_str.endswith(".apk"):
                     result.file_type = FILE_TYPE_ANDROID
                 elif any(
-                    ext in file_path_str.lower()
+                    file_path_str.lower().endswith(ext)
                     for ext in (".dmg", ".msi", ".exe", ".deb", ".rpm", ".appimage")
                 ):
                     result.file_type = FILE_TYPE_DESKTOP

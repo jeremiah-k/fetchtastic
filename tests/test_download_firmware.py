@@ -909,6 +909,73 @@ class TestFirmwareReleaseDownloader:
         assert parsed.has_mui is True
         assert parsed.has_inkhud is False
 
+    def test_download_manifests_redownloads_when_existing_size_mismatches(
+        self, downloader, tmp_path
+    ):
+        """Existing valid JSON should still be redownloaded when file size mismatches."""
+        downloader.download_dir = str(tmp_path)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=10,
+                )
+            ],
+        )
+        target_path = downloader.get_target_path_for_release(
+            "v2.7.20", "firmware-2.7.20.abcdef0.json"
+        )
+        Path(target_path).write_text("{}", encoding="utf-8")
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).write_text('{"fresh":1}', encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is True
+        assert results[0].was_skipped is False
+        downloader.download.assert_called_once()
+
+    def test_download_manifests_skips_when_json_and_size_match(
+        self, downloader, tmp_path
+    ):
+        """Existing manifest should be skipped only when JSON is valid and size matches."""
+        downloader.download_dir = str(tmp_path)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=2,
+                )
+            ],
+        )
+        target_path = downloader.get_target_path_for_release(
+            "v2.7.20", "firmware-2.7.20.abcdef0.json"
+        )
+        Path(target_path).write_text("{}", encoding="utf-8")
+        downloader.download = Mock(return_value=True)
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is True
+        assert results[0].was_skipped is True
+        downloader.download.assert_not_called()
+
     @patch("fetchtastic.download.firmware.download_file_with_retry", return_value=True)
     def test_download_prerelease_assets_keeps_release_manifest_with_pattern_filter(
         self, _mock_download, downloader, tmp_path

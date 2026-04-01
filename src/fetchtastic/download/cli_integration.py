@@ -22,6 +22,7 @@ from fetchtastic.constants import (
     FILE_TYPE_DESKTOP,
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_MANIFEST,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
@@ -141,6 +142,8 @@ class DownloadCLIIntegration:
             if force_refresh:
                 self._clear_caches()
 
+            tracked_versions = self._get_tracked_desktop_versions()
+
             # Run the download pipeline
             success_results, _failed_results = orchestrator.run_download_pipeline()
 
@@ -155,7 +158,10 @@ class DownloadCLIIntegration:
                 downloaded_firmware_prereleases,
                 downloaded_apk_prereleases,
                 downloaded_desktop_prereleases,
-            ) = self._convert_results_to_legacy_format(success_results)
+            ) = self._convert_results_to_legacy_format(
+                success_results,
+                tracked_versions=tracked_versions,
+            )
 
             # Handle cleanup
             orchestrator.cleanup_old_versions()
@@ -200,6 +206,40 @@ class DownloadCLIIntegration:
             logger.exception("Error in CLI integration: %s", e)
             # Return empty results and error information
             return [], [], [], [], [], [], [], [], [], [], "", "", ""
+
+    def _get_tracked_desktop_versions(self) -> Dict[str, Optional[str]]:
+        """
+        Return desktop tracking versions from local tracking files before a pipeline run.
+
+        Returns:
+            Dict[str, Optional[str]]: Mapping with keys `desktop` and
+                `desktop_prerelease` representing locally tracked versions.
+        """
+        tracked_desktop: Optional[str] = None
+        tracked_desktop_prerelease: Optional[str] = None
+
+        if self.desktop_downloader:
+            try:
+                tracked_desktop = self.desktop_downloader.get_latest_release_tag()
+            except (OSError, ValueError, TypeError):
+                tracked_desktop = None
+
+            try:
+                tracked_desktop_prerelease = (
+                    self.desktop_downloader.get_latest_prerelease_tag()
+                )
+            except (OSError, ValueError, TypeError):
+                tracked_desktop_prerelease = None
+
+        if not isinstance(tracked_desktop, str):
+            tracked_desktop = None
+        if not isinstance(tracked_desktop_prerelease, str):
+            tracked_desktop_prerelease = None
+
+        return {
+            "desktop": tracked_desktop,
+            "desktop_prerelease": tracked_desktop_prerelease,
+        }
 
     def _clear_caches(self) -> None:
         """
@@ -345,7 +385,11 @@ class DownloadCLIIntegration:
                 "📊 GitHub API Summary: No API requests made (all data served from cache)"
             )
 
-    def _convert_results_to_legacy_format(self, success_results: List[Any]) -> Tuple[
+    def _convert_results_to_legacy_format(
+        self,
+        success_results: List[Any],
+        tracked_versions: Optional[Dict[str, Optional[str]]] = None,
+    ) -> Tuple[
         List[str],
         List[str],
         List[str],
@@ -361,6 +405,9 @@ class DownloadCLIIntegration:
 
         Parameters:
             success_results (List[Any]): Iterable of result objects from the orchestrator; each object may have attributes `release_tag`, `file_path`, and `was_skipped`.
+            tracked_versions (Optional[Dict[str, Optional[str]]]): Optional local
+                tracking values to prefer over remote/latest release tags for
+                version comparison.
 
         Returns:
             Tuple containing:
@@ -393,22 +440,21 @@ class DownloadCLIIntegration:
         new_apk_set: set[str] = set()
         new_desktop_set: set[str] = set()
 
-        # Get current versions before processing results
+        latest_versions: Dict[str, Optional[str]] = {}
         if self.orchestrator:
-            latest_versions = self.orchestrator.get_latest_versions()
-            current_android = latest_versions.get("android")
-            current_firmware = latest_versions.get("firmware")
-            current_android_prerelease = latest_versions.get("android_prerelease")
-            current_firmware_prerelease = latest_versions.get("firmware_prerelease")
-            current_desktop = latest_versions.get("desktop")
-            current_desktop_prerelease = latest_versions.get("desktop_prerelease")
-        else:
-            current_android = None
-            current_firmware = None
-            current_android_prerelease = None
-            current_firmware_prerelease = None
-            current_desktop = None
-            current_desktop_prerelease = None
+            latest_versions = cast(
+                Dict[str, Optional[str]],
+                self.orchestrator.get_latest_versions(),
+            )
+        if tracked_versions:
+            latest_versions.update(tracked_versions)
+
+        current_android = latest_versions.get("android")
+        current_firmware = latest_versions.get("firmware")
+        current_android_prerelease = latest_versions.get("android_prerelease")
+        current_firmware_prerelease = latest_versions.get("firmware_prerelease")
+        current_desktop = latest_versions.get("desktop")
+        current_desktop_prerelease = latest_versions.get("desktop_prerelease")
 
         for result in success_results:
             release_tag = result.release_tag
@@ -626,6 +672,7 @@ class DownloadCLIIntegration:
 
         file_type_map = {
             FILE_TYPE_FIRMWARE: "Firmware",
+            FILE_TYPE_FIRMWARE_MANIFEST: "Firmware Manifest",
             FILE_TYPE_ANDROID: "Android APK",
             FILE_TYPE_FIRMWARE_PRERELEASE: "Firmware Prerelease",
             FILE_TYPE_FIRMWARE_PRERELEASE_REPO: "Firmware Prerelease",
