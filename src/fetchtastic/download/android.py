@@ -166,6 +166,27 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             self._get_legacy_android_base_dir(), APK_PRERELEASES_DIR_NAME
         )
 
+    def _is_within_download_tree(self, path: str) -> bool:
+        """
+        Return whether `path` resolves within this downloader's managed download directory tree.
+        """
+        try:
+            download_root = os.path.realpath(self.download_dir)
+            candidate = os.path.realpath(path)
+            return os.path.commonpath([download_root, candidate]) == download_root
+        except ValueError:
+            return False
+
+    def _is_safe_managed_dir(self, path: str) -> bool:
+        """
+        Return whether `path` is a non-symlink directory under the managed download tree.
+        """
+        return (
+            os.path.isdir(path)
+            and not os.path.islink(path)
+            and self._is_within_download_tree(path)
+        )
+
     def _move_legacy_path(self, source_path: str, destination_path: str) -> bool:
         """
         Move a legacy path into the preferred Android layout when safe.
@@ -217,7 +238,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Migrate legacy Android directories from `<download_dir>/apks` to `app/android`.
         """
         legacy_android_dir = self._get_legacy_android_base_dir()
-        if not os.path.isdir(legacy_android_dir) or os.path.islink(legacy_android_dir):
+        if not self._is_safe_managed_dir(legacy_android_dir):
             return
 
         preferred_android_dir = os.path.join(
@@ -226,6 +247,18 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         preferred_prerelease_dir = os.path.join(
             preferred_android_dir, APK_PRERELEASES_DIR_NAME
         )
+        if os.path.islink(preferred_android_dir):
+            logger.warning(
+                "Skipping Android legacy migration because preferred root is symlinked: %s",
+                preferred_android_dir,
+            )
+            return
+        if not self._is_within_download_tree(preferred_android_dir):
+            logger.warning(
+                "Skipping Android legacy migration because preferred root is outside download tree: %s",
+                preferred_android_dir,
+            )
+            return
         os.makedirs(preferred_android_dir, exist_ok=True)
 
         try:
@@ -253,7 +286,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
 
         legacy_prerelease_dir = self._get_legacy_prerelease_base_dir()
-        if os.path.isdir(legacy_prerelease_dir):
+        if self._is_safe_managed_dir(legacy_prerelease_dir):
             os.makedirs(preferred_prerelease_dir, exist_ok=True)
             try:
                 with os.scandir(legacy_prerelease_dir) as it:
@@ -312,15 +345,35 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         preferred_release_dir = os.path.join(preferred_base_dir, safe_release)
         legacy_release_dir = os.path.join(legacy_base_dir, safe_release)
 
-        if os.path.isdir(preferred_release_dir):
+        if os.path.islink(preferred_release_dir):
+            message = (
+                f"Refusing symlinked Android release directory: {preferred_release_dir}"
+            )
+            logger.warning(message)
+            raise ValueError(message)
+
+        if self._is_safe_managed_dir(preferred_release_dir):
             return preferred_release_dir
-        if os.path.isdir(legacy_release_dir):
+        if os.path.islink(legacy_release_dir):
+            logger.warning(
+                "Ignoring symlinked legacy Android release directory: %s",
+                legacy_release_dir,
+            )
+        elif self._is_safe_managed_dir(legacy_release_dir):
             if self._move_legacy_path(legacy_release_dir, preferred_release_dir):
                 self._prune_empty_legacy_android_dirs()
                 return preferred_release_dir
             return legacy_release_dir
 
         if create_if_missing:
+            if os.path.islink(preferred_base_dir):
+                message = f"Refusing to create Android release directory under symlinked base: {preferred_base_dir}"
+                logger.warning(message)
+                raise ValueError(message)
+            if not self._is_within_download_tree(preferred_release_dir):
+                message = f"Refusing to create Android release directory outside download tree: {preferred_release_dir}"
+                logger.warning(message)
+                raise ValueError(message)
             os.makedirs(preferred_release_dir, exist_ok=True)
         return preferred_release_dir
 
@@ -830,7 +883,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             android_dirs = [
                 directory
                 for directory in (preferred_android_dir, legacy_android_dir)
-                if os.path.isdir(directory) and not os.path.islink(directory)
+                if self._is_safe_managed_dir(directory)
             ]
             if not android_dirs:
                 return
@@ -969,7 +1022,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     preferred_prerelease_dir = os.path.join(
                         preferred_android_dir, APK_PRERELEASES_DIR_NAME
                     )
-                    if os.path.isdir(preferred_android_dir):
+                    if self._is_safe_managed_dir(preferred_android_dir):
                         try:
                             with os.scandir(preferred_android_dir) as it:
                                 for entry in it:
@@ -980,7 +1033,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     expected_stable_for_dir = expected_stable - preferred_entries
 
                     preferred_prerelease_entries: set[str] = set()
-                    if os.path.isdir(preferred_prerelease_dir):
+                    if self._is_safe_managed_dir(preferred_prerelease_dir):
                         try:
                             with os.scandir(preferred_prerelease_dir) as it:
                                 for entry in it:
@@ -1007,7 +1060,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     entries=android_entries,
                 )
 
-                if not os.path.exists(prerelease_dir):
+                if not self._is_safe_managed_dir(prerelease_dir):
                     continue
 
                 _remove_unexpected_entries(prerelease_dir, expected_prerelease_for_dir)

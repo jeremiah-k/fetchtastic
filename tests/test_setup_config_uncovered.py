@@ -1194,13 +1194,14 @@ def test_run_setup_windows_cmd_environment(
     mock_is_termux,
     mock_platform_system,
     mock_input,
+    tmp_path,
 ):
     """Test Windows setup when running from cmd.exe (lines 2206-2214)."""
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
-    setup_config.CONFIG_DIR = "/tmp/test_config"
-    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    setup_config.CONFIG_DIR = str(tmp_path / "test_config")
+    setup_config.CONFIG_FILE = str(tmp_path / "test_config" / "fetchtastic.yml")
     try:
         with patch.dict(os.environ, {"COMSPEC": "cmd.exe"}):
             user_inputs = [
@@ -1459,13 +1460,14 @@ def test_run_setup_desktop_invalid_version_input(
     mock_is_termux,
     mock_platform_system,
     mock_input,
+    tmp_path,
 ):
     """Test run_setup desktop with invalid version input (lines 2133-2139)."""
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
-    setup_config.CONFIG_DIR = "/tmp/test_config"
-    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    setup_config.CONFIG_DIR = str(tmp_path / "test_config")
+    setup_config.CONFIG_FILE = str(tmp_path / "test_config" / "fetchtastic.yml")
     try:
         user_inputs = [
             "",  # Use default base directory
@@ -1538,6 +1540,7 @@ def test_run_setup_version_package_not_found(
     mock_platform_system,
     mock_input,
     mocker,
+    tmp_path,
 ):
     """Test run_setup when version() raises PackageNotFoundError (lines 2167-2169)."""
     from importlib.metadata import PackageNotFoundError
@@ -1545,8 +1548,8 @@ def test_run_setup_version_package_not_found(
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
-    setup_config.CONFIG_DIR = "/tmp/test_config"
-    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    setup_config.CONFIG_DIR = str(tmp_path / "test_config")
+    setup_config.CONFIG_FILE = str(tmp_path / "test_config" / "fetchtastic.yml")
     try:
         user_inputs = [
             "",  # Use default base directory
@@ -1623,13 +1626,14 @@ def test_run_setup_version_other_error(
     mock_platform_system,
     mock_input,
     mocker,
+    tmp_path,
 ):
     """Test run_setup when version() raises other exception (lines 2172-2175)."""
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
-    setup_config.CONFIG_DIR = "/tmp/test_config"
-    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    setup_config.CONFIG_DIR = str(tmp_path / "test_config")
+    setup_config.CONFIG_FILE = str(tmp_path / "test_config" / "fetchtastic.yml")
     try:
         user_inputs = [
             "",  # Use default base directory
@@ -1707,13 +1711,14 @@ def test_run_setup_config_dir_creation_error(
     mock_input,
     mocker,
     capsys,
+    tmp_path,
 ):
     """Test run_setup when config directory creation fails (lines 2182-2183)."""
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
-    setup_config.CONFIG_DIR = "/tmp/test_config"
-    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    setup_config.CONFIG_DIR = str(tmp_path / "test_config")
+    setup_config.CONFIG_FILE = str(tmp_path / "test_config" / "fetchtastic.yml")
     try:
         user_inputs = [
             "",  # Use default base directory
@@ -1764,7 +1769,8 @@ def test_setup_github_keep_existing_token(mocker, capsys):
     """Test _setup_github keeping existing token (lines 1755-1761)."""
     from fetchtastic.setup_config import _setup_github
 
-    config = {"GITHUB_TOKEN": "ghp_existing_token_12345678901234567890"}
+    existing_token = "token_" + "existing_placeholder"
+    config = {"GITHUB_TOKEN": existing_token}
 
     mocker.patch(
         "builtins.input",
@@ -1774,7 +1780,7 @@ def test_setup_github_keep_existing_token(mocker, capsys):
     result = _setup_github(config)
     captured = capsys.readouterr()
 
-    assert result["GITHUB_TOKEN"] == "ghp_existing_token_12345678901234567890"
+    assert result["GITHUB_TOKEN"] == existing_token
     assert "Keeping existing GitHub token configuration" in captured.out
 
 
@@ -1804,11 +1810,11 @@ def test_setup_github_empty_token_input(mocker, capsys):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_load_config_non_standard_location(mocker, capsys):
+def test_load_config_non_standard_location(mocker, capsys, tmp_path):
     """Test load_config from non-standard location (lines 3407-3411)."""
     from fetchtastic.setup_config import load_config
 
-    tmp_dir = "/tmp/custom_config"
+    tmp_dir = str(tmp_path / "custom_config")
     os.path.join(tmp_dir, "fetchtastic.yaml")
 
     mocker.patch("os.path.exists", return_value=True)
@@ -1825,11 +1831,11 @@ def test_load_config_non_standard_location(mocker, capsys):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_load_config_directory_yaml_error(mocker):
+def test_load_config_directory_yaml_error(mocker, tmp_path):
     """Test load_config directory mode with YAML error (line 3429)."""
     from fetchtastic.setup_config import load_config
 
-    tmp_dir = "/tmp/custom_config"
+    tmp_dir = str(tmp_path / "custom_config")
 
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("fetchtastic.setup_config._load_yaml_mapping", return_value=None)
@@ -1841,11 +1847,11 @@ def test_load_config_directory_yaml_error(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_load_config_migrates_legacy_desktop_asset_key(mocker):
+def test_load_config_migrates_legacy_desktop_asset_key(mocker, tmp_path):
     """load_config should migrate SELECTED_DESKTOP_PLATFORMS to SELECTED_DESKTOP_ASSETS."""
     from fetchtastic.setup_config import load_config
 
-    tmp_dir = "/tmp/custom_config"
+    tmp_dir = str(tmp_path / "custom_config")
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch(
         "fetchtastic.setup_config._load_yaml_mapping",
@@ -1861,11 +1867,11 @@ def test_load_config_migrates_legacy_desktop_asset_key(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_load_config_new_desktop_asset_key_stays_authoritative(mocker):
+def test_load_config_new_desktop_asset_key_stays_authoritative(mocker, tmp_path):
     """load_config should keep new key value even when legacy key is present."""
     from fetchtastic.setup_config import load_config
 
-    tmp_dir = "/tmp/custom_config"
+    tmp_dir = str(tmp_path / "custom_config")
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch(
         "fetchtastic.setup_config._load_yaml_mapping",

@@ -22,9 +22,17 @@ def mock_cache_manager(tmp_path):
     """Create a minimal cache manager mock for Desktop downloader tests."""
     mock = Mock(spec=CacheManager)
     mock.cache_dir = str(tmp_path / "cache")
-    mock.get_cache_file_path.side_effect = lambda file_name: os.path.join(
-        mock.cache_dir, file_name
-    )
+
+    def _get_cache_file_path(file_name: str, suffix: str = ".json") -> str:
+        normalized_suffix = suffix or ""
+        normalized_name = file_name
+        if normalized_suffix and not normalized_name.lower().endswith(
+            normalized_suffix.lower()
+        ):
+            normalized_name = f"{normalized_name}{normalized_suffix}"
+        return os.path.join(mock.cache_dir, normalized_name)
+
+    mock.get_cache_file_path.side_effect = _get_cache_file_path
     return mock
 
 
@@ -1438,32 +1446,34 @@ def test_get_releases_stops_at_configured_max_pages(downloader):
     assert all(r.prerelease for r in result)
 
 
-def test_cleanup_prerelease_directories_no_expected_stable(downloader, tmp_path):
+def test_cleanup_prerelease_directories_no_expected_stable(
+    downloader, tmp_path, mocker
+):
     """Empty expected_stable with keep_limit > 0 should log warning and return."""
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
     desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
     desktop_dir.mkdir(parents=True)
+    mock_logger = mocker.patch("fetchtastic.download.desktop.logger")
+    mocker.patch(
+        "fetchtastic.download.desktop._sanitize_path_component", return_value=None
+    )
 
-    # Create a release with unsafe tag that gets sanitized to None
-    class UnsafeRelease:
-        def __init__(self, tag):
-            self.tag_name = tag
-            self.prerelease = False
-            self.published_at = "2024-01-01"
-            self.assets = []
-
-    # Use a tag that will be sanitized to a valid name
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
 
-    # Test with keep_limit=0 to skip the expected_stable check
     downloader.cleanup_prerelease_directories(
-        cached_releases=releases, keep_limit_override=0
+        cached_releases=releases, keep_limit_override=1
+    )
+    assert any(
+        "no safe release tags found to keep" in str(call.args[0]).lower()
+        for call in mock_logger.warning.call_args_list
     )
 
 
-def test_cleanup_prerelease_directories_scandir_filenotfound(downloader, tmp_path):
+def test_cleanup_prerelease_directories_scandir_filenotfound(
+    downloader, tmp_path, mocker
+):
     """FileNotFoundError during scandir should be handled gracefully."""
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
@@ -1473,11 +1483,14 @@ def test_cleanup_prerelease_directories_scandir_filenotfound(downloader, tmp_pat
 
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
 
-    # Create prerelease dir that will be removed during cleanup
-    prerelease_dir = desktop_dir / DESKTOP_PRERELEASES_DIR_NAME
-    prerelease_dir.mkdir()
+    real_scandir = os.scandir
 
-    # Now test - prerelease_dir exists so _remove_unexpected_entries will be called
+    def _scandir(path):
+        if os.fspath(path) == str(desktop_dir):
+            raise FileNotFoundError("desktop dir disappeared")
+        return real_scandir(path)
+
+    mocker.patch("fetchtastic.download.desktop.os.scandir", side_effect=_scandir)
     downloader.cleanup_prerelease_directories(cached_releases=releases)
 
 
@@ -1536,7 +1549,7 @@ def test_cleanup_prerelease_directories_unsafe_tags(downloader, tmp_path):
 
 
 def test_cleanup_prerelease_directories_remove_unexpected_filenotfound(
-    downloader, tmp_path
+    downloader, tmp_path, mocker
 ):
     """FileNotFoundError in _remove_unexpected_entries should return quietly."""
     real_vm = VersionManager()
@@ -1548,10 +1561,19 @@ def test_cleanup_prerelease_directories_remove_unexpected_filenotfound(
     # Create prerelease dir
     prerelease_dir = desktop_dir / DESKTOP_PRERELEASES_DIR_NAME
     prerelease_dir.mkdir()
+    # Ensure expected_stable intersects existing entries so cleanup reaches prerelease scan.
+    (desktop_dir / "v2.7.20").mkdir()
 
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
 
-    # Test with existing prerelease dir
+    real_scandir = os.scandir
+
+    def _scandir(path):
+        if os.fspath(path) == str(prerelease_dir):
+            raise FileNotFoundError("prerelease dir disappeared")
+        return real_scandir(path)
+
+    mocker.patch("fetchtastic.download.desktop.os.scandir", side_effect=_scandir)
     downloader.cleanup_prerelease_directories(cached_releases=releases)
 
 

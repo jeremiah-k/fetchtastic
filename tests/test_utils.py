@@ -512,6 +512,8 @@ def test_matches_selected_patterns_handles_renamed_android_assets():
     )
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 def test_expand_apk_selected_patterns_adds_split_variants_for_legacy_fdroid():
     """Legacy F-Droid APK patterns should expand to include split architecture variants."""
     from fetchtastic.utils import expand_apk_selected_patterns
@@ -526,6 +528,8 @@ def test_expand_apk_selected_patterns_adds_split_variants_for_legacy_fdroid():
     assert "app-fdroid-x86_64-release.apk" in expanded
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 def test_expand_apk_selected_patterns_adds_legacy_for_split_variants():
     """Split F-Droid APK patterns should include legacy fallback patterns."""
     from fetchtastic.utils import expand_apk_selected_patterns

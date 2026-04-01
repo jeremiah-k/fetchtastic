@@ -913,11 +913,7 @@ def _setup_downloads(
                 )
                 or current_desktop_default
             )
-            # Only update if choice is a recognized boolean token
-            recognized_tokens = ("y", "n", "yes", "no", "true", "false", "1", "0")
-            if choice.lower() in recognized_tokens:
-                save_desktop = _coerce_bool(choice)
-            # else: leave save_desktop unchanged (preserve current setting on invalid input)
+            save_desktop = _coerce_bool(choice, default=save_desktop)
 
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
