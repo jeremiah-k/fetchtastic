@@ -83,8 +83,54 @@ def fetch_desktop_assets() -> list[str]:
     if not isinstance(releases, list) or not releases:
         logger.warning("No releases found from GitHub API.")
         return []
-    latest_release = releases[0] or {}
-    assets = latest_release.get("assets", []) or []
+
+    # Scan recent releases to find best one with desktop assets
+    max_releases_to_scan = min(10, len(releases))
+    best_release = None
+
+    for i, release in enumerate(releases[:max_releases_to_scan]):
+        if not isinstance(release, dict):
+            continue
+
+        assets = release.get("assets", []) or []
+        if not isinstance(assets, list) or not assets:
+            tag_name = release.get("tag_name", f"#{i}")
+            logger.debug(f"Release {tag_name} has no assets, skipping")
+            continue
+
+        # Check if this release has any desktop assets
+        has_desktop = False
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            asset_name = asset.get("name", "")
+            if asset_name and any(
+                asset_name.lower().endswith(ext.lower()) for ext in DESKTOP_EXTENSIONS
+            ):
+                has_desktop = True
+                break
+
+        if has_desktop:
+            is_prerelease = release.get("prerelease", False)
+            if best_release is None or (
+                not is_prerelease and best_release.get("prerelease", False)
+            ):
+                best_release = release
+                # If we found a stable release with assets, prefer it
+                if not is_prerelease:
+                    logger.debug(
+                        f"Found stable release with desktop assets: {release.get('tag_name')}"
+                    )
+                    break
+
+    # Fall back to first release if no better option found
+    if best_release is None:
+        logger.debug(
+            "No release with desktop assets found, falling back to first release"
+        )
+        best_release = releases[0]
+
+    assets = best_release.get("assets", []) or []
     if not isinstance(assets, list):
         logger.warning("Invalid assets data from GitHub API.")
         return []

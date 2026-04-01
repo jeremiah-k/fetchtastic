@@ -157,7 +157,7 @@ class TestFetchDesktopAssetsErrorHandling:
 
         menu_desktop.fetch_desktop_assets()
 
-        mock_logger.debug.assert_called_with("Fetched 1 releases from GitHub API")
+        mock_logger.debug.assert_any_call("Fetched 1 releases from GitHub API")
 
 
 class TestSelectAssets:

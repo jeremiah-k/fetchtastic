@@ -1334,11 +1334,33 @@ class DownloadOrchestrator:
         if not downloaded and total_failures == 0:
             logger.info("All assets are up to date.")
         else:
-            logger.info(
-                "Downloads: %d downloaded, %d failed",
-                len(downloaded),
-                total_failures,
-            )
+            # Group results by product category
+            client_app_downloads = [
+                r
+                for r in downloaded
+                if r.file_type
+                in (
+                    FILE_TYPE_ANDROID,
+                    FILE_TYPE_ANDROID_PRERELEASE,
+                    FILE_TYPE_DESKTOP,
+                    FILE_TYPE_DESKTOP_PRERELEASE,
+                )
+            ]
+            firmware_downloads = [
+                r
+                for r in downloaded
+                if r.file_type
+                in (
+                    FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                    FILE_TYPE_FIRMWARE_MANIFEST,
+                )
+            ]
+
+            if client_app_downloads:
+                logger.info(f"Client apps: {len(client_app_downloads)} downloaded")
+            if firmware_downloads:
+                logger.info(f"Firmware: {len(firmware_downloads)} downloaded")
         if skipped:
             logger.debug("Skipped %d existing assets", len(skipped))
 

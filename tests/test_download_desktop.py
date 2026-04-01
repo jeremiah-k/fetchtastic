@@ -34,7 +34,7 @@ def downloader(tmp_path, mock_cache_manager):
     config = {
         "DOWNLOAD_DIR": str(tmp_path / "downloads"),
         "EXCLUDE_PATTERNS": [],
-        "SELECTED_DESKTOP_PLATFORMS": [],
+        "SELECTED_DESKTOP_ASSETS": [],
     }
     dl = MeshtasticDesktopDownloader(config, mock_cache_manager)
     dl.cache_manager = mock_cache_manager
@@ -454,23 +454,31 @@ def test_should_download_asset_exclude_pattern(downloader):
 
 def test_should_download_asset_no_patterns(downloader):
     """No selected patterns should allow all assets."""
-    downloader.config["SELECTED_DESKTOP_PLATFORMS"] = []
+    downloader.config["SELECTED_DESKTOP_ASSETS"] = []
     result = downloader.should_download_asset("test.dmg")
     assert result is True
 
 
 def test_should_download_asset_with_patterns(downloader):
     """Selected patterns should filter assets."""
-    downloader.config["SELECTED_DESKTOP_PLATFORMS"] = ["*.dmg"]
+    downloader.config["SELECTED_DESKTOP_ASSETS"] = ["*.dmg"]
     result = downloader.should_download_asset("test.dmg")
     assert result is True
 
 
 def test_should_download_asset_pattern_mismatch(downloader):
     """Non-matching selected patterns should block assets."""
-    downloader.config["SELECTED_DESKTOP_PLATFORMS"] = ["*.AppImage"]
+    downloader.config["SELECTED_DESKTOP_ASSETS"] = ["*.AppImage"]
     result = downloader.should_download_asset("test.dmg")
     assert result is False
+
+
+def test_should_download_asset_backward_compat_old_key(downloader):
+    """Backward compatibility: Old SELECTED_DESKTOP_PLATFORMS key should still work."""
+    downloader.config["SELECTED_DESKTOP_ASSETS"] = None  # Ensure new key is not set
+    downloader.config["SELECTED_DESKTOP_PLATFORMS"] = ["*.dmg"]
+    result = downloader.should_download_asset("test.dmg")
+    assert result is True
 
 
 def test_download_desktop_already_complete(downloader, tmp_path):

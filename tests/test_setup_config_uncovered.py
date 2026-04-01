@@ -91,7 +91,7 @@ def test_setup_downloads_full_run_desktop_only(mocker):
     assert save_apks is False
     assert save_firmware is False
     assert updated["SAVE_DESKTOP_APP"] is True
-    assert updated["SELECTED_DESKTOP_PLATFORMS"] == ["*Meshtastic*dmg*"]
+    assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
     mock_menu.assert_called_once()
 
 
@@ -224,7 +224,7 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
         config, is_partial_run=True, wants=wants
     )
 
-    assert updated["SELECTED_DESKTOP_PLATFORMS"] == ["*Meshtastic*dmg*"]
+    assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
     mock_menu.assert_not_called()
 
 
@@ -238,7 +238,7 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
         "SAVE_APKS": False,
         "SAVE_FIRMWARE": False,
         "SAVE_DESKTOP_APP": True,
-        "SELECTED_DESKTOP_PLATFORMS": [],
+        "SELECTED_DESKTOP_ASSETS": [],
     }
 
     def wants(section: str) -> bool:
@@ -255,7 +255,7 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
     )
 
     assert updated["SAVE_DESKTOP_APP"] is False  # Disabled because no selection
-    assert updated["SELECTED_DESKTOP_PLATFORMS"] == []
+    assert updated["SELECTED_DESKTOP_ASSETS"] == []
 
 
 @pytest.mark.configuration
@@ -286,7 +286,7 @@ def test_setup_downloads_desktop_no_selection(mocker):
     )
 
     assert updated["SAVE_DESKTOP_APP"] is False
-    assert updated["SELECTED_DESKTOP_PLATFORMS"] == []
+    assert updated["SELECTED_DESKTOP_ASSETS"] == []
 
 
 @pytest.mark.configuration
@@ -298,7 +298,7 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
     config = {
         "SAVE_DESKTOP_APP": True,
         "CHECK_DESKTOP_PRERELEASES": True,
-        "SELECTED_DESKTOP_PLATFORMS": ["*Meshtastic*dmg*"],
+        "SELECTED_DESKTOP_ASSETS": ["*Meshtastic*dmg*"],
     }
 
     def wants(_section: str) -> bool:
@@ -323,7 +323,39 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
 
     assert updated["SAVE_DESKTOP_APP"] is False
     assert updated["CHECK_DESKTOP_PRERELEASES"] is False
-    assert updated["SELECTED_DESKTOP_PLATFORMS"] == []
+    assert updated["SELECTED_DESKTOP_ASSETS"] == []
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_backward_compat_old_key(mocker):
+    """Test backward compatibility: Old SELECTED_DESKTOP_PLATFORMS key should still work."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": True,
+        "SELECTED_DESKTOP_PLATFORMS": ["*Meshtastic*dmg*"],  # Using old key
+    }
+
+    def wants(section: str) -> bool:
+        return section == "desktop"
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "n", "n"],  # Keep desktop, don't re-run menu, no prerelease
+    )
+    mock_menu = mocker.patch("fetchtastic.menu_desktop.run_menu")
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=wants
+    )
+
+    # Both old and new keys should be set after reading
+    assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
+    assert updated["SELECTED_DESKTOP_PLATFORMS"] == ["*Meshtastic*dmg*"]
+    mock_menu.assert_not_called()
 
 
 # Tests for _disable_asset_downloads function

@@ -437,7 +437,12 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.
         """
-        selected = self.config.get("SELECTED_DESKTOP_PLATFORMS") or []
+        # Check both old and new config keys for backward compatibility
+        selected = (
+            self.config.get("SELECTED_DESKTOP_ASSETS")
+            or self.config.get("SELECTED_DESKTOP_PLATFORMS")
+            or []
+        )
         exclude = self._get_exclude_patterns()
 
         if exclude and any(

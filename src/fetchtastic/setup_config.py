@@ -52,6 +52,30 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
 ]
 
 
+# Backward compatibility helper functions for desktop assets config key
+# Old key: SELECTED_DESKTOP_PLATFORMS -> New key: SELECTED_DESKTOP_ASSETS
+def _get_desktop_assets(config: dict) -> list:
+    """Get selected desktop assets, checking both old and new config keys."""
+    # Prefer new key, fall back to old key for backward compatibility
+    return (
+        config.get("SELECTED_DESKTOP_ASSETS")
+        or config.get("SELECTED_DESKTOP_PLATFORMS")
+        or []
+    )
+
+
+def _set_desktop_assets(config: dict, assets: list) -> None:
+    """Set selected desktop assets in both old and new config keys for backward compatibility."""
+    config["SELECTED_DESKTOP_ASSETS"] = assets
+    config["SELECTED_DESKTOP_PLATFORMS"] = assets  # Keep old key for backward compat
+
+
+def _clear_desktop_assets(config: dict) -> None:
+    """Clear selected desktop assets from both old and new config keys."""
+    config["SELECTED_DESKTOP_ASSETS"] = []
+    config["SELECTED_DESKTOP_PLATFORMS"] = []
+
+
 def _safe_input(prompt: str, *, default: str = "") -> str:
     """
     Safely get user input with EOFError handling for non-interactive environments.
@@ -844,7 +868,7 @@ def _setup_downloads(
         config["SELECTED_PRERELEASE_ASSETS"] = []
     if not save_desktop:
         config["CHECK_DESKTOP_PRERELEASES"] = False
-        config["SELECTED_DESKTOP_PLATFORMS"] = []
+        _clear_desktop_assets(config)
 
     if save_firmware and (not is_partial_run or wants("firmware")):
         rerun_menu = True
@@ -928,7 +952,7 @@ def _setup_downloads(
     if save_desktop and (not is_partial_run or wants("desktop")):
         rerun_menu = True
         if is_partial_run:
-            if config.get("SELECTED_DESKTOP_PLATFORMS"):
+            if _get_desktop_assets(config):
                 rerun_menu_choice = _safe_input(
                     "Re-run the desktop client selection menu? [y/n] (default: yes): ",
                     default="y",
@@ -947,16 +971,20 @@ def _setup_downloads(
                     "No desktop assets selected. Desktop clients will not be downloaded."
                 )
                 config["SAVE_DESKTOP_APP"] = False
-                config["SELECTED_DESKTOP_PLATFORMS"] = []
+                _clear_desktop_assets(config)
                 save_desktop = False
             else:
-                config["SELECTED_DESKTOP_PLATFORMS"] = selected_assets
-        elif not config.get("SELECTED_DESKTOP_PLATFORMS"):
+                _set_desktop_assets(config, selected_assets)
+        else:
+            # Not re-running menu, but ensure both keys are set for backward compat
+            existing = _get_desktop_assets(config)
+            _set_desktop_assets(config, existing)
+        if not _get_desktop_assets(config):
             print(
                 "No existing desktop selection found. Desktop clients will not be downloaded."
             )
             config["SAVE_DESKTOP_APP"] = False
-            config["SELECTED_DESKTOP_PLATFORMS"] = []
+            _clear_desktop_assets(config)
             save_desktop = False
 
     # --- Desktop Prerelease Configuration ---
@@ -1914,8 +1942,6 @@ def _setup_base(
                     if e.stderr:
                         print(f"Error details:\n{e.stderr.decode(errors='ignore')}")
                     print("You can migrate manually later using the steps above.")
-
-        from fetchtastic.log_utils import logger
 
         separator = "=" * 60
         logger.info(f"{separator}\n")
