@@ -1246,3 +1246,138 @@ class TestMeshtasticAndroidAppDownloader:
         # Should return prereleases that match expected base version
         assert len(result) == 1
         assert result[0].tag_name == "v1.0.1-beta"
+
+    def test_get_legacy_android_base_dir(self, downloader, tmp_path):
+        """Test legacy Android base directory path."""
+        result = downloader._get_legacy_android_base_dir()
+
+        expected = os.path.join(str(tmp_path / "downloads"), "apks")
+        assert result == expected
+
+    def test_get_legacy_prerelease_base_dir(self, downloader, tmp_path):
+        """Test legacy prerelease base directory path."""
+        result = downloader._get_legacy_prerelease_base_dir()
+
+        expected = os.path.join(
+            str(tmp_path / "downloads"), "apks", APK_PRERELEASES_DIR_NAME
+        )
+        assert result == expected
+
+    def test_resolve_release_dir_prefers_existing_preferred_path(self, tmp_path):
+        """Test _resolve_release_dir returns existing preferred path."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        preferred_dir = (
+            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
+        )
+        preferred_dir.mkdir(parents=True)
+
+        result = downloader._resolve_release_dir(
+            "v2.7.10", is_prerelease=False, create_if_missing=False
+        )
+
+        assert result == str(preferred_dir)
+
+    def test_resolve_release_dir_uses_legacy_path_when_preferred_missing(
+        self, tmp_path
+    ):
+        """Test _resolve_release_dir falls back to legacy path when preferred missing."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        legacy_dir = tmp_path / "apks" / "v2.7.10"
+        legacy_dir.mkdir(parents=True)
+
+        result = downloader._resolve_release_dir(
+            "v2.7.10", is_prerelease=False, create_if_missing=False
+        )
+
+        assert result == str(legacy_dir)
+
+    def test_resolve_release_dir_creates_preferred_when_create_if_missing_true(
+        self, tmp_path
+    ):
+        """Test _resolve_release_dir creates preferred dir when create_if_missing=True."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        preferred_dir = (
+            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
+        )
+        assert not preferred_dir.exists()
+
+        result = downloader._resolve_release_dir(
+            "v2.7.10", is_prerelease=False, create_if_missing=True
+        )
+
+        assert result == str(preferred_dir)
+        assert preferred_dir.exists()
+
+    def test_resolve_release_dir_returns_preferred_without_creating_when_false(
+        self, tmp_path
+    ):
+        """Test _resolve_release_dir returns preferred path without creating when create_if_missing=False."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        preferred_dir = (
+            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
+        )
+        assert not preferred_dir.exists()
+
+        result = downloader._resolve_release_dir(
+            "v2.7.10", is_prerelease=False, create_if_missing=False
+        )
+
+        assert result == str(preferred_dir)
+        assert not preferred_dir.exists()
+
+    def test_resolve_release_dir_prerelease_prefers_existing_preferred_path(
+        self, tmp_path
+    ):
+        """Test _resolve_release_dir for prereleases returns existing preferred path."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        preferred_dir = (
+            tmp_path
+            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+            / APK_PRERELEASES_DIR_NAME
+            / "v2.7.10-open.1"
+        )
+        preferred_dir.mkdir(parents=True)
+
+        result = downloader._resolve_release_dir(
+            "v2.7.10-open.1", is_prerelease=True, create_if_missing=False
+        )
+
+        assert result == str(preferred_dir)
+
+    def test_resolve_release_dir_prerelease_uses_legacy_path_when_preferred_missing(
+        self, tmp_path
+    ):
+        """Test _resolve_release_dir for prereleases falls back to legacy path."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        legacy_dir = tmp_path / "apks" / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.1"
+        legacy_dir.mkdir(parents=True)
+
+        result = downloader._resolve_release_dir(
+            "v2.7.10-open.1", is_prerelease=True, create_if_missing=False
+        )
+
+        assert result == str(legacy_dir)

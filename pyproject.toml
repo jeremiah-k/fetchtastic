@@ -122,14 +122,27 @@ output = "coverage.xml"
 directory = "htmlcov"
 
 [tool.coverage.components]
-core = [
+core_downloads = [
+  "src/fetchtastic/download/desktop.py",
+  "src/fetchtastic/download/android.py",
+  "src/fetchtastic/download/firmware.py",
+  "src/fetchtastic/download/orchestrator.py",
+  "src/fetchtastic/download/cli_integration.py",
+  "src/fetchtastic/download/base.py",
+  "src/fetchtastic/download/files.py",
+  "src/fetchtastic/download/cache.py",
+  "src/fetchtastic/download/version.py",
+  "src/fetchtastic/download/async_downloader.py",
+  "src/fetchtastic/download/async_core.py",
+  "src/fetchtastic/download/async_client.py",
   "src/fetchtastic/downloader.py",
   "src/fetchtastic/repo_downloader.py",
   "src/fetchtastic/utils.py",
 ]
-interface = [
+user_interface = [
   "src/fetchtastic/cli.py",
   "src/fetchtastic/menu_apk.py",
+  "src/fetchtastic/menu_desktop.py",
   "src/fetchtastic/menu_firmware.py",
   "src/fetchtastic/menu_repo.py",
 ]
@@ -137,6 +150,12 @@ configuration = ["src/fetchtastic/setup_config.py"]
 infrastructure = [
   "src/fetchtastic/log_utils.py",
   "src/fetchtastic/constants.py",
+  "src/fetchtastic/download/__init__.py",
+  "src/fetchtastic/download/interfaces.py",
+  "src/fetchtastic/download/config_utils.py",
+  "src/fetchtastic/download/github_source.py",
+  "src/fetchtastic/download/release_history.py",
+  "src/fetchtastic/download/prerelease_history.py",
   "src/fetchtastic/__init__.py",
 ]
 

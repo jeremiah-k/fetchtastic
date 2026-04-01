@@ -2,6 +2,7 @@
 #
 # Comprehensive unit tests for the DownloadOrchestrator class.
 
+import time
 from unittest.mock import Mock, patch
 
 import pytest
@@ -66,6 +67,8 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.desktop_downloader = Mock()
+        orch.desktop_downloader.download_dir = "/tmp/test"
 
         def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
             return initial_releases, initial_releases, current_fetch_limit
@@ -733,3 +736,1086 @@ class TestDownloadOrchestrator:
         assert result.retry_count == 0
         assert isinstance(result.is_retryable, bool)
         assert result.is_retryable is orchestrator._is_download_retryable(result)
+
+    def test_is_connected_to_wifi_non_termux(self):
+        """is_connected_to_wifi returns True on non-Termux platforms."""
+        with patch("fetchtastic.download.orchestrator.is_termux", return_value=False):
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is True
+
+    def test_is_connected_to_wifi_termux_success(self):
+        """is_connected_to_wifi returns True when Termux API reports connected."""
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = Mock(
+                returncode=0,
+                stdout='{"supplicant_state": "COMPLETED", "ip": "192.168.1.100"}',
+                stderr="",
+            )
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is True
+
+    def test_is_connected_to_wifi_termux_non_zero_exit(self):
+        """is_connected_to_wifi returns False when Termux API exits non-zero."""
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch("subprocess.run") as mock_run,
+            patch("fetchtastic.download.orchestrator.logger") as mock_logger,
+        ):
+            mock_run.return_value = Mock(
+                returncode=1, stdout="", stderr="error message"
+            )
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is False
+            mock_logger.warning.assert_called()
+
+    def test_is_connected_to_wifi_termux_empty_output(self):
+        """is_connected_to_wifi returns False when Termux API returns empty output."""
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is False
+
+    def test_is_connected_to_wifi_termux_non_dict_json(self):
+        """is_connected_to_wifi returns False when JSON is not a dict."""
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = Mock(returncode=0, stdout='"not a dict"', stderr="")
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is False
+
+    def test_is_connected_to_wifi_termux_json_decode_error(self):
+        """is_connected_to_wifi returns False on JSON decode error."""
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch("subprocess.run") as mock_run,
+            patch("fetchtastic.download.orchestrator.logger") as mock_logger,
+        ):
+            mock_run.return_value = Mock(returncode=0, stdout="not json", stderr="")
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is False
+            mock_logger.warning.assert_called()
+
+    def test_is_connected_to_wifi_termux_file_not_found(self):
+        """is_connected_to_wifi returns False when termux-wifi-connectioninfo not found."""
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch("subprocess.run", side_effect=FileNotFoundError()),
+            patch("fetchtastic.download.orchestrator.logger") as mock_logger,
+        ):
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is False
+            mock_logger.warning.assert_called()
+
+    def test_is_connected_to_wifi_termux_os_error(self):
+        """is_connected_to_wifi returns False on OSError."""
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch("subprocess.run", side_effect=OSError("test error")),
+            patch("fetchtastic.download.orchestrator.logger") as mock_logger,
+        ):
+            from fetchtastic.download.orchestrator import is_connected_to_wifi
+
+            assert is_connected_to_wifi() is False
+            mock_logger.warning.assert_called()
+
+    def test_process_desktop_downloads_disabled(self, orchestrator):
+        """Desktop processing should skip when disabled in config."""
+        orchestrator.config["SAVE_DESKTOP_APP"] = False
+
+        orchestrator._process_desktop_downloads()
+
+        orchestrator.desktop_downloader.get_releases.assert_not_called()
+
+    def test_process_desktop_downloads_no_releases(self, orchestrator):
+        """Desktop processing should stop when no releases are found."""
+        orchestrator.desktop_downloader.get_releases.return_value = []
+        orchestrator.config["SAVE_DESKTOP_APP"] = True
+
+        orchestrator._process_desktop_downloads()
+
+        orchestrator.desktop_downloader.get_releases.assert_called_once()
+
+    def test_process_desktop_downloads_complete_release(self, orchestrator):
+        """Desktop processing should skip complete releases."""
+        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        orchestrator.desktop_downloader.get_releases.return_value = [release]
+        orchestrator.desktop_downloader.update_release_history.return_value = {}
+        orchestrator.desktop_downloader.is_release_complete.return_value = True
+        orchestrator.desktop_downloader.handle_prereleases.return_value = []
+        orchestrator._download_desktop_release = Mock()
+
+        orchestrator._process_desktop_downloads()
+
+        orchestrator._download_desktop_release.assert_not_called()
+
+    def test_process_desktop_downloads_with_prerelease(self, orchestrator):
+        """Desktop processing should handle prerelease assets."""
+        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        orchestrator.config["CHECK_DESKTOP_PRERELEASES"] = True
+        release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        prerelease = Release(
+            tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.dmg")]
+        )
+        prerelease.assets[0].name = "app.dmg"
+        orchestrator.desktop_downloader.get_releases.return_value = [release]
+        orchestrator.desktop_downloader.update_release_history.return_value = {}
+        orchestrator.desktop_downloader.is_release_complete.return_value = False
+        orchestrator.desktop_downloader.handle_prereleases.return_value = [prerelease]
+        orchestrator.desktop_downloader.should_download_asset.return_value = True
+        orchestrator.desktop_downloader.get_assets.return_value = prerelease.assets
+        mock_result = Mock(spec=DownloadResult)
+        mock_result.success = True
+        mock_result.was_skipped = False
+        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
+        orchestrator._download_desktop_release = Mock(return_value=True)
+
+        orchestrator._process_desktop_downloads()
+
+        orchestrator.desktop_downloader.download_desktop.assert_called_once()
+
+    def test_process_desktop_downloads_error_handling(self, orchestrator):
+        """Desktop processing should handle exceptions gracefully."""
+        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        orchestrator.desktop_downloader.get_releases.side_effect = OSError("test error")
+
+        orchestrator._process_desktop_downloads()
+
+    def test_download_desktop_release_success(self, orchestrator):
+        """Test successful desktop release download."""
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+        asset = Mock()
+        asset.name = "app.dmg"
+        orchestrator.desktop_downloader.get_assets.return_value = [asset]
+        orchestrator.desktop_downloader.should_download_asset.return_value = True
+        mock_result = Mock(spec=DownloadResult)
+        mock_result.success = True
+        mock_result.was_skipped = False
+        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
+        orchestrator._handle_download_result = Mock()
+
+        result = orchestrator._download_desktop_release(release)
+
+        assert result is True
+        orchestrator.desktop_downloader.download_desktop.assert_called_once()
+
+    def test_download_desktop_release_skipped(self, orchestrator):
+        """Test desktop release download when skipped."""
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+        asset = Mock()
+        asset.name = "app.dmg"
+        orchestrator.desktop_downloader.get_assets.return_value = [asset]
+        orchestrator.desktop_downloader.should_download_asset.return_value = True
+        mock_result = Mock(spec=DownloadResult)
+        mock_result.success = True
+        mock_result.was_skipped = True
+        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
+        orchestrator._handle_download_result = Mock()
+
+        result = orchestrator._download_desktop_release(release)
+
+        assert result is False
+
+    def test_download_desktop_release_error(self, orchestrator):
+        """Test desktop release download with error."""
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+        asset = Mock()
+        asset.name = "app.dmg"
+        orchestrator.desktop_downloader.get_assets.return_value = [asset]
+        orchestrator.desktop_downloader.should_download_asset.return_value = True
+        orchestrator.desktop_downloader.download_desktop.side_effect = OSError(
+            "test error"
+        )
+
+        result = orchestrator._download_desktop_release(release)
+
+        assert result is False
+
+    def test_download_android_release_error(self, orchestrator):
+        """Test Android release download with error."""
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+        asset = Mock()
+        asset.name = "app.apk"
+        release.assets = [asset]
+        orchestrator.android_downloader.should_download_asset.return_value = True
+        orchestrator.android_downloader.download_apk.side_effect = OSError("test error")
+
+        result = orchestrator._download_android_release(release)
+
+        assert result is False
+
+    def test_ensure_releases_with_zero_limit(self, orchestrator):
+        """_ensure_releases should return empty list when limit is 0."""
+        result = orchestrator._ensure_android_releases(limit=0)
+        assert result == []
+
+    def test_ensure_releases_with_cached_and_limit(self, orchestrator):
+        """_ensure_releases should slice cached releases when limit is set."""
+        releases = [
+            Release(tag_name="v1.0.0", prerelease=False, assets=[]),
+            Release(tag_name="v2.0.0", prerelease=False, assets=[]),
+        ]
+        orchestrator.android_releases = releases
+        orchestrator._android_releases_fetch_limit = 10
+
+        result = orchestrator._ensure_android_releases(limit=1)
+
+        assert len(result) == 1
+        assert result[0].tag_name == "v1.0.0"
+
+    def test_check_releases_complete_empty(self, orchestrator):
+        """_check_releases_complete should return empty list for no releases."""
+        result = orchestrator._check_releases_complete([], Mock())
+        assert result == []
+
+    def test_check_releases_complete_exception(self, orchestrator):
+        """_check_releases_complete should handle exceptions in checker."""
+        release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        checker = Mock(side_effect=ValueError("test error"))
+
+        result = orchestrator._check_releases_complete([release], checker)
+
+        assert result == [False]
+
+    def test_handle_download_result_skipped_prerelease(self, orchestrator):
+        """_handle_download_result should not log debug for skipped prereleases."""
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.was_skipped = True
+        result.release_tag = "v1.0.0"
+
+        orchestrator._handle_download_result(result, "android_prerelease")
+
+        assert result in orchestrator.download_results
+
+    def test_handle_download_result_with_download_url(self, orchestrator):
+        """_handle_download_result should log URL when present."""
+        result = Mock(spec=DownloadResult)
+        result.success = False
+        result.error_message = "test error"
+        result.release_tag = "v1.0.0"
+        result.download_url = "https://example.com/file.apk"
+
+        orchestrator._handle_download_result(result, "android")
+
+        assert result in orchestrator.failed_downloads
+
+    def test_handle_download_result_skipped_non_prerelease(self, orchestrator):
+        """_handle_download_result should log debug for skipped non-prerelease."""
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.was_skipped = True
+        result.release_tag = "v1.0.0"
+
+        orchestrator._handle_download_result(result, "android")
+
+        assert result in orchestrator.download_results
+
+    def test_process_firmware_downloads_symlink_cleanup(self, tmp_path):
+        """Firmware processing should skip symlinks in prerelease cleanup."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": [],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease"
+        prerelease_dir.mkdir(parents=True)
+        symlink_target = tmp_path / "target"
+        symlink_target.mkdir()
+        symlink = prerelease_dir / "firmware-2.0.0.abcdef"
+        symlink.symlink_to(symlink_target)
+
+        orch.firmware_downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v1.0.0", prerelease=False)]
+        )
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+
+        orch._process_firmware_downloads()
+
+        assert symlink.exists()
+
+    def test_process_firmware_downloads_non_dir_cleanup(self, tmp_path):
+        """Firmware processing should skip non-directory items in prerelease cleanup."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": [],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease"
+        prerelease_dir.mkdir(parents=True)
+        file_item = prerelease_dir / "firmware-2.0.0.abcdef.txt"
+        file_item.write_text("test")
+
+        orch.firmware_downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v1.0.0", prerelease=False)]
+        )
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+
+        orch._process_firmware_downloads()
+
+        assert file_item.exists()
+
+    def test_process_firmware_downloads_unparseable_version_cleanup(self, tmp_path):
+        """Firmware processing should skip directories with unparseable versions."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": [],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease"
+        prerelease_dir.mkdir(parents=True)
+        unparseable_dir = prerelease_dir / "firmware-invalid-version"
+        unparseable_dir.mkdir()
+
+        orch.firmware_downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v1.0.0", prerelease=False)]
+        )
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+
+        orch._process_firmware_downloads()
+
+        assert unparseable_dir.exists()
+
+    def test_process_firmware_downloads_error(self, orchestrator):
+        """Firmware processing should handle exceptions gracefully."""
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.firmware_downloader.get_releases.side_effect = OSError(
+            "test error"
+        )
+
+        orchestrator._process_firmware_downloads()
+
+    def test_download_firmware_release_no_assets_matched(self, orchestrator):
+        """Firmware download should return False when no assets match."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        release.assets = []
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = False
+
+        result = orchestrator._download_firmware_release(release)
+
+        assert result is False
+
+    def test_download_firmware_release_with_extraction(self, orchestrator):
+        """Firmware download should extract when AUTO_EXTRACT is enabled."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware.zip"
+        release.assets = [asset]
+        orchestrator.config["AUTO_EXTRACT"] = True
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        mock_result = Mock(spec=DownloadResult)
+        mock_result.success = True
+        mock_result.was_skipped = False
+        orchestrator.firmware_downloader.download_firmware.return_value = mock_result
+        mock_extract_result = Mock(spec=DownloadResult)
+        orchestrator.firmware_downloader.extract_firmware.return_value = (
+            mock_extract_result
+        )
+        orchestrator._handle_download_result = Mock()
+
+        orchestrator._download_firmware_release(release)
+
+        orchestrator.firmware_downloader.extract_firmware.assert_called_once()
+
+    def test_download_firmware_release_error(self, orchestrator):
+        """Firmware download should handle exceptions gracefully."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        release.assets = []
+        orchestrator.firmware_downloader.download_manifests.side_effect = OSError(
+            "test error"
+        )
+
+        result = orchestrator._download_firmware_release(release)
+
+        assert result is False
+
+    def test_retry_failed_downloads_with_sleep(self, orchestrator):
+        """Test retry with sleep delay."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.success = False
+        failed_result.is_retryable = True
+        failed_result.retry_count = 0
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/file.apk"
+        failed_result.file_path = "/tmp/file.apk"
+        failed_result.error_type = "network_error"
+        failed_result.file_type = "android"
+        failed_result.error_message = "test error"
+        failed_result.file_size = 1000
+
+        orchestrator.config["RETRY_DELAY_SECONDS"] = 1
+        orchestrator.config["MAX_RETRIES"] = 1
+        orchestrator.failed_downloads = [failed_result]
+        retry_result = Mock(spec=DownloadResult)
+        retry_result.success = True
+        retry_result.was_skipped = False
+        retry_result.file_path = "/tmp/file.apk"
+        retry_result.file_type = "android"
+        orchestrator._retry_single_failure = Mock(return_value=retry_result)
+
+        with patch("fetchtastic.download.orchestrator.time.sleep"):
+            orchestrator._retry_failed_downloads()
+
+        assert failed_result in orchestrator.download_results
+
+    def test_retry_failed_downlogs_max_retries_exceeded(self, orchestrator):
+        """Test retry when max retries is exceeded in retryable check."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.success = False
+        failed_result.is_retryable = True
+        failed_result.retry_count = 3
+        failed_result.release_tag = "v1.0.0"
+
+        orchestrator.config["MAX_RETRIES"] = 3
+        orchestrator.failed_downloads = [failed_result]
+
+        orchestrator._retry_failed_downloads()
+
+        assert failed_result in orchestrator.failed_downloads
+
+    def test_retry_failed_downloads_exception_during_retry(self, orchestrator):
+        """Test retry when exception occurs during retry."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.success = False
+        failed_result.is_retryable = True
+        failed_result.retry_count = 0
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/file.apk"
+        failed_result.file_path = "/tmp/file.apk"
+        failed_result.error_type = "network_error"
+        failed_result.file_type = "android"
+        failed_result.error_message = "test error"
+        failed_result.file_size = 1000
+
+        orchestrator.config["RETRY_DELAY_SECONDS"] = 0
+        orchestrator.config["MAX_RETRIES"] = 3
+        orchestrator.failed_downloads = [failed_result]
+        orchestrator._retry_single_failure = Mock(side_effect=OSError("retry failed"))
+
+        orchestrator._retry_failed_downloads()
+
+        assert failed_result.is_retryable is False
+
+    def test_retry_single_failure_missing_url(self, orchestrator):
+        """_retry_single_failure should handle missing URL."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = None
+        failed_result.file_path = "/tmp/file.apk"
+        failed_result.retry_count = 0
+        failed_result.file_type = "android"
+        failed_result.file_size = 1000
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+        assert "missing URL" in result.error_message
+
+    def test_retry_single_failure_missing_path(self, orchestrator):
+        """_retry_single_failure should handle missing target path."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/file.apk"
+        failed_result.file_path = None
+        failed_result.retry_count = 0
+        failed_result.file_type = "android"
+        failed_result.file_size = 1000
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+
+    def test_retry_single_failure_unsupported_file_type(self, orchestrator):
+        """_retry_single_failure should handle unsupported file types."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/file.dat"
+        failed_result.file_path = "/tmp/file.dat"
+        failed_result.retry_count = 0
+        failed_result.file_type = "unknown"
+        failed_result.file_size = 1000
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+
+    def test_retry_single_failure_firmware_type(self, orchestrator):
+        """_retry_single_failure should use firmware downloader for firmware type."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/firmware.zip"
+        failed_result.file_path = "/tmp/firmware.zip"
+        failed_result.retry_count = 0
+        failed_result.file_type = "firmware"
+        failed_result.file_size = 1000
+
+        orchestrator.firmware_downloader.download = Mock(return_value=True)
+        orchestrator.firmware_downloader.verify = Mock(return_value=True)
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is True
+        orchestrator.firmware_downloader.download.assert_called_once()
+
+    def test_retry_single_failure_desktop_type(self, orchestrator):
+        """_retry_single_failure should use desktop downloader for desktop type."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/app.dmg"
+        failed_result.file_path = "/tmp/app.dmg"
+        failed_result.retry_count = 0
+        failed_result.file_type = "desktop"
+        failed_result.file_size = 1000
+
+        orchestrator.desktop_downloader.download = Mock(return_value=True)
+        orchestrator.desktop_downloader.verify = Mock(return_value=True)
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is True
+        orchestrator.desktop_downloader.download.assert_called_once()
+
+    def test_retry_single_failure_desktop_prerelease_type(self, orchestrator):
+        """_retry_single_failure should use desktop downloader for desktop_prerelease type."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/app.dmg"
+        failed_result.file_path = "/tmp/app.dmg"
+        failed_result.retry_count = 0
+        failed_result.file_type = "desktop_prerelease"
+        failed_result.file_size = 1000
+
+        orchestrator.desktop_downloader.download = Mock(return_value=True)
+        orchestrator.desktop_downloader.verify = Mock(return_value=True)
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is True
+
+    def test_retry_single_failure_firmware_manifest_type(self, orchestrator):
+        """_retry_single_failure should use firmware downloader for firmware_manifest type."""
+        from fetchtastic.constants import FILE_TYPE_FIRMWARE_MANIFEST
+
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/firmware.json"
+        failed_result.file_path = "/tmp/firmware.json"
+        failed_result.retry_count = 0
+        failed_result.file_type = FILE_TYPE_FIRMWARE_MANIFEST
+        failed_result.file_size = 1000
+
+        orchestrator.firmware_downloader.download = Mock(return_value=True)
+        orchestrator.firmware_downloader.verify = Mock(return_value=True)
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is True
+
+    def test_retry_single_failure_download_succeeds_verify_fails(self, orchestrator):
+        """_retry_single_failure should fail when download succeeds but verify fails."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/file.apk"
+        failed_result.file_path = "/tmp/file.apk"
+        failed_result.retry_count = 0
+        failed_result.file_type = "android"
+        failed_result.file_size = 1000
+
+        orchestrator.android_downloader.download = Mock(return_value=True)
+        orchestrator.android_downloader.verify = Mock(return_value=False)
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+
+    def test_retry_single_failure_exception(self, orchestrator):
+        """_retry_single_failure should handle exceptions."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/file.apk"
+        failed_result.file_path = "/tmp/file.apk"
+        failed_result.retry_count = 0
+        failed_result.file_type = "android"
+        failed_result.file_size = 1000
+
+        orchestrator.android_downloader.download = Mock(
+            side_effect=OSError("download error")
+        )
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+        assert result.is_retryable is False
+
+    def test_create_failure_result_with_override(self, orchestrator):
+        """_create_failure_result should respect is_retryable_override."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.file_size = 1000
+        failed_result.retry_count = 0
+        failed_result.retry_timestamp = "2024-01-01 00:00:00"
+
+        from pathlib import Path
+
+        result = orchestrator._create_failure_result(
+            failed_result,
+            Path("/tmp/file.apk"),
+            "https://example.com/file.apk",
+            "android",
+            "test error",
+            is_retryable_override=True,
+        )
+
+        assert result.success is False
+        assert result.is_retryable is True
+
+    def test_create_failure_result_with_exception_message(self, orchestrator):
+        """_create_failure_result should prefer exception_message."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.file_size = 1000
+        failed_result.retry_count = 0
+        failed_result.retry_timestamp = "2024-01-01 00:00:00"
+
+        from pathlib import Path
+
+        result = orchestrator._create_failure_result(
+            failed_result,
+            Path("/tmp/file.apk"),
+            "https://example.com/file.apk",
+            "android",
+            "test error",
+            exception_message="exception message",
+        )
+
+        assert result.error_message == "exception message"
+
+    def test_generate_retry_report_with_retryable(self, orchestrator):
+        """_generate_retry_report should handle retryable failures."""
+        retryable = Mock(spec=DownloadResult)
+        retryable.file_type = "android"
+        retryable.retry_count = 1
+        non_retryable = Mock(spec=DownloadResult)
+        non_retryable.error_type = "validation_error"
+
+        orchestrator.failed_downloads = []
+        orchestrator._generate_retry_report([retryable], [non_retryable])
+
+    def test_generate_retry_report_empty(self, orchestrator):
+        """_generate_retry_report should handle empty lists."""
+        orchestrator._generate_retry_report([], [])
+
+    def test_enhance_metadata_with_repo_path(self, orchestrator):
+        """_enhance_download_results_with_metadata should detect repo paths."""
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.file_path = "/tmp/repo-dls/somefile.dat"
+        result.file_type = None
+        result.was_skipped = False
+        orchestrator.download_results = [result]
+        orchestrator.failed_downloads = []
+
+        orchestrator._enhance_download_results_with_metadata()
+
+        from fetchtastic.constants import FILE_TYPE_REPOSITORY
+
+        assert result.file_type == FILE_TYPE_REPOSITORY
+
+    def test_enhance_metadata_with_desktop_extension(self, orchestrator):
+        """_enhance_download_results_with_metadata should detect desktop extensions."""
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.file_path = "/tmp/app.dmg"
+        result.file_type = None
+        result.was_skipped = False
+        orchestrator.download_results = [result]
+        orchestrator.failed_downloads = []
+
+        orchestrator._enhance_download_results_with_metadata()
+
+        from fetchtastic.constants import FILE_TYPE_DESKTOP
+
+        assert result.file_type == FILE_TYPE_DESKTOP
+
+    def test_enhance_metadata_with_unknown_path(self, orchestrator):
+        """_enhance_download_results_with_metadata should handle unknown paths."""
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.file_path = "/tmp/unknown.dat"
+        result.file_type = None
+        result.was_skipped = False
+        orchestrator.download_results = [result]
+        orchestrator.failed_downloads = []
+
+        orchestrator._enhance_download_results_with_metadata()
+
+        from fetchtastic.constants import FILE_TYPE_UNKNOWN
+
+        assert result.file_type == FILE_TYPE_UNKNOWN
+
+    def test_is_download_retryable_unknown_error(self, orchestrator):
+        """_is_download_retryable should return True for unknown error types."""
+        result = Mock(spec=DownloadResult)
+        result.error_type = "unknown_error_type"
+
+        assert orchestrator._is_download_retryable(result) is True
+
+    def test_log_download_summary_with_skipped(self, orchestrator):
+        """_log_download_summary should log skipped count."""
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.was_skipped = True
+        orchestrator.download_results = [result]
+        orchestrator.failed_downloads = []
+
+        orchestrator._log_download_summary(time.time())
+
+    def test_log_download_summary_with_failures(self, orchestrator):
+        """_log_download_summary should warn about failures."""
+        result = Mock(spec=DownloadResult)
+        result.success = False
+        orchestrator.download_results = []
+        orchestrator.failed_downloads = [result]
+
+        orchestrator._log_download_summary(time.time())
+
+    def test_log_prerelease_summary_missing_entries(self, orchestrator):
+        """_log_prerelease_summary should skip when history_entries is missing."""
+        orchestrator.firmware_prerelease_summary = {"history_entries": None}
+
+        orchestrator._log_prerelease_summary()
+
+    def test_log_prerelease_summary_invalid_clean_release(self, orchestrator):
+        """_log_prerelease_summary should skip when clean_latest_release is not string."""
+        orchestrator.firmware_prerelease_summary = {
+            "history_entries": [{"id": "1"}],
+            "clean_latest_release": 123,
+            "expected_version": "1.0.1",
+        }
+
+        orchestrator._log_prerelease_summary()
+
+    def test_log_prerelease_summary_invalid_expected_version(self, orchestrator):
+        """_log_prerelease_summary should skip when expected_version is not string."""
+        orchestrator.firmware_prerelease_summary = {
+            "history_entries": [{"id": "1"}],
+            "clean_latest_release": "v1.0.0",
+            "expected_version": 123,
+        }
+
+        orchestrator._log_prerelease_summary()
+
+    def test_log_prerelease_summary_success(self, orchestrator):
+        """_log_prerelease_summary should call downloader log method."""
+        orchestrator.firmware_prerelease_summary = {
+            "history_entries": [{"id": "1"}],
+            "clean_latest_release": "v1.0.0",
+            "expected_version": "1.0.1",
+        }
+        orchestrator.firmware_downloader.log_prerelease_summary = Mock()
+
+        orchestrator._log_prerelease_summary()
+
+        orchestrator.firmware_downloader.log_prerelease_summary.assert_called_once()
+
+    def test_log_firmware_history_with_filter_revoked(self, orchestrator):
+        """log_firmware_release_history_summary should filter revoked releases."""
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = True
+        orchestrator.config["KEEP_LAST_BETA"] = False
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [
+            Release(tag_name="v1.0.0", prerelease=False),
+            Release(tag_name="v0.9.0", prerelease=False),
+        ]
+        orchestrator.firmware_downloader.is_release_revoked = Mock(
+            side_effect=lambda r: r.tag_name == "v0.9.0"
+        )
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = [
+            Release(tag_name="v1.0.0", prerelease=False)
+        ]
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        manager.log_release_channel_summary.assert_called_once()
+
+    def test_cleanup_old_versions_with_desktop(self, orchestrator):
+        """cleanup_old_versions should clean desktop when enabled."""
+        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        orchestrator.config["DESKTOP_VERSIONS_TO_KEEP"] = 2
+        orchestrator._cleanup_deleted_prereleases = Mock()
+
+        orchestrator.cleanup_old_versions()
+
+        orchestrator.desktop_downloader.cleanup_old_versions.assert_called_once()
+
+    def test_cleanup_old_versions_error(self, orchestrator):
+        """cleanup_old_versions should handle exceptions gracefully."""
+        orchestrator.android_downloader.cleanup_old_versions.side_effect = OSError(
+            "test error"
+        )
+
+        orchestrator.cleanup_old_versions()
+
+    def test_cleanup_deleted_prereleases_no_latest_release(self, orchestrator):
+        """_cleanup_deleted_prereleases should exit when no latest release."""
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value=None
+        )
+
+        orchestrator._cleanup_deleted_prereleases()
+
+    def test_cleanup_deleted_prereleases_no_expected_version(self, orchestrator):
+        """_cleanup_deleted_prereleases should exit when no expected version."""
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v1.0.0"
+        )
+        orchestrator.version_manager.calculate_expected_prerelease_version = Mock(
+            return_value=None
+        )
+
+        orchestrator._cleanup_deleted_prereleases()
+
+    def test_cleanup_deleted_prereleases_no_deleted_entries(self, orchestrator):
+        """_cleanup_deleted_prereleases should exit when no deleted entries."""
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v1.0.0"
+        )
+        orchestrator.version_manager.calculate_expected_prerelease_version = Mock(
+            return_value="1.0.1"
+        )
+        orchestrator.prerelease_manager.get_prerelease_commit_history = Mock(
+            return_value=[{"status": "active"}]
+        )
+
+        orchestrator._cleanup_deleted_prereleases()
+
+    def test_cleanup_deleted_prereleases_with_deleted(self, tmp_path):
+        """_cleanup_deleted_prereleases should remove deleted directories."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease"
+        prerelease_dir.mkdir(parents=True)
+        deleted_dir = prerelease_dir / "firmware-1.0.1.abcdef"
+        deleted_dir.mkdir()
+
+        orch.firmware_downloader.get_latest_release_tag = Mock(return_value="v1.0.0")
+        orch.version_manager.calculate_expected_prerelease_version = Mock(
+            return_value="1.0.1"
+        )
+        orch.prerelease_manager.get_prerelease_commit_history = Mock(
+            return_value=[{"status": "deleted", "directory": "firmware-1.0.1.abcdef"}]
+        )
+
+        orch._cleanup_deleted_prereleases()
+
+        assert not deleted_dir.exists()
+
+    def test_cleanup_deleted_prereleases_unsafe_name(self, tmp_path):
+        """_cleanup_deleted_prereleases should skip unsafe directory names."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease"
+        prerelease_dir.mkdir(parents=True)
+        unsafe_dir = prerelease_dir / "firmware-1.0.1.abcdef"
+        unsafe_dir.mkdir()
+
+        orch.firmware_downloader.get_latest_release_tag = Mock(return_value="v1.0.0")
+        orch.version_manager.calculate_expected_prerelease_version = Mock(
+            return_value="1.0.1"
+        )
+        orch.prerelease_manager.get_prerelease_commit_history = Mock(
+            return_value=[{"status": "deleted", "directory": "../outside"}]
+        )
+
+        orch._cleanup_deleted_prereleases()
+
+        assert unsafe_dir.exists()
+
+    def test_cleanup_deleted_prereleases_error(self, orchestrator):
+        """_cleanup_deleted_prereleases should handle exceptions gracefully."""
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            side_effect=OSError("test error")
+        )
+
+        orchestrator._cleanup_deleted_prereleases()
+
+    def test_get_latest_versions_with_firmware_prerelease_prefix(self, orchestrator):
+        """get_latest_versions should strip firmware- prefix from prerelease."""
+        orchestrator.android_releases = []
+        orchestrator.desktop_releases = []
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v1.0.0"
+        )
+        orchestrator.version_manager.extract_clean_version = Mock(return_value="1.0.0")
+        orchestrator.version_manager.calculate_expected_prerelease_version = Mock(
+            return_value="1.0.1"
+        )
+        orchestrator.prerelease_manager.get_latest_active_prerelease_from_history = (
+            Mock(return_value=("firmware-1.0.1.abcdef", []))
+        )
+        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
+            return_value=None
+        )
+        orchestrator.desktop_downloader.get_latest_prerelease_tag = Mock(
+            return_value=None
+        )
+
+        versions = orchestrator.get_latest_versions()
+
+        assert versions["firmware_prerelease"] == "1.0.1.abcdef"
+
+    def test_get_latest_versions_with_firmware_prerelease_no_prefix(self, orchestrator):
+        """get_latest_versions should keep prerelease without firmware- prefix."""
+        orchestrator.android_releases = []
+        orchestrator.desktop_releases = []
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v1.0.0"
+        )
+        orchestrator.version_manager.extract_clean_version = Mock(return_value="1.0.0")
+        orchestrator.version_manager.calculate_expected_prerelease_version = Mock(
+            return_value="1.0.1"
+        )
+        orchestrator.prerelease_manager.get_latest_active_prerelease_from_history = (
+            Mock(return_value=("custom-1.0.1.abcdef", []))
+        )
+        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
+            return_value=None
+        )
+        orchestrator.desktop_downloader.get_latest_prerelease_tag = Mock(
+            return_value=None
+        )
+
+        versions = orchestrator.get_latest_versions()
+
+        assert versions["firmware_prerelease"] == "custom-1.0.1.abcdef"
+
+    def test_update_version_tracking_error(self, orchestrator):
+        """update_version_tracking should handle exceptions gracefully."""
+        orchestrator.android_downloader.get_releases = Mock(
+            side_effect=OSError("test error")
+        )
+
+        orchestrator.update_version_tracking()
+
+    def test_refresh_commit_history_cache_error(self, orchestrator):
+        """_refresh_commit_history_cache should handle exceptions gracefully."""
+        orchestrator.prerelease_manager.fetch_recent_repo_commits = Mock(
+            side_effect=OSError("test error")
+        )
+
+        orchestrator._refresh_commit_history_cache()
+
+    def test_manage_prerelease_tracking(self, orchestrator):
+        """_manage_prerelease_tracking should call all downloader methods."""
+        orchestrator._refresh_commit_history_cache = Mock()
+
+        orchestrator._manage_prerelease_tracking()
+
+        orchestrator.android_downloader.manage_prerelease_tracking_files.assert_called_once()
+        orchestrator.firmware_downloader.manage_prerelease_tracking_files.assert_called_once()
+        orchestrator.desktop_downloader.manage_prerelease_tracking_files.assert_called_once()
+
+    def test_manage_prerelease_tracking_error(self, orchestrator):
+        """_manage_prerelease_tracking should handle exceptions gracefully."""
+        orchestrator.android_downloader.manage_prerelease_tracking_files = Mock(
+            side_effect=OSError("test error")
+        )
+
+        orchestrator._manage_prerelease_tracking()
+
+    def test_run_download_pipeline_wifi_only_not_connected(self, orchestrator):
+        """Pipeline should skip when WIFI_ONLY and not connected."""
+        orchestrator.config["WIFI_ONLY"] = True
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            result = orchestrator.run_download_pipeline()
+
+        assert result == ([], [])
+        orchestrator._process_android_downloads.assert_not_called()
+
+    def test_get_firmware_keep_limit_invalid(self, orchestrator):
+        """_get_firmware_keep_limit should handle invalid values."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = "invalid"
+
+        result = orchestrator._get_firmware_keep_limit()
+
+        from fetchtastic.constants import DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+
+        assert result == DEFAULT_FIRMWARE_VERSIONS_TO_KEEP

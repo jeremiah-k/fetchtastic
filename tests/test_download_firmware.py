@@ -20,7 +20,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, FirmwareManifest, Release
 from fetchtastic.download.version import VersionManager
 
 
@@ -908,6 +908,314 @@ class TestFirmwareReleaseDownloader:
         assert parsed is not None
         assert parsed.has_mui is True
         assert parsed.has_inkhud is False
+
+    def test_parse_manifest_data_returns_none_on_exception(self, downloader):
+        """Manifest parsing should return None when dataclass construction fails."""
+        with patch(
+            "fetchtastic.download.firmware.FirmwareManifest",
+            side_effect=TypeError("bad data"),
+        ):
+            parsed = downloader._parse_manifest_data({"version": "1.0.0"})
+
+        assert parsed is None
+
+    def test_is_release_manifest_name_detects_release_json(self, downloader):
+        """Release-level manifest names should be detected."""
+        assert (
+            downloader._is_release_manifest_name("firmware-2.7.20.abcdef0.json") is True
+        )
+        assert downloader._is_release_manifest_name("FIRMWARE-2.7.20.json") is True
+
+    def test_is_release_manifest_name_rejects_device_manifest(self, downloader):
+        """Per-device manifests (.mt.json) should be rejected."""
+        assert (
+            downloader._is_release_manifest_name(
+                "firmware-rak4631-2.7.20.abcdef0.mt.json"
+            )
+            is False
+        )
+
+    def test_is_release_manifest_name_rejects_non_firmware_prefix(self, downloader):
+        """Non-firmware prefixed files should be rejected."""
+        assert downloader._is_release_manifest_name("other-2.7.20.json") is False
+        assert downloader._is_release_manifest_name("config.json") is False
+
+    def test_is_manifest_asset_name_accepts_both_types(self, downloader):
+        """Both per-device and release-level manifests should be accepted."""
+        assert (
+            downloader._is_manifest_asset_name(
+                "firmware-rak4631-2.7.20.abcdef0.mt.json"
+            )
+            is True
+        )
+        assert (
+            downloader._is_manifest_asset_name("firmware-2.7.20.abcdef0.json") is True
+        )
+
+    def test_is_manifest_asset_name_rejects_non_manifest(self, downloader):
+        """Non-manifest files should be rejected."""
+        assert (
+            downloader._is_manifest_asset_name("firmware-rak4631-2.7.20.zip") is False
+        )
+        assert downloader._is_manifest_asset_name("readme.txt") is False
+
+    def test_download_manifests_skips_unsafe_tag(self, downloader):
+        """Unsafe release tags should skip manifest downloads."""
+        release = Release(tag_name="../v1.0.0", prerelease=False, assets=[])
+        results = downloader.download_manifests(release)
+        assert results == []
+
+    def test_download_manifests_verification_failure(self, downloader, tmp_path):
+        """Manifest verification failure should be reported and file cleaned up."""
+        downloader.download_dir = str(tmp_path)
+
+        def _write_invalid_manifest(_url: str, target: str) -> bool:
+            Path(target).parent.mkdir(parents=True, exist_ok=True)
+            Path(target).write_text("{}", encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_invalid_manifest)
+        downloader.verify = Mock(return_value=False)
+        downloader.cleanup_file = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/manifest.json",
+                    size=100,
+                )
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error_type == "validation_error"
+        downloader.cleanup_file.assert_called_once()
+
+    def test_download_manifests_download_failure(self, downloader, tmp_path):
+        """Manifest download failure should be reported."""
+        downloader.download_dir = str(tmp_path)
+        downloader.download = Mock(return_value=False)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/manifest.json",
+                    size=100,
+                )
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error_type == "network_error"
+
+    def test_download_manifests_existing_invalid_json_redownloads(
+        self, downloader, tmp_path
+    ):
+        """Existing manifest with invalid JSON should be redownloaded."""
+        downloader.download_dir = str(tmp_path)
+
+        target_path = downloader.get_target_path_for_release(
+            "v2.7.20", "firmware-2.7.20.abcdef0.json"
+        )
+        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(target_path).write_text("not valid json", encoding="utf-8")
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).write_text('{"valid":true}', encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/manifest.json",
+                    size=14,
+                )
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is True
+        assert results[0].was_skipped is False
+        downloader.download.assert_called_once()
+
+    def test_get_manifest_for_device_returns_none_for_unsafe_tag(self, downloader):
+        """Unsafe release tags should return None from get_manifest_for_device."""
+        release = Release(tag_name="../v1.0.0", prerelease=False)
+        assert downloader.get_manifest_for_device(release) is None
+
+    def test_get_manifest_for_device_returns_none_for_missing_dir(
+        self, downloader, tmp_path
+    ):
+        """Missing release directories should return None."""
+        downloader.download_dir = str(tmp_path)
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        assert downloader.get_manifest_for_device(release) is None
+
+    def test_get_manifest_for_device_returns_first_manifest_when_no_slug(
+        self, downloader, tmp_path
+    ):
+        """When hwModelSlug is None, first valid manifest should be returned."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"hwModelSlug": "RAK4631", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "RAK4631"
+
+    def test_get_manifest_for_device_filters_by_slug(self, downloader, tmp_path):
+        """get_manifest_for_device should filter by hwModelSlug when provided."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"hwModelSlug": "RAK4631", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        manifest2 = version_dir / "firmware-tbeam-2.7.20.abcdef0.mt.json"
+        manifest2.write_text(
+            json.dumps({"hwModelSlug": "T_BEAM", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release, hwModelSlug="T_BEAM")
+
+        assert result is not None
+        assert result.hwModelSlug == "T_BEAM"
+
+    def test_get_manifest_for_device_skips_invalid_json(self, downloader, tmp_path):
+        """Invalid manifest files should be skipped."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        bad_manifest = version_dir / "firmware-bad-2.7.20.abcdef0.mt.json"
+        bad_manifest.write_text("not json", encoding="utf-8")
+
+        good_manifest = version_dir / "firmware-good-2.7.20.abcdef0.mt.json"
+        good_manifest.write_text(
+            json.dumps({"hwModelSlug": "GOOD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "GOOD"
+
+    def test_get_manifest_for_device_returns_none_when_no_match(
+        self, downloader, tmp_path
+    ):
+        """get_manifest_for_device should return None when no matching slug is found."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"hwModelSlug": "RAK4631", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release, hwModelSlug="NONEXISTENT")
+
+        assert result is None
+
+    def test_get_manifest_for_device_skips_unparseable_manifest(
+        self, downloader, tmp_path, mocker
+    ):
+        """Manifests that fail to parse should be skipped."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"hwModelSlug": "RAK4631"}),
+            encoding="utf-8",
+        )
+
+        mocker.patch.object(
+            downloader,
+            "_parse_manifest_data",
+            side_effect=[
+                None,
+                FirmwareManifest(version="2.7.20", hwModelSlug="RAK4631"),
+            ],
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "RAK4631"
+
+    def test_matches_prerelease_selection_returns_true_without_patterns(
+        self, downloader
+    ):
+        """_matches_prerelease_selection should return True when no patterns are configured."""
+        assert downloader._matches_prerelease_selection("any-file.zip", []) is True
+
+    def test_matches_prerelease_selection_matches_patterns(self, downloader, mocker):
+        """_matches_prerelease_selection should delegate to matches_extract_patterns."""
+        mock_match = mocker.patch(
+            "fetchtastic.download.firmware.matches_extract_patterns", return_value=True
+        )
+        assert (
+            downloader._matches_prerelease_selection(
+                "firmware-rak4631.zip", ["rak4631"]
+            )
+            is True
+        )
+        mock_match.assert_called_once()
+
+    def test_matches_prerelease_selection_keeps_release_manifest(
+        self, downloader, mocker
+    ):
+        """_matches_prerelease_selection should keep release-level manifest even without pattern match."""
+        mocker.patch(
+            "fetchtastic.download.firmware.matches_extract_patterns", return_value=False
+        )
+        assert (
+            downloader._matches_prerelease_selection(
+                "firmware-2.7.20.abcdef0.json", ["rak4631"]
+            )
+            is True
+        )
 
     def test_download_manifests_redownloads_when_existing_size_mismatches(
         self, downloader, tmp_path
