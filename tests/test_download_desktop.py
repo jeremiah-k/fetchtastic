@@ -807,7 +807,7 @@ def test_cleanup_prerelease_directories_skips_symlinks(downloader, tmp_path):
     link_target = tmp_path / "link_target"
     link_target.mkdir()
     symlink = desktop_dir / "v2.7.10"
-    symlink.symlink_to(link_target)
+    symlink.symlink_to(link_target, target_is_directory=True)
 
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
     downloader.cleanup_prerelease_directories(cached_releases=releases)
@@ -910,7 +910,9 @@ def test_handle_prereleases_filters_by_patterns(downloader):
         Release(tag_name="v2.7.20", prerelease=False, assets=[]),
     ]
     result = downloader.handle_prereleases(releases)
-    assert len(result) >= 0
+    # Pattern "*-open*" uses glob syntax but filtering uses substring matching,
+    # so it won't match any prereleases (expected behavior is empty result)
+    assert len(result) == 0
 
 
 def test_handle_prereleases_with_expected_base(downloader):
@@ -940,7 +942,9 @@ def test_handle_prereleases_with_expected_base(downloader):
         Release(tag_name="v2.7.20", prerelease=False, assets=[]),
     ]
     result = downloader.handle_prereleases(releases)
-    assert len(result) >= 0
+    # Should only include prereleases matching expected base version 2.7.21
+    assert len(result) == 1
+    assert result[0].tag_name == "v2.7.21-open.1"
 
 
 def test_handle_prereleases_with_recent_commits(downloader):
@@ -971,7 +975,9 @@ def test_handle_prereleases_with_recent_commits(downloader):
     ]
     recent_commits = [{"sha": "abc1234567890"}]
     result = downloader.handle_prereleases(releases, recent_commits=recent_commits)
-    assert len(result) >= 0
+    # Should match prerelease containing the commit hash abc1234
+    assert len(result) == 1
+    assert result[0].tag_name == "v2.7.21-open.1-abc1234"
 
 
 def test_get_latest_prerelease_tag_no_releases(downloader):
@@ -1513,8 +1519,9 @@ def test_handle_prereleases_filtered_by_commits_empty_result(downloader):
     # Provide commits that don't match any prerelease tags
     recent_commits = [{"sha": "xyz9999"}]
     result = downloader.handle_prereleases(releases, recent_commits=recent_commits)
-    # When no commits match, should fall back to all prereleases
-    assert len(result) >= 0
+    # When no commits match, should fall back to all prereleases matching expected base
+    assert len(result) == 1
+    assert result[0].tag_name == "v2.7.21-open.1-abc1234"
 
 
 def test_get_latest_prerelease_tag_no_stable(downloader):

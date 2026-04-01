@@ -1402,6 +1402,8 @@ def test_copy_to_clipboard_func_unsupported_platform(mocker):
     """Test clipboard functionality on unsupported platform."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     mocker.patch("platform.system", return_value="FreeBSD")
+    result = cli.copy_to_clipboard_func("test text")
+    assert result is False  # Should return False for unsupported platforms
 
 
 # Tests for _normalize_download_main_result function

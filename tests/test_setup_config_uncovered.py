@@ -77,7 +77,7 @@ def test_setup_downloads_full_run_desktop_only(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["d", "n", "n", "n"],  # desktop only, no prerelease, no suffix
+        side_effect=["d", "n"],  # desktop only, no prerelease
     )
     mock_menu = mocker.patch(
         "fetchtastic.menu_desktop.run_menu",

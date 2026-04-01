@@ -961,7 +961,7 @@ def _setup_downloads(
 
     # --- Desktop Prerelease Configuration ---
     if save_desktop and (not is_partial_run or wants("desktop")):
-        check_desktop_prereleases_current = _coerce_bool(
+        _coerce_bool(
             config.get("CHECK_DESKTOP_PRERELEASES", DEFAULT_CHECK_DESKTOP_PRERELEASES)
         )
         check_desktop_prereleases_default = (

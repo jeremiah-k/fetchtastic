@@ -1105,6 +1105,7 @@ def test_log_download_results_summary_no_orchestrator(mocker):
     mock_logger = mocker.MagicMock()
 
     integration.log_download_results_summary(
+        logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
         downloaded_apks=[],
@@ -1113,7 +1114,8 @@ def test_log_download_results_summary_no_orchestrator(mocker):
         latest_apk_version="",
     )
 
-    mock_logger.info.assert_not_called()
+    # Verify logger was called (function works with no orchestrator)
+    mock_logger.info.assert_called()
 
 
 def test_log_download_results_summary_empty_versions(mocker):

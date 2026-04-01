@@ -1249,6 +1249,7 @@ class TestFirmwareReleaseDownloader:
         target_path = downloader.get_target_path_for_release(
             "v2.7.20", "firmware-2.7.20.abcdef0.json"
         )
+        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
         Path(target_path).write_text("{}", encoding="utf-8")
 
         def _write_manifest(_url: str, target: str) -> bool:
@@ -1285,6 +1286,7 @@ class TestFirmwareReleaseDownloader:
         target_path = downloader.get_target_path_for_release(
             "v2.7.20", "firmware-2.7.20.abcdef0.json"
         )
+        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
         Path(target_path).write_text("{}", encoding="utf-8")
         downloader.download = Mock(return_value=True)
 
@@ -2186,6 +2188,8 @@ def test_get_latest_version_logs_invalid_tracking_version():
     assert "does not match expected pattern" in mock_debug.call_args[0][0]
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 class TestFirmwareUncoveredBranches:
     """Targeted tests for previously uncovered branches in firmware.py."""
 

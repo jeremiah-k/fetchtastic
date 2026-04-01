@@ -738,6 +738,7 @@ class TestDownloadOrchestrator:
         assert isinstance(result.is_retryable, bool)
         assert result.is_retryable is orchestrator._is_download_retryable(result)
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_non_termux(self):
         """is_connected_to_wifi returns True on non-Termux platforms."""
         with patch("fetchtastic.download.orchestrator.is_termux", return_value=False):
@@ -745,6 +746,7 @@ class TestDownloadOrchestrator:
 
             assert is_connected_to_wifi() is True
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_termux_success(self):
         """is_connected_to_wifi returns True when Termux API reports connected."""
         with (
@@ -760,6 +762,7 @@ class TestDownloadOrchestrator:
 
             assert is_connected_to_wifi() is True
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_termux_non_zero_exit(self):
         """is_connected_to_wifi returns False when Termux API exits non-zero."""
         with (
@@ -775,6 +778,7 @@ class TestDownloadOrchestrator:
             assert is_connected_to_wifi() is False
             mock_logger.warning.assert_called()
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_termux_empty_output(self):
         """is_connected_to_wifi returns False when Termux API returns empty output."""
         with (
@@ -786,6 +790,7 @@ class TestDownloadOrchestrator:
 
             assert is_connected_to_wifi() is False
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_termux_non_dict_json(self):
         """is_connected_to_wifi returns False when JSON is not a dict."""
         with (
@@ -797,6 +802,7 @@ class TestDownloadOrchestrator:
 
             assert is_connected_to_wifi() is False
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_termux_json_decode_error(self):
         """is_connected_to_wifi returns False on JSON decode error."""
         with (
@@ -810,6 +816,7 @@ class TestDownloadOrchestrator:
             assert is_connected_to_wifi() is False
             mock_logger.warning.assert_called()
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_termux_file_not_found(self):
         """is_connected_to_wifi returns False when termux-wifi-connectioninfo not found."""
         with (
@@ -822,6 +829,7 @@ class TestDownloadOrchestrator:
             assert is_connected_to_wifi() is False
             mock_logger.warning.assert_called()
 
+    @pytest.mark.infrastructure
     def test_is_connected_to_wifi_termux_os_error(self):
         """is_connected_to_wifi returns False on OSError."""
         with (
