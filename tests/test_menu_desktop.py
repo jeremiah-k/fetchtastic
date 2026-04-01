@@ -66,6 +66,10 @@ class TestExtractWildcardPattern:
         result = menu_desktop.extract_wildcard_pattern("Meshtastic-2.7.14b1.dmg")
         assert result == "meshtastic.dmg"
 
+    def test_version_with_v_prefix_and_hash(self):
+        result = menu_desktop.extract_wildcard_pattern("Meshtastic-v2.7.14.1a06f88.dmg")
+        assert result == "meshtastic.dmg"
+
 
 class TestFetchDesktopAssetsErrorHandling:
     def test_request_exception(self, mocker):

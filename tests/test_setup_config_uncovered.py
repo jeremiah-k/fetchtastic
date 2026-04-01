@@ -66,6 +66,18 @@ def test_cron_check_command_required_non_str_path(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_get_desktop_assets_prefers_new_key_even_when_empty():
+    """Explicit empty new key should not fall back to legacy key."""
+    config = {
+        "SELECTED_DESKTOP_ASSETS": [],
+        "SELECTED_DESKTOP_PLATFORMS": ["legacy-value"],
+    }
+
+    assert setup_config._get_desktop_assets(config) == []
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_full_run_desktop_only(mocker):
     """Test full run with desktop-only choice (lines 775-777)."""
     from fetchtastic.setup_config import _setup_downloads
@@ -81,7 +93,7 @@ def test_setup_downloads_full_run_desktop_only(mocker):
     )
     mock_menu = mocker.patch(
         "fetchtastic.menu_desktop.run_menu",
-        return_value={"selected_assets": ["*Meshtastic*dmg*"]},
+        return_value={"selected_assets": ["meshtastic.dmg"]},
     )
 
     updated, save_apks, save_firmware = _setup_downloads(
@@ -91,7 +103,7 @@ def test_setup_downloads_full_run_desktop_only(mocker):
     assert save_apks is False
     assert save_firmware is False
     assert updated["SAVE_DESKTOP_APP"] is True
-    assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
+    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
     mock_menu.assert_called_once()
 
 
@@ -129,7 +141,7 @@ def test_setup_downloads_full_run_multiple_selection(mocker):
     )
     mocker.patch(
         "fetchtastic.menu_desktop.run_menu",
-        return_value={"selected_assets": ["*Meshtastic*dmg*"]},
+        return_value={"selected_assets": ["meshtastic.dmg"]},
     )
 
     updated, save_apks, save_firmware = _setup_downloads(
@@ -176,7 +188,7 @@ def test_setup_downloads_partial_desktop_section(mocker):
         "SAVE_APKS": False,
         "SAVE_FIRMWARE": False,
         "SAVE_DESKTOP_APP": True,
-        "SELECTED_DESKTOP_PLATFORMS": ["*Meshtastic*dmg*"],
+        "SELECTED_DESKTOP_PLATFORMS": ["meshtastic.dmg"],
     }
 
     def wants(section: str) -> bool:
@@ -188,7 +200,7 @@ def test_setup_downloads_partial_desktop_section(mocker):
     )
     mocker.patch(
         "fetchtastic.menu_desktop.run_menu",
-        return_value={"selected_assets": ["*Meshtastic*AppImage*"]},
+        return_value={"selected_assets": ["meshtastic.appimage"]},
     )
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
@@ -206,7 +218,7 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
         "SAVE_APKS": False,
         "SAVE_FIRMWARE": False,
         "SAVE_DESKTOP_APP": True,
-        "SELECTED_DESKTOP_PLATFORMS": ["*Meshtastic*dmg*"],
+        "SELECTED_DESKTOP_PLATFORMS": ["meshtastic.dmg"],
     }
 
     def wants(section: str) -> bool:
@@ -220,7 +232,7 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
-    assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
+    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
     mock_menu.assert_not_called()
 
 
@@ -290,7 +302,7 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
     config = {
         "SAVE_DESKTOP_APP": True,
         "CHECK_DESKTOP_PRERELEASES": True,
-        "SELECTED_DESKTOP_ASSETS": ["*Meshtastic*dmg*"],
+        "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg"],
     }
 
     def wants(_section: str) -> bool:
@@ -320,6 +332,32 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_partial_non_desktop_preserves_desktop_state(mocker):
+    """Partial runs outside desktop should not clear saved desktop selections."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": False,
+        "CHECK_DESKTOP_PRERELEASES": True,
+        "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg"],
+    }
+
+    def wants(section: str) -> bool:
+        return section == "android"
+
+    mocker.patch("builtins.input", side_effect=["n"])
+
+    updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
+
+    assert updated["SAVE_DESKTOP_APP"] is False
+    assert updated["CHECK_DESKTOP_PRERELEASES"] is True
+    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_backward_compat_old_key(mocker):
     """Test backward compatibility: Old SELECTED_DESKTOP_PLATFORMS key should still work."""
     from fetchtastic.setup_config import _setup_downloads
@@ -328,7 +366,7 @@ def test_setup_downloads_backward_compat_old_key(mocker):
         "SAVE_APKS": False,
         "SAVE_FIRMWARE": False,
         "SAVE_DESKTOP_APP": True,
-        "SELECTED_DESKTOP_PLATFORMS": ["*Meshtastic*dmg*"],  # Using old key
+        "SELECTED_DESKTOP_PLATFORMS": ["meshtastic.dmg"],  # Using old key
     }
 
     def wants(section: str) -> bool:
@@ -343,7 +381,7 @@ def test_setup_downloads_backward_compat_old_key(mocker):
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
     # New key should be set, old key should be removed (migration complete)
-    assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
+    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
     assert (
         "SELECTED_DESKTOP_PLATFORMS" not in updated
     )  # Old key removed after migration
@@ -1425,7 +1463,7 @@ def test_run_setup_desktop_invalid_version_input(
     ]
     mock_input.side_effect = user_inputs
 
-    mock_menu_desktop.return_value = {"selected_assets": ["*Meshtastic*dmg*"]}
+    mock_menu_desktop.return_value = {"selected_assets": ["meshtastic.dmg"]}
 
     with patch("builtins.open", mock_open()):
         with patch("sys.stdin.isatty", return_value=False):

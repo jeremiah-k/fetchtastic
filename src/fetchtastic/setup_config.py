@@ -56,12 +56,10 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
 # Old key: SELECTED_DESKTOP_PLATFORMS -> New key: SELECTED_DESKTOP_ASSETS
 def _get_desktop_assets(config: dict) -> list:
     """Get selected desktop assets, checking both old and new config keys."""
-    # Prefer new key, fall back to old key for backward compatibility
-    return (
-        config.get("SELECTED_DESKTOP_ASSETS")
-        or config.get("SELECTED_DESKTOP_PLATFORMS")
-        or []
-    )
+    # Prefer new key by presence, even when intentionally empty.
+    if "SELECTED_DESKTOP_ASSETS" in config:
+        return config.get("SELECTED_DESKTOP_ASSETS") or []
+    return config.get("SELECTED_DESKTOP_PLATFORMS") or []
 
 
 def _set_desktop_assets(config: dict, assets: list) -> None:
@@ -781,6 +779,10 @@ def _setup_downloads(
     Returns:
         tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where `save_apks` and `save_firmware` indicate whether APKs and firmware, respectively, will be downloaded.
     """
+    # Track prior desktop-enabled state so we only clear desktop selections when
+    # the user explicitly turns desktop downloads off.
+    save_desktop_was_enabled = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
+
     # Prompt to save APKs, firmware, desktop, or combinations
     if not is_partial_run:
         save_choice = (
@@ -870,7 +872,7 @@ def _setup_downloads(
     if not save_firmware and (not is_partial_run or wants("firmware")):
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
-    if not save_desktop:
+    if save_desktop_was_enabled and not save_desktop:
         config["CHECK_DESKTOP_PRERELEASES"] = False
         _clear_desktop_assets(config)
 

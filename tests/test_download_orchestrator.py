@@ -71,6 +71,9 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
         orch.desktop_downloader = Mock()
         orch.desktop_downloader.download_dir = "/tmp/test"
+        orch.desktop_downloader.get_releases.return_value = []
+        orch.desktop_downloader.handle_prereleases.return_value = []
+        orch.desktop_downloader.update_release_history.return_value = {}
 
         def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
             return initial_releases, initial_releases, current_fetch_limit
@@ -1349,6 +1352,24 @@ class TestDownloadOrchestrator:
         result = orchestrator._retry_single_failure(failed_result)
 
         assert result.success is True
+
+    def test_retry_single_failure_android_prerelease_type(self, orchestrator):
+        """_retry_single_failure should use Android downloader for android_prerelease type."""
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0-open.1"
+        failed_result.download_url = "https://example.com/app.apk"
+        failed_result.file_path = "/tmp/app.apk"
+        failed_result.retry_count = 0
+        failed_result.file_type = "android_prerelease"
+        failed_result.file_size = 1000
+
+        orchestrator.android_downloader.download = Mock(return_value=True)
+        orchestrator.android_downloader.verify = Mock(return_value=True)
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is True
+        orchestrator.android_downloader.download.assert_called_once()
 
     def test_retry_single_failure_firmware_manifest_type(self, orchestrator):
         """_retry_single_failure should use firmware downloader for firmware_manifest type."""

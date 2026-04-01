@@ -1,7 +1,6 @@
 # src/fetchtastic/menu_desktop.py
 
 import json
-import re
 from typing import cast
 
 import requests  # type: ignore[import-untyped]
@@ -19,6 +18,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
+    extract_base_name,
     make_github_api_request,
 )
 
@@ -43,26 +43,15 @@ def extract_wildcard_pattern(filename: str) -> str:
     """
     Extract a normalized pattern from a desktop asset filename.
 
-    Strips the semantic version from the filename and normalizes to match the
-    format expected by matches_selected_patterns(). The result is lowercased
-    and contains no wildcards, suitable for direct substring matching.
+    Uses shared base-name normalization and lowercases the result for
+    case-insensitive substring matching in matches_selected_patterns().
 
     Examples:
         Meshtastic-2.7.14-linux-x86_64.AppImage -> meshtastic-linux-x86_64.appimage
         Meshtastic_x64_2.7.14.msi -> meshtastic_x64.msi
         Meshtastic-2.7.14.dmg -> meshtastic.dmg
     """
-    # Strip semantic version (with optional prerelease) using the same regex as utils.py
-    version_pattern = r"[-_]?\d+\.\d+\.\d+(?:[-.]?(?:rc|dev|b|beta|alpha)\d+)?"
-    result = re.sub(version_pattern, "", filename)
-
-    # Clean up double separators that might result from version removal
-    result = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], result)
-
-    # Normalize: lowercase for case-insensitive matching
-    result = result.lower()
-
-    return result
+    return extract_base_name(filename).lower()
 
 
 def fetch_desktop_assets() -> list[str]:

@@ -1105,7 +1105,7 @@ class DownloadOrchestrator:
 
         try:
             downloader: Optional[BaseDownloader] = None
-            if file_type == FILE_TYPE_ANDROID:
+            if file_type in (FILE_TYPE_ANDROID, FILE_TYPE_ANDROID_PRERELEASE):
                 downloader = self.android_downloader
             elif file_type in (FILE_TYPE_FIRMWARE, FILE_TYPE_FIRMWARE_MANIFEST):
                 downloader = self.firmware_downloader

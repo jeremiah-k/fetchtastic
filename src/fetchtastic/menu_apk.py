@@ -118,10 +118,12 @@ def _normalize_apk_assets(
         if not isinstance(asset, dict):
             continue
         name = asset.get("name")
-        if not name:
+        if not isinstance(name, str) or not name:
             continue
         size = asset.get("size", 0)
-        normalized.append({"name": name, "size": size})
+        normalized.append(
+            {"name": name, "size": size if isinstance(size, int) and size >= 0 else 0}
+        )
     return normalized
 
 

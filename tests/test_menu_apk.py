@@ -128,6 +128,18 @@ def test_fetch_apk_assets_scans_past_non_apk_first_release(mocker):
     assert assets == [{"name": "meshtastic.apk", "size": 20}]
 
 
+def test_normalize_apk_assets_ignores_non_string_names():
+    """Normalization should drop entries with non-string names."""
+    normalized = menu_apk._normalize_apk_assets(
+        [
+            {"name": 123, "size": 10},
+            {"name": "valid.apk", "size": "bad-size"},
+        ]
+    )
+
+    assert normalized == [{"name": "valid.apk", "size": 0}]
+
+
 @pytest.mark.parametrize(
     "filename, expected",
     [
