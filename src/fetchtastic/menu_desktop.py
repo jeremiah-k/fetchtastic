@@ -110,10 +110,10 @@ def fetch_desktop_assets() -> list[str]:
 
 def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
     """
-    Present an interactive multi-select prompt of desktop filenames grouped by platform.
+    Present an interactive multi-select prompt of desktop filenames ordered by platform.
 
-    Displays the provided desktop filenames for multi-selection, grouped by platform
-    (macOS, Windows, Linux). For each chosen filename this function computes a
+    Displays the provided desktop filenames for multi-selection, ordered by platform
+    (macOS, Windows, Linux) without placeholder heading rows. For each chosen filename this function computes a
     base-name pattern using `extract_wildcard_pattern` and returns a dictionary with
     selected patterns.
 
@@ -125,42 +125,35 @@ def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
             one or more assets are selected, `None` if no selection was made.
     """
     title = """Select the desktop client files you want to download (press SPACE to select, ENTER to confirm):
-Note: Options are grouped by platform (macOS, Windows, Linux)."""
+Note: Options are ordered by platform (macOS, Windows, Linux)."""
 
-    # Build display options with platform group labels
+    # Build option list in platform order without non-selectable heading rows.
     grouped: dict[str, list[str]] = {}
     for asset in assets:
         label = _get_platform_label(asset) or "Other"
         grouped.setdefault(label, []).append(asset)
 
     display_options: list[str] = []
-    option_map: list[str] = []  # Maps display indices to actual asset names
 
     for platform in PLATFORM_GROUPS:
         if platform not in grouped:
             continue
-        display_options.append(f"--- {platform} ---")
-        option_map.append("")  # Placeholder for group label
         for asset in grouped[platform]:
-            display_options.append(f"  {asset}")
-            option_map.append(asset)
+            display_options.append(asset)
 
     # Handle any unrecognized assets under "Other"
     if "Other" in grouped:
-        display_options.append("--- Other ---")
-        option_map.append("")
         for asset in grouped["Other"]:
-            display_options.append(f"  {asset}")
-            option_map.append(asset)
+            display_options.append(asset)
 
     selected_options = pick(
         display_options, title, multiselect=True, min_selection_count=0, indicator="*"
     )
     selected_assets = []
     for _display_str, index in cast(list[tuple[str, int]], selected_options):
-        if index < 0 or index >= len(option_map):
+        if index < 0 or index >= len(display_options):
             continue
-        asset_name = option_map[index]
+        asset_name = display_options[index]
         if asset_name:
             selected_assets.append(asset_name)
 

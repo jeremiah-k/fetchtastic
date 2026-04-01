@@ -227,6 +227,7 @@ class DownloadOrchestrator:
                 logger.info("Android APK downloads are disabled in configuration")
                 return
 
+            self.android_downloader.migrate_legacy_layout()
             logger.info("Scanning Android APK releases")
             android_releases = self._ensure_android_releases()
             if not android_releases:
@@ -269,14 +270,45 @@ class DownloadOrchestrator:
             logger.info("Checking for pre-release APK...")
             prereleases = self.android_downloader.handle_prereleases(android_releases)
             for prerelease in prereleases:
+                if not self.android_downloader.should_download_prerelease(
+                    prerelease.tag_name
+                ):
+                    logger.debug(
+                        "Skipping prerelease APK %s because it is not newer than tracked prerelease",
+                        prerelease.tag_name,
+                    )
+                    continue
+
+                selected_assets = [
+                    asset
+                    for asset in prerelease.assets
+                    if self.android_downloader.should_download_asset(asset.name)
+                ]
+                if not selected_assets:
+                    logger.debug(
+                        "Skipping prerelease APK %s because no selected assets matched",
+                        prerelease.tag_name,
+                    )
+                    continue
+
                 self.android_downloader.ensure_release_notes(prerelease)
-                for asset in prerelease.assets:
-                    if not self.android_downloader.should_download_asset(asset.name):
-                        continue
+                prerelease_results: list[DownloadResult] = []
+                for asset in selected_assets:
                     result = self.android_downloader.download_apk(prerelease, asset)
                     if result.success and not result.was_skipped:
                         any_android_downloaded = True
+                    prerelease_results.append(result)
                     self._handle_download_result(result, FILE_TYPE_ANDROID_PRERELEASE)
+                if prerelease_results and all(
+                    result.success for result in prerelease_results
+                ):
+                    if not self.android_downloader.update_prerelease_tracking(
+                        prerelease.tag_name
+                    ):
+                        logger.warning(
+                            "Failed to update Android prerelease tracking for %s",
+                            prerelease.tag_name,
+                        )
 
             if (
                 self.config.get(
@@ -353,14 +385,45 @@ class DownloadOrchestrator:
             logger.info("Checking for pre-release Desktop app...")
             prereleases = self.desktop_downloader.handle_prereleases(desktop_releases)
             for prerelease in prereleases:
+                if not self.desktop_downloader.should_download_prerelease(
+                    prerelease.tag_name
+                ):
+                    logger.debug(
+                        "Skipping prerelease Desktop release %s because it is not newer than tracked prerelease",
+                        prerelease.tag_name,
+                    )
+                    continue
+
+                selected_assets = [
+                    asset
+                    for asset in self.desktop_downloader.get_assets(prerelease)
+                    if self.desktop_downloader.should_download_asset(asset.name)
+                ]
+                if not selected_assets:
+                    logger.debug(
+                        "Skipping prerelease Desktop release %s because no selected assets matched",
+                        prerelease.tag_name,
+                    )
+                    continue
+
                 self.desktop_downloader.ensure_release_notes(prerelease)
-                for asset in self.desktop_downloader.get_assets(prerelease):
-                    if not self.desktop_downloader.should_download_asset(asset.name):
-                        continue
+                prerelease_results: list[DownloadResult] = []
+                for asset in selected_assets:
                     result = self.desktop_downloader.download_desktop(prerelease, asset)
                     if result.success and not result.was_skipped:
                         any_desktop_downloaded = True
+                    prerelease_results.append(result)
                     self._handle_download_result(result, FILE_TYPE_DESKTOP_PRERELEASE)
+                if prerelease_results and all(
+                    result.success for result in prerelease_results
+                ):
+                    if not self.desktop_downloader.update_prerelease_tracking(
+                        prerelease.tag_name
+                    ):
+                        logger.warning(
+                            "Failed to update Desktop prerelease tracking for %s",
+                            prerelease.tag_name,
+                        )
 
             if (
                 self.config.get(

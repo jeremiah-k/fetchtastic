@@ -7,6 +7,7 @@ This module implements the specific downloader for Meshtastic Android APK files.
 import fnmatch
 import json
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
@@ -165,6 +166,120 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             self._get_legacy_android_base_dir(), APK_PRERELEASES_DIR_NAME
         )
 
+    def _move_legacy_path(self, source_path: str, destination_path: str) -> bool:
+        """
+        Move a legacy path into the preferred Android layout when safe.
+
+        Returns:
+            bool: True when migration succeeded, False otherwise.
+        """
+        if not os.path.exists(source_path):
+            return False
+        if os.path.exists(destination_path):
+            logger.debug(
+                "Skipping Android legacy migration because destination exists: %s",
+                destination_path,
+            )
+            return False
+        try:
+            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+            shutil.move(source_path, destination_path)
+            logger.info(
+                "Migrated Android legacy path %s -> %s",
+                source_path,
+                destination_path,
+            )
+            return True
+        except OSError as exc:
+            logger.warning(
+                "Failed to migrate Android legacy path %s -> %s: %s",
+                source_path,
+                destination_path,
+                exc,
+            )
+            return False
+
+    def _prune_empty_legacy_android_dirs(self) -> None:
+        """
+        Remove empty legacy Android directories after successful migration attempts.
+        """
+        legacy_prerelease_dir = self._get_legacy_prerelease_base_dir()
+        legacy_android_dir = self._get_legacy_android_base_dir()
+        for directory in (legacy_prerelease_dir, legacy_android_dir):
+            try:
+                os.rmdir(directory)
+                logger.debug("Removed empty legacy Android directory: %s", directory)
+            except OSError:
+                continue
+
+    def migrate_legacy_layout(self) -> None:
+        """
+        Migrate legacy Android directories from `<download_dir>/apks` to `app/android`.
+        """
+        legacy_android_dir = self._get_legacy_android_base_dir()
+        if not os.path.isdir(legacy_android_dir):
+            return
+
+        preferred_android_dir = os.path.join(
+            self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME
+        )
+        preferred_prerelease_dir = os.path.join(
+            preferred_android_dir, APK_PRERELEASES_DIR_NAME
+        )
+        os.makedirs(preferred_android_dir, exist_ok=True)
+
+        try:
+            with os.scandir(legacy_android_dir) as it:
+                legacy_entries = list(it)
+        except OSError as exc:
+            logger.warning(
+                "Unable to scan legacy Android directory %s: %s",
+                legacy_android_dir,
+                exc,
+            )
+            return
+
+        for entry in legacy_entries:
+            if entry.is_symlink():
+                logger.warning(
+                    "Skipping symlink during Android legacy migration: %s", entry.path
+                )
+                continue
+            if entry.name == APK_PRERELEASES_DIR_NAME:
+                continue
+            self._move_legacy_path(
+                entry.path,
+                os.path.join(preferred_android_dir, entry.name),
+            )
+
+        legacy_prerelease_dir = self._get_legacy_prerelease_base_dir()
+        if os.path.isdir(legacy_prerelease_dir):
+            os.makedirs(preferred_prerelease_dir, exist_ok=True)
+            try:
+                with os.scandir(legacy_prerelease_dir) as it:
+                    prerelease_entries = list(it)
+            except OSError as exc:
+                logger.warning(
+                    "Unable to scan legacy Android prerelease directory %s: %s",
+                    legacy_prerelease_dir,
+                    exc,
+                )
+                prerelease_entries = []
+
+            for entry in prerelease_entries:
+                if entry.is_symlink():
+                    logger.warning(
+                        "Skipping symlink during Android prerelease migration: %s",
+                        entry.path,
+                    )
+                    continue
+                self._move_legacy_path(
+                    entry.path,
+                    os.path.join(preferred_prerelease_dir, entry.name),
+                )
+
+        self._prune_empty_legacy_android_dirs()
+
     def _resolve_release_dir(
         self,
         safe_release: str,
@@ -173,10 +288,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         create_if_missing: bool,
     ) -> str:
         """
-        Resolve the release directory, preferring the new `app/android/...` layout when present.
+        Resolve the release directory in the `app/android/...` layout.
 
-        Falls back to legacy `apks/...` paths when the new layout directory is absent,
-        keeping previously downloaded APKs valid after layout changes.
+        If only a legacy `apks/...` directory exists for the release, this method
+        attempts to migrate it into the preferred location before returning.
         """
         preferred_base_dir = (
             os.path.join(
@@ -200,6 +315,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if os.path.isdir(preferred_release_dir):
             return preferred_release_dir
         if os.path.isdir(legacy_release_dir):
+            if self._move_legacy_path(legacy_release_dir, preferred_release_dir):
+                self._prune_empty_legacy_android_dirs()
+                return preferred_release_dir
             return legacy_release_dir
 
         if create_if_missing:

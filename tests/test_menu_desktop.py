@@ -205,6 +205,32 @@ def test_fetch_desktop_assets_no_fallback_when_no_desktop_assets(mocker):
 
 
 class TestSelectAssets:
+    def test_options_are_plain_asset_names_without_heading_rows(self, mocker):
+        captured_options = []
+
+        def pick_side_effect(options, *_args, **_kwargs):
+            captured_options.extend(options)
+            return []
+
+        mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
+        mock_pick.side_effect = pick_side_effect
+
+        result = menu_desktop.select_assets(
+            [
+                "Meshtastic-2.7.14.dmg",
+                "Meshtastic-2.7.14.exe",
+                "meshtastic_2.7.14_amd64.deb",
+            ]
+        )
+
+        assert result is None
+        assert captured_options == [
+            "Meshtastic-2.7.14.dmg",
+            "Meshtastic-2.7.14.exe",
+            "meshtastic_2.7.14_amd64.deb",
+        ]
+        assert all(not option.startswith("---") for option in captured_options)
+
     def test_other_category_handling(self, mocker):
         mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
         mock_pattern = mocker.patch(
@@ -232,7 +258,7 @@ class TestSelectAssets:
 
         def pick_side_effect(options, *_args, **_kwargs):
             # Return an out-of-range index
-            return [("  Meshtastic-2.7.14.dmg", len(options) + 100)]
+            return [("Meshtastic-2.7.14.dmg", len(options) + 100)]
 
         mock_pick.side_effect = pick_side_effect
 
@@ -240,13 +266,13 @@ class TestSelectAssets:
 
         assert result is None
 
-    def test_empty_asset_name_in_option_map(self, mocker):
+    def test_empty_display_string_is_ignored(self, mocker):
         mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
-        mock_pick.return_value = [("--- macOS ---", 0)]
+        mock_pick.return_value = [("", 0)]
 
         result = menu_desktop.select_assets(["Meshtastic-2.7.14.dmg"])
 
-        assert result is None
+        assert result == {"selected_assets": ["meshtastic.dmg"]}
 
     def test_no_selection_prints_message(self, mocker, capsys):
         mock_pick = mocker.patch("fetchtastic.menu_desktop.pick")
