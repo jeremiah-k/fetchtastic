@@ -1632,7 +1632,9 @@ class TestDownloadOrchestrator:
 
         orchestrator.cleanup_old_versions()
 
-        orchestrator.desktop_downloader.cleanup_old_versions.assert_called_once()
+        orchestrator.desktop_downloader.cleanup_old_versions.assert_called_once_with(
+            2, cached_releases=orchestrator.desktop_releases
+        )
 
     def test_cleanup_old_versions_error(self, orchestrator):
         """cleanup_old_versions should handle exceptions gracefully."""

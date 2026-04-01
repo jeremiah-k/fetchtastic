@@ -393,8 +393,8 @@ def test_setup_downloads_backward_compat_old_key(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_disable_asset_downloads_desktop_with_message():
-    """Test _disable_asset_downloads with firmware asset type (line 684, 719-722)."""
+def test_disable_asset_downloads_firmware_with_message():
+    """Test _disable_asset_downloads with firmware asset type."""
     from fetchtastic.setup_config import _disable_asset_downloads
 
     config = {
@@ -1112,9 +1112,8 @@ def test_migrate_pip_to_pipx_migration_failure(mocker, capsys):
 
     # Let earlier steps succeed; fail only the pipx install call
     def run_side_effect(cmd, *args, **kwargs):
-        # Check if this is the pipx install command
-        if isinstance(cmd, list) and len(cmd) >= 2 and cmd[1] == "install":
-            raise subprocess.CalledProcessError(1, "pipx", stderr=b"Install failed")
+        if cmd[:2] == ["/usr/bin/pipx", "install"]:
+            return MagicMock(returncode=1, stderr="Install failed")
         return MagicMock(returncode=0, stderr="")
 
     mock_subprocess.side_effect = run_side_effect
@@ -1123,7 +1122,7 @@ def test_migrate_pip_to_pipx_migration_failure(mocker, capsys):
     captured = capsys.readouterr()
 
     assert result is False
-    assert "Migration failed" in captured.out
+    assert "Failed to install with pipx" in captured.out
 
 
 # Tests for _safe_input EOF handling (line 72-73)

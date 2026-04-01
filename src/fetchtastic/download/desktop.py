@@ -365,9 +365,10 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         if asset is not None:
                             release.assets.append(asset)
 
-                    if not release.assets:
+                    # Only count releases with valid installer assets
+                    if not self.get_assets(release):
                         logger.warning(
-                            "Skipping Desktop release %s with no valid assets",
+                            "Skipping Desktop release %s with no valid installer assets",
                             tag_name,
                         )
                         continue
@@ -685,7 +686,13 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             except (TypeError, ValueError):
                 keep_limit = int(DEFAULT_DESKTOP_VERSIONS_TO_KEEP)
             stable_releases = sorted(
-                [release for release in cached_releases if not release.prerelease],
+                [
+                    release
+                    for release in cached_releases
+                    if not release.prerelease
+                    and self.version_manager.get_release_tuple(release.tag_name)
+                    is not None
+                ],
                 key=lambda release: (
                     self.version_manager.get_release_tuple(release.tag_name) or ()
                 ),
@@ -890,7 +897,11 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
         # Restrict to prereleases matching expected base version of latest stable
         expected_base = None
-        latest_release = next((r for r in releases if not r.prerelease), None)
+        latest_release = max(
+            (r for r in releases if not r.prerelease),
+            key=lambda release: release.published_at or "",
+            default=None,
+        )
         if latest_release:
             expected_base = version_manager.calculate_expected_prerelease_version(
                 latest_release.tag_name

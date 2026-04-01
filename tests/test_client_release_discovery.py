@@ -13,7 +13,7 @@ from fetchtastic.client_release_discovery import (
     select_best_release_with_assets,
 )
 
-pytestmark = [pytest.mark.unit]
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 class _DummyVersionManager:
@@ -33,7 +33,12 @@ def test_is_android_asset_name():
 def test_is_desktop_asset_name():
     assert is_desktop_asset_name("Meshtastic-2.7.14.dmg") is True
     assert is_desktop_asset_name("Meshtastic_x64_2.7.14.MSI") is True
-    assert is_desktop_asset_name("Meshtastic-2.7.14.AppImage") is True
+    assert (
+        is_desktop_asset_name("Meshtastic-2.7.14.AppImage") is False
+    )  # Case-sensitive exclusion
+    assert (
+        is_desktop_asset_name("Meshtastic-2.7.14.appimage") is True
+    )  # Lowercase is allowed
     assert is_desktop_asset_name("Meshtastic.apk") is False
 
 

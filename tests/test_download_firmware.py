@@ -2758,7 +2758,7 @@ class TestFirmwareUncoveredBranches:
             "fetchtastic.download.firmware.verify_file_integrity", return_value=True
         )
 
-        _successes, _failures, any_downloaded = (
+        _successes, _failures, _any_downloaded = (
             downloader_module._download_prerelease_assets(
                 "test-dir",
                 selected_patterns=[],
@@ -2793,7 +2793,7 @@ class TestFirmwareUncoveredBranches:
         mock_download.return_value = True
         mocker.patch("os.name", "posix")
 
-        _successes, failures, _any_downloaded = (
+        _successes, _failures, _any_downloaded = (
             downloader_module._download_prerelease_assets(
                 "test-dir",
                 selected_patterns=[],

@@ -1311,6 +1311,8 @@ class DownloadOrchestrator:
                     result.file_type = FILE_TYPE_REPOSITORY
                 elif APKS_DIR_NAME in path_parts or file_path_str.endswith(".apk"):
                     result.file_type = FILE_TYPE_ANDROID
+                elif self._is_firmware_manifest_asset(file_path.name):
+                    result.file_type = FILE_TYPE_FIRMWARE_MANIFEST
                 elif any(
                     file_path_str.lower().endswith(ext)
                     for ext in (".dmg", ".msi", ".exe", ".deb", ".rpm", ".appimage")
@@ -1612,7 +1614,10 @@ class DownloadOrchestrator:
             "success_rate": self._calculate_success_rate(),
             "android_downloads": self._count_artifact_downloads(FILE_TYPE_ANDROID),
             "firmware_downloads": self._count_artifact_downloads(FILE_TYPE_FIRMWARE),
-            "desktop_downloads": self._count_artifact_downloads(FILE_TYPE_DESKTOP),
+            "desktop_downloads": (
+                self._count_artifact_downloads(FILE_TYPE_DESKTOP)
+                + self._count_artifact_downloads(FILE_TYPE_DESKTOP_PRERELEASE)
+            ),
             # Repository downloads are not part of the automatic download pipeline.
             "repository_downloads": 0,
         }

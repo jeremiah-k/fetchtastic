@@ -58,7 +58,7 @@ def test_is_release_complete_uses_prerelease_directory(downloader, tmp_path):
         prerelease=True,
         assets=[
             Asset(
-                name="Meshtastic-2.7.20-open.1.AppImage",
+                name="Meshtastic-2.7.20-open.1.dmg",
                 download_url="https://example.invalid/desktop",
                 size=4,
             )
@@ -74,7 +74,7 @@ def test_is_release_complete_uses_prerelease_directory(downloader, tmp_path):
         / "v2.7.20-open.1"
     )
     prerelease_dir.mkdir(parents=True)
-    (prerelease_dir / "Meshtastic-2.7.20-open.1.AppImage").write_bytes(b"desk")
+    (prerelease_dir / "Meshtastic-2.7.20-open.1.dmg").write_bytes(b"desk")
 
     assert downloader.is_release_complete(release) is True
 
@@ -399,7 +399,7 @@ def test_get_releases_with_valid_release(downloader):
 
 
 def test_get_releases_no_valid_assets(downloader):
-    """Release with only non-desktop assets should still be returned (filtering happens in get_assets)."""
+    """Release with only non-desktop assets should be skipped (no valid installer assets)."""
     downloader.github_source.fetch_raw_releases_data = Mock(
         return_value=[
             {
@@ -416,8 +416,7 @@ def test_get_releases_no_valid_assets(downloader):
         ]
     )
     result = downloader.get_releases(limit=10)
-    assert len(result) == 1
-    assert result[0].tag_name == "v2.7.20"
+    assert len(result) == 0  # Release with no valid installer assets is skipped
 
 
 def test_get_releases_fetch_returns_none(downloader):

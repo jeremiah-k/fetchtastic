@@ -156,6 +156,10 @@ def select_assets(
 Note: Options are grouped by flavor and architecture. File sizes shown in parentheses."""
 
     normalized_assets = _normalize_apk_assets(assets)
+    if not normalized_assets:
+        print("No valid APK files found. APKs will not be downloaded.")
+        return None
+
     grouped: dict[str, list[Dict[str, Any]]] = {}
     for asset in normalized_assets:
         group_label, _ = _get_apk_category(asset["name"])

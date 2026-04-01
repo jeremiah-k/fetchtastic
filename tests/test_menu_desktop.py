@@ -421,7 +421,12 @@ def test_fetch_desktop_assets_filters_and_uses_desktop_releases_url(mocker):
         {
             "assets": [
                 {"name": "Meshtastic-2.7.14.dmg"},
-                {"name": "Meshtastic-2.7.14.AppImage"},
+                {
+                    "name": "Meshtastic-2.7.14.AppImage"
+                },  # Should be excluded (case-sensitive)
+                {
+                    "name": "Meshtastic-2.7.14.appimage"
+                },  # Should be included (lowercase)
                 {"name": "notes.txt"},
             ]
         }
@@ -431,7 +436,8 @@ def test_fetch_desktop_assets_filters_and_uses_desktop_releases_url(mocker):
 
     result = menu_desktop.fetch_desktop_assets()
 
-    assert result == ["Meshtastic-2.7.14.AppImage", "Meshtastic-2.7.14.dmg"]
+    # .AppImage should be excluded, but .appimage (lowercase) and .dmg should be included
+    assert result == ["Meshtastic-2.7.14.appimage", "Meshtastic-2.7.14.dmg"]
     mock_request.assert_called_once_with(MESHTASTIC_DESKTOP_RELEASES_URL)
 
 

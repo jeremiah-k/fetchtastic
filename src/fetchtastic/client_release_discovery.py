@@ -26,6 +26,9 @@ def is_android_asset_name(asset_name: str) -> bool:
 
 def is_desktop_asset_name(asset_name: str) -> bool:
     """Return True when the filename is a recognized Desktop installer asset."""
+    # Explicitly reject .AppImage (case-sensitive) before lowercasing
+    if asset_name.endswith(".AppImage"):
+        return False
     return asset_name.lower().endswith(_DESKTOP_EXTENSIONS_LOWER)
 
 

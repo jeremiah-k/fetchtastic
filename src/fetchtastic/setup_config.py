@@ -25,6 +25,7 @@ from fetchtastic.constants import (
     CRON_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_CHECK_APK_PRERELEASES,
     DEFAULT_CHECK_DESKTOP_PRERELEASES,
+    DEFAULT_DESKTOP_VERSIONS_TO_KEEP,
     DEFAULT_EXTRACTION_PATTERNS,
     DEFAULT_KEEP_LAST_BETA,
     MESHTASTIC_DIR_NAME,
@@ -2153,7 +2154,7 @@ def run_setup(
     # Handle desktop client configuration
     if save_desktop and (not is_partial_run or wants("desktop")):
         current_desktop_versions = config.get(
-            "DESKTOP_VERSIONS_TO_KEEP", default_versions_to_keep
+            "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
         )
         if is_first_run:
             prompt_text = f"How many versions of desktop clients would you like to keep? (default is {current_desktop_versions}): "
@@ -2170,10 +2171,12 @@ def run_setup(
                 config["DESKTOP_VERSIONS_TO_KEEP"] = int(current_desktop_versions)
             except (ValueError, TypeError):
                 print("Invalid number in current value — using default.")
-                config["DESKTOP_VERSIONS_TO_KEEP"] = default_versions_to_keep
+                config["DESKTOP_VERSIONS_TO_KEEP"] = DEFAULT_DESKTOP_VERSIONS_TO_KEEP
     else:
         if not save_desktop:
-            config.setdefault("DESKTOP_VERSIONS_TO_KEEP", default_versions_to_keep)
+            config.setdefault(
+                "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+            )
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
