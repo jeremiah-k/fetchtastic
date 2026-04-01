@@ -65,15 +65,19 @@ def _get_desktop_assets(config: dict) -> list:
 
 
 def _set_desktop_assets(config: dict, assets: list) -> None:
-    """Set selected desktop assets in both old and new config keys for backward compatibility."""
+    """Set selected desktop assets in the new config key only, removing old key if it exists."""
     config["SELECTED_DESKTOP_ASSETS"] = assets
-    config["SELECTED_DESKTOP_PLATFORMS"] = assets  # Keep old key for backward compat
+    # Remove old key if it exists (migration complete)
+    if "SELECTED_DESKTOP_PLATFORMS" in config:
+        del config["SELECTED_DESKTOP_PLATFORMS"]
 
 
 def _clear_desktop_assets(config: dict) -> None:
-    """Clear selected desktop assets from both old and new config keys."""
+    """Clear selected desktop assets and remove old config key if it exists."""
     config["SELECTED_DESKTOP_ASSETS"] = []
-    config["SELECTED_DESKTOP_PLATFORMS"] = []
+    # Remove old key if it exists
+    if "SELECTED_DESKTOP_PLATFORMS" in config:
+        del config["SELECTED_DESKTOP_PLATFORMS"]
 
 
 def _safe_input(prompt: str, *, default: str = "") -> str:

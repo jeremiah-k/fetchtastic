@@ -342,9 +342,11 @@ def test_setup_downloads_backward_compat_old_key(mocker):
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
-    # Both old and new keys should be set after reading
+    # New key should be set, old key should be removed (migration complete)
     assert updated["SELECTED_DESKTOP_ASSETS"] == ["*Meshtastic*dmg*"]
-    assert updated["SELECTED_DESKTOP_PLATFORMS"] == ["*Meshtastic*dmg*"]
+    assert (
+        "SELECTED_DESKTOP_PLATFORMS" not in updated
+    )  # Old key removed after migration
     mock_menu.assert_not_called()
 
 

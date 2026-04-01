@@ -316,6 +316,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
                 releases: List[Release] = []
                 stable_count = 0
+                skipped_legacy_count = 0
                 for release_data in releases_data:
                     if not isinstance(release_data, dict):
                         logger.warning(
@@ -338,10 +339,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     if not _is_supported_desktop_release(
                         tag_name, version_manager=self.version_manager
                     ):
-                        logger.debug(
-                            "Skipping legacy Desktop release %s (pre-2.7.14 tagging scheme)",
-                            tag_name or "<unknown>",
-                        )
+                        skipped_legacy_count += 1
                         continue
 
                     release = Release(
@@ -384,15 +382,22 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     stable_count >= min_stable_releases
                     or len(releases_data) < scan_count
                 ):
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
                     return releases
 
                 if scan_count >= max_scan:
                     logger.debug(
-                        "Reached maximum Desktop scan window (%d) without finding %d stable releases; proceeding with %d stable release(s).",
-                        max_scan,
-                        min_stable_releases,
-                        stable_count,
+                        "Desktop scan found no eligible stable desktop releases within the current window; prerelease-only state may be expected."
                     )
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
                     return releases
 
                 scan_count = min(max_scan, scan_count * 2)
@@ -484,7 +489,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             # Check if we need to download
             if self._is_asset_complete_for_target(target_path, asset):
                 logger.debug(
-                    f"Desktop file {asset.name} already exists and is complete"
+                    f"Desktop file {asset.name} (release {release.tag_name}) already exists and is complete"
                 )
                 return self.create_download_result(
                     success=True,
@@ -502,7 +507,9 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             if success:
                 # Verify the download
                 if self.verify(target_path):
-                    logger.info(f"Successfully downloaded and verified {asset.name}")
+                    logger.info(
+                        f"Successfully downloaded and verified {asset.name} (release {release.tag_name})"
+                    )
                     return self.create_download_result(
                         success=True,
                         release_tag=release.tag_name,

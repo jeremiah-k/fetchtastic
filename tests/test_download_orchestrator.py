@@ -37,6 +37,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": "/tmp/test",
             "SAVE_APKS": True,
             "SAVE_FIRMWARE": True,
+            "SAVE_DESKTOP_APP": True,
             "CHECK_APK_PRERELEASES": True,
             "CHECK_FIRMWARE_PRERELEASES": True,
             "SELECTED_FIRMWARE_ASSETS": ["rak4631"],

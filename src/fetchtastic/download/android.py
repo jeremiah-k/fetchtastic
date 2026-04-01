@@ -525,7 +525,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             # Check if we need to download
             if self._is_asset_complete_for_target(target_path, asset):
-                logger.debug(f"APK {asset.name} already exists and is complete")
+                logger.debug(
+                    f"APK {asset.name} (release {release.tag_name}) already exists and is complete"
+                )
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,
@@ -542,7 +544,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             if success:
                 # Verify the download
                 if self.verify(target_path):
-                    logger.info(f"Successfully downloaded and verified {asset.name}")
+                    logger.info(
+                        f"Successfully downloaded and verified {asset.name} (release {release.tag_name})"
+                    )
                     return self.create_download_result(
                         success=True,
                         release_tag=release.tag_name,

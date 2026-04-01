@@ -1714,7 +1714,11 @@ class DownloadOrchestrator:
             if android_releases
             else None
         )
-        desktop_releases = self._ensure_desktop_releases()
+        desktop_releases = (
+            self._ensure_desktop_releases()
+            if self.config.get("SAVE_DESKTOP_APP", False)
+            else []
+        )
         latest_desktop_release = next(
             (
                 release.tag_name
@@ -1748,7 +1752,11 @@ class DownloadOrchestrator:
             # Use cached releases if available
             android_releases = self._ensure_android_releases()
             firmware_releases = self._ensure_firmware_releases()
-            desktop_releases = self._ensure_desktop_releases()
+            desktop_releases = (
+                self._ensure_desktop_releases()
+                if self.config.get("SAVE_DESKTOP_APP", False)
+                else []
+            )
 
             # Update tracking
             latest_android_release = next(
@@ -1822,9 +1830,10 @@ class DownloadOrchestrator:
             )
 
             # Manage Desktop prerelease tracking - pass cached releases to avoid redundant API calls
-            self.desktop_downloader.manage_prerelease_tracking_files(
-                cached_releases=self.desktop_releases
-            )
+            if self.config.get("SAVE_DESKTOP_APP", False):
+                self.desktop_downloader.manage_prerelease_tracking_files(
+                    cached_releases=self.desktop_releases
+                )
 
             logger.info("Prerelease tracking management completed")
 

@@ -898,7 +898,7 @@ def load_file_hash(file_path: str) -> Optional[str]:
     return None
 
 
-def verify_file_integrity(file_path: str) -> bool:
+def verify_file_integrity(file_path: str, release_tag: Optional[str] = None) -> bool:
     """
     Check whether a file's contents match the stored SHA-256 hash, creating and storing an initial hash if none exists.
 
@@ -930,12 +930,22 @@ def verify_file_integrity(file_path: str) -> bool:
         return False
 
     if current_hash == stored_hash:
-        logger.debug(f"Hash verified for {os.path.basename(file_path)}")
+        if release_tag:
+            logger.debug(
+                f"Hash verified for {release_tag}/{os.path.basename(file_path)}"
+            )
+        else:
+            logger.debug(f"Hash verified for {os.path.basename(file_path)}")
         return True
     else:
-        logger.warning(
-            f"Hash mismatch for {os.path.basename(file_path)} - file may be corrupted"
-        )
+        if release_tag:
+            logger.warning(
+                f"Hash mismatch for {release_tag}/{os.path.basename(file_path)} - file may be corrupted"
+            )
+        else:
+            logger.warning(
+                f"Hash mismatch for {os.path.basename(file_path)} - file may be corrupted"
+            )
         return False
 
 
