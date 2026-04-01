@@ -38,9 +38,9 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
         ),
     )
 
-    result = integration.main(config=config)
+    result = integration.main(config=config, include_desktop=True)
 
-    run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, False)
+    run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, False, True)
 
     # Unpack the 13-field tuple into named locals
     (
@@ -99,7 +99,7 @@ def test_cli_integration_main_with_config_parameter(mocker):
 
     result = integration.main(config=config)
 
-    run_download.assert_called_once_with(config, False)
+    run_download.assert_called_once_with(config, False, False)
     assert result[0] == ["fw"]
 
 
@@ -114,12 +114,12 @@ def test_cli_integration_main_with_force_refresh(mocker):
     run_download = mocker.patch.object(
         integration,
         "run_download",
-        return_value=([], [], [], [], [], [], [], [], [], [], "", "", ""),
+        return_value=([], [], [], [], [], [], [], "", ""),
     )
 
     integration.main(config=config, force_refresh=True)
 
-    run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, True)
+    run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, True, False)
 
 
 def test_cli_integration_main_rejects_none_config(mocker):
@@ -223,8 +223,10 @@ def test_run_download_successful(mocker):
         return_value=mock_orchestrator,
     )
 
-    # Test successful run
-    result = integration.run_download(config=config, force_refresh=False)
+    # Test successful run with include_desktop=True to get extended 13-item tuple
+    result = integration.run_download(
+        config=config, force_refresh=False, include_desktop=True
+    )
 
     # Verify orchestrator was called correctly
     mock_orchestrator.run_download_pipeline.assert_called_once()
@@ -323,10 +325,12 @@ def test_run_download_uses_tracked_desktop_version_for_new_detection(mocker):
         return_value=mock_orchestrator,
     )
 
-    result = integration.run_download(config=config, force_refresh=False)
+    result = integration.run_download(
+        config=config, force_refresh=False, include_desktop=True
+    )
 
-    assert result[4] == ["v2.0.0"]  # downloaded_desktop
-    assert result[5] == ["v2.0.0"]  # new_desktop_versions
+    assert result[4] == ["v2.0.0"]  # downloaded_desktop (index 4 in 13-item tuple)
+    assert result[5] == ["v2.0.0"]  # new_desktop_versions (index 5 in 13-item tuple)
 
 
 def test_log_download_results_summary_logs_history_summary(mocker):
@@ -395,8 +399,8 @@ def test_run_download_handles_exception(mocker):
     # Test exception handling
     result = integration.run_download(config=config, force_refresh=False)
 
-    # Verify empty results are returned on error
-    assert result == ([], [], [], [], [], [], [], [], [], [], "", "", "")
+    # Verify empty legacy 9-item tuple is returned on error
+    assert result == ([], [], [], [], [], [], [], "", "")
 
 
 def test_is_newer_version_equal():
@@ -1517,7 +1521,7 @@ def test_main_handles_exception(mocker):
 
     result = integration.main(config=config)
 
-    assert result == ([], [], [], [], [], [], [], [], [], [], "", "", "")
+    assert result == ([], [], [], [], [], [], [], "", "")
 
 
 def test_clear_cache_handles_exception(mocker):

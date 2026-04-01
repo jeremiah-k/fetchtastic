@@ -909,13 +909,19 @@ class TestMeshtasticAndroidAppDownloader:
         )
         legacy_android_dir = os.path.join(downloader.download_dir, "apks")
 
-        with patch(
-            "fetchtastic.download.android.os.path.exists", return_value=False
-        ) as mock_exists:
+        with (
+            patch(
+                "fetchtastic.download.android.os.path.isdir", return_value=False
+            ) as mock_isdir,
+            patch(
+                "fetchtastic.download.android.os.path.islink", return_value=False
+            ) as mock_islink,
+        ):
             downloader.cleanup_prerelease_directories(cached_releases=releases)
 
-        assert mock_exists.call_count == 2
-        checked_paths = {call.args[0] for call in mock_exists.call_args_list}
+        # isdir is called twice (once for preferred, once for legacy)
+        assert mock_isdir.call_count == 2
+        checked_paths = {call.args[0] for call in mock_isdir.call_args_list}
         assert checked_paths == {android_dir, legacy_android_dir}
 
     def test_cleanup_prerelease_directories_warns_on_unsafe_tags(self, tmp_path):
@@ -933,7 +939,7 @@ class TestMeshtasticAndroidAppDownloader:
             downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
         )
 
-        def _exists(path):
+        def _isdir(path):
             """
             Determine whether the given path is the Android APK directory.
 
@@ -947,7 +953,10 @@ class TestMeshtasticAndroidAppDownloader:
 
         with (
             patch("fetchtastic.download.android.logger") as mock_logger,
-            patch("fetchtastic.download.android.os.path.exists", side_effect=_exists),
+            patch(
+                "fetchtastic.download.android.os.path.isdir", side_effect=_isdir
+            ) as mock_isdir,
+            patch("fetchtastic.download.android.os.path.islink", return_value=False),
             patch(
                 "fetchtastic.download.android.os.scandir",
                 return_value=_scandir_context([]),
@@ -1010,8 +1019,13 @@ class TestMeshtasticAndroidAppDownloader:
 
         with (
             patch(
-                "fetchtastic.download.android.os.path.exists",
+                "fetchtastic.download.android.os.path.isdir",
                 side_effect=lambda path: path in {android_dir, prerelease_dir},
+            ),
+            patch("fetchtastic.download.android.os.path.islink", return_value=False),
+            patch(
+                "fetchtastic.download.android.os.path.exists",
+                side_effect=lambda path: path == prerelease_dir,
             ),
             patch(
                 "fetchtastic.download.android.os.scandir",
@@ -1043,7 +1057,7 @@ class TestMeshtasticAndroidAppDownloader:
             downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
         )
 
-        def _exists(path):
+        def _isdir(path):
             """
             Determine whether the given path is the Android APK directory.
 
@@ -1056,7 +1070,10 @@ class TestMeshtasticAndroidAppDownloader:
             return path == android_dir
 
         with (
-            patch("fetchtastic.download.android.os.path.exists", side_effect=_exists),
+            patch(
+                "fetchtastic.download.android.os.path.isdir", side_effect=_isdir
+            ) as mock_isdir,
+            patch("fetchtastic.download.android.os.path.islink", return_value=False),
             patch(
                 "fetchtastic.download.android.os.scandir",
                 return_value=_scandir_context([]),
@@ -1089,7 +1106,8 @@ class TestMeshtasticAndroidAppDownloader:
 
         with (
             patch("fetchtastic.download.android.logger") as mock_logger,
-            patch("fetchtastic.download.android.os.path.exists", return_value=True),
+            patch("fetchtastic.download.android.os.path.isdir", return_value=True),
+            patch("fetchtastic.download.android.os.path.islink", return_value=False),
             patch(
                 "fetchtastic.download.android.os.scandir", side_effect=OSError("boom")
             ),

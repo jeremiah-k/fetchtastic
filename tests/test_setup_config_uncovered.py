@@ -1179,12 +1179,7 @@ def test_safe_input_keyboard_interrupt(mocker):
 @patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
 @patch("fetchtastic.setup_config.create_config_shortcut")
 @patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
 def test_run_setup_windows_cmd_environment(
-    mock_user_config_dir,
     mock_shutil_which,
     mock_create_config_shortcut,
     mock_create_windows_menu_shortcuts,
@@ -1199,32 +1194,44 @@ def test_run_setup_windows_cmd_environment(
     mock_input,
 ):
     """Test Windows setup when running from cmd.exe (lines 2206-2214)."""
-    with patch.dict(os.environ, {"COMSPEC": "cmd.exe"}):
-        user_inputs = [
-            "",  # Use default base directory
-            "n",  # Don't create menu shortcuts
-            "b",  # Both APKs and firmware
-            "n",  # No firmware prereleases
-            "n",  # No APK prereleases
-            "n",  # No channel suffixes
-            "2",  # Keep 2 versions
-            "2",  # Keep 2 versions
-            "n",  # No auto-extract
-            "n",  # No startup shortcut
-            "n",  # No NTFY
-            "n",  # No GitHub token
-            "",  # Press Enter to close (simulating the pause at end)
-        ]
-        mock_input.side_effect = user_inputs
+    # Save original values and patch CONFIG_DIR/CONFIG_FILE
+    original_config_dir = setup_config.CONFIG_DIR
+    original_config_file = setup_config.CONFIG_FILE
+    setup_config.CONFIG_DIR = "/tmp/test_config"
+    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    try:
+        with patch.dict(os.environ, {"COMSPEC": "cmd.exe"}):
+            user_inputs = [
+                "",  # Use default base directory
+                "n",  # Don't create menu shortcuts
+                "b",  # Both APKs and firmware
+                "n",  # No firmware prereleases
+                "n",  # No APK prereleases
+                "n",  # No channel suffixes
+                "2",  # Keep 2 versions
+                "2",  # Keep 2 versions
+                "n",  # No auto-extract
+                "n",  # No startup shortcut
+                "n",  # No NTFY
+                "n",  # No GitHub token
+                "",  # Press Enter to close (simulating the pause at end)
+            ]
+            mock_input.side_effect = user_inputs
 
-        mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
-        mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
+            mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+            mock_menu_firmware.return_value = {
+                "selected_assets": ["meshtastic-firmware"]
+            }
 
-        with patch("builtins.open", mock_open()):
-            with patch("sys.stdin.isatty", return_value=False):
-                setup_config.run_setup()
+            with patch("builtins.open", mock_open()):
+                with patch("sys.stdin.isatty", return_value=False):
+                    setup_config.run_setup()
 
         mock_yaml_dump.assert_called()
+    finally:
+        # Restore original values
+        setup_config.CONFIG_DIR = original_config_dir
+        setup_config.CONFIG_FILE = original_config_file
 
 
 # Tests for _setup_notifications clipboard (lines 1656-1671)
@@ -1430,12 +1437,7 @@ def test_setup_base_windows_no_modules(mocker, capsys):
 )
 @patch("fetchtastic.cli.main")
 @patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
 def test_run_setup_desktop_invalid_version_input(
-    mock_user_config_dir,
     mock_shutil_which,
     mock_downloader_main,
     mock_get_install_method,
@@ -1457,32 +1459,42 @@ def test_run_setup_desktop_invalid_version_input(
     mock_input,
 ):
     """Test run_setup desktop with invalid version input (lines 2133-2139)."""
-    user_inputs = [
-        "",  # Use default base directory
-        "d",  # Desktop only
-        "n",  # No desktop prereleases
-        "invalid",  # Invalid version input
-        "n",  # No wifi only question on non-termux path - wait, this IS termux
-        "y",  # wifi only
-        "n",  # No cron
-        "n",  # No boot script
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-    mock_input.side_effect = user_inputs
+    # Save original values and patch CONFIG_DIR/CONFIG_FILE
+    original_config_dir = setup_config.CONFIG_DIR
+    original_config_file = setup_config.CONFIG_FILE
+    setup_config.CONFIG_DIR = "/tmp/test_config"
+    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    try:
+        user_inputs = [
+            "",  # Use default base directory
+            "d",  # Desktop only
+            "n",  # No desktop prereleases
+            "invalid",  # Invalid version input
+            "n",  # No wifi only question on non-termux path - wait, this IS termux
+            "y",  # wifi only
+            "n",  # No cron
+            "n",  # No boot script
+            "n",  # No NTFY
+            "n",  # No GitHub token
+            "n",  # Don't perform first run
+        ]
+        mock_input.side_effect = user_inputs
 
-    mock_menu_desktop.return_value = {"selected_assets": ["meshtastic.dmg"]}
+        mock_menu_desktop.return_value = {"selected_assets": ["meshtastic.dmg"]}
 
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup()
+        with patch("builtins.open", mock_open()):
+            with patch("sys.stdin.isatty", return_value=False):
+                setup_config.run_setup()
 
-    mock_yaml_dump.assert_called()
-    saved_config = mock_yaml_dump.call_args[0][0]
+        mock_yaml_dump.assert_called()
+        saved_config = mock_yaml_dump.call_args[0][0]
 
-    # Invalid input should fall back to default (2 for termux)
-    assert saved_config["DESKTOP_VERSIONS_TO_KEEP"] == 2
+        # Invalid input should fall back to default (2 for termux)
+        assert saved_config["DESKTOP_VERSIONS_TO_KEEP"] == 2
+    finally:
+        # Restore original values
+        setup_config.CONFIG_DIR = original_config_dir
+        setup_config.CONFIG_FILE = original_config_file
 
 
 # Tests for partial reconfiguration sections (lines 2169-2175, 2182-2183)
@@ -1505,12 +1517,7 @@ def test_run_setup_desktop_invalid_version_input(
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
 @patch("fetchtastic.cli.main")
 @patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
 def test_run_setup_version_package_not_found(
-    mock_user_config_dir,
     mock_shutil_which,
     mock_downloader_main,
     mock_setup_reboot_cron_job,
@@ -1531,41 +1538,51 @@ def test_run_setup_version_package_not_found(
     """Test run_setup when version() raises PackageNotFoundError (lines 2167-2169)."""
     from importlib.metadata import PackageNotFoundError
 
-    user_inputs = [
-        "",  # Use default base directory
-        "b",  # Both APKs and firmware
-        "n",  # No firmware prereleases
-        "n",  # No APK prereleases
-        "n",  # No channel suffixes
-        "2",  # Keep 2 versions Android
-        "2",  # Keep 2 versions firmware
-        "n",  # No auto-extract
-        "n",  # No cron
-        "n",  # No reboot
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-    mock_input.side_effect = user_inputs
+    # Save original values and patch CONFIG_DIR/CONFIG_FILE
+    original_config_dir = setup_config.CONFIG_DIR
+    original_config_file = setup_config.CONFIG_FILE
+    setup_config.CONFIG_DIR = "/tmp/test_config"
+    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    try:
+        user_inputs = [
+            "",  # Use default base directory
+            "b",  # Both APKs and firmware
+            "n",  # No firmware prereleases
+            "n",  # No APK prereleases
+            "n",  # No channel suffixes
+            "2",  # Keep 2 versions Android
+            "2",  # Keep 2 versions firmware
+            "n",  # No auto-extract
+            "n",  # No cron
+            "n",  # No reboot
+            "n",  # No NTFY
+            "n",  # No GitHub token
+            "n",  # Don't perform first run
+        ]
+        mock_input.side_effect = user_inputs
 
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
-    mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
+        mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+        mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
-    mocker.patch(
-        "fetchtastic.setup_config.version",
-        side_effect=PackageNotFoundError("fetchtastic"),
-    )
+        mocker.patch(
+            "fetchtastic.setup_config.version",
+            side_effect=PackageNotFoundError("fetchtastic"),
+        )
 
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup()
+        with patch("builtins.open", mock_open()):
+            with patch("sys.stdin.isatty", return_value=False):
+                setup_config.run_setup()
 
-    mock_yaml_dump.assert_called()
-    saved_config = mock_yaml_dump.call_args[0][0]
+        mock_yaml_dump.assert_called()
+        saved_config = mock_yaml_dump.call_args[0][0]
 
-    # LAST_SETUP_VERSION should not be set when package not found
-    assert "LAST_SETUP_VERSION" not in saved_config
-    assert "LAST_SETUP_DATE" in saved_config
+        # LAST_SETUP_VERSION should not be set when package not found
+        assert "LAST_SETUP_VERSION" not in saved_config
+        assert "LAST_SETUP_DATE" in saved_config
+    finally:
+        # Restore original values
+        setup_config.CONFIG_DIR = original_config_dir
+        setup_config.CONFIG_FILE = original_config_file
 
 
 @pytest.mark.configuration
@@ -1585,12 +1602,7 @@ def test_run_setup_version_package_not_found(
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
 @patch("fetchtastic.cli.main")
 @patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
 def test_run_setup_version_other_error(
-    mock_user_config_dir,
     mock_shutil_which,
     mock_downloader_main,
     mock_setup_reboot_cron_job,
@@ -1609,38 +1621,48 @@ def test_run_setup_version_other_error(
     mocker,
 ):
     """Test run_setup when version() raises other exception (lines 2172-2175)."""
-    user_inputs = [
-        "",  # Use default base directory
-        "b",  # Both APKs and firmware
-        "n",  # No firmware prereleases
-        "n",  # No APK prereleases
-        "n",  # No channel suffixes
-        "2",  # Keep 2 versions Android
-        "2",  # Keep 2 versions firmware
-        "n",  # No auto-extract
-        "n",  # No cron
-        "n",  # No reboot
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-    mock_input.side_effect = user_inputs
+    # Save original values and patch CONFIG_DIR/CONFIG_FILE
+    original_config_dir = setup_config.CONFIG_DIR
+    original_config_file = setup_config.CONFIG_FILE
+    setup_config.CONFIG_DIR = "/tmp/test_config"
+    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    try:
+        user_inputs = [
+            "",  # Use default base directory
+            "b",  # Both APKs and firmware
+            "n",  # No firmware prereleases
+            "n",  # No APK prereleases
+            "n",  # No channel suffixes
+            "2",  # Keep 2 versions Android
+            "2",  # Keep 2 versions firmware
+            "n",  # No auto-extract
+            "n",  # No cron
+            "n",  # No reboot
+            "n",  # No NTFY
+            "n",  # No GitHub token
+            "n",  # Don't perform first run
+        ]
+        mock_input.side_effect = user_inputs
 
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
-    mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
+        mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+        mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
-    mocker.patch(
-        "fetchtastic.setup_config.version",
-        side_effect=RuntimeError("Unexpected error"),
-    )
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+        mocker.patch(
+            "fetchtastic.setup_config.version",
+            side_effect=RuntimeError("Unexpected error"),
+        )
+        mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup()
+        with patch("builtins.open", mock_open()):
+            with patch("sys.stdin.isatty", return_value=False):
+                setup_config.run_setup()
 
-    mock_yaml_dump.assert_called()
-    mock_logger.debug.assert_called()
+        mock_yaml_dump.assert_called()
+        mock_logger.debug.assert_called()
+    finally:
+        # Restore original values
+        setup_config.CONFIG_DIR = original_config_dir
+        setup_config.CONFIG_FILE = original_config_file
 
 
 # Tests for config directory creation error (lines 2182-2183)
@@ -1663,12 +1685,7 @@ def test_run_setup_version_other_error(
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
 @patch("fetchtastic.cli.main")
 @patch("shutil.which")
-@patch(
-    "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",
-)
 def test_run_setup_config_dir_creation_error(
-    mock_user_config_dir,
     mock_shutil_which,
     mock_downloader_main,
     mock_setup_reboot_cron_job,
@@ -1688,40 +1705,50 @@ def test_run_setup_config_dir_creation_error(
     capsys,
 ):
     """Test run_setup when config directory creation fails (lines 2182-2183)."""
-    user_inputs = [
-        "",  # Use default base directory
-        "b",  # Both APKs and firmware
-        "n",  # No firmware prereleases
-        "n",  # No APK prereleases
-        "n",  # No channel suffixes
-        "2",  # Keep 2 versions Android
-        "2",  # Keep 2 versions firmware
-        "n",  # No auto-extract
-        "n",  # No cron
-        "n",  # No reboot
-        "n",  # No NTFY
-        "n",  # No GitHub token
-        "n",  # Don't perform first run
-    ]
-    mock_input.side_effect = user_inputs
+    # Save original values and patch CONFIG_DIR/CONFIG_FILE
+    original_config_dir = setup_config.CONFIG_DIR
+    original_config_file = setup_config.CONFIG_FILE
+    setup_config.CONFIG_DIR = "/tmp/test_config"
+    setup_config.CONFIG_FILE = "/tmp/test_config/fetchtastic.yml"
+    try:
+        user_inputs = [
+            "",  # Use default base directory
+            "b",  # Both APKs and firmware
+            "n",  # No firmware prereleases
+            "n",  # No APK prereleases
+            "n",  # No channel suffixes
+            "2",  # Keep 2 versions Android
+            "2",  # Keep 2 versions firmware
+            "n",  # No auto-extract
+            "n",  # No cron
+            "n",  # No reboot
+            "n",  # No NTFY
+            "n",  # No GitHub token
+            "n",  # Don't perform first run
+        ]
+        mock_input.side_effect = user_inputs
 
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
-    mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
+        mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+        mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
-    # Make makedirs raise an error when creating config dir
-    def side_effect(path, exist_ok=False):
-        if "config" in str(path):
-            raise OSError("Permission denied")
-        return None
+        # Make makedirs raise an error when creating config dir
+        def side_effect(path, exist_ok=False):
+            if "config" in str(path):
+                raise OSError("Permission denied")
+            return None
 
-    mock_makedirs.side_effect = side_effect
+        mock_makedirs.side_effect = side_effect
 
-    with patch("builtins.open", mock_open()):
-        with patch("sys.stdin.isatty", return_value=False):
-            setup_config.run_setup()
-            captured = capsys.readouterr()
+        with patch("builtins.open", mock_open()):
+            with patch("sys.stdin.isatty", return_value=False):
+                setup_config.run_setup()
+                captured = capsys.readouterr()
 
-    assert "Error creating config directory" in captured.out
+        assert "Error creating config directory" in captured.out
+    finally:
+        # Restore original values
+        setup_config.CONFIG_DIR = original_config_dir
+        setup_config.CONFIG_FILE = original_config_file
 
 
 # Tests for _setup_github uncovered lines (1755->1761, 1809-1810)

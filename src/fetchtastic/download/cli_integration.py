@@ -7,7 +7,7 @@ This module provides integration between the new download subsystem and the exis
 import os
 import sys
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from .version import VersionManager
@@ -34,6 +34,7 @@ from fetchtastic.notifications import (
     send_download_completion_notification,
     send_up_to_date_notification,
 )
+from fetchtastic.setup_config import _coerce_bool
 from fetchtastic.utils import (
     format_api_summary,
     get_api_request_summary,
@@ -90,21 +91,37 @@ class DownloadCLIIntegration:
         self.firmware_downloader = self.orchestrator.firmware_downloader
 
     def run_download(
-        self, config: Dict[str, Any], force_refresh: bool = False
-    ) -> Tuple[
-        List[str],  # downloaded_firmwares
-        List[str],  # new_firmware_versions
-        List[str],  # downloaded_apks
-        List[str],  # new_apk_versions
-        List[str],  # downloaded_desktop
-        List[str],  # new_desktop_versions
-        List[str],  # downloaded_firmware_prereleases
-        List[str],  # downloaded_apk_prereleases
-        List[str],  # downloaded_desktop_prereleases
-        List[Dict[str, str]],  # failed_downloads
-        str,  # latest_firmware_version
-        str,  # latest_apk_version
-        str,  # latest_desktop_version
+        self,
+        config: Dict[str, Any],
+        force_refresh: bool = False,
+        include_desktop: bool = False,
+    ) -> Union[
+        Tuple[
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[Dict[str, str]],
+            str,
+            str,
+        ],  # Legacy 9-item tuple
+        Tuple[
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[Dict[str, str]],
+            str,
+            str,
+            str,
+        ],  # Extended 13-item tuple with desktop
     ]:
         """
         Run the download pipeline using the provided configuration and return results formatted for the legacy CLI.
@@ -114,21 +131,24 @@ class DownloadCLIIntegration:
         Parameters:
             config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
             force_refresh (bool): If True, clear downloader caches before running the pipeline.
+            include_desktop (bool): If True, include desktop download results. When True, the return tuple will be extended with 4 additional fields: downloaded_desktop, new_desktop_versions, downloaded_desktop_prereleases, and latest_desktop_version.
 
         Returns:
-            Tuple containing:
+            Tuple containing (by default, 9 items):
                 - downloaded_firmwares: Paths or identifiers of firmware files that were downloaded.
                 - new_firmware_versions: Firmware release tags that are newer than the currently tracked firmware.
                 - downloaded_apks: Paths or identifiers of Android APK files that were downloaded.
                 - new_apk_versions: Android release tags that are newer than the currently tracked Android version.
-                - downloaded_desktop: Paths or identifiers of desktop files that were downloaded.
-                - new_desktop_versions: Desktop release tags that are newer than the currently tracked desktop version.
                 - downloaded_firmware_prereleases: Paths or identifiers of firmware prerelease files that were downloaded.
                 - downloaded_apk_prereleases: Paths or identifiers of Android APK prerelease files that were downloaded.
-                - downloaded_desktop_prereleases: Paths or identifiers of desktop prerelease files that were downloaded.
                 - failed_downloads: List of failure records; each record includes keys such as `file_name`, `release_tag`, `url`, `type`, `path_to_download`, `error`, `retryable`, and `http_status`.
                 - latest_firmware_version: Latest known firmware version (empty string if unavailable).
                 - latest_apk_version: Latest known Android APK version (empty string if unavailable).
+
+            When include_desktop=True, the tuple is extended with 4 additional fields (13 items total):
+                - downloaded_desktop: Paths or identifiers of desktop files that were downloaded.
+                - new_desktop_versions: Desktop release tags that are newer than the currently tracked desktop version.
+                - downloaded_desktop_prereleases: Paths or identifiers of desktop prerelease files that were downloaded.
                 - latest_desktop_version: Latest known desktop version (empty string if unavailable).
         """
         try:
@@ -180,21 +200,35 @@ class DownloadCLIIntegration:
             latest_apk_version = latest_versions.get("android", "") or ""
             latest_desktop_version = latest_versions.get("desktop", "") or ""
 
-            return (
-                downloaded_firmwares,
-                new_firmware_versions,
-                downloaded_apks,
-                new_apk_versions,
-                downloaded_desktop,
-                new_desktop_versions,
-                downloaded_firmware_prereleases,
-                downloaded_apk_prereleases,
-                downloaded_desktop_prereleases,
-                failed_downloads,
-                latest_firmware_version,
-                latest_apk_version,
-                latest_desktop_version,
-            )
+            # Return legacy 9-item tuple by default, or extended 13-item tuple if include_desktop=True
+            if include_desktop:
+                return (
+                    downloaded_firmwares,
+                    new_firmware_versions,
+                    downloaded_apks,
+                    new_apk_versions,
+                    downloaded_desktop,
+                    new_desktop_versions,
+                    downloaded_firmware_prereleases,
+                    downloaded_apk_prereleases,
+                    downloaded_desktop_prereleases,
+                    failed_downloads,
+                    latest_firmware_version,
+                    latest_apk_version,
+                    latest_desktop_version,
+                )
+            else:
+                return (
+                    downloaded_firmwares,
+                    new_firmware_versions,
+                    downloaded_apks,
+                    new_apk_versions,
+                    downloaded_firmware_prereleases,
+                    downloaded_apk_prereleases,
+                    failed_downloads,
+                    latest_firmware_version,
+                    latest_apk_version,
+                )
 
         except (
             requests.RequestException,
@@ -204,8 +238,8 @@ class DownloadCLIIntegration:
             KeyError,
         ) as e:
             logger.exception("Error in CLI integration: %s", e)
-            # Return empty results and error information
-            return [], [], [], [], [], [], [], [], [], [], "", "", ""
+            # Return empty legacy 9-item tuple for backward compatibility
+            return [], [], [], [], [], [], [], "", ""
 
     def _get_tracked_desktop_versions(self) -> Dict[str, Optional[str]]:
         """
@@ -713,20 +747,34 @@ class DownloadCLIIntegration:
         self,
         config: Dict[str, Any],
         force_refresh: bool = False,
-    ) -> Tuple[
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[Dict[str, Any]],
-        str,
-        str,
-        str,
+        include_desktop: bool = False,
+    ) -> Union[
+        Tuple[
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[Dict[str, Any]],
+            str,
+            str,
+        ],  # Legacy 9-item tuple
+        Tuple[
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[str],
+            List[Dict[str, Any]],
+            str,
+            str,
+            str,
+        ],  # Extended 13-item tuple with desktop
     ]:
         """
         Entry point for CLI commands that uses a provided configuration, normalizes tokens, and runs the download workflow to produce legacy-compatible results.
@@ -734,21 +782,24 @@ class DownloadCLIIntegration:
          Parameters:
             config (Dict[str, Any]): Configuration mapping for the download run. Must not be None; passing None raises TypeError.
             force_refresh (bool): When True, forces refresh behavior for downloaders (e.g., clears caches) for this run.
+            include_desktop (bool): If True, include desktop download results. When True, the return tuple will be extended with 4 additional fields: downloaded_desktop, new_desktop_versions, downloaded_desktop_prereleases, and latest_desktop_version.
 
         Returns:
-            Tuple containing:
+            Tuple containing (by default, 9 items):
                 downloaded_firmwares (List[str]): List of firmware release tags or identifiers that were downloaded during the run.
                 new_firmware_versions (List[str]): Subset of downloaded_firmwares that are newer than previously known firmware versions.
                 downloaded_apks (List[str]): List of Android APK release tags or identifiers that were downloaded during the run.
                 new_apk_versions (List[str]): Subset of downloaded_apks that are newer than previously known APK versions.
-                downloaded_desktop (List[str]): List of desktop release tags or identifiers that were downloaded during the run.
-                new_desktop_versions (List[str]): Subset of downloaded_desktop that are newer than previously known desktop versions.
                 downloaded_firmware_prereleases (List[str]): List of firmware prerelease release tags or identifiers that were downloaded during the run.
                 downloaded_apk_prereleases (List[str]): List of Android APK prerelease release tags or identifiers that were downloaded during the run.
-                downloaded_desktop_prereleases (List[str]): List of desktop prerelease release tags or identifiers that were downloaded during the run.
                 failed_downloads (List[Dict[str, Any]]): List of failure records formatted for legacy CLI consumption; each record includes keys like file_name, release_tag, url, type, path_to_download, error, retryable, and http_status.
                 latest_firmware_version (str): The latest known firmware version after the run (empty string if unknown).
                 latest_apk_version (str): The latest known Android APK version after the run (empty string if unknown).
+
+            When include_desktop=True, the tuple is extended with 4 additional fields (13 items total):
+                downloaded_desktop (List[str]): List of desktop release tags or identifiers that were downloaded during the run.
+                new_desktop_versions (List[str]): Subset of downloaded_desktop that are newer than previously known desktop versions.
+                downloaded_desktop_prereleases (List[str]): List of desktop prerelease release tags or identifiers that were downloaded during the run.
                 latest_desktop_version (str): The latest known desktop version after the run (empty string if unknown).
         """
         if config is None:
@@ -766,7 +817,7 @@ class DownloadCLIIntegration:
             else:
                 config.pop("GITHUB_TOKEN", None)
 
-            results = self.run_download(config, force_refresh)
+            results = self.run_download(config, force_refresh, include_desktop)
             return results
 
         except (
@@ -777,7 +828,8 @@ class DownloadCLIIntegration:
             KeyError,
         ) as error:
             self.handle_cli_error(error)
-            return [], [], [], [], [], [], [], [], [], [], "", "", ""
+            # Return empty legacy 9-item tuple for backward compatibility
+            return [], [], [], [], [], [], [], "", ""
 
     def clear_cache(self, config: Dict[str, Any]) -> bool:
         """
@@ -860,7 +912,9 @@ class DownloadCLIIntegration:
         Returns:
             bool: `True` if all checks pass, `False` otherwise.
         """
-        desktop_enabled = bool((self.config or {}).get("SAVE_DESKTOP_APP", False))
+        desktop_enabled = _coerce_bool(
+            (self.config or {}).get("SAVE_DESKTOP_APP", False)
+        )
         if (
             not self.orchestrator
             or not self.android_downloader
@@ -919,7 +973,9 @@ class DownloadCLIIntegration:
                 - statistics (Dict[str, Any]): current download statistics from get_download_statistics().
                 - repository_support (bool): included only when `status` is "not_initialized" and set to False.
         """
-        desktop_enabled = bool((self.config or {}).get("SAVE_DESKTOP_APP", False))
+        desktop_enabled = _coerce_bool(
+            (self.config or {}).get("SAVE_DESKTOP_APP", False)
+        )
         desktop_initialized = self.desktop_downloader is not None
         if (
             self.orchestrator

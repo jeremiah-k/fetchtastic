@@ -133,7 +133,7 @@ def _parse_non_negative_int(value: Any) -> Optional[int]:
     """
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if parsed < 0:
         return None

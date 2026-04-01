@@ -117,10 +117,11 @@ class TestDownloadIntegration:
             ),
             patch.object(
                 orchestrator.desktop_downloader, "get_releases", return_value=[]
-            ),
+            ) as mock_get_releases,
         ):
             orchestrator.config["SAVE_DESKTOP_APP"] = True
             versions = orchestrator.get_latest_versions()
+        mock_get_releases.assert_called_once()
         assert isinstance(versions, dict)
         assert versions["desktop"] is None
         assert versions["desktop_prerelease"] is None

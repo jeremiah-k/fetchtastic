@@ -685,7 +685,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     size_matches = asset.size is None or (
                         os.path.getsize(target_path) == asset.size
                     )
-                    if size_matches:
+                    if size_matches and self.verify(target_path):
                         logger.debug(
                             "Manifest %s already exists and is valid", asset.name
                         )
@@ -701,7 +701,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             )
                         )
                         continue
-                except (json.JSONDecodeError, IOError, OSError):
+                except (json.JSONDecodeError, IOError, OSError, ValueError):
                     pass
 
             try:
@@ -892,6 +892,26 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return None
 
         try:
+            # Validate required fields before constructing FirmwareManifest
+            hw_model_slug = data.get("hwModelSlug")
+            if not isinstance(hw_model_slug, str) or not hw_model_slug:
+                logger.debug("Manifest missing valid hwModelSlug: %s", hw_model_slug)
+                return None
+
+            files = data.get("files", [])
+            if not isinstance(files, list):
+                logger.debug(
+                    "Manifest files field is not a list: %s", type(files).__name__
+                )
+                return None
+
+            part = data.get("part", [])
+            if not isinstance(part, list):
+                logger.debug(
+                    "Manifest part field is not a list: %s", type(part).__name__
+                )
+                return None
+
             return FirmwareManifest(
                 version=data.get("version"),
                 hwModel=data.get("hwModel"),

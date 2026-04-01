@@ -12,6 +12,8 @@ Comprehensive tests for the version.py module covering:
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from fetchtastic.download.version import (
     VersionManager,
     _read_latest_release_tag,
@@ -464,6 +466,8 @@ class TestPrereleaseFiltering:
         )
         assert result == ["v1.2.3-rc1", "v1.2.4-beta1"]
 
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
     def test_filter_prereleases_glob_patterns(self):
         """Glob-style include patterns should be supported."""
         vm = VersionManager()

@@ -217,7 +217,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Migrate legacy Android directories from `<download_dir>/apks` to `app/android`.
         """
         legacy_android_dir = self._get_legacy_android_base_dir()
-        if not os.path.isdir(legacy_android_dir):
+        if not os.path.isdir(legacy_android_dir) or os.path.islink(legacy_android_dir):
             return
 
         preferred_android_dir = os.path.join(
@@ -828,7 +828,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             android_dirs = [
                 directory
                 for directory in (preferred_android_dir, legacy_android_dir)
-                if os.path.exists(directory)
+                if os.path.isdir(directory) and not os.path.islink(directory)
             ]
             if not android_dirs:
                 return
@@ -956,6 +956,43 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             for android_dir in android_dirs:
                 prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
+
+                # Determine if this is the legacy root
+                is_legacy = android_dir == legacy_android_dir
+
+                # For legacy roots, compute releases present in preferred destination
+                # and subtract them from expected sets to clean up duplicates
+                if is_legacy:
+                    preferred_entries: set[str] = set()
+                    preferred_prerelease_dir = os.path.join(
+                        preferred_android_dir, APK_PRERELEASES_DIR_NAME
+                    )
+                    if os.path.isdir(preferred_android_dir):
+                        try:
+                            with os.scandir(preferred_android_dir) as it:
+                                for entry in it:
+                                    if entry.is_dir() and not entry.is_symlink():
+                                        preferred_entries.add(entry.name)
+                        except (FileNotFoundError, OSError):
+                            pass
+                    expected_stable_for_dir = expected_stable - preferred_entries
+
+                    preferred_prerelease_entries: set[str] = set()
+                    if os.path.isdir(preferred_prerelease_dir):
+                        try:
+                            with os.scandir(preferred_prerelease_dir) as it:
+                                for entry in it:
+                                    if entry.is_dir() and not entry.is_symlink():
+                                        preferred_prerelease_entries.add(entry.name)
+                        except (FileNotFoundError, OSError):
+                            pass
+                    expected_prerelease_for_dir = (
+                        expected_prerelease - preferred_prerelease_entries
+                    )
+                else:
+                    expected_stable_for_dir = expected_stable
+                    expected_prerelease_for_dir = expected_prerelease
+
                 try:
                     with os.scandir(android_dir) as it:
                         android_entries = list(it)
@@ -964,14 +1001,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
                 _remove_unexpected_entries(
                     android_dir,
-                    expected_stable | {APK_PRERELEASES_DIR_NAME},
+                    expected_stable_for_dir | {APK_PRERELEASES_DIR_NAME},
                     entries=android_entries,
                 )
 
                 if not os.path.exists(prerelease_dir):
                     continue
 
-                _remove_unexpected_entries(prerelease_dir, expected_prerelease)
+                _remove_unexpected_entries(prerelease_dir, expected_prerelease_for_dir)
         except (OSError, ValueError) as exc:
             logger.error("Error cleaning up APK prerelease directories: %s", exc)
 

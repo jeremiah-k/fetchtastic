@@ -1301,29 +1301,80 @@ def test_get_releases_no_assets_after_filtering(downloader):
 
 
 def test_get_releases_expands_scan_window(downloader):
-    """Should expand scan window when not enough stable releases found."""
-    downloader.config["DESKTOP_VERSIONS_TO_KEEP"] = 5
+    """Should expand scan window (fetch next page) when not enough stable releases found."""
+    # With higher keep value, scan_count will be larger, allowing us to test expansion
+    downloader.config["DESKTOP_VERSIONS_TO_KEEP"] = 10
 
-    # Return a prerelease but no stable releases
-    downloader.github_source.fetch_raw_releases_data = Mock(
-        return_value=[
-            {
-                "tag_name": "v2.7.20-open.1",
-                "prerelease": True,
-                "assets": [
-                    {
-                        "name": "test.dmg",
-                        "browser_download_url": "http://example.com/test.dmg",
-                        "size": 100,
-                    }
-                ],
-            }
-        ]
-    )
+    # With keep=10: scan_count = min(100, max(10*2, 10)) = 20
+    # First call returns 20 prereleases (all >= 2.7.14, no stable) to trigger page increment
+    # Second call returns stable releases (without -open suffix)
+    call_tracker = {"count": 0}
+
+    def mock_fetch_side_effect(*args, **kwargs):
+        call_tracker["count"] += 1
+        params = args[0] if args else kwargs.get("params", {})
+        page = params.get("page", 1)
+
+        if call_tracker["count"] == 1:
+            # First call (page=1): return 20 prereleases (with -open suffix), all >= 2.7.14
+            # Since stable_count (0) < min_stable_releases (10) and we got a full page,
+            # the code will increment page and fetch again
+            return [
+                {
+                    "tag_name": f"v2.7.{33 - i}-open.1",
+                    "prerelease": True,
+                    "assets": [
+                        {
+                            "name": "test.dmg",
+                            "browser_download_url": "http://example.com/test.dmg",
+                            "size": 100,
+                        }
+                    ],
+                }
+                for i in range(20)
+            ]
+        else:
+            # Second call (page=2): return stable releases (no -open suffix), all >= 2.7.14
+            return [
+                {
+                    "tag_name": f"v2.7.{23 - i}",
+                    "prerelease": False,
+                    "assets": [
+                        {
+                            "name": "test.dmg",
+                            "browser_download_url": "http://example.com/test.dmg",
+                            "size": 100,
+                        }
+                    ],
+                }
+                for i in range(10)
+            ]
+
+    mock_fetch = Mock(side_effect=mock_fetch_side_effect)
+    downloader.github_source.fetch_raw_releases_data = mock_fetch
 
     result = downloader.get_releases()
-    # Should return the prerelease but keep scanning logic
-    assert len(result) == 1
+
+    # Verify fetch was called twice (scan window expansion via page increment)
+    assert mock_fetch.call_count == 2
+
+    # Verify the first call used page=1
+    first_call_args = mock_fetch.call_args_list[0]
+    assert first_call_args[0][0]["page"] == 1
+    assert first_call_args[0][0]["per_page"] == 20
+
+    # Verify the second call used page=2 (expanded scan window)
+    second_call_args = mock_fetch.call_args_list[1]
+    assert second_call_args[0][0]["page"] == 2
+    assert second_call_args[0][0]["per_page"] == 20
+
+    # Total releases: 20 prereleases + 10 stable = 30
+    # The function returns when stable_count >= min_stable_releases (10)
+    assert len(result) == 30
+
+    # Verify stable releases were found
+    stable_releases = [r for r in result if not r.prerelease]
+    assert len(stable_releases) == 10
 
 
 def test_cleanup_prerelease_directories_no_expected_stable(downloader, tmp_path):
