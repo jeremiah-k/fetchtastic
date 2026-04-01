@@ -821,7 +821,7 @@ def _setup_downloads(
                 or current_fw_default
             )
             save_firmware = _coerce_bool(choice)
-        if wants("android"):
+        if wants("desktop"):
             current_desktop_default = "y" if save_desktop else "n"
             choice = (
                 _safe_input(
@@ -921,7 +921,7 @@ def _setup_downloads(
         config["CHECK_APK_PRERELEASES"] = _coerce_bool(check_apk_prereleases_input)
 
     # --- Desktop Client Selection ---
-    if save_desktop and (not is_partial_run or wants("android")):
+    if save_desktop and (not is_partial_run or wants("desktop")):
         rerun_menu = True
         if is_partial_run:
             if config.get("SELECTED_DESKTOP_PLATFORMS"):
@@ -956,7 +956,7 @@ def _setup_downloads(
             save_desktop = False
 
     # --- Desktop Prerelease Configuration ---
-    if save_desktop and (not is_partial_run or wants("android")):
+    if save_desktop and (not is_partial_run or wants("desktop")):
         check_desktop_prereleases_current = _coerce_bool(
             config.get("CHECK_DESKTOP_PRERELEASES", True)
         )
@@ -995,7 +995,12 @@ def _setup_downloads(
         not save_apks
         and not save_firmware
         and not save_desktop
-        and (not is_partial_run or wants("android") or wants("firmware"))
+        and (
+            not is_partial_run
+            or wants("android")
+            or wants("firmware")
+            or wants("desktop")
+        )
     ):
         print(
             "Please select at least one type of asset to download (APK, firmware, or desktop)."
@@ -2089,7 +2094,12 @@ def run_setup(
         not save_apks
         and not save_firmware
         and not save_desktop
-        and (not is_partial_run or wants("android") or wants("firmware"))
+        and (
+            not is_partial_run
+            or wants("android")
+            or wants("firmware")
+            or wants("desktop")
+        )
     ):
         return
 
@@ -2104,7 +2114,7 @@ def run_setup(
         config = _setup_firmware(config, is_first_run, default_versions_to_keep)
 
     # Handle desktop client configuration
-    if save_desktop and (not is_partial_run or wants("android")):
+    if save_desktop and (not is_partial_run or wants("desktop")):
         current_desktop_versions = config.get(
             "DESKTOP_VERSIONS_TO_KEEP", default_versions_to_keep
         )

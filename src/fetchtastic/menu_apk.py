@@ -1,7 +1,7 @@
 # src/fetchtastic/menu_apk.py
 
 import json
-from typing import cast
+from typing import Any, Dict, Union, cast
 
 import requests  # type: ignore[import-untyped]
 from pick import pick
@@ -50,13 +50,13 @@ def _format_file_size(size_bytes: int) -> str:
     return f"{size_mb:.1f} MB"
 
 
-def fetch_apk_assets() -> list[dict]:
+def fetch_apk_assets() -> list[str]:
     """
     Retrieve APK asset info from the latest Meshtastic Android release on GitHub.
 
     Returns:
-        list[dict]: List of dicts with 'name' and 'size' keys, sorted alphabetically by name.
-                    Empty list if no releases or matching assets are found.
+        list[str]: List of APK filenames sorted alphabetically.
+            Empty list if no releases or matching assets are found.
     """
     try:
         response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
@@ -80,21 +80,47 @@ def fetch_apk_assets() -> list[dict]:
         logger.warning("Invalid assets data from GitHub API.")
         return []
 
-    asset_list = []
+    asset_list: list[str] = []
     for asset in assets:
         if not isinstance(asset, dict):
             continue
         asset_name = asset.get("name")
         if not asset_name or not asset_name.lower().endswith(APK_EXTENSION):
             continue
-        asset_size = asset.get("size", 0)
-        asset_list.append({"name": asset_name, "size": asset_size})
+        asset_list.append(asset_name)
 
-    asset_list.sort(key=lambda x: x["name"])
+    asset_list.sort()
     return asset_list
 
 
-def select_assets(assets: list[dict]) -> dict[str, list[str]] | None:
+def _normalize_apk_assets(
+    assets: list[Union[str, Dict[str, Any]]],
+) -> list[Dict[str, Any]]:
+    """
+    Normalize APK assets into dict items with `name` and `size` keys.
+
+    Accepts either legacy string filenames or dict entries returned by GitHub API
+    processing. Invalid entries are ignored.
+    """
+    normalized: list[Dict[str, Any]] = []
+    for asset in assets:
+        if isinstance(asset, str):
+            if asset:
+                normalized.append({"name": asset, "size": 0})
+            continue
+        if not isinstance(asset, dict):
+            continue
+        name = asset.get("name")
+        if not name:
+            continue
+        size = asset.get("size", 0)
+        normalized.append({"name": name, "size": size})
+    return normalized
+
+
+def select_assets(
+    assets: list[Union[str, Dict[str, Any]]],
+) -> dict[str, list[str]] | None:
     """
     Present an interactive multi-select prompt of APK filenames grouped by architecture.
 
@@ -119,13 +145,14 @@ def select_assets(assets: list[dict]) -> dict[str, list[str]] | None:
     title = """Select the APK files you want to download (press SPACE to select, ENTER to confirm):
 Note: Options are grouped by flavor and architecture. File sizes shown in parentheses."""
 
-    grouped: dict[str, list[dict]] = {}
-    for asset in assets:
+    normalized_assets = _normalize_apk_assets(assets)
+    grouped: dict[str, list[Dict[str, Any]]] = {}
+    for asset in normalized_assets:
         group_label, _ = _get_apk_category(asset["name"])
         grouped.setdefault(group_label, []).append(asset)
 
     display_options: list[str] = []
-    option_map: list[str] = []
+    option_map: dict[str, str] = {}
 
     ordered_groups = sorted(grouped.keys())
     for group_key in ordered_groups:
@@ -134,11 +161,12 @@ Note: Options are grouped by flavor and architecture. File sizes shown in parent
             continue
         _, display_name = _get_apk_category(group_assets[0]["name"])
         display_options.append(f"--- {display_name} ---")
-        option_map.append("")
         for asset in sorted(group_assets, key=lambda x: x["name"]):
-            size_str = _format_file_size(asset["size"])
-            display_options.append(f"  {asset['name']} ({size_str})")
-            option_map.append(asset["name"])
+            size_bytes = asset["size"] if isinstance(asset["size"], int) else 0
+            size_str = _format_file_size(max(0, size_bytes))
+            display = f"{asset['name']} ({size_str})"
+            display_options.append(display)
+            option_map[display] = asset["name"]
 
     selected_options = pick(
         display_options, title, multiselect=True, min_selection_count=0, indicator="*"
@@ -147,15 +175,14 @@ Note: Options are grouped by flavor and architecture. File sizes shown in parent
         option[0] for option in cast(list[tuple[str, int]], selected_options)
     ]
 
+    asset_names = {asset["name"] for asset in normalized_assets}
     selected_assets = []
     for display_str in selected_display:
-        stripped = display_str.strip()
-        if stripped.startswith("---") or not stripped:
-            continue
-        for asset_name in option_map:
-            if asset_name and stripped.startswith(f"  {asset_name}"):
-                selected_assets.append(asset_name)
-                break
+        if display_str in option_map:
+            selected_assets.append(option_map[display_str])
+        elif display_str in asset_names:
+            # Backward-compatible path for tests/mocks that return raw filenames.
+            selected_assets.append(display_str)
 
     if not selected_assets:
         print("No APK files selected. APKs will not be downloaded.")

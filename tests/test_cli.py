@@ -51,6 +51,10 @@ def mock_cli_dependencies(mocker, tmp_path):
         [],
         [],
         [],
+        [],
+        [],
+        [],
+        "",
         "",
         "",
     )
@@ -60,6 +64,8 @@ def mock_cli_dependencies(mocker, tmp_path):
         "android": "",
         "firmware_prerelease": "",
         "android_prerelease": "",
+        "desktop": "",
+        "desktop_prerelease": "",
     }
 
     # Mock the CLI integration at its defining module to prevent real downloads/network.
@@ -1517,6 +1523,10 @@ def test_cli_download_without_log_level_config(mocker):
         [],
         [],
         [],
+        [],
+        [],
+        [],
+        "",
         "",
         "",
     )
@@ -1525,6 +1535,8 @@ def test_cli_download_without_log_level_config(mocker):
         "android": "",
         "firmware_prerelease": "",
         "android_prerelease": "",
+        "desktop": "",
+        "desktop_prerelease": "",
     }
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadCLIIntegration",
@@ -1577,6 +1589,10 @@ def test_cli_download_with_empty_config(mocker):
         [],
         [],
         [],
+        [],
+        [],
+        [],
+        "",
         "",
         "",
     )
@@ -1585,6 +1601,8 @@ def test_cli_download_with_empty_config(mocker):
         "android": "",
         "firmware_prerelease": "",
         "android_prerelease": "",
+        "desktop": "",
+        "desktop_prerelease": "",
     }
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadCLIIntegration",
