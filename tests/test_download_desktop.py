@@ -1099,6 +1099,9 @@ def test_should_download_prerelease_same_version(downloader, tmp_path):
     tracking_file.write_text('{"latest_version": "v2.7.20-open.1"}')
 
     downloader.get_prerelease_tracking_file = Mock(return_value=str(tracking_file))
+    downloader.cache_manager.read_json = Mock(
+        return_value={"latest_version": "v2.7.20-open.1"}
+    )
     downloader.version_manager.compare_versions = Mock(return_value=0)
 
     result = downloader.should_download_prerelease("v2.7.20-open.1")

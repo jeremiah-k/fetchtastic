@@ -1932,6 +1932,51 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.download_apk.assert_not_called()
         orchestrator.android_downloader.update_prerelease_tracking.assert_not_called()
 
+    def test_process_android_downloads_backfills_tracked_prerelease_when_incomplete(
+        self, orchestrator
+    ):
+        """
+        Tracked prerelease should be backfilled when selected assets changed.
+
+        This protects naming transitions (for example legacy -> split APK assets)
+        without redownloading older prerelease tags.
+        """
+        orchestrator.config["SAVE_APKS"] = True
+        release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        prerelease = Release(
+            tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
+        )
+        prerelease.assets[0].name = "app.apk"
+
+        orchestrator.android_downloader.get_releases.return_value = [release]
+        orchestrator.android_downloader.update_release_history.return_value = {}
+        orchestrator.android_downloader.ensure_release_notes.return_value = None
+        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
+        orchestrator.android_downloader.should_download_prerelease.return_value = False
+        orchestrator.android_downloader.get_current_tracked_prerelease_tag.return_value = (
+            "v1.0.1-beta"
+        )
+        orchestrator.android_downloader.is_release_complete.side_effect = (
+            lambda rel: not rel.prerelease
+        )
+        orchestrator.android_downloader.should_download_asset.return_value = True
+
+        mock_result = Mock(spec=DownloadResult)
+        mock_result.success = True
+        mock_result.was_skipped = False
+        orchestrator.android_downloader.download_apk.return_value = mock_result
+        orchestrator._handle_download_result = Mock()
+
+        orchestrator._process_android_downloads()
+
+        orchestrator.android_downloader.download_apk.assert_called_once_with(
+            prerelease, prerelease.assets[0]
+        )
+        orchestrator.android_downloader.update_prerelease_tracking.assert_called_once_with(
+            "v1.0.1-beta"
+        )
+
     def test_process_android_downloads_prerelease_skipped_updates_tracking(
         self, orchestrator
     ):

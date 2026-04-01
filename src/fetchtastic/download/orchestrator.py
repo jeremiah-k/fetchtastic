@@ -270,15 +270,30 @@ class DownloadOrchestrator:
 
             logger.info("Checking for pre-release APK...")
             prereleases = self.android_downloader.handle_prereleases(android_releases)
+            tracked_prerelease_tag = self._get_tracked_prerelease_tag(
+                self.android_downloader
+            )
             for prerelease in prereleases:
-                if not self.android_downloader.should_download_prerelease(
+                is_newer = self.android_downloader.should_download_prerelease(
                     prerelease.tag_name
-                ):
-                    logger.debug(
-                        "Skipping prerelease APK %s because it is not newer than tracked prerelease",
-                        prerelease.tag_name,
+                )
+                if not is_newer:
+                    should_backfill_tracked = (
+                        tracked_prerelease_tag is not None
+                        and prerelease.tag_name == tracked_prerelease_tag
+                        and not self.android_downloader.is_release_complete(prerelease)
                     )
-                    continue
+                    if should_backfill_tracked:
+                        logger.info(
+                            "Backfilling tracked prerelease APK %s to include newly selected assets",
+                            prerelease.tag_name,
+                        )
+                    else:
+                        logger.debug(
+                            "Skipping prerelease APK %s because it is not newer than tracked prerelease",
+                            prerelease.tag_name,
+                        )
+                        continue
 
                 selected_assets = [
                     asset
@@ -310,6 +325,7 @@ class DownloadOrchestrator:
                             "Failed to update Android prerelease tracking for %s",
                             prerelease.tag_name,
                         )
+                    tracked_prerelease_tag = prerelease.tag_name
 
             if (
                 self.config.get(
@@ -385,15 +401,30 @@ class DownloadOrchestrator:
 
             logger.info("Checking for pre-release Desktop app...")
             prereleases = self.desktop_downloader.handle_prereleases(desktop_releases)
+            tracked_prerelease_tag = self._get_tracked_prerelease_tag(
+                self.desktop_downloader
+            )
             for prerelease in prereleases:
-                if not self.desktop_downloader.should_download_prerelease(
+                is_newer = self.desktop_downloader.should_download_prerelease(
                     prerelease.tag_name
-                ):
-                    logger.debug(
-                        "Skipping prerelease Desktop release %s because it is not newer than tracked prerelease",
-                        prerelease.tag_name,
+                )
+                if not is_newer:
+                    should_backfill_tracked = (
+                        tracked_prerelease_tag is not None
+                        and prerelease.tag_name == tracked_prerelease_tag
+                        and not self.desktop_downloader.is_release_complete(prerelease)
                     )
-                    continue
+                    if should_backfill_tracked:
+                        logger.info(
+                            "Backfilling tracked prerelease Desktop release %s to include newly selected assets",
+                            prerelease.tag_name,
+                        )
+                    else:
+                        logger.debug(
+                            "Skipping prerelease Desktop release %s because it is not newer than tracked prerelease",
+                            prerelease.tag_name,
+                        )
+                        continue
 
                 selected_assets = [
                     asset
@@ -425,6 +456,7 @@ class DownloadOrchestrator:
                             "Failed to update Desktop prerelease tracking for %s",
                             prerelease.tag_name,
                         )
+                    tracked_prerelease_tag = prerelease.tag_name
 
             if (
                 self.config.get(
@@ -441,6 +473,22 @@ class DownloadOrchestrator:
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing Desktop downloads: {e}", exc_info=True)
+
+    def _get_tracked_prerelease_tag(self, downloader: Any) -> Optional[str]:
+        """
+        Best-effort retrieval of a downloader's currently tracked prerelease tag.
+
+        Returns:
+            Optional[str]: Tracked prerelease tag string when available, else None.
+        """
+        getter = getattr(downloader, "get_current_tracked_prerelease_tag", None)
+        if not callable(getter):
+            return None
+        try:
+            tracked = getter()
+        except (OSError, ValueError, TypeError):
+            return None
+        return tracked if isinstance(tracked, str) and tracked else None
 
     def _ensure_android_releases(self, limit: Optional[int] = None) -> List[Release]:
         """

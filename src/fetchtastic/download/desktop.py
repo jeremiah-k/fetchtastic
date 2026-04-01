@@ -1124,28 +1124,39 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         if not check_prereleases:
             return False
 
-        # Check if we have a tracking file
-        tracking_file = self.get_prerelease_tracking_file()
-        if os.path.exists(tracking_file):
-            try:
-                data = self.cache_manager.read_json(tracking_file) or {}
-                current_prerelease = data.get("latest_version")
-                if current_prerelease:
-                    comparison = self.version_manager.compare_versions(
-                        prerelease_tag, current_prerelease
-                    )
-                    return comparison > 0
-            except (OSError, ValueError, json.JSONDecodeError) as exc:
-                logger.debug(
-                    "Error reading Desktop prerelease tracking file %s: %s; "
-                    "defaulting to download",
-                    tracking_file,
-                    exc,
-                )
-                return True
+        current_prerelease = self.get_current_tracked_prerelease_tag()
+        if current_prerelease:
+            comparison = self.version_manager.compare_versions(
+                prerelease_tag, current_prerelease
+            )
+            return comparison > 0
 
         # No tracking file or unreadable; default to download
         return True
+
+    def get_current_tracked_prerelease_tag(self) -> Optional[str]:
+        """
+        Return the currently tracked Desktop prerelease tag from the tracking file.
+
+        Returns:
+            Optional[str]: The tracked prerelease tag, or `None` when not available.
+        """
+        tracking_file = self.get_prerelease_tracking_file()
+        if not os.path.exists(tracking_file):
+            return None
+
+        try:
+            data = self.cache_manager.read_json(tracking_file) or {}
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            logger.debug(
+                "Error reading Desktop prerelease tracking file %s: %s",
+                tracking_file,
+                exc,
+            )
+            return None
+
+        tracked = data.get("latest_version")
+        return tracked if isinstance(tracked, str) and tracked else None
 
     def manage_prerelease_tracking_files(
         self, cached_releases: Optional[List[Release]] = None
