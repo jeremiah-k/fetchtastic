@@ -375,6 +375,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 logger.warning(message)
                 raise ValueError(message)
             os.makedirs(preferred_release_dir, exist_ok=True)
+
+        # Safety check: verify preferred_release_dir is safe before returning
+        # When create_if_missing=False, an existing unsafe directory should not be used
+        if not create_if_missing and os.path.exists(preferred_release_dir):
+            if not self._is_safe_managed_dir(preferred_release_dir):
+                message = f"Refusing unsafe Android release directory: {preferred_release_dir}"
+                logger.warning(message)
+                raise ValueError(message)
+
         return preferred_release_dir
 
     def _is_android_prerelease(self, release: Release) -> bool:

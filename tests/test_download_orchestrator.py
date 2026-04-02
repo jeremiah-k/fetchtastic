@@ -1895,6 +1895,7 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.is_release_complete.return_value = True
         orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
         orchestrator.android_downloader.should_download_asset.return_value = True
+        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
@@ -1957,10 +1958,11 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.get_current_tracked_prerelease_tag.return_value = (
             "v1.0.1-beta"
         )
-        orchestrator.android_downloader.is_release_complete.side_effect = (
-            lambda rel: not rel.prerelease
+        orchestrator.android_downloader.is_release_complete.side_effect = lambda rel: (
+            not rel.prerelease
         )
         orchestrator.android_downloader.should_download_asset.return_value = True
+        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
 
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
@@ -1995,6 +1997,7 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
         orchestrator.android_downloader.should_download_prerelease.return_value = True
         orchestrator.android_downloader.should_download_asset.return_value = True
+        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = True
@@ -2031,6 +2034,7 @@ class TestDownloadOrchestrator:
             False,
         ]
         orchestrator.android_downloader.should_download_asset.return_value = True
+        orchestrator.android_downloader.get_assets.side_effect = lambda rel: rel.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
@@ -2647,6 +2651,7 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.is_release_complete.return_value = True
         orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
         orchestrator.android_downloader.should_download_asset.return_value = True
+        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False  # Actually downloaded, not skipped

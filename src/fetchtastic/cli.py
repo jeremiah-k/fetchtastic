@@ -219,7 +219,9 @@ def _perform_cache_clear(
     return success
 
 
-def _normalize_download_main_result(raw_result: Any) -> tuple[
+def _normalize_download_main_result(
+    raw_result: Any,
+) -> tuple[
     List[str],
     List[str],
     List[str],
@@ -317,7 +319,11 @@ def _handle_download_subcommand(
         return
 
     start_time = time.time()
-    raw_result = integration.main(config=config, force_refresh=args.force_download)
+    raw_result = integration.main(
+        config=config,
+        force_refresh=args.force_download,
+        include_desktop=True,
+    )
     (
         downloaded_firmwares,
         new_firmware_versions,

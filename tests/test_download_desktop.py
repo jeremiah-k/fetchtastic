@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -570,13 +571,20 @@ def test_download_desktop_network_exception(downloader, tmp_path):
     downloader.get_target_path_for_release = Mock(
         return_value=str(tmp_path / "test.dmg")
     )
-    downloader.create_download_result = Mock(return_value={"success": False})
+    mock_create_result = Mock(return_value={"success": False})
+    downloader.create_download_result = mock_create_result
 
     release = Release(tag_name="v2.7.20", prerelease=False, assets=[])
     asset = Asset(name="test.dmg", download_url="http://example.com/test.dmg", size=100)
 
     result = downloader.download_desktop(release, asset)
     assert result == {"success": False}
+
+    # Verify create_download_result was called with correct kwargs
+    mock_create_result.assert_called_once()
+    call_kwargs = mock_create_result.call_args[1]
+    assert call_kwargs.get("error_type") == "network_error"
+    assert call_kwargs.get("is_retryable") is True
 
 
 def test_download_desktop_oserror(downloader, tmp_path):
@@ -585,13 +593,20 @@ def test_download_desktop_oserror(downloader, tmp_path):
     downloader.get_target_path_for_release = Mock(
         return_value=str(tmp_path / "test.dmg")
     )
-    downloader.create_download_result = Mock(return_value={"success": False})
+    mock_create_result = Mock(return_value={"success": False})
+    downloader.create_download_result = mock_create_result
 
     release = Release(tag_name="v2.7.20", prerelease=False, assets=[])
     asset = Asset(name="test.dmg", download_url="http://example.com/test.dmg", size=100)
 
     result = downloader.download_desktop(release, asset)
     assert result == {"success": False}
+
+    # Verify create_download_result was called with correct kwargs
+    mock_create_result.assert_called_once()
+    call_kwargs = mock_create_result.call_args[1]
+    assert call_kwargs.get("error_type") == "filesystem_error"
+    assert call_kwargs.get("is_retryable") is False
 
 
 def test_download_desktop_value_error(downloader, tmp_path):
@@ -600,13 +615,20 @@ def test_download_desktop_value_error(downloader, tmp_path):
     downloader.get_target_path_for_release = Mock(
         return_value=str(tmp_path / "test.dmg")
     )
-    downloader.create_download_result = Mock(return_value={"success": False})
+    mock_create_result = Mock(return_value={"success": False})
+    downloader.create_download_result = mock_create_result
 
     release = Release(tag_name="v2.7.20", prerelease=False, assets=[])
     asset = Asset(name="test.dmg", download_url="http://example.com/test.dmg", size=100)
 
     result = downloader.download_desktop(release, asset)
     assert result == {"success": False}
+
+    # Verify create_download_result was called with correct kwargs
+    mock_create_result.assert_called_once()
+    call_kwargs = mock_create_result.call_args[1]
+    assert call_kwargs.get("error_type") == "validation_error"
+    assert call_kwargs.get("is_retryable") is False
 
 
 def test_download_desktop_no_target_path(downloader, tmp_path):
@@ -616,13 +638,22 @@ def test_download_desktop_no_target_path(downloader, tmp_path):
     downloader.get_target_path_for_release = Mock(
         side_effect=requests.RequestException("error")
     )
-    downloader.create_download_result = Mock(return_value={"success": False})
+    mock_create_result = Mock(return_value={"success": False})
+    downloader.create_download_result = mock_create_result
 
     release = Release(tag_name="v2.7.20", prerelease=False, assets=[])
     asset = Asset(name="test.dmg", download_url="http://example.com/test.dmg", size=100)
 
     result = downloader.download_desktop(release, asset)
     assert result == {"success": False}
+
+    # Verify create_download_result was called with fallback file_path
+    mock_create_result.assert_called_once()
+    call_kwargs = mock_create_result.call_args[1]
+    expected_fallback = str(
+        Path(downloader.download_dir) / APP_DIR_NAME / DESKTOP_DIR_NAME
+    )
+    assert call_kwargs.get("file_path") == expected_fallback
 
 
 def test_is_release_complete_missing_dir(downloader):

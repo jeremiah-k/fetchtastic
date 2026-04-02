@@ -742,7 +742,10 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     )
                 ],
                 key=lambda release: (
-                    self.version_manager.get_release_tuple(release.tag_name) or ()
+                    self.version_manager.get_release_tuple(release.tag_name)
+                    or (
+                        release.published_at.timestamp() if release.published_at else 0,
+                    )
                 ),
                 reverse=True,
             )

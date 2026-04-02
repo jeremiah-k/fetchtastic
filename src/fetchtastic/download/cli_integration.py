@@ -74,6 +74,39 @@ class DownloadCLIIntegration:
         self.firmware_downloader: Optional[FirmwareReleaseDownloader] = None
         self.config: Optional[Dict[str, Any]] = None
 
+    def _empty_cli_integration_result(self, include_desktop: bool) -> Union[
+        Tuple[list, list, list, list, list, list, list, str, str],
+        Tuple[
+            list,
+            list,
+            list,
+            list,
+            list,
+            list,
+            list,
+            list,
+            list,
+            list,
+            str,
+            str,
+            str,
+        ],
+    ]:
+        """
+        Return an empty CLI integration result tuple of the appropriate shape.
+
+        Parameters:
+            include_desktop (bool): If True, return a 13-item tuple with desktop fields;
+                otherwise return a 9-item tuple.
+
+        Returns:
+            Union[Tuple[...], Tuple[...]]: Empty tuple matching the expected return shape.
+        """
+        if include_desktop:
+            return ([], [], [], [], [], [], [], [], [], [], "", "", "")
+        else:
+            return ([], [], [], [], [], [], [], "", "")
+
     def _initialize_components(self, config: Dict[str, Any]) -> None:
         """
         Set up the DownloadOrchestrator and expose its downloaders on the integration instance.
@@ -240,8 +273,8 @@ class DownloadCLIIntegration:
             KeyError,
         ) as e:
             logger.exception("Error in CLI integration: %s", e)
-            # Return empty legacy 9-item tuple for backward compatibility
-            return [], [], [], [], [], [], [], "", ""
+            # Return empty tuple with appropriate shape based on include_desktop
+            return self._empty_cli_integration_result(include_desktop)
 
     def _get_tracked_desktop_versions(self) -> Dict[str, Optional[str]]:
         """
@@ -845,8 +878,8 @@ class DownloadCLIIntegration:
             KeyError,
         ) as error:
             self.handle_cli_error(error)
-            # Return empty legacy 9-item tuple for backward compatibility
-            return [], [], [], [], [], [], [], "", ""
+            # Return empty tuple with appropriate shape based on include_desktop
+            return self._empty_cli_integration_result(include_desktop)
 
     def clear_cache(self, config: Dict[str, Any]) -> bool:
         """

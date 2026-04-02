@@ -297,7 +297,7 @@ class DownloadOrchestrator:
 
                 selected_assets = [
                     asset
-                    for asset in prerelease.assets
+                    for asset in self.android_downloader.get_assets(prerelease)
                     if self.android_downloader.should_download_asset(asset.name)
                 ]
                 if not selected_assets:
