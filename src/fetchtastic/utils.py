@@ -3,6 +3,7 @@ import gc  # For Windows file operation retries
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 import platform
 import re
@@ -32,6 +33,42 @@ from fetchtastic.constants import (
     ZIP_EXTENSION,
 )
 from fetchtastic.log_utils import logger  # Import the new logger
+
+
+def coerce_bool(value: Any, default: bool = False) -> bool:
+    """
+    Normalize a variety of common truthy and falsey representations to a boolean.
+
+    Accepts booleans, integers, and common string forms such as "y"/"yes", "n"/"no",
+    "true"/"false", "1"/"0", and "on"/"off". If the input cannot be interpreted,
+    returns the provided default.
+
+    Parameters:
+        value (Any): The value to coerce to bool.
+        default (bool): Value to return when `value` is unrecognized (defaults to False).
+
+    Returns:
+        bool: `True` if `value` represents truth, `False` if it represents falsehood,
+        or `default` when the representation is unrecognized.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return default
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if re.fullmatch(r"[+-]?\d+", normalized or ""):
+            return int(normalized) != 0
+        if normalized in {"y", "yes", "true", "t", "1", "on"}:
+            return True
+        if normalized in {"n", "no", "false", "f", "0", "off"}:
+            return False
+    return default
+
 
 # Precompiled regexes for version stripping
 MODERN_VER_RX = re.compile(

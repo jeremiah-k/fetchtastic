@@ -136,7 +136,13 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             if is_prerelease
             else os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
         )
+        if os.path.exists(base_dir) and not self._is_safe_managed_dir(base_dir):
+            raise ValueError(f"Desktop base directory is unsafe: {base_dir}")
         version_dir = os.path.join(base_dir, safe_release)
+        if not self._is_within_download_tree(version_dir):
+            raise ValueError(
+                f"Desktop version directory is outside safe tree: {version_dir}"
+            )
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
 
@@ -155,6 +161,27 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         )
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
+
+    def _is_within_download_tree(self, path: str) -> bool:
+        """
+        Return whether `path` resolves within this downloader's managed download directory tree.
+        """
+        try:
+            download_root = os.path.realpath(self.download_dir)
+            candidate = os.path.realpath(path)
+            return os.path.commonpath([download_root, candidate]) == download_root
+        except ValueError:
+            return False
+
+    def _is_safe_managed_dir(self, path: str) -> bool:
+        """
+        Return whether `path` is a non-symlink directory under the managed download tree.
+        """
+        return (
+            os.path.isdir(path)
+            and not os.path.islink(path)
+            and self._is_within_download_tree(path)
+        )
 
     def _is_desktop_prerelease(self, release: Release) -> bool:
         """
@@ -719,8 +746,22 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             )
             if not os.path.exists(desktop_dir):
                 return
+            if not self._is_safe_managed_dir(desktop_dir):
+                logger.warning(
+                    "Skipping Desktop cleanup: desktop directory is unsafe (symlink or outside tree): %s",
+                    desktop_dir,
+                )
+                return
 
             prerelease_dir = os.path.join(desktop_dir, DESKTOP_PRERELEASES_DIR_NAME)
+            if os.path.exists(prerelease_dir) and not self._is_safe_managed_dir(
+                prerelease_dir
+            ):
+                logger.warning(
+                    "Skipping Desktop prerelease cleanup: prerelease directory is unsafe: %s",
+                    prerelease_dir,
+                )
+                return
             raw_keep_limit = (
                 keep_limit_override
                 if keep_limit_override is not None

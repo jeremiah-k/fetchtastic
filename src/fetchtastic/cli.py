@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import platformdirs
 
-from fetchtastic import log_utils, setup_config
+from fetchtastic import log_utils, setup_config, utils
 from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
@@ -575,7 +575,7 @@ def main() -> None:
                 text_to_copy = full_url
 
             resp = setup_config._safe_input(copy_prompt_text, default="y")
-            if setup_config._coerce_bool(resp, default=True):
+            if utils.coerce_bool(resp, default=True):
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
@@ -770,7 +770,7 @@ def run_clean() -> None:
     confirm = setup_config._safe_input(
         "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
     )
-    if not setup_config._coerce_bool(confirm, default=False):
+    if not utils.coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 
@@ -993,7 +993,7 @@ def run_repo_clean(config: Dict[str, Any]) -> None:
     confirm = setup_config._safe_input(
         "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
     )
-    confirmed = setup_config._coerce_bool(confirm, default=False)
+    confirmed = utils.coerce_bool(confirm, default=False)
     if not confirmed:
         print("Clean operation cancelled.")
         return

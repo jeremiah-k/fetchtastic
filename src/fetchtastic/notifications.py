@@ -66,6 +66,8 @@ def send_download_completion_notification(
     downloaded_apks: List[str],
     downloaded_firmware_prereleases: Optional[List[str]] = None,
     downloaded_apk_prereleases: Optional[List[str]] = None,
+    downloaded_desktop: Optional[List[str]] = None,
+    downloaded_desktop_prereleases: Optional[List[str]] = None,
 ) -> None:
     """
     Send notification when downloads are completed successfully.
@@ -76,6 +78,8 @@ def send_download_completion_notification(
         downloaded_apks (List[str]): List of APK versions that were downloaded.
         downloaded_firmware_prereleases (Optional[List[str]]): List of firmware prerelease versions that were downloaded.
         downloaded_apk_prereleases (Optional[List[str]]): List of APK prerelease versions that were downloaded.
+        downloaded_desktop (Optional[List[str]]): List of desktop versions that were downloaded.
+        downloaded_desktop_prereleases (Optional[List[str]]): List of desktop prerelease versions that were downloaded.
 
     Side effects:
         - Sends notification to configured NTFY server/topic if downloads occurred.
@@ -85,12 +89,16 @@ def send_download_completion_notification(
 
     downloaded_firmware_prereleases = downloaded_firmware_prereleases or []
     downloaded_apk_prereleases = downloaded_apk_prereleases or []
+    downloaded_desktop = downloaded_desktop or []
+    downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
 
     if (
         not downloaded_firmwares
         and not downloaded_apks
         and not downloaded_firmware_prereleases
         and not downloaded_apk_prereleases
+        and not downloaded_desktop
+        and not downloaded_desktop_prereleases
     ):
         return  # No downloads, no notification needed
 
@@ -110,6 +118,14 @@ def send_download_completion_notification(
 
     if downloaded_apk_prereleases:
         message = f"Downloaded Android APK prerelease versions: {', '.join(downloaded_apk_prereleases)}"
+        notification_messages.append(message)
+
+    if downloaded_desktop:
+        message = f"Downloaded Desktop versions: {', '.join(downloaded_desktop)}"
+        notification_messages.append(message)
+
+    if downloaded_desktop_prereleases:
+        message = f"Downloaded Desktop prerelease versions: {', '.join(downloaded_desktop_prereleases)}"
         notification_messages.append(message)
 
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")

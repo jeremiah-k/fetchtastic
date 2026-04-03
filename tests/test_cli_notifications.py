@@ -76,6 +76,8 @@ def test_summary_sends_completion_notification(integration):
             ["v1.8.1"],
             [],
             [],
+            [],
+            [],
         )
         mock_up_to_date.assert_not_called()
 

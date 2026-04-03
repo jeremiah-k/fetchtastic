@@ -34,8 +34,8 @@ from fetchtastic.notifications import (
     send_download_completion_notification,
     send_up_to_date_notification,
 )
-from fetchtastic.setup_config import _coerce_bool
 from fetchtastic.utils import (
+    coerce_bool,
     format_api_summary,
     get_api_request_summary,
     get_effective_github_token,
@@ -453,6 +453,8 @@ class DownloadCLIIntegration:
                     downloaded_apks,
                     downloaded_firmware_prereleases,
                     downloaded_apk_prereleases,
+                    downloaded_desktop,
+                    downloaded_desktop_prereleases,
                 )
             else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
                 send_up_to_date_notification(self.config)
@@ -962,7 +964,7 @@ class DownloadCLIIntegration:
         Returns:
             bool: `True` if all checks pass, `False` otherwise.
         """
-        desktop_enabled = _coerce_bool(
+        desktop_enabled = coerce_bool(
             (self.config or {}).get("SAVE_DESKTOP_APP", False)
         )
         if (
@@ -1023,7 +1025,7 @@ class DownloadCLIIntegration:
                 - statistics (Dict[str, Any]): current download statistics from get_download_statistics().
                 - repository_support (bool): included only when `status` is "not_initialized" and set to False.
         """
-        desktop_enabled = _coerce_bool(
+        desktop_enabled = coerce_bool(
             (self.config or {}).get("SAVE_DESKTOP_APP", False)
         )
         desktop_initialized = self.desktop_downloader is not None

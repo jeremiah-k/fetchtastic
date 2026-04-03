@@ -360,10 +360,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 legacy_release_dir,
             )
         elif self._is_safe_managed_dir(legacy_release_dir):
-            if self._move_legacy_path(legacy_release_dir, preferred_release_dir):
-                self._prune_empty_legacy_android_dirs()
-                return preferred_release_dir
-            return legacy_release_dir
+            if self._is_within_download_tree(preferred_release_dir):
+                if self._move_legacy_path(legacy_release_dir, preferred_release_dir):
+                    self._prune_empty_legacy_android_dirs()
+                    return preferred_release_dir
+                return legacy_release_dir
+            else:
+                logger.warning(
+                    "Skipping legacy Android release migration because destination is not safe: %s",
+                    preferred_release_dir,
+                )
+                return legacy_release_dir
 
         if create_if_missing:
             if os.path.islink(preferred_base_dir):
