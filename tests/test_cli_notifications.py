@@ -40,23 +40,33 @@ def _call_summary(
     new_apks=None,
     downloaded_fw_prereleases=None,
     downloaded_apk_prereleases=None,
+    downloaded_desktop=None,
+    downloaded_desktop_prereleases=None,
+    new_desktop=None,
 ):
     failed = failed or []
     new_fw = new_fw or []
     new_apks = new_apks or []
     downloaded_fw_prereleases = downloaded_fw_prereleases or []
     downloaded_apk_prereleases = downloaded_apk_prereleases or []
+    downloaded_desktop = downloaded_desktop or []
+    downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
+    new_desktop = new_desktop or []
     integration.log_download_results_summary(
         elapsed_seconds=1.2,
         downloaded_firmwares=downloaded_fw,
         downloaded_apks=downloaded_apks,
         downloaded_firmware_prereleases=downloaded_fw_prereleases,
         downloaded_apk_prereleases=downloaded_apk_prereleases,
+        downloaded_desktop=downloaded_desktop,
+        downloaded_desktop_prereleases=downloaded_desktop_prereleases,
         failed_downloads=failed,
         latest_firmware_version="v2.8.0",
         latest_apk_version="v1.8.0",
+        latest_desktop_version="",
         new_firmware_versions=new_fw,
         new_apk_versions=new_apks,
+        new_desktop_versions=new_desktop,
     )
 
 

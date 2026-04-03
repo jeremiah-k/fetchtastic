@@ -321,21 +321,30 @@ class DownloadCLIIntegration:
             "prerelease": tracked_desktop_prerelease,
         }
 
-    def _clear_caches(self) -> None:
+    def _clear_caches(self) -> bool:
         """
         Clear downloader caches managed by this integration.
 
         This calls the Android downloader's cache manager to remove all cached data; exceptions raised during the clear operation (e.g., OSError, ValueError) are caught and logged and are not propagated.
+
+        Returns:
+            bool: True if cache was cleared successfully, False otherwise.
         """
         try:
             # Clear shared cache manager (same instance used by all downloaders)
+            success = True
             if self.android_downloader:
-                self.android_downloader.clear_cache()
+                if not self.android_downloader.clear_cache():
+                    logger.warning("Failed to clear cache for Android downloader")
+                    success = False
 
-            logger.info("All caches cleared")
+            if success:
+                logger.info("All caches cleared")
+            return success
 
         except (OSError, ValueError) as e:
             logger.warning(f"Error clearing caches: {e}")
+            return False
 
     def log_download_results_summary(
         self,

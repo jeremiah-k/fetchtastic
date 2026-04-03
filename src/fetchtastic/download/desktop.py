@@ -152,6 +152,9 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
         Returns:
             str: Absolute filesystem path to the prerelease Desktop directory under the Desktop downloads directory.
+
+        Raises:
+            ValueError: If the prerelease directory is unsafe (symlink or outside download tree).
         """
         prerelease_dir = os.path.join(
             self.download_dir,
@@ -159,6 +162,14 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             DESKTOP_DIR_NAME,
             DESKTOP_PRERELEASES_DIR_NAME,
         )
+        if os.path.islink(prerelease_dir):
+            message = f"Refusing to use symlinked Desktop prerelease directory: {prerelease_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+        if not self._is_within_download_tree(prerelease_dir):
+            message = f"Refusing to create Desktop prerelease directory outside safe tree: {prerelease_dir}"
+            logger.warning(message)
+            raise ValueError(message)
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
 
