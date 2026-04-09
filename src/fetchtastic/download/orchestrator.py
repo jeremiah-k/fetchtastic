@@ -1707,7 +1707,8 @@ class DownloadOrchestrator:
             1
             for result in self.download_results
             if (
-                getattr(result, "was_skipped", False) is not True
+                result.success
+                and getattr(result, "was_skipped", False) is not True
                 and (
                     result.file_type == artifact_type
                     or (result.file_path and artifact_type in str(result.file_path))

@@ -1,6 +1,6 @@
 import curses
 from datetime import datetime
-from typing import Any, Callable, Protocol, cast
+from typing import Any, Callable, cast
 
 import requests  # type: ignore[import-untyped]
 from pick import (
@@ -12,6 +12,7 @@ from pick import (
     Picker,
     Position,
 )
+from pick.backend import Backend
 
 from fetchtastic.constants import (
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
@@ -27,27 +28,7 @@ from fetchtastic.download.version import VersionManager
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
-
-class CursesScreen(Protocol):
-    """Protocol for curses screen objects used by MenuPicker."""
-
-    def getmaxyx(self) -> tuple[int, int]:
-        """
-        Return the current screen dimensions.
-
-        Returns:
-            (rows, cols): A tuple with the number of rows (height) and columns (width) of the screen in character cells.
-        """
-        ...
-
-    def getch(self) -> int:
-        """
-        Read a single key code from the screen input.
-
-        Returns:
-            int: Integer key code for the pressed key.
-        """
-        ...
+CursesScreen = Backend
 
 
 # Module-level constants for repository content filtering

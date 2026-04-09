@@ -557,7 +557,8 @@ class DownloadCLIIntegration:
                 continue
 
             file_type = result.file_type
-            is_firmware = file_type in FIRMWARE_FILE_TYPES
+            is_firmware_manifest = file_type == FILE_TYPE_FIRMWARE_MANIFEST
+            is_firmware = file_type in FIRMWARE_FILE_TYPES and not is_firmware_manifest
             is_android = file_type in ANDROID_FILE_TYPES
             is_desktop = file_type in DESKTOP_FILE_TYPES
             was_skipped = getattr(result, "was_skipped", False)

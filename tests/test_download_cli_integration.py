@@ -888,6 +888,42 @@ def test_convert_results_to_legacy_format_with_file_type_categorization():
     assert "v2.1" in _downloaded_apk_prereleases  # android_prerelease
 
 
+def test_convert_results_excludes_manifest_from_firmware_download_lists(mocker):
+    """Firmware manifest-only results should not be reported as firmware downloads."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {
+        "firmware": "v2.0.0",
+        "android": None,
+        "firmware_prerelease": None,
+        "android_prerelease": None,
+        "desktop": None,
+        "desktop_prerelease": None,
+    }
+
+    class MockResult:
+        def __init__(self, release_tag, file_type, was_skipped=False):
+            self.release_tag = release_tag
+            self.file_type = file_type
+            self.was_skipped = was_skipped
+
+    results = [MockResult("v2.1.0", "firmware_manifest")]
+    (
+        downloaded_firmwares,
+        new_firmware_versions,
+        _downloaded_apks,
+        _new_apk_versions,
+        _downloaded_desktop,
+        _new_desktop_versions,
+        _downloaded_firmware_prereleases,
+        _downloaded_apk_prereleases,
+        _downloaded_desktop_prereleases,
+    ) = integration._convert_results_to_legacy_format(results)
+
+    assert downloaded_firmwares == []
+    assert new_firmware_versions == []
+
+
 def test_convert_results_uses_android_prerelease_for_comparison(mocker):
     """Android prerelease comparisons should use prerelease current version."""
     integration = DownloadCLIIntegration()

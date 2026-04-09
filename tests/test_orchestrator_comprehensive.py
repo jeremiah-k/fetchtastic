@@ -10,7 +10,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import RELEASE_SCAN_COUNT
+from fetchtastic.constants import (
+    DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    RELEASE_SCAN_COUNT,
+)
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -339,10 +342,10 @@ class TestDownloadOrchestrator:
             ),
         ]
 
-        # Test counting firmware downloads (should count both successful and failed)
+        # Test counting firmware downloads (should count only successful results)
         firmware_count = orchestrator._count_artifact_downloads("firmware")
         assert isinstance(firmware_count, int)
-        assert firmware_count == 3  # 3 firmware entries total
+        assert firmware_count == 2  # 2 successful firmware entries
 
         # Test counting android downloads
         android_count = orchestrator._count_artifact_downloads("android")
@@ -373,8 +376,12 @@ class TestDownloadOrchestrator:
         ):
             versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
-        # Should contain version information for different components
-        assert len(versions) >= 0  # May be empty initially
+        assert "android" in versions
+        assert "firmware" in versions
+        assert "firmware_prerelease" in versions
+        assert "android_prerelease" in versions
+        assert "desktop" in versions
+        assert "desktop_prerelease" in versions
         for key, value in versions.items():
             assert isinstance(key, str)
             assert isinstance(value, (str, type(None)))
@@ -562,7 +569,7 @@ class TestDownloadOrchestrator:
         orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = "nope"
         keep_limit = orchestrator._get_firmware_keep_limit()
         assert isinstance(keep_limit, int)
-        assert keep_limit >= 0
+        assert keep_limit == int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
 
     def test_download_android_release(self, orchestrator):
         """
