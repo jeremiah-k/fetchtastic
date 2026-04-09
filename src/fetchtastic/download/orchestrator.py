@@ -1703,18 +1703,38 @@ class DownloadOrchestrator:
         Returns:
             int: Number of matching downloads that were not skipped.
         """
-        return sum(
-            1
-            for result in self.download_results
-            if (
-                result.success
-                and getattr(result, "was_skipped", False) is not True
-                and (
-                    result.file_type == artifact_type
-                    or (result.file_path and artifact_type in str(result.file_path))
-                )
-            )
-        )
+
+        def _matches_group(file_type: str) -> bool:
+            if artifact_type == FILE_TYPE_FIRMWARE:
+                return file_type in {
+                    FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                }
+            if artifact_type == FILE_TYPE_ANDROID:
+                return file_type in {
+                    FILE_TYPE_ANDROID,
+                    FILE_TYPE_ANDROID_PRERELEASE,
+                }
+            return file_type == artifact_type
+
+        count = 0
+        for result in self.download_results:
+            if not result.success or getattr(result, "was_skipped", False) is True:
+                continue
+
+            file_type = getattr(result, "file_type", None)
+            if isinstance(file_type, str) and file_type:
+                if _matches_group(file_type):
+                    count += 1
+                continue
+
+            # Legacy fallback for untyped results.
+            file_path = getattr(result, "file_path", None)
+            if file_path and artifact_type in str(file_path):
+                count += 1
+
+        return count
 
     def cleanup_old_versions(self) -> None:
         """

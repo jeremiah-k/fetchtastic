@@ -12,6 +12,14 @@ import pytest
 
 from fetchtastic.constants import (
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_DESKTOP,
+    FILE_TYPE_DESKTOP_PRERELEASE,
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
@@ -322,34 +330,62 @@ class TestDownloadOrchestrator:
         orchestrator.download_results = [
             DownloadResult(
                 success=True,
-                file_type="firmware",
+                file_type=FILE_TYPE_FIRMWARE,
                 download_url="https://example.com/firmware1.bin",
             ),
             DownloadResult(
                 success=True,
-                file_type="firmware",
-                download_url="https://example.com/firmware2.bin",
+                file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
+                file_path="/tmp/firmware/prerelease/v2.0.0-open.1/firmware.bin",
             ),
             DownloadResult(
                 success=True,
-                file_type="android",
+                file_type=FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                file_path="/tmp/firmware/prerelease/firmware-2.0.1.a1b2c3d/repo.bin",
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                file_path="/tmp/firmware/v2.0.0/device.mt.json",
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_ANDROID_PRERELEASE,
                 download_url="https://example.com/android.apk",
             ),
             DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_DESKTOP,
+                file_path="/tmp/app/desktop/v2.0.0/Meshtastic.dmg",
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_DESKTOP_PRERELEASE,
+                file_path="/tmp/app/desktop/prerelease/v2.0.1-open.1/Meshtastic.dmg",
+            ),
+            DownloadResult(
                 success=False,
-                file_type="firmware",
+                file_type=FILE_TYPE_FIRMWARE,
                 download_url="https://example.com/firmware3.bin",
             ),
         ]
 
-        # Test counting firmware downloads (should count only successful results)
-        firmware_count = orchestrator._count_artifact_downloads("firmware")
+        # Firmware count should include stable+prerelease types but exclude manifests.
+        firmware_count = orchestrator._count_artifact_downloads(FILE_TYPE_FIRMWARE)
         assert isinstance(firmware_count, int)
-        assert firmware_count == 2  # 2 successful firmware entries
+        assert firmware_count == 3
 
-        # Test counting android downloads
-        android_count = orchestrator._count_artifact_downloads("android")
-        assert android_count == 1  # 1 android entry
+        # Android count should include Android prerelease results.
+        android_count = orchestrator._count_artifact_downloads(FILE_TYPE_ANDROID)
+        assert android_count == 1
+
+        # Desktop prereleases must not be double-counted as stable desktop downloads.
+        desktop_count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
+        desktop_prerelease_count = orchestrator._count_artifact_downloads(
+            FILE_TYPE_DESKTOP_PRERELEASE
+        )
+        assert desktop_count == 1
+        assert desktop_prerelease_count == 1
 
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
