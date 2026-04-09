@@ -832,6 +832,24 @@ def test_is_release_complete_size_mismatch(downloader, tmp_path):
     assert result is False
 
 
+def test_is_release_complete_with_unknown_asset_size(downloader, tmp_path):
+    """Unknown asset sizes should skip size checks but still require verification."""
+    downloader.verify = Mock(return_value=True)
+    downloader.should_download_asset = Mock(return_value=True)
+
+    release = Release(
+        tag_name="v2.7.20",
+        prerelease=False,
+        assets=[Asset(name="test.dmg", download_url="http://x", size=None)],
+    )
+    version_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    version_dir.mkdir(parents=True)
+    (version_dir / "test.dmg").write_bytes(b"test")
+
+    result = downloader.is_release_complete(release)
+    assert result is True
+
+
 def test_is_release_complete_verify_fails(downloader, tmp_path):
     """Failed verification should return False."""
     downloader.verify = Mock(return_value=False)

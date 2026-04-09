@@ -396,7 +396,10 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         if not os.path.exists(target_path):
             return False
 
-        if asset.size and self.file_operations.get_file_size(target_path) != asset.size:
+        if (
+            asset.size is not None
+            and self.file_operations.get_file_size(target_path) != asset.size
+        ):
             return False
 
         if not self.verify(target_path):
@@ -785,7 +788,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             if not os.path.exists(asset_path):
                 return False
             try:
-                if os.path.getsize(asset_path) != asset.size:
+                if asset.size is not None and os.path.getsize(asset_path) != asset.size:
                     return False
                 if not self.verify(asset_path):
                     logger.debug("Hash verification failed for %s", asset.name)

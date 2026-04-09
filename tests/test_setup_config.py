@@ -136,6 +136,47 @@ def test_setup_downloads_partial_non_download_sections_skip_no_download_warning(
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_desktop_no_selection_avoids_duplicate_message(mocker, capsys):
+    """Desktop no-selection flow should emit only the direct no-selection message."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": False,
+    }
+
+    mocker.patch("builtins.input", side_effect=["d"])
+    mocker.patch(
+        "fetchtastic.setup_config.menu_desktop.run_menu",
+        return_value={"selected_assets": []},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config,
+        is_partial_run=False,
+        wants=lambda section: True,
+    )
+    captured = capsys.readouterr()
+
+    assert (
+        captured.out.count(
+            "No desktop assets selected. Desktop clients will not be downloaded."
+        )
+        == 1
+    )
+    assert (
+        "No existing desktop selection found. Desktop clients will not be downloaded."
+        not in captured.out
+    )
+    assert updated["SAVE_DESKTOP_APP"] is False
+    assert updated["CHECK_DESKTOP_PRERELEASES"] is False
+    assert save_apks is False
+    assert save_firmware is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_partial_skips_firmware_menu(mocker):
     """Partial runs should respect "keep existing" and skip the firmware menu."""
     from fetchtastic.setup_config import _setup_downloads

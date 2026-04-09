@@ -196,6 +196,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         if not os.path.exists(source_path):
             return False
+        if os.path.islink(source_path):
+            logger.debug(
+                "Skipping Android legacy migration because source is symlinked: %s",
+                source_path,
+            )
+            return False
         if os.path.exists(destination_path):
             logger.debug(
                 "Skipping Android legacy migration because destination exists: %s",

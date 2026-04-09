@@ -122,7 +122,7 @@ class TestPatternMatchingAlignment:
         # Create a mock config with selected patterns
         config = {
             "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg", "meshtastic_x64.msi"],
-            "DESKTOP_EXCLUDE_PATTERNS": [],
+            "EXCLUDE_PATTERNS": [],
         }
 
         mock_cache = MagicMock()

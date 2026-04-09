@@ -1306,8 +1306,9 @@ def test_clear_caches_handles_error(mocker):
     integration.android_downloader = mock_android
 
     mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
-    integration._clear_caches()
+    result = integration._clear_caches()
 
+    assert result is False
     mock_logger.warning.assert_called()
 
 

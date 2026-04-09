@@ -1022,14 +1022,14 @@ def _setup_downloads(
             # Not re-running menu, but ensure both keys are set for backward compat
             existing = _get_desktop_assets(config)
             _set_desktop_assets(config, existing)
-        if not _get_desktop_assets(config):
-            print(
-                "No existing desktop selection found. Desktop clients will not be downloaded."
-            )
-            config["SAVE_DESKTOP_APP"] = False
-            config["CHECK_DESKTOP_PRERELEASES"] = False
-            _clear_desktop_assets(config)
-            save_desktop = False
+            if not _get_desktop_assets(config):
+                print(
+                    "No existing desktop selection found. Desktop clients will not be downloaded."
+                )
+                config["SAVE_DESKTOP_APP"] = False
+                config["CHECK_DESKTOP_PRERELEASES"] = False
+                _clear_desktop_assets(config)
+                save_desktop = False
 
     # --- Desktop Prerelease Configuration ---
     if save_desktop and (not is_partial_run or wants("desktop")):

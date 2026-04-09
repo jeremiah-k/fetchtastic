@@ -1444,6 +1444,33 @@ class TestMeshtasticAndroidAppDownloader:
         assert preferred_dir.exists()
         assert not legacy_dir.exists()
 
+    def test_move_legacy_path_skips_symlink_source(self, tmp_path):
+        """_move_legacy_path should refuse to move symlinked sources."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        real_source = tmp_path / "real-source" / "v2.7.10"
+        real_source.mkdir(parents=True)
+        source_link = tmp_path / "apks" / "v2.7.10"
+        source_link.parent.mkdir(parents=True)
+        try:
+            source_link.symlink_to(real_source, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        destination = (
+            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
+        )
+
+        moved = downloader._move_legacy_path(str(source_link), str(destination))
+
+        assert moved is False
+        assert source_link.exists()
+        assert real_source.exists()
+        assert not destination.exists()
+
     def test_resolve_release_dir_skips_legacy_move_when_preferred_base_symlinked(
         self, tmp_path
     ):

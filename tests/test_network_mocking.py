@@ -21,7 +21,12 @@ def test_requests_session_send_blocked():
 async def test_aiohttp_request_blocked():
     """aiohttp.request should be blocked unless a test explicitly mocks async HTTP."""
     aiohttp = pytest.importorskip("aiohttp")
+    request_call = aiohttp.request("GET", "https://example.com")
     with pytest.raises(
         RuntimeError, match="Async network access is blocked during tests"
     ):
-        await aiohttp.request("GET", "https://example.com")
+        if hasattr(request_call, "__aenter__"):
+            async with request_call:
+                pass
+        else:
+            await request_call
