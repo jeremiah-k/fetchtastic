@@ -1556,7 +1556,7 @@ def _extract_embedded_asset_version_tuple(
     match = ASSET_VERSION_RX.search(asset_name)
     if not match:
         return None
-    return tuple(int(match.group(index)) for index in (1, 2, 3))
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
 
 
 def _is_supported_desktop_release(

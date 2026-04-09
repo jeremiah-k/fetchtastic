@@ -915,7 +915,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return None
 
         for filename in sorted(os.listdir(version_dir)):
-            if not filename.endswith(FIRMWARE_MANIFEST_EXTENSION):
+            if not filename.lower().endswith(FIRMWARE_MANIFEST_EXTENSION):
                 continue
 
             manifest_path = os.path.join(version_dir, filename)
@@ -984,15 +984,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return FirmwareManifest(
                 version=data.get("version"),
                 hwModel=data.get("hwModel"),
-                hwModelSlug=data.get("hwModelSlug"),
+                hwModelSlug=hw_model_slug,
                 architecture=data.get("architecture"),
                 activelySupported=data.get("activelySupported"),
                 displayName=data.get("displayName"),
                 supportLevel=data.get("supportLevel"),
                 has_mui=data.get("has_mui"),
                 has_inkhud=data.get("has_inkhud"),
-                files=data.get("files", []),
-                part=data.get("part", []),
+                files=files,
+                part=part,
                 raw_data=data,
             )
         except (TypeError, ValueError) as exc:
