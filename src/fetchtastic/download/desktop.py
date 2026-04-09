@@ -98,7 +98,6 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         self.release_history_manager = ReleaseHistoryManager(
             self.cache_manager, self.release_history_path
         )
-        self._asset_version_mismatch_tags: set[str] = set()
         self._wip_2714_prerelease_mismatch_tags: set[str] = set()
 
     def has_known_2714_prerelease_version_mismatch(self) -> bool:
@@ -428,7 +427,10 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         return True
 
     def _record_release_asset_version_mismatch(
-        self, release: Release, desktop_assets: List[Asset]
+        self,
+        release: Release,
+        desktop_assets: List[Asset],
+        logged_mismatch_tags: set[str],
     ) -> None:
         """
         Detect and log installer filename version mismatches compared to the release tag version.
@@ -457,29 +459,33 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         ):
             self._wip_2714_prerelease_mismatch_tags.add(release.tag_name)
 
-        if release.tag_name in self._asset_version_mismatch_tags:
+        if release.tag_name in logged_mismatch_tags:
             return
 
-        self._asset_version_mismatch_tags.add(release.tag_name)
+        logged_mismatch_tags.add(release.tag_name)
         expected_label = ".".join(str(part) for part in expected_version_tuple)
         mismatch_preview = ", ".join(
             f"{asset_name} -> {'.'.join(str(part) for part in version_tuple)}"
             for asset_name, version_tuple in mismatches[:3]
-        )
-        logger.warning(
-            "Desktop release %s has installer filename version mismatch (expected %s): %s",
-            release.tag_name,
-            expected_label,
-            mismatch_preview,
         )
         if (
             release.prerelease
             and expected_version_tuple == DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION
         ):
             logger.info(
-                "Desktop prerelease %s uses known transitional packaging names; 2.7.14 prerelease installer version-label discrepancies are currently expected while upstream CI packaging is being finalized.",
+                "Desktop prerelease %s uses known transitional packaging names (expected %s): %s. 2.7.14 prerelease installer version-label discrepancies are currently expected while upstream CI packaging is being finalized.",
                 release.tag_name,
+                expected_label,
+                mismatch_preview,
             )
+            return
+
+        logger.warning(
+            "Desktop release %s has installer filename version mismatch (expected %s): %s",
+            release.tag_name,
+            expected_label,
+            mismatch_preview,
+        )
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
@@ -493,6 +499,10 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         Returns:
             List[Release]: Release objects populated with their Desktop Asset entries; returns an empty list on error or if no valid releases are found.
         """
+        # Keep mismatch observations scoped to the active release scan so CLI run
+        # summary messaging reflects the current run only.
+        self._wip_2714_prerelease_mismatch_tags.clear()
+        logged_mismatch_tags: set[str] = set()
         try:
             max_scan = GITHUB_MAX_PER_PAGE
             min_stable_releases = int(
@@ -601,7 +611,11 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         )
                         continue
 
-                    self._record_release_asset_version_mismatch(release, desktop_assets)
+                    self._record_release_asset_version_mismatch(
+                        release,
+                        desktop_assets,
+                        logged_mismatch_tags,
+                    )
 
                     releases.append(release)
                     if not release.prerelease:
@@ -1497,6 +1511,8 @@ def _is_desktop_prerelease_by_name(tag_name: str) -> bool:
 
 
 MIN_DESKTOP_TRACKED_VERSION = (2, 7, 14)
+# TEMP(maint-331): remove this known transitional mismatch guard once upstream
+# 2.7.14 prerelease packaging stops emitting 1.0.0-named Desktop installers.
 DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION = (2, 7, 14)
 ASSET_VERSION_RX = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)")
 

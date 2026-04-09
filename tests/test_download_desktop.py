@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -490,11 +490,17 @@ def test_get_releases_tracks_known_2714_prerelease_version_mismatch(downloader):
         ]
     )
 
-    result = downloader.get_releases(limit=10)
+    with patch("fetchtastic.download.desktop.logger") as mock_logger:
+        result = downloader.get_releases(limit=10)
 
     assert len(result) == 1
     assert downloader.has_known_2714_prerelease_version_mismatch() is True
     assert downloader.get_known_2714_prerelease_mismatch_tags() == ["v2.7.14-closed.10"]
+    assert mock_logger.warning.call_count == 0
+    assert any(
+        "known transitional packaging names" in call.args[0]
+        for call in mock_logger.info.call_args_list
+    )
 
 
 def test_get_releases_does_not_track_2714_mismatch_when_versions_align(downloader):
@@ -520,6 +526,78 @@ def test_get_releases_does_not_track_2714_mismatch_when_versions_align(downloade
     assert len(result) == 1
     assert downloader.has_known_2714_prerelease_version_mismatch() is False
     assert downloader.get_known_2714_prerelease_mismatch_tags() == []
+
+
+def test_get_releases_resets_known_2714_mismatch_observation_each_scan(downloader):
+    """Known mismatch observations should be cleared at the start of each release scan."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        side_effect=[
+            [
+                {
+                    "tag_name": "v2.7.14-closed.10",
+                    "prerelease": True,
+                    "assets": [
+                        {
+                            "name": "Meshtastic-1.0.0.dmg",
+                            "browser_download_url": "http://example.com/test.dmg",
+                            "size": 100,
+                        }
+                    ],
+                }
+            ],
+            [
+                {
+                    "tag_name": "v2.7.14-closed.9",
+                    "prerelease": True,
+                    "assets": [
+                        {
+                            "name": "Meshtastic-2.7.14.dmg",
+                            "browser_download_url": "http://example.com/test.dmg",
+                            "size": 100,
+                        }
+                    ],
+                }
+            ],
+        ]
+    )
+
+    first_result = downloader.get_releases(limit=10)
+    second_result = downloader.get_releases(limit=10)
+
+    assert len(first_result) == 1
+    assert len(second_result) == 1
+    assert downloader.has_known_2714_prerelease_version_mismatch() is False
+    assert downloader.get_known_2714_prerelease_mismatch_tags() == []
+
+
+def test_get_releases_logs_warning_for_unexpected_version_mismatch(downloader):
+    """Unexpected installer filename/version mismatches should still emit warning-level logs."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.8.0-open.1",
+                "prerelease": True,
+                "assets": [
+                    {
+                        "name": "Meshtastic-1.0.0.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            }
+        ]
+    )
+
+    with patch("fetchtastic.download.desktop.logger") as mock_logger:
+        result = downloader.get_releases(limit=10)
+
+    assert len(result) == 1
+    assert downloader.has_known_2714_prerelease_version_mismatch() is False
+    assert mock_logger.warning.call_count > 0
+    assert any(
+        "installer filename version mismatch" in call.args[0]
+        for call in mock_logger.warning.call_args_list
+    )
 
 
 def test_get_releases_no_valid_assets(downloader):
