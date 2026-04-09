@@ -279,6 +279,13 @@ class TestMeshtasticAndroidAppDownloader:
         )
         assert str(notes_file).endswith(expected_suffix)
 
+    def test_ensure_release_notes_returns_none_on_unsafe_resolve(self, downloader):
+        """Unsafe release-directory resolution should fail closed for release notes."""
+        release = Release(tag_name="v2.7.10", prerelease=False, body="notes")
+        downloader._resolve_release_dir = Mock(side_effect=ValueError("unsafe path"))
+
+        assert downloader.ensure_release_notes(release) is None
+
     def test_get_target_path_for_release(self, downloader, tmp_path):
         """Test target path generation for APK releases."""
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
@@ -351,6 +358,23 @@ class TestMeshtasticAndroidAppDownloader:
             tmp_path / "downloads" / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
         ) / "v1.0.0"
         assert preferred_dir.exists()
+
+    def test_is_release_complete_returns_false_on_unsafe_resolve(self, downloader):
+        """Unsafe release-directory resolution should fail closed for completeness checks."""
+        downloader._resolve_release_dir = Mock(side_effect=ValueError("unsafe path"))
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="meshtastic-universal.apk",
+                    download_url="https://example.invalid/apk",
+                    size=4,
+                )
+            ],
+        )
+
+        assert downloader.is_release_complete(release) is False
 
     @patch("fetchtastic.download.github_source.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
@@ -1251,6 +1275,17 @@ class TestMeshtasticAndroidAppDownloader:
             downloader.latest_prerelease_file
         )
         assert path == expected_path
+
+    def test_get_current_tracked_prerelease_tag_non_mapping_returns_none(
+        self, downloader, tmp_path
+    ):
+        """Non-dict prerelease tracking payloads should be ignored."""
+        tracking_file = tmp_path / "latest_android_prerelease.json"
+        tracking_file.write_text('"not-a-dict"', encoding="utf-8")
+        downloader.get_prerelease_tracking_file = Mock(return_value=str(tracking_file))
+        downloader.cache_manager.read_json = Mock(return_value=["not", "a", "dict"])
+
+        assert downloader.get_current_tracked_prerelease_tag() is None
 
     def test_update_prerelease_tracking(self, downloader):
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)

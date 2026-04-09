@@ -136,6 +136,43 @@ def test_setup_downloads_partial_non_download_sections_skip_no_download_warning(
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_partial_mixed_sections_uses_continue_guidance(mocker, capsys):
+    """Mixed partial runs should use continue messaging instead of hard-stop rerun guidance."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": False,
+    }
+
+    mocker.patch("builtins.input", side_effect=["n"])
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config,
+        is_partial_run=True,
+        wants=lambda section: section in {"android", "notifications"},
+    )
+    captured = capsys.readouterr()
+
+    assert "Please select at least one type of asset to download" in captured.out
+    assert (
+        "Continuing setup for non-download sections requested in this partial run."
+        in captured.out
+    )
+    assert (
+        "Run 'fetchtastic setup' again and select at least one asset."
+        not in captured.out
+    )
+    assert updated["SAVE_APKS"] is False
+    assert updated["SAVE_FIRMWARE"] is False
+    assert updated["SAVE_DESKTOP_APP"] is False
+    assert save_apks is False
+    assert save_firmware is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_desktop_no_selection_avoids_duplicate_message(mocker, capsys):
     """Desktop no-selection flow should emit only the direct no-selection message."""
     from fetchtastic.setup_config import _setup_downloads

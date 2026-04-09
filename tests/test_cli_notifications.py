@@ -123,7 +123,7 @@ def test_summary_calls_up_to_date_when_download_only_setting_true(integration):
         assert integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] is True
 
 
-def test_summary_treats_new_versions_as_up_to_date(integration):
+def test_summary_skips_up_to_date_notification_when_new_versions_available(integration):
     with (
         patch(
             "fetchtastic.download.cli_integration.send_download_completion_notification"
@@ -134,13 +134,34 @@ def test_summary_treats_new_versions_as_up_to_date(integration):
     ):
         _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
         mock_completion.assert_not_called()
-        mock_up_to_date.assert_called_once_with(integration.config)
+        mock_up_to_date.assert_not_called()
 
 
-def test_summary_calls_up_to_date_with_new_versions_when_download_only(integration):
+def test_summary_skips_up_to_date_with_new_versions_when_download_only(integration):
     integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = True
     with patch(
         "fetchtastic.download.cli_integration.send_up_to_date_notification"
     ) as mock_up_to_date:
         _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
-        mock_up_to_date.assert_called_once_with(integration.config)
+        mock_up_to_date.assert_not_called()
+
+
+def test_summary_does_not_send_up_to_date_notification_on_failures(integration):
+    with patch(
+        "fetchtastic.download.cli_integration.send_up_to_date_notification"
+    ) as mock_up_to_date:
+        _call_summary(
+            integration,
+            [],
+            [],
+            failed=[
+                {
+                    "type": "Firmware",
+                    "release_tag": "v1.0.0",
+                    "file_name": "firmware.bin",
+                    "url": "https://example.invalid/fw",
+                    "error": "failed",
+                }
+            ],
+        )
+        mock_up_to_date.assert_not_called()

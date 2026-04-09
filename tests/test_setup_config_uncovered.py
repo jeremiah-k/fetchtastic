@@ -301,7 +301,10 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
         "builtins.input",
         side_effect=["y", "n"],  # Keep desktop enabled, no prerelease
     )
-    mocker.patch("fetchtastic.menu_desktop.run_menu")
+    mocker.patch(
+        "fetchtastic.menu_desktop.run_menu",
+        return_value=None,
+    )
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
@@ -1850,10 +1853,10 @@ def test_load_config_non_standard_location(mocker, capsys, tmp_path):
     from fetchtastic.setup_config import load_config
 
     tmp_dir = str(tmp_path / "custom_config")
-    os.path.join(tmp_dir, "fetchtastic.yaml")
+    expected_path = os.path.join(tmp_dir, "fetchtastic.yaml")
 
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch(
+    mocker.patch("os.path.exists", side_effect=lambda path: path == expected_path)
+    mock_load_yaml = mocker.patch(
         "fetchtastic.setup_config._load_yaml_mapping",
         return_value={"BASE_DIR": "/custom/dir"},
     )
@@ -1862,6 +1865,7 @@ def test_load_config_non_standard_location(mocker, capsys, tmp_path):
 
     assert result is not None
     assert result["BASE_DIR"] == "/custom/dir"
+    mock_load_yaml.assert_called_once_with(expected_path)
 
 
 @pytest.mark.configuration
@@ -1871,13 +1875,17 @@ def test_load_config_directory_yaml_error(mocker, tmp_path):
     from fetchtastic.setup_config import load_config
 
     tmp_dir = str(tmp_path / "custom_config")
+    expected_path = os.path.join(tmp_dir, "fetchtastic.yaml")
 
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("fetchtastic.setup_config._load_yaml_mapping", return_value=None)
+    mocker.patch("os.path.exists", side_effect=lambda path: path == expected_path)
+    mock_load_yaml = mocker.patch(
+        "fetchtastic.setup_config._load_yaml_mapping", return_value=None
+    )
 
     result = load_config(tmp_dir)
 
     assert result is None
+    mock_load_yaml.assert_called_once_with(expected_path)
 
 
 @pytest.mark.configuration
@@ -1887,8 +1895,9 @@ def test_load_config_migrates_legacy_desktop_asset_key(mocker, tmp_path):
     from fetchtastic.setup_config import load_config
 
     tmp_dir = str(tmp_path / "custom_config")
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch(
+    expected_path = os.path.join(tmp_dir, "fetchtastic.yaml")
+    mocker.patch("os.path.exists", side_effect=lambda path: path == expected_path)
+    mock_load_yaml = mocker.patch(
         "fetchtastic.setup_config._load_yaml_mapping",
         return_value={"SELECTED_DESKTOP_PLATFORMS": ["meshtastic.dmg"]},
     )
@@ -1898,6 +1907,7 @@ def test_load_config_migrates_legacy_desktop_asset_key(mocker, tmp_path):
     assert result is not None
     assert result["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
     assert "SELECTED_DESKTOP_PLATFORMS" not in result
+    mock_load_yaml.assert_called_once_with(expected_path)
 
 
 @pytest.mark.configuration
@@ -1907,8 +1917,9 @@ def test_load_config_new_desktop_asset_key_stays_authoritative(mocker, tmp_path)
     from fetchtastic.setup_config import load_config
 
     tmp_dir = str(tmp_path / "custom_config")
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch(
+    expected_path = os.path.join(tmp_dir, "fetchtastic.yaml")
+    mocker.patch("os.path.exists", side_effect=lambda path: path == expected_path)
+    mock_load_yaml = mocker.patch(
         "fetchtastic.setup_config._load_yaml_mapping",
         return_value={
             "SELECTED_DESKTOP_ASSETS": [],
@@ -1921,6 +1932,7 @@ def test_load_config_new_desktop_asset_key_stays_authoritative(mocker, tmp_path)
     assert result is not None
     assert result["SELECTED_DESKTOP_ASSETS"] == []
     assert "SELECTED_DESKTOP_PLATFORMS" not in result
+    mock_load_yaml.assert_called_once_with(expected_path)
 
 
 # Tests for _configure_cron_job (lines 1334-1340)

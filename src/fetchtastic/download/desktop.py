@@ -651,15 +651,14 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             DownloadResult: Success entries include `file_path`, `download_url`, `file_size`, `file_type`, and `was_skipped` when applicable; failure entries include `error_message`, `error_type`, and `is_retryable`.
         """
         target_path: Optional[str] = None
-        file_type = (
-            FILE_TYPE_DESKTOP_PRERELEASE if release.prerelease else FILE_TYPE_DESKTOP
-        )
+        is_prerelease = self._is_desktop_prerelease(release)
+        file_type = FILE_TYPE_DESKTOP_PRERELEASE if is_prerelease else FILE_TYPE_DESKTOP
         try:
             # Get target path for the Desktop file
             target_path = self.get_target_path_for_release(
                 release.tag_name,
                 asset.name,
-                is_prerelease=release.prerelease,
+                is_prerelease=is_prerelease,
                 release=release,
             )
 
@@ -886,7 +885,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                 [
                     release
                     for release in cached_releases
-                    if not release.prerelease
+                    if not self._is_desktop_prerelease(release)
                     and _is_supported_desktop_release(
                         release.tag_name, version_manager=self.version_manager
                     )
@@ -1081,7 +1080,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         version_manager = self.version_manager
 
         # Filter prereleases
-        prereleases = [r for r in releases if r.prerelease]
+        prereleases = [r for r in releases if self._is_desktop_prerelease(r)]
 
         # Sort by published date (newest first)
         prereleases.sort(key=lambda r: r.published_at or "", reverse=True)
@@ -1100,7 +1099,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         # Restrict to prereleases matching expected base version of latest stable
         expected_base = None
         latest_release = max(
-            (r for r in releases if not r.prerelease),
+            (r for r in releases if not self._is_desktop_prerelease(r)),
             key=lambda release: release.published_at or "",
             default=None,
         )
@@ -1160,7 +1159,12 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             reverse=True,
         )
         latest_stable = next(
-            (release for release in sorted_releases if not release.prerelease), None
+            (
+                release
+                for release in sorted_releases
+                if not self._is_desktop_prerelease(release)
+            ),
+            None,
         )
         latest_stable_tuple = (
             self.version_manager.get_release_tuple(latest_stable.tag_name)
@@ -1169,7 +1173,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         )
 
         for release in sorted_releases:
-            if not release.prerelease:
+            if not self._is_desktop_prerelease(release):
                 continue
             prerelease_tuple = self.version_manager.get_release_tuple(release.tag_name)
             if (

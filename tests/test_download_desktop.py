@@ -8,6 +8,7 @@ from fetchtastic.constants import (
     APP_DIR_NAME,
     DESKTOP_DIR_NAME,
     DESKTOP_PRERELEASES_DIR_NAME,
+    FILE_TYPE_DESKTOP_PRERELEASE,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
@@ -587,6 +588,35 @@ def test_download_desktop_success(downloader, tmp_path):
 
     result = downloader.download_desktop(release, asset)
     assert result == {"success": True}
+
+
+def test_download_desktop_infers_prerelease_from_tag_for_path_and_file_type(
+    downloader, tmp_path
+):
+    """Semver/open prerelease tags should drive prerelease path + file type even when flag is false."""
+    downloader._is_asset_complete_for_target = Mock(side_effect=[False, True])
+    downloader.get_target_path_for_release = Mock(
+        return_value=str(tmp_path / "test.dmg")
+    )
+    downloader.download = Mock(return_value=True)
+    downloader.create_download_result = Mock(return_value={"success": True})
+
+    release = Release(tag_name="v2.7.20-open.1", prerelease=False, assets=[])
+    asset = Asset(name="test.dmg", download_url="http://example.com/test.dmg", size=100)
+
+    result = downloader.download_desktop(release, asset)
+
+    assert result == {"success": True}
+    downloader.get_target_path_for_release.assert_called_once_with(
+        "v2.7.20-open.1",
+        "test.dmg",
+        is_prerelease=True,
+        release=release,
+    )
+    assert (
+        downloader.create_download_result.call_args.kwargs["file_type"]
+        == FILE_TYPE_DESKTOP_PRERELEASE
+    )
 
 
 def test_download_desktop_verify_fails(downloader, tmp_path):
@@ -1249,6 +1279,32 @@ def test_get_latest_prerelease_tag_with_prereleases(downloader):
         ]
     )
     result = downloader.get_latest_prerelease_tag()
+    assert result == "v2.7.21-open.1"
+
+
+def test_get_latest_prerelease_tag_treats_tag_prerelease_as_prerelease(downloader):
+    """Prerelease-like tags should be treated as prereleases even when flag is false."""
+    real_vm = VersionManager()
+    downloader.get_releases = Mock(
+        return_value=[
+            Release(
+                tag_name="v2.7.20",
+                prerelease=False,
+                published_at="2025-01-01T00:00:00Z",
+            ),
+            Release(
+                tag_name="v2.7.21-open.1",
+                prerelease=False,
+                published_at="2025-01-02T00:00:00Z",
+            ),
+        ]
+    )
+    downloader.version_manager.get_release_tuple = Mock(
+        side_effect=real_vm.get_release_tuple
+    )
+
+    result = downloader.get_latest_prerelease_tag()
+
     assert result == "v2.7.21-open.1"
 
 

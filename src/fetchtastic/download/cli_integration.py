@@ -453,6 +453,12 @@ class DownloadCLIIntegration:
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
 
+        new_versions_available = bool(
+            (new_firmware_versions or [])
+            or (new_apk_versions or [])
+            or (new_desktop_versions or [])
+        )
+
         # Send notifications based on download results
         if self.config:
             if downloaded_count > 0:
@@ -465,7 +471,7 @@ class DownloadCLIIntegration:
                     downloaded_desktop,
                     downloaded_desktop_prereleases,
                 )
-            else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
+            elif not failed_downloads and not new_versions_available:
                 send_up_to_date_notification(self.config)
 
         summary = get_api_request_summary()

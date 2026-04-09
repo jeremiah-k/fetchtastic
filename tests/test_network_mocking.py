@@ -3,6 +3,8 @@
 import pytest
 import requests
 
+pytestmark = [pytest.mark.infrastructure, pytest.mark.unit]
+
 
 def test_requests_request_blocked():
     """Top-level requests.request should be blocked unless a test mocks it."""

@@ -1079,10 +1079,22 @@ def _setup_downloads(
         and not save_desktop
         and (not is_partial_run or wants_downloads)
     ):
+        requested_non_download_sections = is_partial_run and any(
+            wants(section)
+            for section in ("base", "notifications", "automation", "github")
+        )
         print(
             "Please select at least one type of asset to download (APK, firmware, or desktop)."
         )
-        print("Run 'fetchtastic setup' again and select at least one asset.")
+        if requested_non_download_sections:
+            print(
+                "Continuing setup for non-download sections requested in this partial run."
+            )
+            print(
+                "Re-run setup with download sections if you intended to configure asset downloads."
+            )
+        else:
+            print("Run 'fetchtastic setup' again and select at least one asset.")
         return config, save_apks, save_firmware
 
     return config, save_apks, save_firmware

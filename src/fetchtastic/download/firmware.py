@@ -907,6 +907,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             manifest_path = os.path.join(version_dir, filename)
             try:
+                if not self.verify(manifest_path):
+                    logger.debug(
+                        "Skipping manifest that failed integrity verification: %s",
+                        manifest_path,
+                    )
+                    continue
                 with open(manifest_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 

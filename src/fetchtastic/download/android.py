@@ -499,11 +499,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         storage_tag = self._get_storage_tag_for_release(release)
 
-        release_dir = self._resolve_release_dir(
-            storage_tag,
-            is_prerelease=is_prerelease,
-            create_if_missing=True,
-        )
+        try:
+            release_dir = self._resolve_release_dir(
+                storage_tag,
+                is_prerelease=is_prerelease,
+                create_if_missing=True,
+            )
+        except ValueError:
+            return None
         base_dir = os.path.dirname(release_dir)
         return self._write_release_notes(
             release_dir=release_dir,
@@ -524,7 +527,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not os.path.exists(target_path):
             return False
 
-        if asset.size and self.file_operations.get_file_size(target_path) != asset.size:
+        if (
+            asset.size is not None
+            and self.file_operations.get_file_size(target_path) != asset.size
+        ):
             return False
 
         if not self.verify(target_path):
@@ -749,8 +755,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             success = self.download(asset.download_url, target_path)
 
             if success:
-                # Verify the download
-                if self.verify(target_path):
+                # Apply the same validation checks used for existing files.
+                if self._is_asset_complete_for_target(target_path, asset):
                     logger.info(
                         f"Successfully downloaded and verified {asset.name} (release {release.tag_name})"
                     )
@@ -763,13 +769,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         file_type=file_type,
                     )
                 else:
-                    logger.error(f"Verification failed for {asset.name}")
+                    logger.error(f"Validation failed for {asset.name}")
                     self.cleanup_file(target_path)
                     return self.create_download_result(
                         success=False,
                         release_tag=release.tag_name,
                         file_path=target_path,
-                        error_message="Verification failed",
+                        error_message="Validation failed",
                         download_url=asset.download_url,
                         file_size=asset.size,
                         file_type=file_type,
@@ -828,11 +834,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         safe_tag = self._get_storage_tag_for_release(release)
 
-        version_dir = self._resolve_release_dir(
-            safe_tag,
-            is_prerelease=self._is_android_prerelease(release),
-            create_if_missing=False,
-        )
+        try:
+            version_dir = self._resolve_release_dir(
+                safe_tag,
+                is_prerelease=self._is_android_prerelease(release),
+                create_if_missing=False,
+            )
+        except ValueError:
+            return False
         if not os.path.isdir(version_dir):
             return False
 
@@ -850,7 +859,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             if not os.path.exists(asset_path):
                 return False
             try:
-                if os.path.getsize(asset_path) != asset.size:
+                if asset.size is not None and os.path.getsize(asset_path) != asset.size:
                     return False
                 if not self.verify(asset_path):
                     logger.debug("Hash verification failed for %s", asset.name)
@@ -1394,6 +1403,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
             return None
 
+        if not isinstance(data, dict):
+            return None
         tracked = data.get("latest_version")
         return tracked if isinstance(tracked, str) and tracked else None
 
@@ -1455,7 +1466,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     exc,
                 )
             if (
-                tracking_data
+                isinstance(tracking_data, dict)
                 and "latest_version" in tracking_data
                 and "base_version" in tracking_data
             ):
