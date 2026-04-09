@@ -851,6 +851,46 @@ def test_cleanup_prerelease_directories_handles_invalid_keep_limit(
     )
 
 
+def test_cleanup_prerelease_directories_sorts_by_iso_published_at_fallback(
+    downloader, tmp_path, monkeypatch
+):
+    """When version tuples are unavailable, ISO published_at should drive sorting."""
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+    newest = desktop_dir / "v2.7.20"
+    oldest = desktop_dir / "v2.7.19"
+    newest.mkdir()
+    oldest.mkdir()
+
+    downloader.version_manager.get_release_tuple = Mock(return_value=None)
+    monkeypatch.setattr(
+        "fetchtastic.download.desktop._is_supported_desktop_release",
+        lambda *_args, **_kwargs: True,
+    )
+
+    releases = [
+        Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[],
+            published_at="2024-01-02T00:00:00Z",
+        ),
+        Release(
+            tag_name="v2.7.19",
+            prerelease=False,
+            assets=[],
+            published_at="2024-01-01T00:00:00Z",
+        ),
+    ]
+
+    downloader.cleanup_prerelease_directories(
+        cached_releases=releases, keep_limit_override=1
+    )
+
+    assert newest.exists()
+    assert not oldest.exists()
+
+
 def test_cleanup_prerelease_directories_skips_symlinks(downloader, tmp_path):
     """Symlinks should be skipped during cleanup."""
     real_vm = VersionManager()

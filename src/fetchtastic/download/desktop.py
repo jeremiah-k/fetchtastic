@@ -41,7 +41,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .files import (
     _safe_rmtree,
     _sanitize_path_component,
@@ -784,6 +784,14 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                 keep_limit = max(0, int(raw_keep_limit))
             except (TypeError, ValueError):
                 keep_limit = int(DEFAULT_DESKTOP_VERSIONS_TO_KEEP)
+
+            def _stable_release_sort_key(release: Release) -> tuple[Any, ...]:
+                release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+                if release_tuple:
+                    return tuple(release_tuple)
+                published_dt = parse_iso_datetime_utc(release.published_at)
+                return (published_dt.timestamp() if published_dt else 0,)
+
             stable_releases = sorted(
                 [
                     release
@@ -793,12 +801,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         release.tag_name, version_manager=self.version_manager
                     )
                 ],
-                key=lambda release: (
-                    self.version_manager.get_release_tuple(release.tag_name)
-                    or (
-                        release.published_at.timestamp() if release.published_at else 0,
-                    )
-                ),
+                key=_stable_release_sort_key,
                 reverse=True,
             )
             if not stable_releases:

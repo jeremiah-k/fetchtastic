@@ -119,33 +119,37 @@ def _isolate_test_environment(tmp_path_factory, monkeypatch):
     )
 
 
-def pytest_runtest_setup():
+@pytest.fixture(autouse=True)
+def _block_network_calls(monkeypatch):
     """
-    Prevent real network requests during tests by replacing HTTP entry points with blocking callables.
+    Block common sync/async HTTP entry points so tests must use explicit mocks.
 
-    Replaces common synchronous requests entry points and Session.request with a function that raises a RuntimeError indicating network access is blocked. If aiohttp is installed, replaces its top-level request and ClientSession HTTP methods with an async blocker; if aiohttp is not available, the function continues silently.
+    This fixture deliberately patches both convenience functions and lower-level request
+    APIs to avoid accidental real network traffic through alternative code paths.
     """
-    requests.get = _block_network
-    requests.post = _block_network
-    requests.put = _block_network
-    requests.delete = _block_network
-    requests.head = _block_network
-    requests.patch = _block_network
-    requests.options = _block_network
-    requests.Session.request = _block_network
+    monkeypatch.setattr(requests, "request", _block_network)
+    monkeypatch.setattr(requests, "get", _block_network)
+    monkeypatch.setattr(requests, "post", _block_network)
+    monkeypatch.setattr(requests, "put", _block_network)
+    monkeypatch.setattr(requests, "delete", _block_network)
+    monkeypatch.setattr(requests, "head", _block_network)
+    monkeypatch.setattr(requests, "patch", _block_network)
+    monkeypatch.setattr(requests, "options", _block_network)
+    monkeypatch.setattr(requests.Session, "request", _block_network)
+    monkeypatch.setattr(requests.Session, "send", _block_network)
 
     try:
         import aiohttp  # type: ignore[import-not-found]
 
-        aiohttp.request = _async_block_network
-        aiohttp.ClientSession.request = _async_block_network  # type: ignore[assignment]
-        aiohttp.ClientSession.get = _async_block_network  # type: ignore[assignment]
-        aiohttp.ClientSession.post = _async_block_network  # type: ignore[assignment]
-        aiohttp.ClientSession.put = _async_block_network  # type: ignore[assignment]
-        aiohttp.ClientSession.delete = _async_block_network  # type: ignore[assignment]
-        aiohttp.ClientSession.head = _async_block_network  # type: ignore[assignment]
-        aiohttp.ClientSession.patch = _async_block_network  # type: ignore[assignment]
-        aiohttp.ClientSession.options = _async_block_network  # type: ignore[assignment]
+        monkeypatch.setattr(aiohttp, "request", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "request", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "get", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "post", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "put", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "delete", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "head", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "patch", _async_block_network)
+        monkeypatch.setattr(aiohttp.ClientSession, "options", _async_block_network)
     except ImportError:
         pass
 

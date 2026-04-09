@@ -1,7 +1,7 @@
 # src/fetchtastic/menu_apk.py
 
 import json
-from typing import Any, Dict, Union, cast
+from typing import Any, Dict, Sequence, Union, cast
 
 import requests  # type: ignore[import-untyped]
 from pick import pick
@@ -101,7 +101,7 @@ def fetch_apk_assets() -> list[Dict[str, Any]]:
 
 
 def _normalize_apk_assets(
-    assets: list[Union[str, Dict[str, Any]]],
+    assets: Sequence[Union[str, Dict[str, Any]]],
 ) -> list[Dict[str, Any]]:
     """
     Normalize APK assets into dict items with `name` and `size` keys.
@@ -128,7 +128,7 @@ def _normalize_apk_assets(
 
 
 def select_assets(
-    assets: list[Union[str, Dict[str, Any]]],
+    assets: Sequence[Union[str, Dict[str, Any]]],
 ) -> dict[str, list[str]] | None:
     """
     Present an interactive multi-select prompt of APK filenames grouped by architecture.
