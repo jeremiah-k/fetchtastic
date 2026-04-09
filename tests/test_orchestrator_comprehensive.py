@@ -174,6 +174,48 @@ class TestDownloadOrchestrator:
             assert result.success is True
             mock_download.assert_called_once()
 
+    def test_retry_single_failure_desktop_zip_validation_failure(
+        self, orchestrator, tmp_path
+    ):
+        """Desktop retry should fail when post-download zip validation fails."""
+        target_path = tmp_path / "Meshtastic.zip"
+        target_path.write_bytes(b"data")
+
+        failed_result = DownloadResult(
+            success=False,
+            error_type="network_error",
+            is_retryable=True,
+            download_url="https://example.com/Meshtastic.zip",
+            file_path=str(target_path),
+            file_type=FILE_TYPE_DESKTOP,
+            retry_count=0,
+            release_tag="v2.7.20",
+            file_size=4,
+        )
+
+        with (
+            patch.object(
+                orchestrator.desktop_downloader, "download", return_value=True
+            ),
+            patch.object(orchestrator.desktop_downloader, "verify", return_value=True),
+            patch.object(
+                orchestrator.desktop_downloader, "_is_zip_intact", return_value=False
+            ) as mock_zip_intact,
+            patch.object(
+                orchestrator.desktop_downloader, "cleanup_file"
+            ) as mock_cleanup,
+        ):
+            result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+        assert result.error_type == "retry_failure"
+        assert (
+            result.error_message
+            == "Downloaded desktop asset failed post-download validation"
+        )
+        mock_zip_intact.assert_called_once_with(str(target_path))
+        mock_cleanup.assert_called_once_with(str(target_path))
+
     def test_generate_retry_report(self, orchestrator):
         """Test generating retry reports."""
         retryable_failures = [
@@ -325,7 +367,7 @@ class TestDownloadOrchestrator:
         # Only entries in failed_downloads count as failed
         assert rate == 100.0  # 3 successful out of 3 attempted = 100%
 
-    def test_count_artifact_downloads(self, orchestrator):
+    def test_count_artifact_downloads(self, orchestrator, tmp_path):
         """Test counting artifact downloads."""
         orchestrator.download_results = [
             DownloadResult(
@@ -336,17 +378,29 @@ class TestDownloadOrchestrator:
             DownloadResult(
                 success=True,
                 file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
-                file_path="/tmp/firmware/prerelease/v2.0.0-open.1/firmware.bin",
+                file_path=str(
+                    tmp_path
+                    / "firmware"
+                    / "prerelease"
+                    / "v2.0.0-open.1"
+                    / "firmware.bin"
+                ),
             ),
             DownloadResult(
                 success=True,
                 file_type=FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
-                file_path="/tmp/firmware/prerelease/firmware-2.0.1.a1b2c3d/repo.bin",
+                file_path=str(
+                    tmp_path
+                    / "firmware"
+                    / "prerelease"
+                    / "firmware-2.0.1.a1b2c3d"
+                    / "repo.bin"
+                ),
             ),
             DownloadResult(
                 success=True,
                 file_type=FILE_TYPE_FIRMWARE_MANIFEST,
-                file_path="/tmp/firmware/v2.0.0/device.mt.json",
+                file_path=str(tmp_path / "firmware" / "v2.0.0" / "device.mt.json"),
             ),
             DownloadResult(
                 success=True,
@@ -356,12 +410,21 @@ class TestDownloadOrchestrator:
             DownloadResult(
                 success=True,
                 file_type=FILE_TYPE_DESKTOP,
-                file_path="/tmp/app/desktop/v2.0.0/Meshtastic.dmg",
+                file_path=str(
+                    tmp_path / "app" / "desktop" / "v2.0.0" / "Meshtastic.dmg"
+                ),
             ),
             DownloadResult(
                 success=True,
                 file_type=FILE_TYPE_DESKTOP_PRERELEASE,
-                file_path="/tmp/app/desktop/prerelease/v2.0.1-open.1/Meshtastic.dmg",
+                file_path=str(
+                    tmp_path
+                    / "app"
+                    / "desktop"
+                    / "prerelease"
+                    / "v2.0.1-open.1"
+                    / "Meshtastic.dmg"
+                ),
             ),
             DownloadResult(
                 success=False,

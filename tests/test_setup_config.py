@@ -92,6 +92,50 @@ def test_coerce_bool(value, default, expected):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_migrate_desktop_asset_key_normalizes_non_list_values():
+    """SELECTED_DESKTOP_ASSETS should be normalized to a list when malformed."""
+    from fetchtastic.setup_config import _migrate_desktop_asset_key
+
+    config = {
+        "SELECTED_DESKTOP_ASSETS": "linux",
+        "SELECTED_DESKTOP_PLATFORMS": ["*.dmg"],
+    }
+
+    migrated = _migrate_desktop_asset_key(config)
+
+    assert migrated["SELECTED_DESKTOP_ASSETS"] == []
+    assert "SELECTED_DESKTOP_PLATFORMS" not in migrated
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_non_download_sections_skip_no_download_warning(capsys):
+    """Partial runs for non-download sections should not print download-selection warnings."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": False,
+    }
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config,
+        is_partial_run=True,
+        wants=lambda section: section == "notifications",
+    )
+    captured = capsys.readouterr()
+
+    assert "Please select at least one type of asset to download" not in captured.out
+    assert updated["SAVE_APKS"] is False
+    assert updated["SAVE_FIRMWARE"] is False
+    assert updated["SAVE_DESKTOP_APP"] is False
+    assert save_apks is False
+    assert save_firmware is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_partial_skips_firmware_menu(mocker):
     """Partial runs should respect "keep existing" and skip the firmware menu."""
     from fetchtastic.setup_config import _setup_downloads

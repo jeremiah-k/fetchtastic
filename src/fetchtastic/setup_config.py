@@ -81,12 +81,12 @@ def _migrate_desktop_asset_key(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Normalize legacy desktop asset selection key to SELECTED_DESKTOP_ASSETS.
 
-    If SELECTED_DESKTOP_ASSETS already exists it remains authoritative (with None
-    normalized to []). Otherwise, SELECTED_DESKTOP_PLATFORMS is migrated to the new
-    key and then removed.
+    If SELECTED_DESKTOP_ASSETS already exists it remains authoritative (with
+    non-list values normalized to []). Otherwise, SELECTED_DESKTOP_PLATFORMS is
+    migrated to the new key and then removed.
     """
     if "SELECTED_DESKTOP_ASSETS" in config:
-        if config.get("SELECTED_DESKTOP_ASSETS") is None:
+        if not isinstance(config.get("SELECTED_DESKTOP_ASSETS"), list):
             config["SELECTED_DESKTOP_ASSETS"] = []
         config.pop("SELECTED_DESKTOP_PLATFORMS", None)
         return config
@@ -1068,16 +1068,16 @@ def _setup_downloads(
     # If save_apks, save_firmware, and save_desktop are all False, inform the user and exit setup.
     # During partial runs that only update non-download sections (e.g. automation),
     # allow setup to proceed even when downloads are disabled.
+    wants_downloads = (
+        (wants("android") or wants("firmware") or wants("desktop"))
+        if is_partial_run
+        else True
+    )
     if (
         not save_apks
         and not save_firmware
         and not save_desktop
-        and (
-            not is_partial_run
-            or wants("android")
-            or wants("firmware")
-            or wants("desktop")
-        )
+        and (not is_partial_run or wants_downloads)
     ):
         print(
             "Please select at least one type of asset to download (APK, firmware, or desktop)."

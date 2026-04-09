@@ -739,7 +739,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         try:
                             with open(target_path, "r", encoding="utf-8") as f:
                                 json.load(f)
-                        except (json.JSONDecodeError, OSError, ValueError):
+                        except (json.JSONDecodeError, ValueError):
                             logger.error("Malformed manifest %s", asset.name)
                             self.cleanup_file(target_path)
                             results.append(
@@ -753,6 +753,28 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                     file_type=FILE_TYPE_FIRMWARE_MANIFEST,
                                     is_retryable=True,
                                     error_type=ERROR_TYPE_VALIDATION,
+                                )
+                            )
+                            continue
+                        except OSError as exc:
+                            logger.exception(
+                                "Error reading manifest %s at %s: %s",
+                                asset.name,
+                                target_path,
+                                exc,
+                            )
+                            self.cleanup_file(target_path)
+                            results.append(
+                                self.create_download_result(
+                                    success=False,
+                                    release_tag=release.tag_name,
+                                    file_path=target_path,
+                                    error_message=str(exc),
+                                    download_url=asset.download_url,
+                                    file_size=asset.size,
+                                    file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                    is_retryable=False,
+                                    error_type=ERROR_TYPE_FILESYSTEM,
                                 )
                             )
                             continue

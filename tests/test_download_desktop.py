@@ -448,6 +448,29 @@ def test_get_releases_with_valid_release(downloader):
     assert result[0].tag_name == "v2.7.20"
 
 
+def test_get_releases_marks_semver_prerelease_from_tag(downloader):
+    """Semver prerelease tags should be classified as prerelease consistently."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.7.20-rc.1",
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "Meshtastic-2.7.20-rc.1.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            }
+        ]
+    )
+
+    result = downloader.get_releases(limit=10)
+    assert len(result) == 1
+    assert result[0].prerelease is True
+
+
 def test_get_releases_no_valid_assets(downloader):
     """Release with only non-desktop assets should be skipped (no valid installer assets)."""
     downloader.github_source.fetch_raw_releases_data = Mock(
@@ -552,12 +575,11 @@ def test_download_desktop_already_complete(downloader, tmp_path):
 
 def test_download_desktop_success(downloader, tmp_path):
     """Successful download and verification."""
-    downloader._is_asset_complete_for_target = Mock(return_value=False)
+    downloader._is_asset_complete_for_target = Mock(side_effect=[False, True])
     downloader.get_target_path_for_release = Mock(
         return_value=str(tmp_path / "test.dmg")
     )
     downloader.download = Mock(return_value=True)
-    downloader.verify = Mock(return_value=True)
     downloader.create_download_result = Mock(return_value={"success": True})
 
     release = Release(tag_name="v2.7.20", prerelease=False, assets=[])
@@ -569,12 +591,11 @@ def test_download_desktop_success(downloader, tmp_path):
 
 def test_download_desktop_verify_fails(downloader, tmp_path):
     """Failed verification should cleanup and return error."""
-    downloader._is_asset_complete_for_target = Mock(return_value=False)
+    downloader._is_asset_complete_for_target = Mock(side_effect=[False, False])
     downloader.get_target_path_for_release = Mock(
         return_value=str(tmp_path / "test.dmg")
     )
     downloader.download = Mock(return_value=True)
-    downloader.verify = Mock(return_value=False)
     downloader.cleanup_file = Mock()
     downloader.create_download_result = Mock(return_value={"success": False})
 
@@ -996,7 +1017,10 @@ def test_cleanup_prerelease_directories_skips_symlinks(downloader, tmp_path):
     link_target = tmp_path / "link_target"
     link_target.mkdir()
     symlink = desktop_dir / "v2.7.10"
-    symlink.symlink_to(link_target, target_is_directory=True)
+    try:
+        symlink.symlink_to(link_target, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("Symlinks are not supported in this test environment")
 
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
     downloader.cleanup_prerelease_directories(cached_releases=releases)
@@ -1038,6 +1062,17 @@ def test_get_latest_release_tag_invalid_json(downloader, tmp_path):
     tracking_file = tmp_path / "cache" / "latest_desktop_release.json"
     tracking_file.parent.mkdir(parents=True)
     tracking_file.write_text("not valid json")
+
+    downloader.latest_release_path = str(tracking_file)
+    result = downloader.get_latest_release_tag()
+    assert result is None
+
+
+def test_get_latest_release_tag_non_mapping_json(downloader, tmp_path):
+    """Valid non-object JSON tracking file should return None."""
+    tracking_file = tmp_path / "cache" / "latest_desktop_release.json"
+    tracking_file.parent.mkdir(parents=True)
+    tracking_file.write_text('["v2.7.20"]', encoding="utf-8")
 
     downloader.latest_release_path = str(tracking_file)
     result = downloader.get_latest_release_tag()
@@ -1313,6 +1348,21 @@ def test_should_download_prerelease_read_error(downloader, tmp_path):
 
     result = downloader.should_download_prerelease("v2.7.20-open.1")
     assert result is True
+
+
+def test_get_current_tracked_prerelease_tag_non_mapping_returns_none(
+    downloader, tmp_path
+):
+    """Non-object JSON from cache manager should be treated as missing tracking."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
+    tracking_file = tmp_path / "cache" / "prerelease_desktop.json"
+    tracking_file.parent.mkdir(parents=True)
+    tracking_file.write_text("[]", encoding="utf-8")
+
+    downloader.get_prerelease_tracking_file = Mock(return_value=str(tracking_file))
+    downloader.cache_manager.read_json = Mock(return_value=["v2.7.20-open.1"])
+
+    assert downloader.get_current_tracked_prerelease_tag() is None
 
 
 def test_manage_prerelease_tracking_files_disabled(downloader):

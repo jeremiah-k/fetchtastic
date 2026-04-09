@@ -191,13 +191,13 @@ class DownloadCLIIntegration:
                 raise RuntimeError("Failed to initialize download orchestrator")
             orchestrator = self.orchestrator
 
-            # Clear caches if force refresh is requested
-            if force_refresh and not self._clear_caches():
-                raise OSError("Failed to clear downloader caches for force refresh")
-
             tracked_versions = (
                 self._get_tracked_desktop_versions() if include_desktop else None
             )
+
+            # Clear caches if force refresh is requested
+            if force_refresh and not self._clear_caches():
+                raise OSError("Failed to clear downloader caches for force refresh")
 
             # Run the download pipeline
             success_results, _failed_results = orchestrator.run_download_pipeline()

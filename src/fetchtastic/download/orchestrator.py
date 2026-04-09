@@ -1249,6 +1249,31 @@ class DownloadOrchestrator:
                                 "Downloaded manifest is not valid JSON",
                                 is_retryable_override=False,
                             )
+                    if file_type in (FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE):
+                        desktop_downloader = self.desktop_downloader
+                        try:
+                            size_ok = (
+                                failed_result.file_size is None
+                                or os.path.getsize(target_path)
+                                == failed_result.file_size
+                            )
+                        except OSError:
+                            size_ok = False
+                        zip_ok = not target_path.lower().endswith(".zip") or (
+                            desktop_downloader is not None
+                            and desktop_downloader._is_zip_intact(target_path)
+                        )
+                        if not size_ok or not zip_ok:
+                            downloader.cleanup_file(target_path)
+                            return self._create_failure_result(
+                                failed_result,
+                                Path(target_path),
+                                url,
+                                file_type,
+                                "Retry attempt failed",
+                                "Downloaded desktop asset failed post-download validation",
+                                is_retryable_override=False,
+                            )
                     return DownloadResult(
                         success=True,
                         release_tag=failed_result.release_tag,

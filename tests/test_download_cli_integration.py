@@ -150,10 +150,12 @@ def test_cli_integration_clear_cache_loads_config(mocker):
     assert result is True
 
 
-def test_cli_integration_clear_cache_returns_false_when_cache_clear_fails(mocker):
+def test_cli_integration_clear_cache_returns_false_when_cache_clear_fails(
+    mocker, tmp_path
+):
     """clear_cache should propagate _clear_caches failure."""
     integration = DownloadCLIIntegration()
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
     mock_orchestrator = mocker.MagicMock(
         android_downloader=mocker.MagicMock(),
         firmware_downloader=mocker.MagicMock(),
@@ -399,10 +401,10 @@ def test_run_download_with_force_refresh(mocker):
     mock_clear.assert_called_once()
 
 
-def test_run_download_force_refresh_fails_when_cache_clear_fails(mocker):
+def test_run_download_force_refresh_fails_when_cache_clear_fails(mocker, tmp_path):
     """run_download should return empty results if force-refresh cache clear fails."""
     integration = DownloadCLIIntegration()
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
 
     mock_orchestrator = MagicMock()
     mock_orchestrator.run_download_pipeline.return_value = ([], [])
@@ -416,6 +418,50 @@ def test_run_download_force_refresh_fails_when_cache_clear_fails(mocker):
 
     assert result == ([], [], [], [], [], [], [], "", "")
     mock_orchestrator.run_download_pipeline.assert_not_called()
+
+
+def test_run_download_force_refresh_reads_desktop_tracking_before_clear(
+    mocker, tmp_path
+):
+    """Desktop tracking snapshot should be captured before force-refresh cache clear."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
+
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run_download_pipeline.return_value = ([], [])
+    mock_orchestrator.cleanup_old_versions.return_value = None
+    mock_orchestrator.update_version_tracking.return_value = None
+    mock_orchestrator.get_latest_versions.return_value = {}
+    mock_orchestrator.android_downloader = MagicMock()
+    mock_orchestrator.firmware_downloader = MagicMock()
+    mock_orchestrator.desktop_downloader = MagicMock()
+
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+
+    call_order: list[str] = []
+    mocker.patch.object(
+        integration,
+        "_get_tracked_desktop_versions",
+        side_effect=lambda: call_order.append("tracked")
+        or {"current": "v1.0.0", "prerelease": "v1.0.0-open.1"},
+    )
+    mocker.patch.object(
+        integration,
+        "_clear_caches",
+        side_effect=lambda: call_order.append("clear") or True,
+    )
+
+    result = integration.run_download(
+        config=config,
+        force_refresh=True,
+        include_desktop=True,
+    )
+
+    assert call_order[:2] == ["tracked", "clear"]
+    assert len(result) == 13
 
 
 def test_run_download_handles_exception(mocker):
