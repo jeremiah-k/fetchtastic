@@ -130,17 +130,15 @@ class TestMeshtasticAndroidAppDownloader:
         assert android_downloader.should_download_asset("readme.txt") is True
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
-    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.verify")
     @patch(
-        "fetchtastic.download.android.MeshtasticAndroidAppDownloader.is_asset_complete"
+        "fetchtastic.download.android.MeshtasticAndroidAppDownloader._is_asset_complete_for_target"
     )
     def test_download_apk_success(
-        self, mock_is_complete, mock_verify, mock_download, android_downloader
+        self, mock_is_complete, mock_download, android_downloader
     ):
         """Test successful APK download."""
-        mock_is_complete.return_value = False
+        mock_is_complete.side_effect = [False, True]
         mock_download.return_value = True
-        mock_verify.return_value = True
 
         release = Release(tag_name="v2.7.14", prerelease=False)
         asset = Asset(
@@ -156,12 +154,11 @@ class TestMeshtasticAndroidAppDownloader:
         assert result.file_type == "android"
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
-    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.verify")
     @patch(
-        "fetchtastic.download.android.MeshtasticAndroidAppDownloader.is_asset_complete"
+        "fetchtastic.download.android.MeshtasticAndroidAppDownloader._is_asset_complete_for_target"
     )
     def test_download_apk_method_exists(
-        self, mock_is_complete, mock_verify, mock_download, android_downloader
+        self, mock_is_complete, mock_download, android_downloader
     ):
         """Test that download_apk method exists and can be called."""
         release = Release(tag_name="v2.7.14", prerelease=False)
@@ -172,9 +169,8 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         # Method should exist and return a result
-        mock_is_complete.return_value = False
+        mock_is_complete.side_effect = [False, True]
         mock_download.return_value = True
-        mock_verify.return_value = True
         result = android_downloader.download_apk(release, asset)
         assert hasattr(result, "success")
         assert result.file_type == "android"
