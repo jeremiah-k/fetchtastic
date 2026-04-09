@@ -8,9 +8,10 @@ import fnmatch
 import json
 import math
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests  # type: ignore[import-untyped]
 
@@ -97,6 +98,20 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         self.release_history_manager = ReleaseHistoryManager(
             self.cache_manager, self.release_history_path
         )
+        self._asset_version_mismatch_tags: set[str] = set()
+        self._wip_2714_prerelease_mismatch_tags: set[str] = set()
+
+    def has_known_2714_prerelease_version_mismatch(self) -> bool:
+        """
+        Return whether this run observed Desktop installer version-name mismatches for 2.7.14 prereleases.
+        """
+        return bool(self._wip_2714_prerelease_mismatch_tags)
+
+    def get_known_2714_prerelease_mismatch_tags(self) -> List[str]:
+        """
+        Return prerelease tags that showed the known 2.7.14 Desktop installer version-name mismatch.
+        """
+        return sorted(self._wip_2714_prerelease_mismatch_tags, reverse=True)
 
     def get_target_path_for_release(
         self,
@@ -412,6 +427,60 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
         return True
 
+    def _record_release_asset_version_mismatch(
+        self, release: Release, desktop_assets: List[Asset]
+    ) -> None:
+        """
+        Detect and log installer filename version mismatches compared to the release tag version.
+        """
+        expected_release_tuple = self.version_manager.get_release_tuple(
+            release.tag_name
+        )
+        if not expected_release_tuple or len(expected_release_tuple) < 3:
+            return
+
+        expected_version_tuple = expected_release_tuple[:3]
+        mismatches: List[Tuple[str, Tuple[int, int, int]]] = []
+        for asset in desktop_assets:
+            embedded_version_tuple = _extract_embedded_asset_version_tuple(asset.name)
+            if embedded_version_tuple is None:
+                continue
+            if embedded_version_tuple != expected_version_tuple:
+                mismatches.append((asset.name, embedded_version_tuple))
+
+        if not mismatches:
+            return
+
+        if (
+            release.prerelease
+            and expected_version_tuple == DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION
+        ):
+            self._wip_2714_prerelease_mismatch_tags.add(release.tag_name)
+
+        if release.tag_name in self._asset_version_mismatch_tags:
+            return
+
+        self._asset_version_mismatch_tags.add(release.tag_name)
+        expected_label = ".".join(str(part) for part in expected_version_tuple)
+        mismatch_preview = ", ".join(
+            f"{asset_name} -> {'.'.join(str(part) for part in version_tuple)}"
+            for asset_name, version_tuple in mismatches[:3]
+        )
+        logger.warning(
+            "Desktop release %s has installer filename version mismatch (expected %s): %s",
+            release.tag_name,
+            expected_label,
+            mismatch_preview,
+        )
+        if (
+            release.prerelease
+            and expected_version_tuple == DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION
+        ):
+            logger.info(
+                "Desktop prerelease %s uses known transitional packaging names; 2.7.14 prerelease installer version-label discrepancies are currently expected while upstream CI packaging is being finalized.",
+                release.tag_name,
+            )
+
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Retrieve Desktop releases from GitHub and construct Release objects populated with their Desktop assets.
@@ -522,13 +591,17 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         if asset is not None:
                             release.assets.append(asset)
 
+                    desktop_assets = self.get_assets(release)
+
                     # Only count releases with valid installer assets
-                    if not self.get_assets(release):
+                    if not desktop_assets:
                         logger.warning(
                             "Skipping Desktop release %s with no valid installer assets",
                             tag_name,
                         )
                         continue
+
+                    self._record_release_asset_version_mismatch(release, desktop_assets)
 
                     releases.append(release)
                     if not release.prerelease:
@@ -1424,6 +1497,20 @@ def _is_desktop_prerelease_by_name(tag_name: str) -> bool:
 
 
 MIN_DESKTOP_TRACKED_VERSION = (2, 7, 14)
+DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION = (2, 7, 14)
+ASSET_VERSION_RX = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)")
+
+
+def _extract_embedded_asset_version_tuple(
+    asset_name: str,
+) -> Optional[Tuple[int, int, int]]:
+    """
+    Extract the first semantic-like X.Y.Z version tuple from an installer filename.
+    """
+    match = ASSET_VERSION_RX.search(asset_name)
+    if not match:
+        return None
+    return tuple(int(match.group(index)) for index in (1, 2, 3))
 
 
 def _is_supported_desktop_release(

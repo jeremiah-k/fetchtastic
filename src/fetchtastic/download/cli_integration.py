@@ -453,6 +453,23 @@ class DownloadCLIIntegration:
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
 
+        desktop_enabled = coerce_bool(
+            (self.config or {}).get("SAVE_DESKTOP_APP", False)
+        )
+        if (
+            desktop_enabled
+            and self.desktop_downloader is not None
+            and self.desktop_downloader.has_known_2714_prerelease_version_mismatch()
+        ):
+            mismatch_tags = (
+                self.desktop_downloader.get_known_2714_prerelease_mismatch_tags()
+            )
+            mismatch_label = ", ".join(mismatch_tags) if mismatch_tags else "v2.7.14"
+            log.info(
+                "Desktop prerelease note: installer version labels do not match release tag versions for %s. This is a known 2.7.14 prerelease packaging discrepancy while Desktop CI/build requirements are still being finalized upstream.",
+                mismatch_label,
+            )
+
         new_versions_available = bool(
             (new_firmware_versions or [])
             or (new_apk_versions or [])

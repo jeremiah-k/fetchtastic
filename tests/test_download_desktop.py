@@ -472,6 +472,56 @@ def test_get_releases_marks_semver_prerelease_from_tag(downloader):
     assert result[0].prerelease is True
 
 
+def test_get_releases_tracks_known_2714_prerelease_version_mismatch(downloader):
+    """2.7.14 prerelease installer filename mismatches should be tracked and logged once."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.7.14-closed.10",
+                "prerelease": True,
+                "assets": [
+                    {
+                        "name": "Meshtastic-1.0.0.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            }
+        ]
+    )
+
+    result = downloader.get_releases(limit=10)
+
+    assert len(result) == 1
+    assert downloader.has_known_2714_prerelease_version_mismatch() is True
+    assert downloader.get_known_2714_prerelease_mismatch_tags() == ["v2.7.14-closed.10"]
+
+
+def test_get_releases_does_not_track_2714_mismatch_when_versions_align(downloader):
+    """Matching desktop installer version labels should not set the known mismatch flag."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.7.14-closed.9",
+                "prerelease": True,
+                "assets": [
+                    {
+                        "name": "Meshtastic-2.7.14.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            }
+        ]
+    )
+
+    result = downloader.get_releases(limit=10)
+
+    assert len(result) == 1
+    assert downloader.has_known_2714_prerelease_version_mismatch() is False
+    assert downloader.get_known_2714_prerelease_mismatch_tags() == []
+
+
 def test_get_releases_no_valid_assets(downloader):
     """Release with only non-desktop assets should be skipped (no valid installer assets)."""
     downloader.github_source.fetch_raw_releases_data = Mock(
