@@ -131,19 +131,11 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     release_tag
                 ) or self.version_manager.is_prerelease_version(release_tag)
 
-        base_dir = (
-            self._get_prerelease_base_dir()
-            if is_prerelease
-            else os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
+        version_dir = self._resolve_release_dir(
+            safe_release,
+            is_prerelease=bool(is_prerelease),
+            create_if_missing=True,
         )
-        if os.path.exists(base_dir) and not self._is_safe_managed_dir(base_dir):
-            raise ValueError(f"Desktop base directory is unsafe: {base_dir}")
-        version_dir = os.path.join(base_dir, safe_release)
-        if not self._is_within_download_tree(version_dir):
-            raise ValueError(
-                f"Desktop version directory is outside safe tree: {version_dir}"
-            )
-        os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
 
     def _get_prerelease_base_dir(self) -> str:
@@ -156,22 +148,82 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         Raises:
             ValueError: If the prerelease directory is unsafe (symlink or outside download tree).
         """
-        prerelease_dir = os.path.join(
-            self.download_dir,
-            APP_DIR_NAME,
-            DESKTOP_DIR_NAME,
-            DESKTOP_PRERELEASES_DIR_NAME,
+        return self._resolve_desktop_base_dir(
+            is_prerelease=True,
+            create_if_missing=True,
         )
-        if os.path.islink(prerelease_dir):
-            message = f"Refusing to use symlinked Desktop prerelease directory: {prerelease_dir}"
+
+    def _resolve_desktop_base_dir(
+        self,
+        *,
+        is_prerelease: bool,
+        create_if_missing: bool,
+    ) -> str:
+        """
+        Resolve and validate the Desktop base directory path.
+
+        Parameters:
+            is_prerelease (bool): Whether to resolve the prerelease base directory.
+            create_if_missing (bool): Whether to create the directory when absent.
+
+        Returns:
+            str: Validated Desktop base directory path.
+        """
+        base_dir = os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
+        if is_prerelease:
+            base_dir = os.path.join(base_dir, DESKTOP_PRERELEASES_DIR_NAME)
+
+        if os.path.islink(base_dir):
+            message = f"Refusing to use symlinked Desktop base directory: {base_dir}"
             logger.warning(message)
             raise ValueError(message)
-        if not self._is_within_download_tree(prerelease_dir):
-            message = f"Refusing to create Desktop prerelease directory outside safe tree: {prerelease_dir}"
+        if not self._is_within_download_tree(base_dir):
+            message = (
+                f"Refusing to use Desktop base directory outside safe tree: {base_dir}"
+            )
             logger.warning(message)
             raise ValueError(message)
-        os.makedirs(prerelease_dir, exist_ok=True)
-        return prerelease_dir
+        if os.path.exists(base_dir) and not self._is_safe_managed_dir(base_dir):
+            message = f"Desktop base directory is unsafe: {base_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+
+        if create_if_missing:
+            os.makedirs(base_dir, exist_ok=True)
+        return base_dir
+
+    def _resolve_release_dir(
+        self,
+        safe_release: str,
+        *,
+        is_prerelease: bool,
+        create_if_missing: bool,
+    ) -> str:
+        """
+        Resolve and validate a Desktop release directory under the managed tree.
+        """
+        base_dir = self._resolve_desktop_base_dir(
+            is_prerelease=is_prerelease,
+            create_if_missing=create_if_missing,
+        )
+        release_dir = os.path.join(base_dir, safe_release)
+
+        if os.path.islink(release_dir):
+            message = f"Refusing symlinked Desktop release directory: {release_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+        if not self._is_within_download_tree(release_dir):
+            message = f"Desktop release directory is outside safe tree: {release_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+        if os.path.exists(release_dir) and not self._is_safe_managed_dir(release_dir):
+            message = f"Desktop release directory is unsafe: {release_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+
+        if create_if_missing:
+            os.makedirs(release_dir, exist_ok=True)
+        return release_dir
 
     def _is_within_download_tree(self, path: str) -> bool:
         """
@@ -288,12 +340,16 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
         storage_tag = self._get_storage_tag_for_release(release)
 
-        base_dir = (
-            self._get_prerelease_base_dir()
-            if is_prerelease
-            else os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
-        )
-        release_dir = os.path.join(base_dir, storage_tag)
+        try:
+            release_dir = self._resolve_release_dir(
+                storage_tag,
+                is_prerelease=is_prerelease,
+                create_if_missing=True,
+            )
+        except ValueError:
+            return None
+
+        base_dir = os.path.dirname(release_dir)
         return self._write_release_notes(
             release_dir=release_dir,
             release_tag=release.tag_name,
@@ -675,12 +731,15 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         safe_tag = self._get_storage_tag_for_release(release)
 
         is_prerelease = self._is_desktop_prerelease(release)
-        base_dir = (
-            self._get_prerelease_base_dir()
-            if is_prerelease
-            else os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
-        )
-        version_dir = os.path.join(base_dir, safe_tag)
+        try:
+            version_dir = self._resolve_release_dir(
+                safe_tag,
+                is_prerelease=is_prerelease,
+                create_if_missing=False,
+            )
+        except ValueError:
+            return False
+
         if not os.path.isdir(version_dir):
             return False
 

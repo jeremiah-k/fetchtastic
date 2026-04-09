@@ -907,6 +907,53 @@ class TestMeshtasticAndroidAppDownloader:
         assert v27_10.exists()
         assert v28_0.exists()
 
+    def test_cleanup_prerelease_directories_keeps_unparsable_recent_release(
+        self, tmp_path
+    ):
+        """Recent unparsable stable tags should not be dropped from the keep window."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+            "ANDROID_VERSIONS_TO_KEEP": 2,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        v27_9 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.9"
+        v27_9.mkdir(parents=True)
+        v28_0 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.8.0"
+        v28_0.mkdir(parents=True)
+        future_tag = "release-2026.04"
+        future_dir = (
+            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / future_tag
+        )
+        future_dir.mkdir(parents=True)
+
+        releases = [
+            Release(
+                tag_name=future_tag,
+                prerelease=False,
+                published_at="2026-04-01T12:00:00Z",
+            ),
+            Release(
+                tag_name="v2.8.0",
+                prerelease=False,
+                published_at="2026-03-01T12:00:00Z",
+            ),
+            Release(
+                tag_name="v2.7.9",
+                prerelease=False,
+                published_at="2026-02-01T12:00:00Z",
+            ),
+        ]
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        assert not v27_9.exists()
+        assert v28_0.exists()
+        assert future_dir.exists()
+
     def test_cleanup_prerelease_directories_returns_without_cached_releases(
         self, downloader
     ):

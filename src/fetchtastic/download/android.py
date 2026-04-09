@@ -42,7 +42,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import expand_apk_selected_patterns, matches_selected_patterns
 
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .files import (
     _safe_rmtree,
     _sanitize_path_component,
@@ -914,11 +914,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 keep_limit = max(0, int(raw_keep_limit))
             except (TypeError, ValueError):
                 keep_limit = int(DEFAULT_ANDROID_VERSIONS_TO_KEEP)
+
+            def _stable_release_sort_key(release: Release) -> tuple[Any, ...]:
+                release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+                if release_tuple:
+                    return tuple(release_tuple)
+                published_dt = parse_iso_datetime_utc(release.published_at)
+                return (published_dt.timestamp() if published_dt else 0,)
+
             stable_releases = sorted(
                 [release for release in cached_releases if not release.prerelease],
-                key=lambda release: (
-                    self.version_manager.get_release_tuple(release.tag_name) or ()
-                ),
+                key=_stable_release_sort_key,
                 reverse=True,
             )
             if not stable_releases:

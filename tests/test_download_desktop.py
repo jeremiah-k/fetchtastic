@@ -242,6 +242,26 @@ def test_ensure_release_notes_prerelease_path(downloader, tmp_path):
     assert result == "/path/to/notes.md"
 
 
+def test_ensure_release_notes_rejects_symlinked_desktop_base(downloader, tmp_path):
+    """Stable release notes should not be written through a symlinked desktop root."""
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+    desktop_dir = app_dir / DESKTOP_DIR_NAME
+    try:
+        desktop_dir.symlink_to(outside_dir, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    downloader._write_release_notes = Mock(return_value="/outside/notes.md")
+    release = Release(tag_name="v2.7.20", prerelease=False, assets=[], body="notes")
+    result = downloader.ensure_release_notes(release)
+
+    assert result is None
+    downloader._write_release_notes.assert_not_called()
+
+
 def test_is_asset_complete_for_target_missing_file(downloader):
     """Missing file should return False."""
     asset = Asset(name="test.dmg", download_url="http://example.com/test.dmg", size=100)
@@ -664,6 +684,28 @@ def test_is_release_complete_missing_dir(downloader):
         prerelease=False,
         assets=[Asset(name="test.dmg", download_url="http://x", size=100)],
     )
+    result = downloader.is_release_complete(release)
+    assert result is False
+
+
+def test_is_release_complete_rejects_symlinked_desktop_base(downloader, tmp_path):
+    """Completeness checks should not follow symlinked desktop roots."""
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+    desktop_dir = app_dir / DESKTOP_DIR_NAME
+    try:
+        desktop_dir.symlink_to(outside_dir, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    release = Release(
+        tag_name="v2.7.20",
+        prerelease=False,
+        assets=[Asset(name="test.dmg", download_url="http://x", size=4)],
+    )
+
     result = downloader.is_release_complete(release)
     assert result is False
 
