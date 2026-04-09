@@ -53,15 +53,15 @@ class TestExtractWildcardPatternRealWorldFilenames:
         assert result == expected
 
 
-class TestExtractWildcardPatternPrereleaseStripping:
-    """Test prerelease version stripping in extract_wildcard_pattern()."""
+class TestExtractWildcardPatternPrereleaseHandling:
+    """Test prerelease version handling in extract_wildcard_pattern()."""
 
     @pytest.mark.parametrize(
         "filename,expected",
         [
-            # RC (release candidate) versions
-            ("Meshtastic-2.7.14-rc1.dmg", "meshtastic.dmg"),
-            ("Meshtastic-2.7.14-rc2.msi", "meshtastic.msi"),
+            # Project prerelease tag variants
+            ("Meshtastic-2.7.14-open.1.dmg", "meshtastic-open.1.dmg"),
+            ("Meshtastic-2.7.14-closed.2.msi", "meshtastic-closed.2.msi"),
             # Dev versions
             ("Meshtastic-2.7.14.dev1.msi", "meshtastic.msi"),
             ("Meshtastic-2.7.14.dev12.deb", "meshtastic.deb"),
@@ -75,7 +75,7 @@ class TestExtractWildcardPatternPrereleaseStripping:
         ],
     )
     def test_prerelease_version_stripping(self, filename, expected):
-        """Verify that prerelease version strings are correctly stripped."""
+        """Verify that prerelease version strings are normalized as expected."""
         result = extract_wildcard_pattern(filename)
         assert result == expected
 
@@ -89,7 +89,7 @@ class TestPatternMatchingAlignment:
             # DMG matching
             ("Meshtastic-2.7.14.dmg", ["meshtastic.dmg"], True),
             ("Meshtastic-2.8.0.dmg", ["meshtastic.dmg"], True),
-            ("Meshtastic-2.7.14-rc1.dmg", ["meshtastic.dmg"], True),
+            ("Meshtastic-2.7.14-open.1.dmg", ["meshtastic.dmg"], False),
             # MSI matching
             ("Meshtastic_x64_2.7.14.msi", ["meshtastic_x64.msi"], True),
             ("Meshtastic_x64_2.8.0.msi", ["meshtastic_x64.msi"], True),
@@ -147,7 +147,7 @@ class TestPatternMatchingAlignment:
         """Test that exclude patterns take precedence over include patterns."""
         config = {
             "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg", "meshtastic.exe"],
-            "EXCLUDE_PATTERNS": ["*beta*", "*rc*"],
+            "EXCLUDE_PATTERNS": ["*beta*", "*open.*", "*closed.*"],
         }
 
         mock_cache = MagicMock()
@@ -156,8 +156,8 @@ class TestPatternMatchingAlignment:
         # Regular stable versions should match
         assert downloader.should_download_asset("Meshtastic-2.7.14.dmg") is True
 
-        # Beta and RC versions should be excluded
-        assert downloader.should_download_asset("Meshtastic-2.7.14-rc1.dmg") is False
+        # Beta and project prerelease variants should be excluded
+        assert downloader.should_download_asset("Meshtastic-2.7.14-open.1.dmg") is False
         assert downloader.should_download_asset("Meshtastic-2.7.14beta1.exe") is False
 
     def test_should_download_asset_no_patterns(self, mocker):

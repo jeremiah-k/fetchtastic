@@ -682,6 +682,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         for asset in release.assets:
             if not asset.name or not self._is_manifest_asset_name(asset.name):
                 continue
+            is_device_manifest = asset.name.lower().endswith(
+                FIRMWARE_MANIFEST_EXTENSION
+            )
 
             try:
                 target_path = self.get_target_path_for_release(storage_tag, asset.name)
@@ -709,7 +712,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if os.path.exists(target_path):
                 try:
                     with open(target_path, "r", encoding="utf-8") as f:
-                        json.load(f)
+                        manifest_data = json.load(f)
+                    if (
+                        is_device_manifest
+                        and self._parse_manifest_data(manifest_data) is None
+                    ):
+                        raise ValueError("Manifest schema is invalid")
                     size_matches = asset.size is None or (
                         os.path.getsize(target_path) == asset.size
                     )
@@ -738,7 +746,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     if self.verify(target_path):
                         try:
                             with open(target_path, "r", encoding="utf-8") as f:
-                                json.load(f)
+                                manifest_data = json.load(f)
+                            if (
+                                is_device_manifest
+                                and self._parse_manifest_data(manifest_data) is None
+                            ):
+                                raise ValueError("Manifest schema is invalid")
                         except (json.JSONDecodeError, ValueError):
                             logger.error("Malformed manifest %s", asset.name)
                             self.cleanup_file(target_path)
@@ -901,7 +914,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not os.path.isdir(version_dir):
             return None
 
-        for filename in os.listdir(version_dir):
+        for filename in sorted(os.listdir(version_dir)):
             if not filename.endswith(FIRMWARE_MANIFEST_EXTENSION):
                 continue
 

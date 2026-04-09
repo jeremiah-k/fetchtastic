@@ -985,11 +985,7 @@ class DownloadCLIIntegration:
         Returns:
             dict: Mapping with keys 'android', 'firmware', 'firmware_prerelease', 'android_prerelease', 'desktop', and 'desktop_prerelease' to the latest version string for each; an empty string indicates the version is not available.
         """
-        if self.orchestrator:
-            versions = self.orchestrator.get_latest_versions()
-            # Convert Optional[str] to str for compatibility
-            return {k: v or "" for k, v in versions.items()}
-        return {
+        versions: Dict[str, Any] = {
             "android": "",
             "firmware": "",
             "firmware_prerelease": "",
@@ -997,6 +993,10 @@ class DownloadCLIIntegration:
             "desktop": "",
             "desktop_prerelease": "",
         }
+        if self.orchestrator:
+            versions.update(self.orchestrator.get_latest_versions())
+        # Convert Optional[str] to str for compatibility
+        return {k: v or "" for k, v in versions.items()}
 
     def validate_integration(self) -> bool:
         """
@@ -1069,20 +1069,23 @@ class DownloadCLIIntegration:
         desktop_enabled = coerce_bool(
             (self.config or {}).get("SAVE_DESKTOP_APP", False)
         )
+        orchestrator_initialized = self.orchestrator is not None
+        android_initialized = self.android_downloader is not None
+        firmware_initialized = self.firmware_downloader is not None
         desktop_initialized = self.desktop_downloader is not None
         if (
-            self.orchestrator
-            and self.android_downloader
-            and self.firmware_downloader
+            orchestrator_initialized
+            and android_initialized
+            and firmware_initialized
             and (not desktop_enabled or desktop_initialized)
         ):
             return {
                 "status": "completed",
-                "android_downloader_initialized": True,
-                "firmware_downloader_initialized": True,
+                "android_downloader_initialized": android_initialized,
+                "firmware_downloader_initialized": firmware_initialized,
                 "desktop_downloader_initialized": desktop_initialized,
                 "desktop_enabled": desktop_enabled,
-                "orchestrator_initialized": True,
+                "orchestrator_initialized": orchestrator_initialized,
                 "configuration_valid": self._validate_configuration(),
                 "download_directory_exists": self._check_download_directory(),
                 "statistics": self.get_download_statistics(),
@@ -1090,11 +1093,11 @@ class DownloadCLIIntegration:
 
         return {
             "status": "not_initialized",
-            "android_downloader_initialized": False,
-            "firmware_downloader_initialized": False,
+            "android_downloader_initialized": android_initialized,
+            "firmware_downloader_initialized": firmware_initialized,
             "desktop_downloader_initialized": desktop_initialized,
             "desktop_enabled": desktop_enabled,
-            "orchestrator_initialized": False,
+            "orchestrator_initialized": orchestrator_initialized,
             "configuration_valid": False,
             "download_directory_exists": False,
             "statistics": self.get_download_statistics(),

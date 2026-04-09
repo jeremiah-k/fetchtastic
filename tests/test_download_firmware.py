@@ -838,7 +838,19 @@ class TestFirmwareReleaseDownloader:
 
         def _write_manifest(_url: str, target: str) -> bool:
             Path(target).parent.mkdir(parents=True, exist_ok=True)
-            Path(target).write_text("{}", encoding="utf-8")
+            if target.endswith(".mt.json"):
+                Path(target).write_text(
+                    json.dumps(
+                        {
+                            "hwModelSlug": "RAK4631",
+                            "files": [],
+                            "part": [],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            else:
+                Path(target).write_text("{}", encoding="utf-8")
             return True
 
         downloader.download = Mock(side_effect=_write_manifest)

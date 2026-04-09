@@ -949,7 +949,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 return (0, 0, 0, 0, 0, 0, published_ts)
 
             stable_releases = sorted(
-                [release for release in cached_releases if not release.prerelease],
+                [
+                    release
+                    for release in cached_releases
+                    if not self._is_android_prerelease(release)
+                ],
                 key=_stable_release_sort_key,
                 reverse=True,
             )
