@@ -11,9 +11,13 @@ MESHTASTIC_ANDROID_RELEASES_URL = (
     f"{GITHUB_API_BASE}/meshtastic/Meshtastic-Android/releases"
 )
 MESHTASTIC_FIRMWARE_RELEASES_URL = f"{GITHUB_API_BASE}/meshtastic/firmware/releases"
-MESHTASTIC_DESKTOP_RELEASES_URL = (
-    f"{GITHUB_API_BASE}/meshtastic/Meshtastic-Desktop/releases"
+MESHTASTIC_DESKTOP_RELEASES_URLS = (
+    # Current canonical location for desktop installers.
+    f"{GITHUB_API_BASE}/meshtastic/Meshtastic-Android/releases",
+    # Reserved fallback for a future dedicated desktop repository.
+    f"{GITHUB_API_BASE}/meshtastic/Meshtastic-Desktop/releases",
 )
+MESHTASTIC_DESKTOP_RELEASES_URL = MESHTASTIC_DESKTOP_RELEASES_URLS[0]
 MESHTASTIC_GITHUB_IO_CONTENTS_URL = (
     f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/contents"
 )

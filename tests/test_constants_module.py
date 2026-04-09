@@ -30,8 +30,17 @@ class TestGitHubAPIConstants:
 
     def test_meshtastic_desktop_releases_url(self):
         """Test Meshtastic desktop releases URL."""
-        expected = "https://api.github.com/repos/meshtastic/Meshtastic-Desktop/releases"
+        expected = "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
         assert constants.MESHTASTIC_DESKTOP_RELEASES_URL == expected
+
+    def test_meshtastic_desktop_release_url_candidates(self):
+        """Desktop release URL candidates should include current and fallback endpoints."""
+        assert constants.MESHTASTIC_DESKTOP_RELEASES_URLS[0].endswith(
+            "/meshtastic/Meshtastic-Android/releases"
+        )
+        assert constants.MESHTASTIC_DESKTOP_RELEASES_URLS[1].endswith(
+            "/meshtastic/Meshtastic-Desktop/releases"
+        )
 
     def test_meshtastic_github_io_contents_url(self):
         """Test Meshtastic GitHub.io contents URL."""

@@ -15,6 +15,7 @@ from fetchtastic.client_release_discovery import (
 )
 from fetchtastic.constants import (
     MESHTASTIC_DESKTOP_RELEASES_URL,
+    MESHTASTIC_DESKTOP_RELEASES_URLS,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -62,30 +63,50 @@ def fetch_desktop_assets() -> list[str]:
         list[str]: Alphabetically sorted desktop asset filenames from the latest release.
                    Empty list if no releases or matching assets are found.
     """
-    try:
-        response = make_github_api_request(MESHTASTIC_DESKTOP_RELEASES_URL)
-    except requests.RequestException as e:
-        logger.error(f"Failed to fetch desktop assets from GitHub API: {e}")
-        return []
+    selected_release: dict[str, object] | None = None
+    for release_url in MESHTASTIC_DESKTOP_RELEASES_URLS:
+        try:
+            response = make_github_api_request(release_url)
+        except requests.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else None
+            if status_code == 404:
+                logger.debug("Desktop release endpoint unavailable: %s", release_url)
+                continue
+            else:
+                logger.error(
+                    "Failed to fetch desktop assets from %s: %s", release_url, e
+                )
+                return []
+        except requests.RequestException as e:
+            logger.error("Failed to fetch desktop assets from %s: %s", release_url, e)
+            return []
 
-    try:
-        releases = response.json()
-        if isinstance(releases, list):
-            logger.debug(f"Fetched {len(releases)} releases from GitHub API")
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to decode JSON from GitHub API: {e}")
-        return []
-    if not isinstance(releases, list) or not releases:
-        logger.warning("No releases found from GitHub API.")
-        return []
+        try:
+            releases = response.json()
+        except json.JSONDecodeError as e:
+            logger.error("Failed to decode JSON from %s: %s", release_url, e)
+            return []
 
-    max_releases_to_scan = min(10, len(releases))
-    selected_release = select_best_release_with_assets(
-        releases,
-        asset_name_matcher=is_desktop_asset_name,
-        tag_prerelease_matcher=is_desktop_prerelease_tag,
-        max_releases_to_scan=max_releases_to_scan,
-    )
+        if not isinstance(releases, list) or not releases:
+            logger.debug("No release payload found at %s", release_url)
+            continue
+
+        logger.debug("Fetched %d releases from %s", len(releases), release_url)
+        max_releases_to_scan = min(10, len(releases))
+        selected_release = select_best_release_with_assets(
+            releases,
+            asset_name_matcher=is_desktop_asset_name,
+            tag_prerelease_matcher=is_desktop_prerelease_tag,
+            max_releases_to_scan=max_releases_to_scan,
+        )
+        if selected_release is None:
+            logger.debug("No desktop assets in recent releases from %s", release_url)
+            continue
+
+        if release_url != MESHTASTIC_DESKTOP_RELEASES_URL:
+            logger.info("Using fallback Desktop release source: %s", release_url)
+        break
+
     if selected_release is None:
         logger.warning("No releases with desktop assets found in recent scan.")
         return []

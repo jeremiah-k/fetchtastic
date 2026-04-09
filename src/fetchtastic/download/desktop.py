@@ -35,6 +35,7 @@ from fetchtastic.constants import (
     LATEST_DESKTOP_PRERELEASE_JSON_FILE,
     LATEST_DESKTOP_RELEASE_JSON_FILE,
     MESHTASTIC_DESKTOP_RELEASES_URL,
+    MESHTASTIC_DESKTOP_RELEASES_URLS,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.log_utils import logger
@@ -80,12 +81,33 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         """
         super().__init__(config)
         self.cache_manager = cache_manager
-        self.desktop_releases_url = MESHTASTIC_DESKTOP_RELEASES_URL
-        self.github_source = GithubReleaseSource(
-            releases_url=MESHTASTIC_DESKTOP_RELEASES_URL,
-            cache_manager=cache_manager,
-            config=config,
-        )
+        configured_sources: Any = self.config.get("DESKTOP_RELEASES_URLS")
+        if configured_sources is None:
+            configured_sources = self.config.get("DESKTOP_RELEASES_URL")
+
+        if configured_sources is None:
+            release_urls = list(MESHTASTIC_DESKTOP_RELEASES_URLS)
+        elif isinstance(configured_sources, str):
+            release_urls = [configured_sources]
+        elif isinstance(configured_sources, (list, tuple)):
+            release_urls = [str(url) for url in configured_sources if str(url).strip()]
+        else:
+            release_urls = []
+
+        if not release_urls:
+            release_urls = [MESHTASTIC_DESKTOP_RELEASES_URL]
+
+        self.desktop_releases_urls = release_urls
+        self._github_sources_by_url = {
+            release_url: GithubReleaseSource(
+                releases_url=release_url,
+                cache_manager=cache_manager,
+                config=config,
+            )
+            for release_url in self.desktop_releases_urls
+        }
+        self.desktop_releases_url = self.desktop_releases_urls[0]
+        self.github_source = self._github_sources_by_url[self.desktop_releases_url]
         self.latest_release_file = LATEST_DESKTOP_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_DESKTOP_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
@@ -97,6 +119,55 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         self.release_history_manager = ReleaseHistoryManager(
             self.cache_manager, self.release_history_path
         )
+
+    def _iter_release_sources(
+        self, include_fallbacks: bool
+    ) -> List[GithubReleaseSource]:
+        """
+        Return Desktop release sources with the active source first.
+
+        Parameters:
+            include_fallbacks (bool): Whether to include non-active fallback sources.
+
+        Returns:
+            List[GithubReleaseSource]: Ordered source list for release fetch attempts.
+        """
+        if not include_fallbacks:
+            return [self.github_source]
+
+        sources = [self.github_source]
+        for release_url in self.desktop_releases_urls:
+            source = self._github_sources_by_url[release_url]
+            if source is self.github_source:
+                continue
+            sources.append(source)
+        return sources
+
+    def _fetch_desktop_releases_page(
+        self, params: Dict[str, Any]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch one page of Desktop releases with endpoint fallback on first-page failure.
+
+        Parameters:
+            params (Dict[str, Any]): GitHub API query parameters.
+
+        Returns:
+            Optional[List[Dict[str, Any]]]: Raw release payload list when available, otherwise None.
+        """
+        include_fallbacks = int(params.get("page", 1)) == 1
+        for source in self._iter_release_sources(include_fallbacks=include_fallbacks):
+            releases_data = source.fetch_raw_releases_data(params)
+            if releases_data is None:
+                continue
+            if source is not self.github_source:
+                self.github_source = source
+                self.desktop_releases_url = source.releases_url
+                logger.info(
+                    "Using fallback Desktop release source: %s", source.releases_url
+                )
+            return releases_data
+        return None
 
     def get_target_path_for_release(
         self,
@@ -454,7 +525,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
             while True:
                 params = {"per_page": scan_count, "page": page}
-                releases_data = self.github_source.fetch_raw_releases_data(params)
+                releases_data = self._fetch_desktop_releases_page(params)
 
                 if releases_data is None:
                     return []

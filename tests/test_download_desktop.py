@@ -9,6 +9,7 @@ from fetchtastic.constants import (
     DESKTOP_DIR_NAME,
     DESKTOP_PRERELEASES_DIR_NAME,
     FILE_TYPE_DESKTOP_PRERELEASE,
+    MESHTASTIC_DESKTOP_RELEASES_URL,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
@@ -45,6 +46,7 @@ def downloader(tmp_path, mock_cache_manager):
         "DOWNLOAD_DIR": str(tmp_path / "downloads"),
         "EXCLUDE_PATTERNS": [],
         "SELECTED_DESKTOP_ASSETS": [],
+        "DESKTOP_RELEASES_URLS": [MESHTASTIC_DESKTOP_RELEASES_URL],
     }
     dl = MeshtasticDesktopDownloader(config, mock_cache_manager)
     dl.cache_manager = mock_cache_manager
