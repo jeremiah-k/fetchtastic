@@ -1400,6 +1400,11 @@ def _classify_fdroid_apk_pattern(pattern: str) -> Optional[str]:
             "split" for architecture-suffixed F-Droid patterns, else None.
     """
     lowered = pattern.lower()
+    if (
+        re.search(r"fdroid[-_][^/\\]*[*?][^/\\]*[-_]release", lowered)
+        and "release" in lowered
+    ):
+        return "split"
     token = _PUNC_RX.sub("", lowered)
     if "fdroid" not in token or "release" not in token:
         return None

@@ -1219,6 +1219,40 @@ class TestFirmwareReleaseDownloader:
         assert result is not None
         assert result.hwModelSlug == "GOOD"
 
+    def test_get_manifest_for_device_skips_manifest_when_verify_raises_valueerror(
+        self, downloader, tmp_path
+    ):
+        """Verification ValueError for one manifest should not abort the whole scan."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        bad_manifest = version_dir / "firmware-bad-2.7.20.abcdef0.mt.json"
+        bad_manifest.write_text(
+            json.dumps({"hwModelSlug": "BAD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+        good_manifest = version_dir / "firmware-good-2.7.20.abcdef0.mt.json"
+        good_manifest.write_text(
+            json.dumps({"hwModelSlug": "GOOD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        bad_manifest_name = "firmware-bad-2.7.20.abcdef0.mt.json"
+
+        def _verify_side_effect(path):
+            if str(path).endswith(bad_manifest_name):
+                raise ValueError("invalid sidecar")
+            return True
+
+        downloader.verify = Mock(side_effect=_verify_side_effect)
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "GOOD"
+
     def test_get_manifest_for_device_returns_none_when_no_match(
         self, downloader, tmp_path
     ):

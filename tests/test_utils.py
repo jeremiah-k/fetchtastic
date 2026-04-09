@@ -545,16 +545,16 @@ def test_expand_apk_selected_patterns_adds_legacy_for_split_variants():
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
-def test_expand_apk_selected_patterns_treats_wildcard_fdroid_as_legacy():
-    """Wildcard F-Droid selectors without architecture markers should follow legacy expansion."""
+def test_expand_apk_selected_patterns_treats_wildcard_fdroid_as_split():
+    """Wildcard F-Droid split selectors should add legacy fallback patterns."""
     from fetchtastic.utils import expand_apk_selected_patterns
 
     expanded = expand_apk_selected_patterns(["app-fdroid-*-release.apk"])
 
     assert "app-fdroid-*-release.apk" in expanded
-    assert "app-fdroid-universal-release.apk" in expanded
-    assert "app-fdroid-arm64-v8a-release.apk" in expanded
-    assert "fdroidRelease.apk" not in expanded
+    assert "app-fdroid-release.apk" in expanded
+    assert "fdroidRelease.apk" in expanded
+    assert "app-fdroid-universal-release.apk" not in expanded
 
 
 def test_legacy_strip_version_numbers():

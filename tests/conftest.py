@@ -25,17 +25,30 @@ def _block_network(*_args, **_kwargs):
     raise RuntimeError(_NETWORK_BLOCK_MSG)
 
 
-async def _async_block_network(*_args, **_kwargs):
-    """
-    Prevent async network calls during tests by raising a RuntimeError.
+class _AsyncNetworkBlocker:
+    """Raise the async network-blocked error for await and async-context usage."""
 
-    Intended to replace async network request callables (for example, aiohttp.ClientSession methods)
-    so tests do not perform real HTTP requests.
+    def __await__(self):
+        async def _raise():
+            raise RuntimeError(_ASYNC_NETWORK_BLOCK_MSG)
 
-    Raises:
-        RuntimeError: `_ASYNC_NETWORK_BLOCK_MSG` explaining that async network access is blocked and suggesting mocking `aiohttp.ClientSession`.
+        return _raise().__await__()
+
+    async def __aenter__(self):
+        raise RuntimeError(_ASYNC_NETWORK_BLOCK_MSG)
+
+    async def __aexit__(self, _exc_type, _exc_val, _exc_tb):
+        return False
+
+
+def _async_block_network(*_args, **_kwargs):
     """
-    raise RuntimeError(_ASYNC_NETWORK_BLOCK_MSG)
+    Return an async blocker object for aiohttp request methods.
+
+    The returned object raises `RuntimeError(_ASYNC_NETWORK_BLOCK_MSG)` when used
+    via either `await ...` or `async with ...`.
+    """
+    return _AsyncNetworkBlocker()
 
 
 # Configure pytest-asyncio mode - only register if available

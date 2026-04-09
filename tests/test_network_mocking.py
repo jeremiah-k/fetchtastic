@@ -20,15 +20,21 @@ def test_requests_session_send_blocked():
 
 
 @pytest.mark.asyncio
-async def test_aiohttp_request_blocked():
-    """aiohttp.request should be blocked unless a test explicitly mocks async HTTP."""
+async def test_aiohttp_request_blocked_async_with():
+    """aiohttp.request async context-manager usage should be blocked."""
     aiohttp = pytest.importorskip("aiohttp")
     with pytest.raises(
         RuntimeError, match="Async network access is blocked during tests"
     ):
-        request_call = aiohttp.request("GET", "https://example.com")
-        if hasattr(request_call, "__aenter__"):
-            async with request_call:
-                pass
-        else:
-            await request_call
+        async with aiohttp.request("GET", "https://example.com"):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_aiohttp_request_blocked_await():
+    """aiohttp.request await usage should be blocked."""
+    aiohttp = pytest.importorskip("aiohttp")
+    with pytest.raises(
+        RuntimeError, match="Async network access is blocked during tests"
+    ):
+        await aiohttp.request("GET", "https://example.com")

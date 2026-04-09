@@ -938,10 +938,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             def _stable_release_sort_key(release: Release) -> tuple[Any, ...]:
                 release_tuple = self.version_manager.get_release_tuple(release.tag_name)
-                if release_tuple:
-                    return tuple(release_tuple)
                 published_dt = parse_iso_datetime_utc(release.published_at)
-                return (published_dt.timestamp() if published_dt else 0,)
+                published_ts = published_dt.timestamp() if published_dt else 0
+                if release_tuple:
+                    max_components = 6
+                    normalized_tuple = tuple(release_tuple[:max_components]) + (0,) * (
+                        max_components - len(release_tuple)
+                    )
+                    return (1, *normalized_tuple, published_ts)
+                return (0, 0, 0, 0, 0, 0, published_ts)
 
             stable_releases = sorted(
                 [release for release in cached_releases if not release.prerelease],

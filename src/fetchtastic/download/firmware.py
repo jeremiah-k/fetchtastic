@@ -926,7 +926,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if manifest.hwModelSlug == hwModelSlug:
                     return manifest
 
-            except (json.JSONDecodeError, IOError):
+            except (json.JSONDecodeError, IOError, ValueError):
                 continue
 
         return None

@@ -1995,10 +1995,12 @@ def test_setup_cron_job_termux_path(mocker):
     setup_config.setup_cron_job("hourly")
 
     # Check that the cron line contains 'fetchtastic' without full path (Termux style)
+    mock_communicate.assert_called()
     call_args = mock_communicate.call_args
-    if call_args and "input" in call_args[1]:
-        cron_content = call_args[1]["input"]
-        assert "fetchtastic download  # fetchtastic" in cron_content
+    assert call_args is not None
+    assert "input" in call_args.kwargs
+    cron_content = call_args.kwargs["input"]
+    assert "fetchtastic download  # fetchtastic" in cron_content
 
 
 @pytest.mark.configuration

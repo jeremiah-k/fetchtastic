@@ -86,6 +86,7 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
     assert apks == []
     assert new_apks == []
     assert _downloaded_desktop == []
+    assert _new_desktop_versions == []
     assert _downloaded_firmware_prereleases == []
     assert _downloaded_apk_prereleases == []
     assert _downloaded_desktop_prereleases == []

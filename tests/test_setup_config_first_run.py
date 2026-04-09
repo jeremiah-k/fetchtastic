@@ -26,7 +26,11 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
     mocker.patch("fetchtastic.setup_config._setup_base", side_effect=passthrough)
     mocker.patch(
         "fetchtastic.setup_config._setup_downloads",
-        side_effect=lambda config, *_args, **_kwargs: (config, True, True),
+        side_effect=lambda config, *_args, **_kwargs: (
+            {**config, "SAVE_DESKTOP_APP": True},
+            True,
+            True,
+        ),
     )
     mocker.patch("fetchtastic.setup_config._setup_android", side_effect=passthrough)
     mocker.patch("fetchtastic.setup_config._setup_firmware", side_effect=passthrough)
@@ -49,6 +53,7 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
     mock_integration.assert_called_once()
     integration_instance.main.assert_called_once()
     assert isinstance(integration_instance.main.call_args.kwargs.get("config"), dict)
+    assert integration_instance.main.call_args.kwargs.get("include_desktop") is True
 
 
 @pytest.mark.unit

@@ -2313,7 +2313,9 @@ def run_setup(
                 print(
                     "Setup complete. Starting first run, this may take a few minutes..."
                 )
-                DownloadCLIIntegration().main(config=config)
+                DownloadCLIIntegration().main(
+                    config=config, include_desktop=save_desktop
+                )
             else:
                 print(
                     "Setup complete. Run 'fetchtastic download' to start downloading."

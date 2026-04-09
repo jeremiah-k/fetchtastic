@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from fetchtastic.constants import DESKTOP_EXTENSIONS
 from fetchtastic.download.desktop import MeshtasticDesktopDownloader
 from fetchtastic.menu_desktop import (
     _get_platform_label,
@@ -217,15 +218,7 @@ class TestDesktopExtensionsDetection:
 
     @pytest.mark.parametrize(
         "ext",
-        [
-            ".dmg",
-            ".msi",
-            ".exe",
-            ".deb",
-            ".rpm",
-            ".appimage",
-            ".AppImage",
-        ],
+        DESKTOP_EXTENSIONS,
     )
     def test_all_supported_extensions(self, ext):
         """Verify each supported desktop extension is recognized.

@@ -54,25 +54,26 @@ def extract_wildcard_pattern(filename: str) -> str:
     return extract_base_name(filename).lower()
 
 
-def fetch_desktop_assets() -> list[str]:
+def fetch_desktop_assets() -> list[str] | None:
     """
     Retrieve desktop client filenames from the latest Meshtastic Desktop release on GitHub.
 
     Returns:
-        list[str]: Alphabetically sorted desktop asset filenames from the latest release.
-                   Empty list if no releases or matching assets are found.
+        list[str] | None: Alphabetically sorted desktop asset filenames from the latest
+            release. Returns an empty list when no releases or matching assets are found.
+            Returns None when fetch or response parsing fails.
     """
     try:
         response = make_github_api_request(MESHTASTIC_DESKTOP_RELEASES_URL)
     except requests.RequestException as e:
         logger.error(f"Failed to fetch desktop assets from GitHub API: {e}")
-        return []
+        return None
 
     try:
         releases = response.json()
     except json.JSONDecodeError as e:
         logger.error(f"Failed to decode JSON from GitHub API: {e}")
-        return []
+        return None
 
     if not isinstance(releases, list) or not releases:
         logger.warning("No releases found from GitHub API.")
@@ -184,6 +185,11 @@ def run_menu() -> dict[str, list[str]] | None:
     """
     try:
         assets = fetch_desktop_assets()
+        if assets is None:
+            print(
+                "Failed to fetch desktop files. Desktop clients will not be downloaded."
+            )
+            return None
         if not assets:
             print("No desktop files found. Desktop clients will not be downloaded.")
             return None

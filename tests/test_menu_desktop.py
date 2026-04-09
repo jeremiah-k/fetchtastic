@@ -79,7 +79,7 @@ class TestFetchDesktopAssetsErrorHandling:
 
         result = menu_desktop.fetch_desktop_assets()
 
-        assert result == []
+        assert result is None
         mock_logger.error.assert_called_once()
 
     def test_json_decode_error(self, mocker):
@@ -91,7 +91,7 @@ class TestFetchDesktopAssetsErrorHandling:
 
         result = menu_desktop.fetch_desktop_assets()
 
-        assert result == []
+        assert result is None
         mock_logger.error.assert_called_once()
 
     def test_non_list_response(self, mocker):
@@ -482,3 +482,19 @@ def test_run_menu_returns_none_when_no_assets(mocker):
     assert result is None
     mock_fetch.assert_called_once()
     mock_select.assert_not_called()
+
+
+def test_run_menu_returns_none_when_fetch_fails(mocker, capsys):
+    """run_menu should return None and show fetch-failure guidance when API fetch fails."""
+    mock_fetch = mocker.patch(
+        "fetchtastic.menu_desktop.fetch_desktop_assets", return_value=None
+    )
+    mock_select = mocker.patch("fetchtastic.menu_desktop.select_assets")
+
+    result = menu_desktop.run_menu()
+
+    assert result is None
+    mock_fetch.assert_called_once()
+    mock_select.assert_not_called()
+    captured = capsys.readouterr()
+    assert "Failed to fetch desktop files" in captured.out

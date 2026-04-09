@@ -931,10 +931,10 @@ class TestMeshtasticAndroidAppDownloader:
         assert v27_10.exists()
         assert v28_0.exists()
 
-    def test_cleanup_prerelease_directories_keeps_unparsable_recent_release(
+    def test_cleanup_prerelease_directories_prefers_parseable_semver_stable_releases(
         self, tmp_path
     ):
-        """Recent unparsable stable tags should not be dropped from the keep window."""
+        """Semver stable tags should outrank unparsable tags in stable cleanup ordering."""
         config = {
             "DOWNLOAD_DIR": str(tmp_path),
             "CHECK_APK_PRERELEASES": True,
@@ -974,9 +974,9 @@ class TestMeshtasticAndroidAppDownloader:
 
         downloader.cleanup_prerelease_directories(cached_releases=releases)
 
-        assert not v27_9.exists()
+        assert v27_9.exists()
         assert v28_0.exists()
-        assert future_dir.exists()
+        assert not future_dir.exists()
 
     def test_cleanup_prerelease_directories_returns_without_cached_releases(
         self, downloader

@@ -454,11 +454,11 @@ def test_get_releases_marks_semver_prerelease_from_tag(downloader):
     downloader.github_source.fetch_raw_releases_data = Mock(
         return_value=[
             {
-                "tag_name": "v2.7.20-rc.1",
+                "tag_name": "v2.7.20-open.1",
                 "prerelease": False,
                 "assets": [
                     {
-                        "name": "Meshtastic-2.7.20-rc.1.dmg",
+                        "name": "Meshtastic-2.7.20-open.1.dmg",
                         "browser_download_url": "http://example.com/test.dmg",
                         "size": 100,
                     }
