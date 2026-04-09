@@ -262,6 +262,27 @@ def test_ensure_release_notes_rejects_symlinked_desktop_base(downloader, tmp_pat
     downloader._write_release_notes.assert_not_called()
 
 
+def test_ensure_release_notes_rejects_symlinked_desktop_ancestor(downloader, tmp_path):
+    """Stable release notes should not be written through symlinked desktop ancestors."""
+    outside_app = tmp_path / "outside-app"
+    (outside_app / DESKTOP_DIR_NAME).mkdir(parents=True)
+    downloads_dir = tmp_path / "downloads"
+    downloads_dir.mkdir(parents=True)
+    app_link = downloads_dir / APP_DIR_NAME
+    try:
+        app_link.symlink_to(outside_app, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    downloader._write_release_notes = Mock(return_value="/outside/notes.md")
+    release = Release(tag_name="v2.7.20", prerelease=False, assets=[], body="notes")
+
+    result = downloader.ensure_release_notes(release)
+
+    assert result is None
+    downloader._write_release_notes.assert_not_called()
+
+
 def test_is_asset_complete_for_target_missing_file(downloader):
     """Missing file should return False."""
     asset = Asset(name="test.dmg", download_url="http://example.com/test.dmg", size=100)
@@ -704,6 +725,38 @@ def test_is_release_complete_rejects_symlinked_desktop_base(downloader, tmp_path
         tag_name="v2.7.20",
         prerelease=False,
         assets=[Asset(name="test.dmg", download_url="http://x", size=4)],
+    )
+
+    result = downloader.is_release_complete(release)
+    assert result is False
+
+
+def test_is_release_complete_rejects_symlinked_desktop_ancestor(downloader, tmp_path):
+    """Completeness checks should reject releases under symlinked desktop ancestors."""
+    outside_app = tmp_path / "outside-app"
+    outside_release_dir = outside_app / DESKTOP_DIR_NAME / "v2.7.20"
+    outside_release_dir.mkdir(parents=True)
+    (outside_release_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg!")
+
+    downloads_dir = tmp_path / "downloads"
+    downloads_dir.mkdir(parents=True)
+    app_link = downloads_dir / APP_DIR_NAME
+    try:
+        app_link.symlink_to(outside_app, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    downloader.verify = Mock(return_value=True)
+    release = Release(
+        tag_name="v2.7.20",
+        prerelease=False,
+        assets=[
+            Asset(
+                name="Meshtastic-2.7.20.dmg",
+                download_url="https://example.invalid/dmg",
+                size=4,
+            )
+        ],
     )
 
     result = downloader.is_release_complete(release)
@@ -1182,6 +1235,25 @@ def test_should_download_prerelease_disabled(downloader):
     assert result is False
 
 
+def test_handle_prereleases_coerces_string_false_config(downloader):
+    """String config values like 'false' should disable desktop prereleases."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = "false"
+
+    releases = [Release(tag_name="v2.7.20-open.1", prerelease=True, assets=[])]
+    result = downloader.handle_prereleases(releases)
+
+    assert result == []
+
+
+def test_should_download_prerelease_coerces_string_false_config(downloader):
+    """String config values like '0' should disable prerelease downloads."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = "0"
+
+    result = downloader.should_download_prerelease("v2.7.20-open.1")
+
+    assert result is False
+
+
 def test_should_download_prerelease_no_tracking_file(downloader, tmp_path):
     """No tracking file should return True (download)."""
     downloader.config["CHECK_DESKTOP_PRERELEASES"] = True
@@ -1247,6 +1319,16 @@ def test_manage_prerelease_tracking_files_disabled(downloader):
     """Disabled prereleases should return early."""
     downloader.config["CHECK_DESKTOP_PRERELEASES"] = False
     downloader.manage_prerelease_tracking_files()
+
+
+def test_manage_prerelease_tracking_files_coerces_string_false_config(downloader):
+    """String config values like 'false' should skip prerelease tracking maintenance."""
+    downloader.config["CHECK_DESKTOP_PRERELEASES"] = "false"
+    downloader.get_releases = Mock()
+
+    downloader.manage_prerelease_tracking_files()
+
+    downloader.get_releases.assert_not_called()
 
 
 def test_manage_prerelease_tracking_files_missing_dir(downloader):

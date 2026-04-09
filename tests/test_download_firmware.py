@@ -1009,6 +1009,44 @@ class TestFirmwareReleaseDownloader:
         results = downloader.download_manifests(release)
         assert results == []
 
+    def test_download_manifests_skips_unsafe_asset_name_and_continues(
+        self, downloader, tmp_path
+    ):
+        """Unsafe manifest filenames should fail per-asset without aborting the release."""
+        downloader.download_dir = str(tmp_path)
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).parent.mkdir(parents=True, exist_ok=True)
+            Path(target).write_text("{}", encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-../unsafe.json",
+                    download_url="https://example.invalid/unsafe.json",
+                    size=10,
+                ),
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=2,
+                ),
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 2
+        assert results[0].success is False
+        assert results[0].error_type == "validation_error"
+        assert results[1].success is True
+
     def test_download_manifests_verification_failure(self, downloader, tmp_path):
         """Manifest verification failure should be reported and file cleaned up."""
         downloader.download_dir = str(tmp_path)

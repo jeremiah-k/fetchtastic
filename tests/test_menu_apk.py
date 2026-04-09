@@ -178,6 +178,8 @@ def test_select_assets(mocker):
     assert selected is None
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_run_menu(mocker):
     """Test the main menu orchestration."""
     mock_fetch = mocker.patch(
@@ -201,6 +203,8 @@ def test_run_menu(mocker):
     assert result is None
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_run_menu_empty_assets_returns_none(mocker):
     """run_menu should return None without calling select_assets when no assets exist."""
     mock_fetch = mocker.patch("fetchtastic.menu_apk.fetch_apk_assets", return_value=[])

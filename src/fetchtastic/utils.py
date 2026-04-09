@@ -1399,10 +1399,12 @@ def _classify_fdroid_apk_pattern(pattern: str) -> Optional[str]:
         Optional[str]: "legacy" for non-architecture F-Droid release patterns,
             "split" for architecture-suffixed F-Droid patterns, else None.
     """
-    token = _PUNC_RX.sub("", pattern.lower())
+    lowered = pattern.lower()
+    token = _PUNC_RX.sub("", lowered)
     if "fdroid" not in token or "release" not in token:
         return None
-    if any(marker in token for marker in _ANDROID_FDROID_ARCH_MARKERS):
+    has_wildcard = "*" in lowered or "?" in lowered
+    if any(marker in token for marker in _ANDROID_FDROID_ARCH_MARKERS) or has_wildcard:
         return "split"
     return "legacy"
 

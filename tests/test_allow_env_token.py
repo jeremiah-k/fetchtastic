@@ -19,12 +19,8 @@ MOCK_RUN_DOWNLOAD_RESULT = (
     [],
     [],
     [],
-    [],
-    [],
-    [],
     "fw",
     "apk",
-    "desktop",
 )
 
 

@@ -709,6 +709,17 @@ class TestBaseDownloaderManagers:
         assert manager is not None
         assert manager is downloader.cache_manager
 
+    def test_clear_all_caches_alias(self):
+        """clear_all_caches should delegate to clear_cache/shared cache manager."""
+        config = {}
+        downloader = ConcreteDownloader(config)
+        downloader.cache_manager.clear_all_caches = Mock(return_value=True)
+
+        result = downloader.clear_all_caches()
+
+        assert result is True
+        downloader.cache_manager.clear_all_caches.assert_called_once()
+
 
 # =============================================================================
 # Async Download Tests

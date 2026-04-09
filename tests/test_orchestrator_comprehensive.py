@@ -370,10 +370,10 @@ class TestDownloadOrchestrator:
             ),
         ]
 
-        # Firmware count should include stable+prerelease types but exclude manifests.
+        # Firmware count should include stable/prerelease types and manifests.
         firmware_count = orchestrator._count_artifact_downloads(FILE_TYPE_FIRMWARE)
         assert isinstance(firmware_count, int)
-        assert firmware_count == 3
+        assert firmware_count == 4
 
         # Android count should include Android prerelease results.
         android_count = orchestrator._count_artifact_downloads(FILE_TYPE_ANDROID)

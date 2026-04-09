@@ -802,15 +802,32 @@ def _setup_downloads(
 
     # Prompt to save APKs, firmware, desktop, or combinations
     if not is_partial_run:
-        save_choice = (
-            _safe_input(
-                "Would you like to download APKs, firmware, desktop clients, or multiple? [a/f/d/m/b/n] (default: both apk+firmware): ",
-                default="b",
+        valid_choices = {
+            "a",
+            "f",
+            "d",
+            "desktop",
+            "m",
+            "multiple",
+            "b",
+            "both",
+            "n",
+            "none",
+        }
+        while True:
+            save_choice = (
+                _safe_input(
+                    "Would you like to download APKs, firmware, desktop clients, or multiple? [a/f/d/m/b/n] (default: both apk+firmware): ",
+                    default="b",
+                )
+                .strip()
+                .lower()
+                or "b"
             )
-            .strip()
-            .lower()
-            or "b"
-        )
+            if save_choice in valid_choices:
+                break
+            print("Invalid choice. Please enter a, f, d, m, b, or n.")
+
         if save_choice == "a":
             save_apks = True
             save_firmware = False
@@ -2146,17 +2163,21 @@ def run_setup(
     config, save_apks, save_firmware = _setup_downloads(config, is_partial_run, wants)
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
-    # If all download types are False, exit setup.
-    # During partial runs that only update non-download sections, continue instead.
+    # If all download types are disabled, only short-circuit when this run is either
+    # full setup or a partial run that requested download sections only.
+    requested_download_sections = is_partial_run and any(
+        wants(section) for section in ("android", "firmware", "desktop")
+    )
+    requested_non_download_sections = is_partial_run and any(
+        wants(section) for section in ("base", "notifications", "automation", "github")
+    )
     if (
         not save_apks
         and not save_firmware
         and not save_desktop
         and (
             not is_partial_run
-            or wants("android")
-            or wants("firmware")
-            or wants("desktop")
+            or (requested_download_sections and not requested_non_download_sections)
         )
     ):
         return

@@ -119,6 +119,41 @@ def test_setup_downloads_full_run_desktop_only(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_full_run_reprompts_invalid_choice(mocker, capsys):
+    """Invalid full-run asset choices should reprompt until a valid token is entered."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {}
+
+    def wants(_section: str) -> bool:
+        return True
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "invalid-choice",
+            "d",
+            "n",
+        ],  # invalid, desktop only, no prerelease
+    )
+    mocker.patch(
+        "fetchtastic.menu_desktop.run_menu",
+        return_value={"selected_assets": ["meshtastic.dmg"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=wants
+    )
+
+    captured = capsys.readouterr()
+    assert "Invalid choice. Please enter a, f, d, m, b, or n." in captured.out
+    assert save_apks is False
+    assert save_firmware is False
+    assert updated["SAVE_DESKTOP_APP"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_full_run_multiple_selection(mocker):
     """Test full run with multiple selection (lines 779-789, 796-798)."""
     from fetchtastic.setup_config import _setup_downloads

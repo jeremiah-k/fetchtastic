@@ -839,8 +839,8 @@ class DownloadOrchestrator:
         """
         any_downloaded = False
         try:
-            # Download each asset in the release
-            for asset in release.assets:
+            # Download selected Android APK assets for the release.
+            for asset in self.android_downloader.get_assets(release):
                 if not self.android_downloader.should_download_asset(asset.name):
                     continue
                 result = self.android_downloader.download_apk(release, asset)
@@ -1232,6 +1232,23 @@ class DownloadOrchestrator:
             if downloader:
                 ok = downloader.download(url, target_path)
                 if ok and downloader.verify(target_path):
+                    if file_type == FILE_TYPE_FIRMWARE_MANIFEST:
+                        try:
+                            with open(
+                                target_path, "r", encoding="utf-8"
+                            ) as manifest_file:
+                                json.load(manifest_file)
+                        except (json.JSONDecodeError, OSError, ValueError):
+                            downloader.cleanup_file(target_path)
+                            return self._create_failure_result(
+                                failed_result,
+                                Path(target_path),
+                                url,
+                                file_type,
+                                "Retry attempt failed",
+                                "Downloaded manifest is not valid JSON",
+                                is_retryable_override=False,
+                            )
                     return DownloadResult(
                         success=True,
                         release_tag=failed_result.release_tag,
@@ -1708,6 +1725,7 @@ class DownloadOrchestrator:
             if artifact_type == FILE_TYPE_FIRMWARE:
                 return file_type in {
                     FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_MANIFEST,
                     FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                 }

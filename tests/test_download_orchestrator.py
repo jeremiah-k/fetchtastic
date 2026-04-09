@@ -469,6 +469,7 @@ class TestDownloadOrchestrator:
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         orchestrator.android_downloader.download_apk.return_value = mock_result
+        orchestrator.android_downloader.get_assets.return_value = [asset]
         orchestrator.android_downloader.should_download_asset.return_value = True
         orchestrator._handle_download_result = Mock()
 
@@ -476,6 +477,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._download_android_release(release)
 
+        orchestrator.android_downloader.get_assets.assert_called_once_with(release)
         orchestrator.android_downloader.download_apk.assert_called_once()
         orchestrator._handle_download_result.assert_called_once_with(
             mock_result, "android"
@@ -984,6 +986,7 @@ class TestDownloadOrchestrator:
         asset = Mock()
         asset.name = "app.apk"
         release.assets = [asset]
+        orchestrator.android_downloader.get_assets.return_value = [asset]
         orchestrator.android_downloader.should_download_asset.return_value = True
         orchestrator.android_downloader.download_apk.side_effect = OSError("test error")
 
@@ -1380,14 +1383,17 @@ class TestDownloadOrchestrator:
         assert result.success is True
         orchestrator.android_downloader.download.assert_called_once()
 
-    def test_retry_single_failure_firmware_manifest_type(self, orchestrator):
+    def test_retry_single_failure_firmware_manifest_type(self, orchestrator, tmp_path):
         """_retry_single_failure should use firmware downloader for firmware_manifest type."""
         from fetchtastic.constants import FILE_TYPE_FIRMWARE_MANIFEST
+
+        target_file = tmp_path / "firmware.json"
+        target_file.write_text("{}", encoding="utf-8")
 
         failed_result = Mock(spec=DownloadResult)
         failed_result.release_tag = "v1.0.0"
         failed_result.download_url = "https://example.com/firmware.json"
-        failed_result.file_path = "/tmp/firmware.json"
+        failed_result.file_path = str(target_file)
         failed_result.retry_count = 0
         failed_result.file_type = FILE_TYPE_FIRMWARE_MANIFEST
         failed_result.file_size = 1000
@@ -1398,6 +1404,34 @@ class TestDownloadOrchestrator:
         result = orchestrator._retry_single_failure(failed_result)
 
         assert result.success is True
+
+    def test_retry_single_failure_firmware_manifest_invalid_json(
+        self, orchestrator, tmp_path
+    ):
+        """Manifest retries should fail when downloaded JSON content is malformed."""
+        from fetchtastic.constants import FILE_TYPE_FIRMWARE_MANIFEST
+
+        target_file = tmp_path / "firmware.json"
+        target_file.write_text("{", encoding="utf-8")
+
+        failed_result = Mock(spec=DownloadResult)
+        failed_result.release_tag = "v1.0.0"
+        failed_result.download_url = "https://example.com/firmware.json"
+        failed_result.file_path = str(target_file)
+        failed_result.retry_count = 0
+        failed_result.file_type = FILE_TYPE_FIRMWARE_MANIFEST
+        failed_result.file_size = 1000
+
+        orchestrator.firmware_downloader.download = Mock(return_value=True)
+        orchestrator.firmware_downloader.verify = Mock(return_value=True)
+        orchestrator.firmware_downloader.cleanup_file = Mock()
+
+        result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+        orchestrator.firmware_downloader.cleanup_file.assert_called_once_with(
+            str(target_file)
+        )
 
     def test_retry_single_failure_download_succeeds_verify_fails(self, orchestrator):
         """_retry_single_failure should fail when download succeeds but verify fails."""

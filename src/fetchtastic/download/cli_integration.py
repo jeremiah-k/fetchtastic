@@ -192,8 +192,8 @@ class DownloadCLIIntegration:
             orchestrator = self.orchestrator
 
             # Clear caches if force refresh is requested
-            if force_refresh:
-                self._clear_caches()
+            if force_refresh and not self._clear_caches():
+                raise OSError("Failed to clear downloader caches for force refresh")
 
             tracked_versions = (
                 self._get_tracked_desktop_versions() if include_desktop else None
@@ -905,9 +905,7 @@ class DownloadCLIIntegration:
         """
         try:
             self._initialize_components(config)
-
-            self._clear_caches()
-            return True
+            return self._clear_caches()
 
         except (
             requests.RequestException,

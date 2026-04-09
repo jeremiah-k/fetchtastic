@@ -683,7 +683,28 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if not asset.name or not self._is_manifest_asset_name(asset.name):
                 continue
 
-            target_path = self.get_target_path_for_release(storage_tag, asset.name)
+            try:
+                target_path = self.get_target_path_for_release(storage_tag, asset.name)
+            except ValueError as exc:
+                logger.warning(
+                    "Skipping manifest with unsafe name %s: %s", asset.name, exc
+                )
+                results.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=release.tag_name,
+                        file_path=os.path.join(
+                            self.download_dir, FIRMWARE_DIR_NAME, storage_tag
+                        ),
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
+                        is_retryable=False,
+                        error_type=ERROR_TYPE_VALIDATION,
+                    )
+                )
+                continue
 
             if os.path.exists(target_path):
                 try:

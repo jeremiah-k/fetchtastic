@@ -121,7 +121,7 @@ class TestPatternMatchingAlignment:
         """
         # Create a mock config with selected patterns
         config = {
-            "SELECTED_DESKTOP_PLATFORMS": ["meshtastic.dmg", "meshtastic_x64.msi"],
+            "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg", "meshtastic_x64.msi"],
             "DESKTOP_EXCLUDE_PATTERNS": [],
         }
 
@@ -145,7 +145,7 @@ class TestPatternMatchingAlignment:
     def test_should_download_asset_with_excludes(self, mocker):
         """Test that exclude patterns take precedence over include patterns."""
         config = {
-            "SELECTED_DESKTOP_PLATFORMS": ["meshtastic.dmg", "meshtastic.exe"],
+            "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg", "meshtastic.exe"],
             "EXCLUDE_PATTERNS": ["*beta*", "*rc*"],
         }
 
@@ -162,7 +162,7 @@ class TestPatternMatchingAlignment:
     def test_should_download_asset_no_patterns(self, mocker):
         """Test that when no patterns are configured, all desktop assets match."""
         config = {
-            "SELECTED_DESKTOP_PLATFORMS": [],
+            "SELECTED_DESKTOP_ASSETS": [],
         }
 
         mock_cache = MagicMock()

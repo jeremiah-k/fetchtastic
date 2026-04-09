@@ -38,7 +38,7 @@ from fetchtastic.constants import (
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import matches_selected_patterns
+from fetchtastic.utils import coerce_bool, matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
@@ -173,8 +173,11 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         if is_prerelease:
             base_dir = os.path.join(base_dir, DESKTOP_PRERELEASES_DIR_NAME)
 
-        if os.path.islink(base_dir):
-            message = f"Refusing to use symlinked Desktop base directory: {base_dir}"
+        symlink_path = self._find_symlinked_ancestor(base_dir)
+        if symlink_path:
+            message = (
+                f"Refusing to use symlinked Desktop base directory: {symlink_path}"
+            )
             logger.warning(message)
             raise ValueError(message)
         if not self._is_within_download_tree(base_dir):
@@ -192,6 +195,29 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             os.makedirs(base_dir, exist_ok=True)
         return base_dir
 
+    def _find_symlinked_ancestor(self, path: str) -> Optional[str]:
+        """
+        Return the first symlinked path segment from `path` up to download_dir.
+        """
+        download_root = os.path.abspath(self.download_dir)
+        candidate = os.path.abspath(path)
+        try:
+            if os.path.commonpath([download_root, candidate]) != download_root:
+                return None
+        except ValueError:
+            return None
+
+        current = candidate
+        while True:
+            if os.path.islink(current):
+                return current
+            if current == download_root:
+                return None
+            parent = os.path.dirname(current)
+            if parent == current:
+                return None
+            current = parent
+
     def _resolve_release_dir(
         self,
         safe_release: str,
@@ -208,8 +234,9 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         )
         release_dir = os.path.join(base_dir, safe_release)
 
-        if os.path.islink(release_dir):
-            message = f"Refusing symlinked Desktop release directory: {release_dir}"
+        symlink_path = self._find_symlinked_ancestor(release_dir)
+        if symlink_path:
+            message = f"Refusing symlinked Desktop release directory: {symlink_path}"
             logger.warning(message)
             raise ValueError(message)
         if not self._is_within_download_tree(release_dir):
@@ -1034,8 +1061,11 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             List[Release]: Prerelease Release objects that match configured patterns, expected base version, and (when applicable) recent commit hashes.
         """
         # Check if prereleases are enabled in config
-        check_prereleases = self.config.get(
-            "CHECK_DESKTOP_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        check_prereleases = coerce_bool(
+            self.config.get(
+                "CHECK_DESKTOP_PRERELEASES",
+                self.config.get("CHECK_PRERELEASES", False),
+            )
         )
 
         if not check_prereleases:
@@ -1235,8 +1265,11 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             `True` if prereleases are enabled and either no valid tracking entry exists or `prerelease_tag` is newer than the tracked prerelease, `False` otherwise.
         """
         # Check if prereleases are enabled in config
-        check_prereleases = self.config.get(
-            "CHECK_DESKTOP_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        check_prereleases = coerce_bool(
+            self.config.get(
+                "CHECK_DESKTOP_PRERELEASES",
+                self.config.get("CHECK_PRERELEASES", False),
+            )
         )
         if not check_prereleases:
             return False
@@ -1286,8 +1319,11 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         Parameters:
             cached_releases (Optional[List[Release]]): Optional cached releases to avoid redundant API calls.
         """
-        check_prereleases = self.config.get(
-            "CHECK_DESKTOP_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        check_prereleases = coerce_bool(
+            self.config.get(
+                "CHECK_DESKTOP_PRERELEASES",
+                self.config.get("CHECK_PRERELEASES", False),
+            )
         )
         if not check_prereleases:
             return

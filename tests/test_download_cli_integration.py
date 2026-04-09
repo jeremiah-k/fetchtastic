@@ -142,12 +142,32 @@ def test_cli_integration_clear_cache_loads_config(mocker):
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
-    mock_clear = mocker.patch.object(integration, "_clear_caches")
+    mock_clear = mocker.patch.object(integration, "_clear_caches", return_value=True)
 
     result = integration.clear_cache(config=config)
 
     mock_clear.assert_called_once()
     assert result is True
+
+
+def test_cli_integration_clear_cache_returns_false_when_cache_clear_fails(mocker):
+    """clear_cache should propagate _clear_caches failure."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+    mock_orchestrator = mocker.MagicMock(
+        android_downloader=mocker.MagicMock(),
+        firmware_downloader=mocker.MagicMock(),
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+    mock_clear = mocker.patch.object(integration, "_clear_caches", return_value=False)
+
+    result = integration.clear_cache(config=config)
+
+    mock_clear.assert_called_once()
+    assert result is False
 
 
 def test_cli_integration_clear_cache_requires_config():
@@ -377,6 +397,25 @@ def test_run_download_with_force_refresh(mocker):
 
     # Verify caches were cleared
     mock_clear.assert_called_once()
+
+
+def test_run_download_force_refresh_fails_when_cache_clear_fails(mocker):
+    """run_download should return empty results if force-refresh cache clear fails."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run_download_pipeline.return_value = ([], [])
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+    mocker.patch.object(integration, "_clear_caches", return_value=False)
+
+    result = integration.run_download(config=config, force_refresh=True)
+
+    assert result == ([], [], [], [], [], [], [], "", "")
+    mock_orchestrator.run_download_pipeline.assert_not_called()
 
 
 def test_run_download_handles_exception(mocker):

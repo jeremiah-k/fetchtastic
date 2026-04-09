@@ -1444,6 +1444,37 @@ class TestMeshtasticAndroidAppDownloader:
         assert preferred_dir.exists()
         assert not legacy_dir.exists()
 
+    def test_resolve_release_dir_skips_legacy_move_when_preferred_base_symlinked(
+        self, tmp_path
+    ):
+        """Legacy migration should be skipped when preferred Android base is symlinked."""
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        legacy_dir = tmp_path / "apks" / "v2.7.10"
+        legacy_dir.mkdir(parents=True)
+
+        app_dir = tmp_path / APP_DIR_NAME
+        app_dir.mkdir(parents=True)
+        redirected_android_base = tmp_path / "redirected-android-base"
+        redirected_android_base.mkdir(parents=True)
+        android_symlink = app_dir / ANDROID_DIR_NAME
+        try:
+            android_symlink.symlink_to(
+                redirected_android_base, target_is_directory=True
+            )
+        except OSError:
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        result = downloader._resolve_release_dir(
+            "v2.7.10", is_prerelease=False, create_if_missing=False
+        )
+
+        assert result == str(legacy_dir)
+        assert legacy_dir.exists()
+
     def test_resolve_release_dir_creates_preferred_when_create_if_missing_true(
         self, tmp_path
     ):
