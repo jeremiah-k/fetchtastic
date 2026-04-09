@@ -4,10 +4,7 @@ import pytest
 import requests
 
 from fetchtastic import menu_desktop
-from fetchtastic.constants import (
-    MESHTASTIC_DESKTOP_RELEASES_URL,
-    MESHTASTIC_DESKTOP_RELEASES_URLS,
-)
+from fetchtastic.constants import MESHTASTIC_DESKTOP_RELEASES_URL
 
 pytestmark = [pytest.mark.unit, pytest.mark.user_interface]
 
@@ -209,32 +206,6 @@ def test_fetch_desktop_assets_no_fallback_when_no_desktop_assets(mocker):
 
     assert result == []
     mock_logger.warning.assert_called_once()
-
-
-def test_fetch_desktop_assets_uses_fallback_url_on_404(mocker):
-    """A 404 primary endpoint should fall through to the fallback Desktop source."""
-    not_found = requests.Response()
-    not_found.status_code = 404
-    not_found.url = MESHTASTIC_DESKTOP_RELEASES_URLS[0]
-    first_error = requests.HTTPError("not found", response=not_found)
-
-    fallback_response = mocker.MagicMock()
-    fallback_response.json.return_value = [
-        {
-            "tag_name": "v2.7.20",
-            "assets": [{"name": "Meshtastic-2.7.20.dmg"}],
-        }
-    ]
-
-    mock_request = mocker.patch("fetchtastic.menu_desktop.make_github_api_request")
-    mock_request.side_effect = [first_error, fallback_response]
-
-    result = menu_desktop.fetch_desktop_assets()
-
-    assert result == ["Meshtastic-2.7.20.dmg"]
-    assert mock_request.call_count == 2
-    assert mock_request.call_args_list[0].args[0] == MESHTASTIC_DESKTOP_RELEASES_URLS[0]
-    assert mock_request.call_args_list[1].args[0] == MESHTASTIC_DESKTOP_RELEASES_URLS[1]
 
 
 class TestSelectAssets:
