@@ -1330,12 +1330,15 @@ class TestDownloadOrchestrator:
         assert result.success is True
         orchestrator.firmware_downloader.download.assert_called_once()
 
-    def test_retry_single_failure_desktop_type(self, orchestrator):
+    def test_retry_single_failure_desktop_type(self, orchestrator, tmp_path):
         """_retry_single_failure should use desktop downloader for desktop type."""
+        target_file = tmp_path / "app.dmg"
+        target_file.write_bytes(b"x" * 1000)
+
         failed_result = Mock(spec=DownloadResult)
         failed_result.release_tag = "v1.0.0"
         failed_result.download_url = "https://example.com/app.dmg"
-        failed_result.file_path = "/tmp/app.dmg"
+        failed_result.file_path = str(target_file)
         failed_result.retry_count = 0
         failed_result.file_type = "desktop"
         failed_result.file_size = 1000
@@ -1348,12 +1351,15 @@ class TestDownloadOrchestrator:
         assert result.success is True
         orchestrator.desktop_downloader.download.assert_called_once()
 
-    def test_retry_single_failure_desktop_prerelease_type(self, orchestrator):
+    def test_retry_single_failure_desktop_prerelease_type(self, orchestrator, tmp_path):
         """_retry_single_failure should use desktop downloader for desktop_prerelease type."""
+        target_file = tmp_path / "app.dmg"
+        target_file.write_bytes(b"x" * 1000)
+
         failed_result = Mock(spec=DownloadResult)
         failed_result.release_tag = "v1.0.0"
         failed_result.download_url = "https://example.com/app.dmg"
-        failed_result.file_path = "/tmp/app.dmg"
+        failed_result.file_path = str(target_file)
         failed_result.retry_count = 0
         failed_result.file_type = "desktop_prerelease"
         failed_result.file_size = 1000
