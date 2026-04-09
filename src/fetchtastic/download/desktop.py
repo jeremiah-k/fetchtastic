@@ -99,6 +99,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             self.cache_manager, self.release_history_path
         )
         self._wip_2714_prerelease_mismatch_tags: set[str] = set()
+        self._logged_known_2714_mismatch_info = False
 
     def has_known_2714_prerelease_version_mismatch(self) -> bool:
         """
@@ -110,7 +111,23 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         """
         Return prerelease tags that showed the known 2.7.14 Desktop installer version-name mismatch.
         """
-        return sorted(self._wip_2714_prerelease_mismatch_tags, reverse=True)
+        tags = list(self._wip_2714_prerelease_mismatch_tags)
+
+        def _known_mismatch_sort_key(tag: str) -> tuple[int, int, int, int, str]:
+            match = re.search(
+                r"^v?(\d+)\.(\d+)\.(\d+)-(?:open|closed|internal)\.(\d+)$",
+                tag,
+                re.IGNORECASE,
+            )
+            if not match:
+                return (0, 0, 0, 0, tag)
+            major, minor, patch, prerelease_num = (
+                int(match.group(index)) for index in range(1, 5)
+            )
+            return (major, minor, patch, prerelease_num, tag)
+
+        tags.sort(key=_known_mismatch_sort_key, reverse=True)
+        return tags
 
     def get_target_path_for_release(
         self,
@@ -472,12 +489,19 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             release.prerelease
             and expected_version_tuple == DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION
         ):
-            logger.info(
-                "Desktop prerelease %s uses known transitional packaging names (expected %s): %s. 2.7.14 prerelease installer version-label discrepancies are currently expected while upstream CI packaging is being finalized.",
-                release.tag_name,
-                expected_label,
-                mismatch_preview,
-            )
+            if not self._logged_known_2714_mismatch_info:
+                logger.info(
+                    "Desktop prerelease %s uses known transitional packaging names (expected %s): %s. 2.7.14 prerelease installer version-label discrepancies are currently expected while upstream CI packaging is being finalized.",
+                    release.tag_name,
+                    expected_label,
+                    mismatch_preview,
+                )
+                self._logged_known_2714_mismatch_info = True
+            else:
+                logger.debug(
+                    "Desktop prerelease %s also matches the known 2.7.14 transitional packaging discrepancy.",
+                    release.tag_name,
+                )
             return
 
         logger.warning(
@@ -502,6 +526,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         # Keep mismatch observations scoped to the active release scan so CLI run
         # summary messaging reflects the current run only.
         self._wip_2714_prerelease_mismatch_tags.clear()
+        self._logged_known_2714_mismatch_info = False
         logged_mismatch_tags: set[str] = set()
         try:
             max_scan = GITHUB_MAX_PER_PAGE

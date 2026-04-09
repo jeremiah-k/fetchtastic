@@ -503,6 +503,56 @@ def test_get_releases_tracks_known_2714_prerelease_version_mismatch(downloader):
     )
 
 
+def test_get_releases_logs_known_2714_info_only_once_per_scan(downloader):
+    """Known 2.7.14 transitional mismatch info should log once per scan."""
+    downloader.github_source.fetch_raw_releases_data = Mock(
+        return_value=[
+            {
+                "tag_name": "v2.7.14-closed.10",
+                "prerelease": True,
+                "assets": [
+                    {
+                        "name": "Meshtastic-1.0.0.dmg",
+                        "browser_download_url": "http://example.com/test.dmg",
+                        "size": 100,
+                    }
+                ],
+            },
+            {
+                "tag_name": "v2.7.14-closed.1",
+                "prerelease": True,
+                "assets": [
+                    {
+                        "name": "Meshtastic-1.0.0.exe",
+                        "browser_download_url": "http://example.com/test.exe",
+                        "size": 100,
+                    }
+                ],
+            },
+        ]
+    )
+
+    with patch("fetchtastic.download.desktop.logger") as mock_logger:
+        result = downloader.get_releases(limit=10)
+
+    assert len(result) == 2
+    assert downloader.get_known_2714_prerelease_mismatch_tags() == [
+        "v2.7.14-closed.10",
+        "v2.7.14-closed.1",
+    ]
+    known_info_calls = [
+        call
+        for call in mock_logger.info.call_args_list
+        if "known transitional packaging names" in call.args[0]
+    ]
+    assert len(known_info_calls) == 1
+    assert any(
+        "also matches the known 2.7.14 transitional packaging discrepancy"
+        in call.args[0]
+        for call in mock_logger.debug.call_args_list
+    )
+
+
 def test_get_releases_does_not_track_2714_mismatch_when_versions_align(downloader):
     """Matching desktop installer version labels should not set the known mismatch flag."""
     downloader.github_source.fetch_raw_releases_data = Mock(

@@ -1444,6 +1444,92 @@ def test_log_download_results_summary_logs_desktop_wip_note_for_known_2714_misma
     assert any("v2.7.14-closed.10" in msg for msg in logged_messages)
 
 
+def test_log_download_results_summary_desktop_wip_note_uses_newest_tag_only(
+    mocker,
+):
+    """Desktop WIP note should include only the newest observed mismatch tag."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = None
+    integration.config = {"SAVE_DESKTOP_APP": True}
+    integration.desktop_downloader = mocker.MagicMock()
+    integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.return_value = (
+        True
+    )
+    integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.return_value = [
+        "v2.7.14-closed.10",
+        "v2.7.14-closed.1",
+    ]
+    integration.get_latest_versions = mocker.MagicMock(
+        return_value={
+            "firmware_prerelease": "",
+            "android_prerelease": "",
+            "desktop_prerelease": "v2.7.14-closed.10",
+        }
+    )
+    mock_logger = mocker.MagicMock()
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        downloaded_desktop=[],
+        failed_downloads=[],
+        latest_firmware_version="",
+        latest_apk_version="",
+        latest_desktop_version="",
+    )
+
+    note_calls = [
+        call
+        for call in mock_logger.info.call_args_list
+        if call.args and "Desktop prerelease note:" in call.args[0]
+    ]
+    assert len(note_calls) == 1
+    assert note_calls[0].args[1] == "v2.7.14-closed.10"
+
+
+def test_log_download_results_summary_suppresses_wip_note_for_non_2714_latest_prerelease(
+    mocker,
+):
+    """Desktop WIP note should be suppressed when latest desktop prerelease is beyond 2.7.14."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = None
+    integration.config = {"SAVE_DESKTOP_APP": True}
+    integration.desktop_downloader = mocker.MagicMock()
+    integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.return_value = (
+        True
+    )
+    integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.return_value = [
+        "v2.7.14-closed.10"
+    ]
+    integration.get_latest_versions = mocker.MagicMock(
+        return_value={
+            "firmware_prerelease": "",
+            "android_prerelease": "",
+            "desktop_prerelease": "v2.8.0-open.1",
+        }
+    )
+    mock_logger = mocker.MagicMock()
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        downloaded_desktop=[],
+        failed_downloads=[],
+        latest_firmware_version="",
+        latest_apk_version="",
+        latest_desktop_version="",
+    )
+
+    logged_info_messages = [str(call) for call in mock_logger.info.call_args_list]
+    logged_debug_messages = [str(call) for call in mock_logger.debug.call_args_list]
+    assert not any("Desktop prerelease note:" in msg for msg in logged_info_messages)
+    assert any("suppressing end-of-run note" in msg for msg in logged_debug_messages)
+
+
 def test_log_download_results_summary_skips_desktop_wip_note_when_desktop_disabled(
     mocker,
 ):
