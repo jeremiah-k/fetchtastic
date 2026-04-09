@@ -1225,6 +1225,16 @@ class TestMeshtasticAndroidAppDownloader:
 
         assert downloader.get_latest_release_tag() == "v1.0.0"
 
+    def test_get_latest_release_tag_non_mapping_json_returns_none(
+        self, mock_config, tmp_path
+    ):
+        cache_manager = CacheManager(str(tmp_path))
+        downloader = MeshtasticAndroidAppDownloader(mock_config, cache_manager)
+        json_path = cache_manager.get_cache_file_path(downloader.latest_release_file)
+        Path(json_path).write_text(json.dumps(["v1.0.0"]))
+
+        assert downloader.get_latest_release_tag() is None
+
     def test_get_current_iso_timestamp(self, downloader):
         """Test ISO timestamp generation."""
         with patch("fetchtastic.download.android.datetime") as mock_datetime:

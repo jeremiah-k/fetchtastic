@@ -10,7 +10,7 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 import requests  # type: ignore[import-untyped]
 
@@ -1122,8 +1122,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             try:
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return cast(str | None, data.get("latest_version"))
-            except (IOError, json.JSONDecodeError):
+                    if not isinstance(data, dict):
+                        return None
+                    tracked = data.get("latest_version")
+                    return tracked if isinstance(tracked, str) and tracked else None
+            except (IOError, json.JSONDecodeError, TypeError):
                 pass
         return None
 
