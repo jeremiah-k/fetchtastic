@@ -10,7 +10,18 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import RELEASE_SCAN_COUNT
+from fetchtastic.constants import (
+    DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_DESKTOP,
+    FILE_TYPE_DESKTOP_PRERELEASE,
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+    RELEASE_SCAN_COUNT,
+)
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -163,6 +174,48 @@ class TestDownloadOrchestrator:
             assert result.success is True
             mock_download.assert_called_once()
 
+    def test_retry_single_failure_desktop_zip_validation_failure(
+        self, orchestrator, tmp_path
+    ):
+        """Desktop retry should fail when post-download zip validation fails."""
+        target_path = tmp_path / "Meshtastic.zip"
+        target_path.write_bytes(b"data")
+
+        failed_result = DownloadResult(
+            success=False,
+            error_type="network_error",
+            is_retryable=True,
+            download_url="https://example.com/Meshtastic.zip",
+            file_path=str(target_path),
+            file_type=FILE_TYPE_DESKTOP,
+            retry_count=0,
+            release_tag="v2.7.20",
+            file_size=4,
+        )
+
+        with (
+            patch.object(
+                orchestrator.desktop_downloader, "download", return_value=True
+            ),
+            patch.object(orchestrator.desktop_downloader, "verify", return_value=True),
+            patch.object(
+                orchestrator.desktop_downloader, "_is_zip_intact", return_value=False
+            ) as mock_zip_intact,
+            patch.object(
+                orchestrator.desktop_downloader, "cleanup_file"
+            ) as mock_cleanup,
+        ):
+            result = orchestrator._retry_single_failure(failed_result)
+
+        assert result.success is False
+        assert result.error_type == "retry_failure"
+        assert (
+            result.error_message
+            == "Downloaded desktop asset failed post-download validation"
+        )
+        mock_zip_intact.assert_called_once_with(str(target_path))
+        mock_cleanup.assert_called_once_with(str(target_path))
+
     def test_generate_retry_report(self, orchestrator):
         """Test generating retry reports."""
         retryable_failures = [
@@ -314,39 +367,88 @@ class TestDownloadOrchestrator:
         # Only entries in failed_downloads count as failed
         assert rate == 100.0  # 3 successful out of 3 attempted = 100%
 
-    def test_count_artifact_downloads(self, orchestrator):
+    def test_count_artifact_downloads(self, orchestrator, tmp_path):
         """Test counting artifact downloads."""
         orchestrator.download_results = [
             DownloadResult(
                 success=True,
-                file_type="firmware",
+                file_type=FILE_TYPE_FIRMWARE,
                 download_url="https://example.com/firmware1.bin",
             ),
             DownloadResult(
                 success=True,
-                file_type="firmware",
-                download_url="https://example.com/firmware2.bin",
+                file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
+                file_path=str(
+                    tmp_path
+                    / "firmware"
+                    / "prerelease"
+                    / "v2.0.0-open.1"
+                    / "firmware.bin"
+                ),
             ),
             DownloadResult(
                 success=True,
-                file_type="android",
+                file_type=FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                file_path=str(
+                    tmp_path
+                    / "firmware"
+                    / "prerelease"
+                    / "firmware-2.0.1.a1b2c3d"
+                    / "repo.bin"
+                ),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                file_path=str(tmp_path / "firmware" / "v2.0.0" / "device.mt.json"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_ANDROID_PRERELEASE,
                 download_url="https://example.com/android.apk",
             ),
             DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_DESKTOP,
+                file_path=str(
+                    tmp_path / "app" / "desktop" / "v2.0.0" / "Meshtastic.dmg"
+                ),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_DESKTOP_PRERELEASE,
+                file_path=str(
+                    tmp_path
+                    / "app"
+                    / "desktop"
+                    / "prerelease"
+                    / "v2.0.1-open.1"
+                    / "Meshtastic.dmg"
+                ),
+            ),
+            DownloadResult(
                 success=False,
-                file_type="firmware",
+                file_type=FILE_TYPE_FIRMWARE,
                 download_url="https://example.com/firmware3.bin",
             ),
         ]
 
-        # Test counting firmware downloads (should count both successful and failed)
-        firmware_count = orchestrator._count_artifact_downloads("firmware")
+        # Firmware count should include stable/prerelease types and manifests.
+        firmware_count = orchestrator._count_artifact_downloads(FILE_TYPE_FIRMWARE)
         assert isinstance(firmware_count, int)
-        assert firmware_count == 3  # 3 firmware entries total
+        assert firmware_count == 4
 
-        # Test counting android downloads
-        android_count = orchestrator._count_artifact_downloads("android")
-        assert android_count == 1  # 1 android entry
+        # Android count should include Android prerelease results.
+        android_count = orchestrator._count_artifact_downloads(FILE_TYPE_ANDROID)
+        assert android_count == 1
+
+        # Desktop prereleases must not be double-counted as stable desktop downloads.
+        desktop_count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
+        desktop_prerelease_count = orchestrator._count_artifact_downloads(
+            FILE_TYPE_DESKTOP_PRERELEASE
+        )
+        assert desktop_count == 1
+        assert desktop_prerelease_count == 1
 
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
@@ -363,6 +465,7 @@ class TestDownloadOrchestrator:
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions."""
         orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.desktop_releases = []
         with (
             patch.object(
                 orchestrator.firmware_downloader,
@@ -372,8 +475,12 @@ class TestDownloadOrchestrator:
         ):
             versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
-        # Should contain version information for different components
-        assert len(versions) >= 0  # May be empty initially
+        assert "android" in versions
+        assert "firmware" in versions
+        assert "firmware_prerelease" in versions
+        assert "android_prerelease" in versions
+        assert "desktop" in versions
+        assert "desktop_prerelease" in versions
         for key, value in versions.items():
             assert isinstance(key, str)
             assert isinstance(value, (str, type(None)))
@@ -387,6 +494,9 @@ class TestDownloadOrchestrator:
             ),
             patch.object(
                 orchestrator.firmware_downloader, "get_releases", return_value=[]
+            ),
+            patch.object(
+                orchestrator.desktop_downloader, "get_releases", return_value=[]
             ),
             patch.object(orchestrator, "_manage_prerelease_tracking"),
         ):
@@ -558,7 +668,7 @@ class TestDownloadOrchestrator:
         orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = "nope"
         keep_limit = orchestrator._get_firmware_keep_limit()
         assert isinstance(keep_limit, int)
-        assert keep_limit >= 0
+        assert keep_limit == int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
 
     def test_download_android_release(self, orchestrator):
         """

@@ -12,6 +12,8 @@ Comprehensive tests for the version.py module covering:
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from fetchtastic.download.version import (
     VersionManager,
     _read_latest_release_tag,
@@ -463,6 +465,24 @@ class TestPrereleaseFiltering:
             prereleases, ["rc", "beta"], ["alpha"]
         )
         assert result == ["v1.2.3-rc1", "v1.2.4-beta1"]
+
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
+    def test_filter_prereleases_glob_patterns(self):
+        """Glob-style include patterns should be supported."""
+        vm = VersionManager()
+        prereleases = ["v2.7.20-open.1", "v2.7.20-closed.1"]
+        result = vm.filter_prereleases_by_pattern(prereleases, ["*-open*"], [])
+        assert result == ["v2.7.20-open.1"]
+
+    @pytest.mark.unit
+    @pytest.mark.core_downloads
+    def test_filter_prereleases_exclude_glob_patterns(self):
+        """Glob-style exclude patterns should be supported."""
+        vm = VersionManager()
+        prereleases = ["v2.7.20-open.1", "v2.7.20-closed.1"]
+        result = vm.filter_prereleases_by_pattern(prereleases, [], ["*-open*"])
+        assert result == ["v2.7.20-closed.1"]
 
 
 class TestVersionTracking:

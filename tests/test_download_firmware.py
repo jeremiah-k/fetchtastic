@@ -10,76 +10,68 @@ from typing import ClassVar
 from unittest.mock import ANY, Mock, patch
 
 import pytest
+import requests
 
 from fetchtastic import log_utils
-from fetchtastic.constants import FIRMWARE_DIR_NAME, RELEASE_SCAN_COUNT
+from fetchtastic.constants import (
+    FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FIRMWARE_DIR_NAME,
+    RELEASE_SCAN_COUNT,
+)
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, FirmwareManifest, Release
 from fetchtastic.download.version import VersionManager
+
+
+# Module-level fixtures shared across test classes
+@pytest.fixture
+def mock_config(tmp_path):
+    """Provide a mock configuration dictionary using tmp_path."""
+    return {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "CHECK_FIRMWARE_PRERELEASES": True,
+        "SELECTED_PRERELEASE_ASSETS": ["rak4631"],
+        "EXCLUDE_PATTERNS": ["*debug*"],
+        "GITHUB_TOKEN": "test_token",
+        "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        "FILTER_REVOKED_RELEASES": True,
+    }
+
+
+@pytest.fixture
+def mock_cache_manager(tmp_path):
+    """Mock CacheManager instance using tmp_path."""
+    mock = Mock(spec=CacheManager)
+    mock.cache_dir = str(tmp_path / "cache")
+    mock.get_cache_file_path.side_effect = lambda file_name: os.path.join(
+        mock.cache_dir, file_name
+    )
+    return mock
+
+
+@pytest.fixture
+def downloader(mock_config, mock_cache_manager):
+    """Create a FirmwareReleaseDownloader with mocked dependencies."""
+    dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
+    dl.cache_manager = mock_cache_manager
+    dl.version_manager = Mock()
+    dl.file_operations = Mock()
+    real_version_manager = VersionManager()
+    dl.version_manager.get_release_tuple.side_effect = (
+        real_version_manager.get_release_tuple
+    )
+    dl.version_manager.extract_clean_version.side_effect = (
+        real_version_manager.extract_clean_version
+    )
+    return dl
 
 
 class TestFirmwareReleaseDownloader:
     """Test suite for FirmwareReleaseDownloader."""
 
     pytestmark: ClassVar[list] = [pytest.mark.unit, pytest.mark.core_downloads]
-
-    @pytest.fixture
-    def mock_config(self):
-        """
-        Provide a mock configuration dictionary used by the test suite.
-
-        Returns:
-            dict: Test configuration containing:
-                - DOWNLOAD_DIR (str): Base directory for downloads ("/tmp/test").
-                - CHECK_FIRMWARE_PRERELEASES (bool): Whether prereleases are considered.
-                - SELECTED_PRERELEASE_ASSETS (list[str]): Asset name substrings to select from prereleases.
-                - EXCLUDE_PATTERNS (list[str]): Filename glob patterns to exclude.
-                - GITHUB_TOKEN (str): Token used for GitHub API requests ("test_token").
-        """
-        return {
-            "DOWNLOAD_DIR": "/tmp/test",
-            "CHECK_FIRMWARE_PRERELEASES": True,
-            "SELECTED_PRERELEASE_ASSETS": ["rak4631"],
-            "EXCLUDE_PATTERNS": ["*debug*"],
-            "GITHUB_TOKEN": "test_token",
-        }
-
-    @pytest.fixture
-    def mock_cache_manager(self):
-        """Mock CacheManager instance."""
-        mock = Mock(spec=CacheManager)
-        mock.cache_dir = "/tmp/cache"
-        mock.get_cache_file_path.side_effect = lambda file_name: os.path.join(
-            mock.cache_dir, file_name
-        )
-        return mock
-
-    @pytest.fixture
-    def downloader(self, mock_config, mock_cache_manager):
-        """
-        Create a FirmwareReleaseDownloader configured for tests with injected mocked dependencies.
-
-        Parameters:
-            mock_config (dict): Configuration values used to initialize the downloader.
-            mock_cache_manager (Mock): Mocked CacheManager used for cache interactions.
-
-        Returns:
-            FirmwareReleaseDownloader: Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` are replaced with mocks. The `version_manager.get_release_tuple` delegates to a real VersionManager implementation.
-        """
-        dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
-        # Mock dependencies that are set in __init__
-        dl.cache_manager = mock_cache_manager
-        dl.version_manager = Mock()
-        dl.file_operations = Mock()
-        real_version_manager = VersionManager()
-        dl.version_manager.get_release_tuple.side_effect = (
-            real_version_manager.get_release_tuple
-        )
-        dl.version_manager.extract_clean_version.side_effect = (
-            real_version_manager.extract_clean_version
-        )
-        return dl
 
     def _expected_cleanup_fetch_limit(
         self, keep_limit: int, keep_last_beta: bool, filter_revoked: bool = True
@@ -120,7 +112,9 @@ class TestFirmwareReleaseDownloader:
         """Test target path generation for firmware releases."""
         path = downloader.get_target_path_for_release("v1.0.0", "firmware.zip")
 
-        expected = "/tmp/test/firmware/v1.0.0/firmware.zip"
+        expected = os.path.join(
+            downloader.config["DOWNLOAD_DIR"], "firmware", "v1.0.0", "firmware.zip"
+        )
         assert path == expected
 
     def test_ensure_release_notes_writes_file(self, tmp_path):
@@ -351,25 +345,16 @@ class TestFirmwareReleaseDownloader:
 
         assert url == "https://example.com/firmware.zip"
 
-    @patch("fetchtastic.utils.download_file_with_retry")
-    @patch("os.path.exists")
-    @patch("os.path.getsize")
-    def test_download_firmware_success(
-        self, mock_getsize, mock_exists, mock_download, downloader
-    ):
+    def test_download_firmware_success(self, downloader):
         """
         Verify that downloading and extracting a firmware asset succeeds and returns expected metadata.
 
         Parameters:
-            mock_getsize (Mock): Fixture mocking os.path.getsize used to simulate existing file size.
-            mock_exists (Mock): Fixture mocking os.path.exists used to simulate file presence.
-            mock_download (Mock): Fixture mocking the network download function; should emulate a successful download.
             downloader (FirmwareReleaseDownloader): Fixture instance under test with verification and extraction methods mocked.
         """
         # Setup mocks
-        mock_exists.return_value = True
-        mock_getsize.return_value = 1000000
-        mock_download.return_value = True
+        downloader.is_asset_complete = Mock(return_value=False)
+        downloader.download = Mock(return_value=True)
 
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
@@ -388,7 +373,7 @@ class TestFirmwareReleaseDownloader:
         assert result.success is True
         assert result.release_tag == "v1.0.0"
         assert "firmware-rak4631.zip" in str(result.file_path)
-        mock_download.assert_called_once()
+        downloader.download.assert_called_once()
 
     def test_download_firmware_skips_revoked_when_filtered(self, downloader):
         """Revoked releases are skipped when revoked filtering is enabled."""
@@ -438,11 +423,8 @@ class TestFirmwareReleaseDownloader:
         assert result.success is False
         assert result.error_type == "network_error"
 
-    @patch("os.path.exists")
-    def test_extract_firmware_success(self, mock_exists, downloader):
+    def test_extract_firmware_success(self, downloader, tmp_path):
         """Test successful firmware extraction."""
-        mock_exists.return_value = True
-
         # Mock release and asset
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
@@ -450,8 +432,15 @@ class TestFirmwareReleaseDownloader:
         asset = Mock(spec=Asset)
         asset.name = "firmware-rak4631.zip"
 
+        zip_path = tmp_path / "firmware-rak4631.zip"
+        zip_path.write_bytes(b"dummy zip")
+        downloader.get_target_path_for_release = Mock(return_value=str(zip_path))
+
         # Mock file operations
+        downloader.file_operations.validate_extraction_patterns.return_value = True
+        downloader.file_operations.check_extraction_needed.return_value = True
         downloader.file_operations.extract_archive = Mock(return_value=["firmware.bin"])
+        downloader.file_operations.generate_hash_for_extracted_files.return_value = None
 
         result = downloader.extract_firmware(release, asset, ["*.bin"], ["readme*"])
 
@@ -459,16 +448,18 @@ class TestFirmwareReleaseDownloader:
         assert result.extracted_files == ["firmware.bin"]
         downloader.file_operations.extract_archive.assert_called_once()
 
-    @patch("os.path.exists")
-    def test_extract_firmware_no_matches_is_warning(self, mock_exists, downloader):
+    def test_extract_firmware_no_matches_is_warning(self, downloader, tmp_path):
         """Test extraction when no files match patterns."""
-        mock_exists.return_value = True
 
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
 
         asset = Mock(spec=Asset)
         asset.name = "firmware-rp2040.zip"
+
+        zip_path = tmp_path / "firmware-rp2040.zip"
+        zip_path.write_bytes(b"dummy zip")
+        downloader.get_target_path_for_release = Mock(return_value=str(zip_path))
 
         downloader.file_operations.validate_extraction_patterns.return_value = True
         downloader.file_operations.check_extraction_needed.return_value = True
@@ -795,15 +786,16 @@ class TestFirmwareReleaseDownloader:
         mock_datetime.now.return_value.isoformat.return_value = "2023-01-01T00:00:00"
 
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)
-        downloader.cache_manager.get_cache_file_path.return_value = (
-            "/tmp/cache/latest_firmware_release.json"
+        cache_path = os.path.join(
+            downloader.cache_manager.cache_dir, "latest_firmware_release.json"
         )
+        downloader.cache_manager.get_cache_file_path.return_value = cache_path
 
         result = downloader.update_latest_release_tag("v2.0.0")
 
         assert result is True
         downloader.cache_manager.atomic_write_json.assert_called_once_with(
-            "/tmp/cache/latest_firmware_release.json", ANY
+            cache_path, ANY
         )
 
     def test_get_prerelease_patterns(self, downloader):
@@ -837,6 +829,651 @@ class TestFirmwareReleaseDownloader:
 
         assert len(listing) == 2
         downloader.cache_manager.get_repo_contents.assert_called_once()
+
+    def test_download_manifests_includes_release_manifest_json(
+        self, downloader, tmp_path
+    ):
+        """Both per-device *.mt.json and release-level firmware-*.json files should be downloaded."""
+        downloader.download_dir = str(tmp_path)
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).parent.mkdir(parents=True, exist_ok=True)
+            if target.endswith(".mt.json"):
+                Path(target).write_text(
+                    json.dumps(
+                        {
+                            "hwModelSlug": "RAK4631",
+                            "files": [],
+                            "part": [],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            else:
+                Path(target).write_text("{}", encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-rak4631-2.7.20.abcdef0.mt.json",
+                    download_url="https://example.invalid/rak.mt.json",
+                    size=100,
+                ),
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=200,
+                ),
+                Asset(
+                    name="firmware-rak4631-2.7.20.abcdef0.zip",
+                    download_url="https://example.invalid/rak.zip",
+                    size=300,
+                ),
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 2
+        assert all(result.success for result in results)
+        assert all(
+            result.file_type == FILE_TYPE_FIRMWARE_MANIFEST for result in results
+        )
+        downloaded_names = sorted(
+            Path(str(result.file_path)).name for result in results
+        )
+        assert downloaded_names == [
+            "firmware-2.7.20.abcdef0.json",
+            "firmware-rak4631-2.7.20.abcdef0.mt.json",
+        ]
+
+    def test_parse_manifest_data_includes_ui_flags(self, downloader):
+        """Manifest parsing should preserve has_mui and has_inkhud fields."""
+        parsed = downloader._parse_manifest_data(
+            {
+                "version": "2.7.20.abcdef0",
+                "hwModelSlug": "RAK4631",
+                "has_mui": True,
+                "has_inkhud": False,
+            }
+        )
+
+        assert parsed is not None
+        assert parsed.has_mui is True
+        assert parsed.has_inkhud is False
+
+    def test_parse_manifest_data_returns_none_on_exception(self, downloader):
+        """Manifest parsing should return None when dataclass construction fails."""
+        with patch(
+            "fetchtastic.download.firmware.FirmwareManifest",
+            side_effect=TypeError("bad data"),
+        ):
+            parsed = downloader._parse_manifest_data({"version": "1.0.0"})
+
+        assert parsed is None
+
+    def test_is_release_manifest_name_detects_release_json(self, downloader):
+        """Release-level manifest names should be detected."""
+        assert (
+            downloader._is_release_manifest_name("firmware-2.7.20.abcdef0.json") is True
+        )
+        assert downloader._is_release_manifest_name("FIRMWARE-2.7.20.json") is True
+
+    def test_is_release_manifest_name_rejects_device_manifest(self, downloader):
+        """Per-device manifests (.mt.json) should be rejected."""
+        assert (
+            downloader._is_release_manifest_name(
+                "firmware-rak4631-2.7.20.abcdef0.mt.json"
+            )
+            is False
+        )
+
+    def test_is_release_manifest_name_rejects_non_firmware_prefix(self, downloader):
+        """Non-firmware prefixed files should be rejected."""
+        assert downloader._is_release_manifest_name("other-2.7.20.json") is False
+        assert downloader._is_release_manifest_name("config.json") is False
+
+    def test_is_manifest_asset_name_accepts_both_types(self, downloader):
+        """Both per-device and release-level manifests should be accepted."""
+        assert (
+            downloader._is_manifest_asset_name(
+                "firmware-rak4631-2.7.20.abcdef0.mt.json"
+            )
+            is True
+        )
+        assert (
+            downloader._is_manifest_asset_name("firmware-2.7.20.abcdef0.json") is True
+        )
+
+    def test_is_manifest_asset_name_rejects_non_manifest(self, downloader):
+        """Non-manifest files should be rejected."""
+        assert (
+            downloader._is_manifest_asset_name("firmware-rak4631-2.7.20.zip") is False
+        )
+        assert downloader._is_manifest_asset_name("readme.txt") is False
+
+    def test_download_manifests_skips_unsafe_tag(self, downloader):
+        """Unsafe release tags should skip manifest downloads."""
+        release = Release(tag_name="../v1.0.0", prerelease=False, assets=[])
+        results = downloader.download_manifests(release)
+        assert results == []
+
+    def test_download_manifests_skips_unsafe_asset_name_and_continues(
+        self, downloader, tmp_path
+    ):
+        """Unsafe manifest filenames should fail per-asset without aborting the release."""
+        downloader.download_dir = str(tmp_path)
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).parent.mkdir(parents=True, exist_ok=True)
+            Path(target).write_text("{}", encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-../unsafe.json",
+                    download_url="https://example.invalid/unsafe.json",
+                    size=10,
+                ),
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=2,
+                ),
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 2
+        assert results[0].success is False
+        assert results[0].error_type == "validation_error"
+        assert results[1].success is True
+
+    def test_download_manifests_verification_failure(self, downloader, tmp_path):
+        """Manifest verification failure should be reported and file cleaned up."""
+        downloader.download_dir = str(tmp_path)
+
+        def _write_invalid_manifest(_url: str, target: str) -> bool:
+            Path(target).parent.mkdir(parents=True, exist_ok=True)
+            Path(target).write_text("{}", encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_invalid_manifest)
+        downloader.verify = Mock(return_value=False)
+        downloader.cleanup_file = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/manifest.json",
+                    size=100,
+                )
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error_type == "validation_error"
+        downloader.cleanup_file.assert_called_once()
+
+    def test_download_manifests_manifest_read_oserror_is_filesystem_error(
+        self, downloader, tmp_path
+    ):
+        """Manifest read I/O errors should be classified as filesystem errors."""
+        downloader.download_dir = str(tmp_path)
+        downloader.download = Mock(return_value=True)
+        downloader.verify = Mock(return_value=True)
+        downloader.cleanup_file = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/manifest.json",
+                    size=100,
+                )
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error_type == "filesystem_error"
+        assert results[0].is_retryable is False
+        downloader.cleanup_file.assert_called_once()
+
+    def test_download_manifests_download_failure(self, downloader, tmp_path):
+        """Manifest download failure should be reported."""
+        downloader.download_dir = str(tmp_path)
+        downloader.download = Mock(return_value=False)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/manifest.json",
+                    size=100,
+                )
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error_type == "network_error"
+
+    def test_download_manifests_existing_invalid_json_redownloads(
+        self, downloader, tmp_path
+    ):
+        """Existing manifest with invalid JSON should be redownloaded."""
+        downloader.download_dir = str(tmp_path)
+
+        target_path = downloader.get_target_path_for_release(
+            "v2.7.20", "firmware-2.7.20.abcdef0.json"
+        )
+        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(target_path).write_text("not valid json", encoding="utf-8")
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).write_text('{"valid":true}', encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/manifest.json",
+                    size=14,
+                )
+            ],
+        )
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is True
+        assert results[0].was_skipped is False
+        downloader.download.assert_called_once()
+
+    def test_get_manifest_for_device_returns_none_for_unsafe_tag(self, downloader):
+        """Unsafe release tags should return None from get_manifest_for_device."""
+        release = Release(tag_name="../v1.0.0", prerelease=False)
+        assert downloader.get_manifest_for_device(release) is None
+
+    def test_get_manifest_for_device_returns_none_for_missing_dir(
+        self, downloader, tmp_path
+    ):
+        """Missing release directories should return None."""
+        downloader.download_dir = str(tmp_path)
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        assert downloader.get_manifest_for_device(release) is None
+
+    def test_get_manifest_for_device_returns_first_manifest_when_no_slug(
+        self, downloader, tmp_path
+    ):
+        """When hwModelSlug is None, first valid manifest should be returned."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"hwModelSlug": "RAK4631", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "RAK4631"
+
+    def test_get_manifest_for_device_filters_by_slug(self, downloader, tmp_path):
+        """get_manifest_for_device should filter by hwModelSlug when provided."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"hwModelSlug": "RAK4631", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        manifest2 = version_dir / "firmware-tbeam-2.7.20.abcdef0.mt.json"
+        manifest2.write_text(
+            json.dumps({"hwModelSlug": "T_BEAM", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release, hwModelSlug="T_BEAM")
+
+        assert result is not None
+        assert result.hwModelSlug == "T_BEAM"
+
+    def test_get_manifest_for_device_skips_invalid_json(self, downloader, tmp_path):
+        """Invalid manifest files should be skipped."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        bad_manifest = version_dir / "firmware-bad-2.7.20.abcdef0.mt.json"
+        bad_manifest.write_text("not json", encoding="utf-8")
+
+        good_manifest = version_dir / "firmware-good-2.7.20.abcdef0.mt.json"
+        good_manifest.write_text(
+            json.dumps({"hwModelSlug": "GOOD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "GOOD"
+
+    def test_get_manifest_for_device_skips_manifest_that_fails_verification(
+        self, downloader, tmp_path
+    ):
+        """Manifests failing local integrity verification should be ignored."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        bad_manifest = version_dir / "firmware-bad-2.7.20.abcdef0.mt.json"
+        bad_manifest.write_text(
+            json.dumps({"hwModelSlug": "BAD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+        good_manifest = version_dir / "firmware-good-2.7.20.abcdef0.mt.json"
+        good_manifest.write_text(
+            json.dumps({"hwModelSlug": "GOOD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+        bad_manifest_name = "firmware-bad-2.7.20.abcdef0.mt.json"
+        downloader.verify = Mock(
+            side_effect=lambda path: not str(path).endswith(bad_manifest_name)
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "GOOD"
+
+    def test_get_manifest_for_device_skips_manifest_when_verify_raises_valueerror(
+        self, downloader, tmp_path
+    ):
+        """Verification ValueError for one manifest should not abort the whole scan."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        bad_manifest = version_dir / "firmware-bad-2.7.20.abcdef0.mt.json"
+        bad_manifest.write_text(
+            json.dumps({"hwModelSlug": "BAD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+        good_manifest = version_dir / "firmware-good-2.7.20.abcdef0.mt.json"
+        good_manifest.write_text(
+            json.dumps({"hwModelSlug": "GOOD", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        bad_manifest_name = "firmware-bad-2.7.20.abcdef0.mt.json"
+
+        def _verify_side_effect(path):
+            if str(path).endswith(bad_manifest_name):
+                raise ValueError("invalid sidecar")
+            return True
+
+        downloader.verify = Mock(side_effect=_verify_side_effect)
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "GOOD"
+
+    def test_get_manifest_for_device_returns_none_when_no_match(
+        self, downloader, tmp_path
+    ):
+        """get_manifest_for_device should return None when no matching slug is found."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"hwModelSlug": "RAK4631", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release, hwModelSlug="NONEXISTENT")
+
+        assert result is None
+
+    def test_get_manifest_for_device_skips_unparsable_manifest(
+        self, downloader, tmp_path, mocker
+    ):
+        """Manifests that fail to parse should be skipped, continue to find valid ones."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = Path(tmp_path) / "firmware" / "v2.7.20"
+        version_dir.mkdir(parents=True)
+
+        # Create two manifest files - one unparsable (returns None), one valid
+        manifest1 = version_dir / "firmware-rak4631-2.7.20.abcdef0.mt.json"
+        manifest1.write_text(
+            json.dumps({"invalid": "data"}),
+            encoding="utf-8",
+        )
+
+        manifest2 = version_dir / "firmware-tbeam-2.7.20.abcdef1.mt.json"
+        manifest2.write_text(
+            json.dumps({"hwModelSlug": "T_BEAM", "version": "2.7.20"}),
+            encoding="utf-8",
+        )
+
+        # Mock to return None for first manifest (unparsable), valid for second
+        mocker.patch.object(
+            downloader,
+            "_parse_manifest_data",
+            side_effect=[
+                None,  # First call - unparsable
+                FirmwareManifest(
+                    version="2.7.20", hwModelSlug="T_BEAM"
+                ),  # Second call - valid
+            ],
+        )
+
+        release = Release(tag_name="v2.7.20", prerelease=False)
+        result = downloader.get_manifest_for_device(release)
+
+        assert result is not None
+        assert result.hwModelSlug == "T_BEAM"
+
+    def test_matches_prerelease_selection_returns_true_without_patterns(
+        self, downloader
+    ):
+        """_matches_prerelease_selection should return True when no patterns are configured."""
+        assert downloader._matches_prerelease_selection("any-file.zip", []) is True
+
+    def test_matches_prerelease_selection_matches_patterns(self, downloader, mocker):
+        """_matches_prerelease_selection should delegate to matches_extract_patterns."""
+        mock_match = mocker.patch(
+            "fetchtastic.download.firmware.matches_extract_patterns", return_value=True
+        )
+        assert (
+            downloader._matches_prerelease_selection(
+                "firmware-rak4631.zip", ["rak4631"]
+            )
+            is True
+        )
+        mock_match.assert_called_once()
+
+    def test_matches_prerelease_selection_keeps_release_manifest(
+        self, downloader, mocker
+    ):
+        """_matches_prerelease_selection should keep release-level manifest even without pattern match."""
+        mocker.patch(
+            "fetchtastic.download.firmware.matches_extract_patterns", return_value=False
+        )
+        assert (
+            downloader._matches_prerelease_selection(
+                "firmware-2.7.20.abcdef0.json", ["rak4631"]
+            )
+            is True
+        )
+
+    def test_download_manifests_redownloads_when_existing_size_mismatches(
+        self, downloader, tmp_path
+    ):
+        """Existing valid JSON should still be redownloaded when file size mismatches."""
+        downloader.download_dir = str(tmp_path)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=10,
+                )
+            ],
+        )
+        target_path = downloader.get_target_path_for_release(
+            "v2.7.20", "firmware-2.7.20.abcdef0.json"
+        )
+        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(target_path).write_text("{}", encoding="utf-8")
+
+        def _write_manifest(_url: str, target: str) -> bool:
+            Path(target).write_text('{"fresh":1}', encoding="utf-8")
+            return True
+
+        downloader.download = Mock(side_effect=_write_manifest)
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is True
+        assert results[0].was_skipped is False
+        downloader.download.assert_called_once()
+
+    def test_download_manifests_skips_when_json_and_size_match(
+        self, downloader, tmp_path
+    ):
+        """Existing manifest should be skipped only when JSON is valid and size matches."""
+        downloader.download_dir = str(tmp_path)
+        downloader.verify = Mock(return_value=True)
+
+        release = Release(
+            tag_name="v2.7.20",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-2.7.20.abcdef0.json",
+                    download_url="https://example.invalid/release.json",
+                    size=2,
+                )
+            ],
+        )
+        target_path = downloader.get_target_path_for_release(
+            "v2.7.20", "firmware-2.7.20.abcdef0.json"
+        )
+        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(target_path).write_text("{}", encoding="utf-8")
+        downloader.download = Mock(return_value=True)
+
+        results = downloader.download_manifests(release)
+
+        assert len(results) == 1
+        assert results[0].success is True
+        assert results[0].was_skipped is True
+        downloader.download.assert_not_called()
+
+    @patch("fetchtastic.download.firmware.download_file_with_retry", return_value=True)
+    def test_download_prerelease_assets_keeps_release_manifest_with_pattern_filter(
+        self, _mock_download, downloader, tmp_path
+    ):
+        """Release-level prerelease manifest should be kept even when selected patterns are narrow."""
+        downloader.download_dir = str(tmp_path)
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "firmware-rak4631-2.7.20.abcdef0.mt.json",
+                    "download_url": "https://example.invalid/rak.mt.json",
+                    "size": 120,
+                },
+                {
+                    "type": "file",
+                    "name": "firmware-2.7.20.abcdef0.json",
+                    "download_url": "https://example.invalid/release.json",
+                    "size": 180,
+                },
+                {
+                    "type": "file",
+                    "name": "firmware-tbeam-2.7.20.abcdef0.zip",
+                    "download_url": "https://example.invalid/tbeam.zip",
+                    "size": 500,
+                },
+            ]
+        )
+        downloader.device_manager.is_device_pattern = Mock(return_value=False)
+
+        successes, failures, any_downloaded = downloader.download_prerelease_assets(
+            "firmware-2.7.20.abcdef0",
+            selected_patterns=["rak4631"],
+            exclude_patterns=[],
+            force_refresh=True,
+        )
+
+        assert failures == []
+        assert any_downloaded is True
+        assert all(
+            result.file_type == FILE_TYPE_FIRMWARE_PRERELEASE for result in successes
+        )
+        downloaded_names = sorted(
+            Path(str(result.file_path)).name for result in successes
+        )
+        assert downloaded_names == [
+            "firmware-2.7.20.abcdef0.json",
+            "firmware-rak4631-2.7.20.abcdef0.mt.json",
+        ]
 
     @patch("os.scandir")
     @patch("shutil.rmtree")
@@ -1665,6 +2302,8 @@ class TestFirmwareReleaseDownloader:
         assert Path(result.file_path) == expected_path
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 def test_get_latest_version_logs_invalid_tracking_version():
     """Ensure invalid tracking versions produce a debug log and are returned."""
     vm = VersionManager()
@@ -1677,3 +2316,938 @@ def test_get_latest_version_logs_invalid_tracking_version():
     assert version == "bad-version!"
     assert mock_debug.called
     assert "does not match expected pattern" in mock_debug.call_args[0][0]
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+class TestFirmwareUncoveredBranches:
+    """Targeted tests for previously uncovered branches in firmware.py."""
+
+    # Lines 138-142: Edge case in _filter_revoked_releases with string config values
+    def test_filter_revoked_releases_string_values(
+        self, mock_config, mock_cache_manager
+    ):
+        """Test that _filter_revoked_releases handles string config values."""
+        # Test various string values
+        for true_val in ["1", "true", "True", "yes", "YES", "y", "Y", "on", "ON"]:
+            mock_config["FILTER_REVOKED_RELEASES"] = true_val
+            dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
+            assert dl._filter_revoked_releases is True, f"Failed for {true_val}"
+
+        for false_val in [
+            "0",
+            "false",
+            "False",
+            "no",
+            "NO",
+            "n",
+            "N",
+            "off",
+            "OFF",
+            "",
+            "   ",
+        ]:
+            mock_config["FILTER_REVOKED_RELEASES"] = false_val
+            dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
+            assert dl._filter_revoked_releases is False, f"Failed for {false_val}"
+
+    # Lines 378-395: Manifest file handling - multiple channel directories
+    def test_get_release_storage_tag_multiple_channel_dirs(self, tmp_path):
+        """Test handling when multiple channel-suffixed directories exist."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        firmware_dir = tmp_path / "downloads" / "firmware"
+        firmware_dir.mkdir(parents=True)
+
+        # Create multiple channel directories
+        (firmware_dir / "v1.0.0-alpha").mkdir()
+        (firmware_dir / "v1.0.0-beta").mkdir()
+        (firmware_dir / "v1.0.0-rc").mkdir()
+
+        release = Release(tag_name="v1.0.0", prerelease=False)
+
+        with patch.object(
+            downloader.release_history_manager, "get_release_channel", return_value=""
+        ):
+            storage_tag = downloader._get_release_storage_tag(release)
+
+        # Should return one of the existing channel directories
+        assert storage_tag in ["v1.0.0-alpha", "v1.0.0-beta", "v1.0.0-rc"]
+
+    # Lines 575-577: Verification failure cleanup
+    def test_download_firmware_verification_failure_cleanup(self, downloader, tmp_path):
+        """Test that verification failure triggers cleanup."""
+        downloader.download_dir = str(tmp_path)
+
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        release.prerelease = False
+        release.name = "v2.0.0"
+        release.body = ""
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rak4631.zip"
+        asset.download_url = "https://example.com/firmware.zip"
+        asset.size = 1000000
+
+        # Mock download to succeed but verification to fail
+        downloader.download = Mock(return_value=True)
+        downloader.verify = Mock(return_value=False)
+        downloader.cleanup_file = Mock(return_value=True)
+        downloader.is_asset_complete = Mock(return_value=False)
+
+        result = downloader.download_firmware(release, asset)
+
+        assert result.success is False
+        assert result.error_type == "validation_error"
+        downloader.cleanup_file.assert_called_once()
+
+    # Lines 866, 871, 874, 879-882: Asset filtering edge cases
+    def test_is_release_complete_empty_asset_name(self, downloader, tmp_path, mocker):
+        """Test is_release_complete with empty asset names."""
+        downloader.download_dir = str(tmp_path)
+        version_dir = tmp_path / "firmware" / "v1.0.0"
+        version_dir.mkdir(parents=True)
+
+        # Create asset with empty/invalid name
+        asset_empty = Asset(
+            name="", download_url="https://example.com/fw.zip", size=100
+        )
+        asset_invalid = Asset(
+            name="  ", download_url="https://example.com/fw2.zip", size=100
+        )
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            assets=[asset_empty, asset_invalid],
+        )
+
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        result = downloader.is_release_complete(release)
+
+        # Should return False because no valid assets to check
+        assert result is False
+        assert mock_logger.debug.called
+
+    # Lines 896-905: Asset filtering with file size mismatch
+    def test_is_release_complete_size_mismatch(self, downloader, tmp_path):
+        """Test is_release_complete when file sizes don't match."""
+        downloader.download_dir = str(tmp_path)
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+        version_dir = tmp_path / "firmware" / "v1.0.0"
+        version_dir.mkdir(parents=True)
+
+        # Create a file with wrong size
+        asset_file = version_dir / "firmware-rak4631.bin"
+        asset_file.write_bytes(b"data")  # size = 4
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-rak4631.bin",
+                    download_url="https://example.com/fw.bin",
+                    size=100,  # Mismatched size
+                )
+            ],
+        )
+
+        result = downloader.is_release_complete(release)
+
+        assert result is False
+
+    # Lines 914-920, 926-927, 929-941: ZIP file handling edge cases
+    def test_is_release_complete_zip_hash_verification_error(
+        self, downloader, tmp_path, mocker
+    ):
+        """Test ZIP handling when hash verification raises OSError."""
+        downloader.download_dir = str(tmp_path)
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+        version_dir = tmp_path / "firmware" / "v1.0.0"
+        version_dir.mkdir(parents=True)
+
+        # Create a valid zip file
+        asset_path = version_dir / "firmware-rak4631.zip"
+        with zipfile.ZipFile(asset_path, "w") as zf:
+            zf.writestr("content.txt", "data")
+
+        # Mock to have hash baseline but OSError on verification
+        mocker.patch(
+            "fetchtastic.download.firmware.load_file_hash", return_value="hash123"
+        )
+        downloader.verify = Mock(side_effect=OSError("IO error"))
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-rak4631.zip",
+                    download_url="https://example.com/fw.zip",
+                    size=asset_path.stat().st_size,
+                )
+            ],
+        )
+
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        result = downloader.is_release_complete(release)
+
+        assert result is False
+        # Check that debug was called with the error message
+        debug_calls = [
+            call
+            for call in mock_logger.debug.call_args_list
+            if len(call.args) >= 2
+            and isinstance(call.args[0], str)
+            and "Error during hash verification" in call.args[0]
+        ]
+        assert len(debug_calls) > 0
+
+    # Lines 1031: Extraction patterns validation failure
+    def test_extract_firmware_invalid_patterns(self, downloader, tmp_path):
+        """Test extract_firmware with invalid extraction patterns."""
+        # Create the directory structure needed
+        version_dir = tmp_path / "downloads" / "firmware" / "v1.0.0"
+        version_dir.mkdir(parents=True)
+        # Create a dummy zip file
+        zip_path = version_dir / "firmware-rak4631.zip"
+        zip_path.write_bytes(b"dummy content")
+
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rak4631.zip"
+
+        downloader.file_operations.validate_extraction_patterns.return_value = False
+
+        result = downloader.extract_firmware(release, asset, ["*.bin"], [])
+
+        assert result.success is False
+        assert result.error_type == "validation_error"
+        assert "Invalid extraction patterns" in result.error_message
+
+    # Lines 1043: Extraction not needed (files already exist)
+    def test_extract_firmware_extraction_not_needed(self, downloader, tmp_path):
+        """Test extract_firmware when extraction is not needed."""
+        # Create the directory structure needed
+        version_dir = tmp_path / "downloads" / "firmware" / "v1.0.0"
+        version_dir.mkdir(parents=True)
+        # Create a dummy zip file
+        zip_path = version_dir / "firmware-rak4631.zip"
+        zip_path.write_bytes(b"dummy content")
+
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rak4631.zip"
+
+        downloader.file_operations.validate_extraction_patterns.return_value = True
+        downloader.file_operations.check_extraction_needed.return_value = False
+
+        result = downloader.extract_firmware(release, asset, ["*.bin"], [])
+
+        assert result.success is True
+        assert result.was_skipped is True
+        assert result.extracted_files == []
+
+    # Lines 1081-1083: Device manifest extraction error handling
+    def test_extract_firmware_extraction_error(self, downloader, tmp_path):
+        """Test extract_firmware error handling with zipfile.BadZipFile."""
+        # Create the directory structure needed
+        version_dir = tmp_path / "downloads" / "firmware" / "v1.0.0"
+        version_dir.mkdir(parents=True)
+        # Create a dummy zip file (invalid)
+        zip_path = version_dir / "firmware-rak4631.zip"
+        zip_path.write_bytes(b"not a valid zip")
+
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rak4631.zip"
+
+        downloader.file_operations.validate_extraction_patterns.return_value = True
+        downloader.file_operations.check_extraction_needed.return_value = True
+        downloader.file_operations.extract_archive.side_effect = zipfile.BadZipFile(
+            "Bad zip file"
+        )
+
+        result = downloader.extract_firmware(release, asset, ["*.bin"], [])
+
+        assert result.success is False
+        assert result.error_type == "extraction_error"
+
+    # Lines 1125: Cleanup with missing firmware directory
+    def test_cleanup_old_versions_missing_directory(self, downloader):
+        """Test cleanup when firmware directory doesn't exist."""
+        with patch("os.path.exists", return_value=False):
+            # Should not raise an exception
+            downloader.cleanup_old_versions(keep_limit=2)
+
+    # Lines 1228->1251: Cleanup edge case - empty keep set with keep_limit > 0
+    @patch("os.path.exists")
+    def test_cleanup_old_versions_empty_keep_set(self, mock_exists, downloader, mocker):
+        """Test cleanup when no safe tags are found to keep."""
+        mock_exists.return_value = True
+
+        # Mock get_releases to return releases
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v1.0.0")])
+
+        # Mock collect_non_revoked_releases to return empty non_revoked list
+        downloader.collect_non_revoked_releases = Mock(return_value=([], [], 8))
+
+        # Mock sanitize_required to fail for all tags
+        downloader._sanitize_required = Mock(side_effect=ValueError("unsafe"))
+
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        mock_logger.warning.assert_any_call(
+            "Skipping firmware cleanup: no safe release tags found to keep."
+        )
+
+    # Lines 1310->1298, 1314: Release completion check with directory edge cases
+    def test_is_release_complete_oserror_on_file_size(
+        self, downloader, tmp_path, mocker
+    ):
+        """Test is_release_complete when file size check raises OSError."""
+        downloader.download_dir = str(tmp_path)
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+        version_dir = tmp_path / "firmware" / "v1.0.0"
+        version_dir.mkdir(parents=True)
+
+        # Create a file
+        asset_file = version_dir / "firmware-rak4631.bin"
+        asset_file.write_bytes(b"data")
+
+        # Patch os.path.getsize to raise OSError
+        mocker.patch("os.path.getsize", side_effect=OSError("IO error"))
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            assets=[
+                Asset(
+                    name="firmware-rak4631.bin",
+                    download_url="https://example.com/fw.bin",
+                    size=4,
+                )
+            ],
+        )
+
+        result = downloader.is_release_complete(release)
+
+        assert result is False
+
+    # Lines 1322-1333: Cleanup error handling
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_rmtree_error(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader, mocker
+    ):
+        """Test cleanup when rmtree raises OSError."""
+        mock_exists.return_value = True
+        mock_rmtree.side_effect = OSError("Permission denied")
+
+        entry = Mock()
+        entry.name = "v0.9.0"
+        entry.is_symlink.return_value = False
+        entry.is_dir.return_value = True
+        entry.path = "/mock/firmware/v0.9.0"
+
+        mock_scandir.return_value.__enter__.return_value = [entry]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v1.0.0")])
+        downloader._sanitize_required = Mock(return_value="v1.0.0")
+        downloader._get_comparable_base_tag = Mock(return_value="v1.0.0")
+        downloader.collect_non_revoked_releases = Mock(
+            return_value=([Release(tag_name="v1.0.0")], [Release(tag_name="v1.0.0")], 8)
+        )
+
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        downloader.cleanup_old_versions(keep_limit=1)
+
+        mock_logger.error.assert_any_call(
+            "Error removing old firmware version %s: %s",
+            "v0.9.0",
+            ANY,
+        )
+
+    # Lines 1348-1349: Cleanup outer error handling
+    @patch("os.path.exists")
+    def test_cleanup_old_versions_outer_oserror(self, mock_exists, downloader, mocker):
+        """Test cleanup outer OSError handling."""
+        mock_exists.side_effect = OSError("Permission denied")
+
+        mock_logger = mocker.patch("fetchtastic.download.firmware.logger")
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        mock_logger.error.assert_called_with("Error during firmware cleanup: %s", ANY)
+
+    # Lines 1517-1518: Prerelease directory naming edge case
+    def test_download_prerelease_assets_unsafe_directory_name(
+        self, downloader, tmp_path
+    ):
+        """Test _download_prerelease_assets with unsafe directory name."""
+        downloader.download_dir = str(tmp_path)
+
+        # Path traversal attempt
+        result = downloader._download_prerelease_assets(
+            "../etc/passwd",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=False,
+        )
+
+        assert result == ([], [], False)
+
+    # Lines 1535, 1539-1542: Prerelease asset filtering with empty names
+    def test_download_prerelease_assets_empty_name(self, downloader, tmp_path, mocker):
+        """Test _download_prerelease_assets with empty file names."""
+        downloader.download_dir = str(tmp_path)
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {"type": "file", "name": "", "download_url": "url1", "size": 100},
+                {"type": "file", "name": None, "download_url": "url2", "size": 200},
+                {
+                    "type": "file",
+                    "name": "valid.zip",
+                    "download_url": "url3",
+                    "size": 300,
+                },
+            ]
+        )
+
+        mocker.patch(
+            "fetchtastic.download.firmware.download_file_with_retry", return_value=True
+        )
+        mocker.patch(
+            "fetchtastic.download.firmware.verify_file_integrity", return_value=False
+        )
+
+        successes, _failures, any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=True,
+        )
+
+        # Only valid.zip should be attempted
+        assert len(successes) == 1
+        assert any_downloaded is True
+
+    # Lines 1557: Missing URL in prerelease asset
+    def test_download_prerelease_assets_missing_url(self, downloader, tmp_path, mocker):
+        """Test _download_prerelease_assets with missing download URL."""
+        downloader.download_dir = str(tmp_path)
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "no_url.zip",
+                    "download_url": None,
+                    "size": 100,
+                },
+                {
+                    "type": "file",
+                    "name": "no_browser_url.zip",
+                    "browser_download_url": None,
+                    "size": 200,
+                },
+            ]
+        )
+
+        successes, failures, any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=True,
+        )
+
+        # Both should be skipped due to missing URLs
+        assert len(successes) == 0
+        assert len(failures) == 0
+        assert any_downloaded is False
+
+    # Lines 1562-1587, 1593-1596: ZIP validation and file operations in prerelease
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    def test_download_prerelease_assets_zip_without_hash_baseline(
+        self, mock_download, downloader, tmp_path, mocker
+    ):
+        """Test ZIP validation in prerelease when no hash baseline exists."""
+        downloader.download_dir = str(tmp_path)
+
+        # Create existing ZIP file
+        prerelease_dir = tmp_path / "firmware" / "prerelease" / "test-dir"
+        prerelease_dir.mkdir(parents=True)
+        zip_path = prerelease_dir / "existing.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("content.txt", "data")
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "existing.zip",
+                    "download_url": "https://example.com/existing.zip",
+                    "size": zip_path.stat().st_size,
+                }
+            ]
+        )
+
+        # No hash baseline, but valid ZIP
+        mocker.patch("fetchtastic.download.firmware.load_file_hash", return_value=None)
+        mocker.patch(
+            "fetchtastic.download.firmware.verify_file_integrity", return_value=True
+        )
+
+        _successes, _failures, _any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=False,
+        )
+
+        assert len(_successes) == 1
+        assert _successes[0].was_skipped is True
+
+    # Lines 1593-1596: Executable permissions for .sh files
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    @patch("os.chmod")
+    def test_download_prerelease_assets_sets_executable_permissions(
+        self, mock_chmod, mock_download, downloader, tmp_path, mocker
+    ):
+        """Test that .sh files get executable permissions on Unix."""
+        downloader.download_dir = str(tmp_path)
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "script.sh",
+                    "download_url": "https://example.com/script.sh",
+                    "size": 100,
+                }
+            ]
+        )
+
+        mock_download.return_value = True
+        mocker.patch("os.name", "posix")
+
+        _successes, _failures, _any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=True,
+        )
+
+        assert len(_successes) == 1
+        mock_chmod.assert_called_once()
+
+    # Lines 1608-1631: Error handling in prerelease download
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    def test_download_prerelease_assets_network_error(
+        self, mock_download, downloader, tmp_path, mocker
+    ):
+        """Test network error handling in prerelease download."""
+        downloader.download_dir = str(tmp_path)
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "test.zip",
+                    "download_url": "https://example.com/test.zip",
+                    "size": 100,
+                }
+            ]
+        )
+
+        mock_download.side_effect = requests.RequestException("Network error")
+
+        _successes, failures, _any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=True,
+        )
+
+        assert len(failures) == 1
+        assert failures[0].error_type == "network_error"
+        assert failures[0].is_retryable is True
+
+    # Lines 1707, 1721: Error handling in download_repo_prerelease_firmware
+    def test_download_repo_prerelease_firmware_disabled(self, downloader):
+        """Test download_repo_prerelease_firmware when prereleases are disabled."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = False
+        downloader.config["CHECK_PRERELEASES"] = False
+
+        result = downloader.download_repo_prerelease_firmware("v1.0.0")
+
+        assert result == ([], [], None, None)
+
+    def test_download_repo_prerelease_firmware_no_expected_version(self, downloader):
+        """Test download_repo_prerelease_firmware when expected version can't be calculated."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+
+        with patch.object(
+            VersionManager,
+            "calculate_expected_prerelease_version",
+            return_value=None,
+        ):
+            result = downloader.download_repo_prerelease_firmware("invalid-version")
+
+        assert result == ([], [], None, None)
+
+    # Lines 1754-1758: Channel handling - non-list directory response
+    def test_download_repo_prerelease_firmware_non_list_dirs(
+        self, downloader, tmp_path
+    ):
+        """Test handling when get_repo_directories returns non-list."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value="not-a-list",  # Should be handled gracefully
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+        ):
+            # Should not raise
+            result = downloader.download_repo_prerelease_firmware("v2.7.17.9058cce")
+
+        assert isinstance(result, tuple)
+
+    # Lines 1764-1777: Fallback prerelease directory scan error
+    def test_download_repo_prerelease_firmware_fallback_scan_error(
+        self, downloader, tmp_path
+    ):
+        """Test fallback scan error handling in download_repo_prerelease_firmware."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                side_effect=requests.RequestException("API error"),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+        ):
+            # Should handle the exception gracefully
+            result = downloader.download_repo_prerelease_firmware("v2.7.17.9058cce")
+
+        assert isinstance(result, tuple)
+
+    # Lines 1786->1793: Prerelease directory not in repo
+    def test_download_repo_prerelease_firmware_dir_not_in_repo(
+        self, downloader, tmp_path
+    ):
+        """Test when active_dir is not in repo directories."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=["other-dir"],  # active_dir not present
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-test123", [{"identifier": "test123"}]),
+            ),
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.17.9058cce")
+
+        # Should return with summary but no downloads
+        assert result[0] == []  # successes
+        assert result[1] == []  # failures
+        assert result[2] is None  # active_dir
+        assert result[3] is not None  # prerelease_summary
+
+    # Lines 1797-1835: Release notes logging
+    def test_log_prerelease_summary(self, downloader):
+        """Test log_prerelease_summary with various entry statuses."""
+        history_entries = [
+            {"identifier": "abc123", "status": "active"},
+            {"identifier": "def456", "status": "active"},
+            {"identifier": "ghi789", "status": "deleted"},
+            {"identifier": "", "status": "active"},  # Empty identifier
+        ]
+
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "v2.7.16", "v2.7.17")
+
+        # Should log summary info with proper counts
+        # Total entries with identifier = 3, deleted = 1, active = 2
+        info_calls = [call for call in mock_logger.info.call_args_list]
+        # Check that at least one call contains the expected format
+        summary_found = False
+        for call in info_calls:
+            args = call[0] if call[0] else call[1].get("args", ())
+            if (
+                len(args) >= 4
+                and isinstance(args[0], str)
+                and "Prereleases since" in args[0]
+            ):
+                summary_found = True
+                break
+        assert (
+            summary_found
+        ), f"Expected 'Prereleases since' log call not found in {info_calls}"
+
+    # Lines 1860-1906: Release notes detailed logging
+    def test_log_prerelease_summary_detailed(self, downloader):
+        """Test detailed prerelease logging with all statuses."""
+        history_entries = [
+            {"identifier": "latest123", "status": "active"},
+            {"identifier": "old456", "status": "deleted"},
+            {"identifier": "current789", "status": "active"},
+        ]
+
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "v2.7.16", "v2.7.17")
+
+        # Should log the detailed list header
+        mock_logger.info.assert_any_call("Prerelease commits for %s:", "v2.7.17")
+
+    # Lines 2007-2023: Tracking file read error handling
+    def test_should_download_prerelease_tracking_read_error(
+        self, downloader, tmp_path, mocker
+    ):
+        """Test should_download_prerelease when tracking file read fails."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        tracking_file = tmp_path / "prerelease_tracking.json"
+        tracking_file.write_text("invalid json")
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_cache_file_path",
+                return_value=str(tracking_file),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "read_json",
+                side_effect=ValueError("Invalid JSON"),
+            ),
+        ):
+            result = downloader.should_download_prerelease("v2.0.0")
+
+        assert result is True  # Should default to download on error
+
+    # Lines 2046-2051, 2059-2077: Version tracking file handling
+    @patch("os.scandir")
+    def test_manage_prerelease_tracking_files_not_found_error(
+        self, mock_scandir, downloader
+    ):
+        """Test FileNotFoundError handling in manage_prerelease_tracking_files."""
+        mock_scandir.side_effect = FileNotFoundError("Directory not found")
+
+        # Should not raise
+        downloader.manage_prerelease_tracking_files()
+
+    def test_manage_prerelease_tracking_files_read_error(
+        self, downloader, tmp_path, mocker
+    ):
+        """Test tracking file read error handling."""
+        tracking_dir = tmp_path / "tracking"
+        tracking_dir.mkdir(parents=True)
+
+        # Create a tracking file with proper prefix
+        tracking_file = tracking_dir / "prerelease_test.json"
+        tracking_file.write_text(
+            '{"latest_version": "v1.0.0", "base_version": "v1.0.0"}'
+        )
+
+        # Create a mock entry that looks like a DirEntry
+        class MockEntry:
+            def __init__(self, name, path):
+                self.name = name
+                self.path = path
+
+        mock_entry = MockEntry("prerelease_test.json", str(tracking_file))
+
+        with (
+            patch.object(
+                downloader,
+                "get_prerelease_tracking_file",
+                return_value=str(tracking_file),
+            ),
+            patch("os.scandir") as mock_scandir,
+            patch.object(
+                downloader.cache_manager,
+                "read_json",
+                side_effect=OSError("Read error"),
+            ),
+            patch("fetchtastic.download.firmware.logger") as mock_logger,
+        ):
+            mock_scandir.return_value.__enter__ = Mock(return_value=iter([mock_entry]))
+            mock_scandir.return_value.__exit__ = Mock(return_value=None)
+
+            downloader.manage_prerelease_tracking_files()
+
+        # Verify debug log was called about read error
+        debug_calls = [
+            call
+            for call in mock_logger.debug.call_args_list
+            if len(call.args) >= 2
+            and isinstance(call.args[0], str)
+            and "read error" in call.args[0].lower()
+        ]
+        assert len(debug_calls) > 0
+
+    # Lines 2117, 2123: Comparison edge cases in cleanup_superseded_prereleases
+    def test_cleanup_superseded_prereleases_empty_tag(self, downloader):
+        """Test cleanup_superseded_prereleases with empty/whitespace tag."""
+        result = downloader.cleanup_superseded_prereleases("v")
+        assert result is False
+
+        result = downloader.cleanup_superseded_prereleases("   ")
+        assert result is False
+
+    def test_cleanup_superseded_prereleases_invalid_version_tuple(self, downloader):
+        """Test when version tuple can't be extracted."""
+        with patch.object(
+            VersionManager,
+            "get_release_tuple",
+            return_value=None,
+        ):
+            result = downloader.cleanup_superseded_prereleases("v1.2.3")
+
+        assert result is False
+
+    # Lines 2144->2135, 2148->2135, 2150->2135: Channel suffix logic in cleanup
+    @patch("os.scandir")
+    def test_cleanup_superseded_prereleases_skips_non_firmware_prefix(
+        self, mock_scandir, downloader
+    ):
+        """Test that directories without firmware- prefix are skipped."""
+        mock_entry = Mock()
+        mock_entry.name = "not-firmware-prefix"
+        mock_entry.is_symlink.return_value = False
+        mock_entry.is_dir.return_value = True
+        mock_entry.path = "/mock/prerelease/not-firmware-prefix"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_entry]
+
+        with patch.object(
+            VersionManager,
+            "get_release_tuple",
+            return_value=(2, 0, 0),
+        ):
+            result = downloader.cleanup_superseded_prereleases("v2.0.0")
+
+        assert result is False  # Nothing was removed
+
+    # Lines 2166-2174: Version extraction edge cases
+    @patch("os.scandir")
+    def test_cleanup_superseded_prereleases_value_error_on_version(
+        self, mock_scandir, downloader
+    ):
+        """Test ValueError handling when extracting version from directory name."""
+        mock_entry = Mock()
+        mock_entry.name = "firmware-invalid.version.name"
+        mock_entry.is_symlink.return_value = False
+        mock_entry.is_dir.return_value = True
+        mock_entry.path = "/mock/prerelease/firmware-invalid.version.name"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_entry]
+
+        with patch.object(
+            VersionManager,
+            "get_release_tuple",
+            return_value=(2, 0, 0),
+        ):
+            result = downloader.cleanup_superseded_prereleases("v2.0.0")
+
+        # Should not raise, and should return False since nothing was removed
+        assert result is False
+
+    @patch("os.scandir")
+    def test_cleanup_superseded_prereleases_oserror_on_removal(
+        self, mock_scandir, downloader, mocker
+    ):
+        """Test OSError handling when removing superseded prerelease."""
+        mock_entry = Mock()
+        mock_entry.name = "firmware-1.0.0.abc123"
+        mock_entry.is_symlink.return_value = False
+        mock_entry.is_dir.return_value = True
+        mock_entry.path = "/mock/prerelease/firmware-1.0.0.abc123"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_entry]
+
+        with (
+            patch.object(
+                VersionManager,
+                "get_release_tuple",
+                return_value=(2, 0, 0),
+            ),
+            patch("shutil.rmtree", side_effect=OSError("Permission denied")),
+            patch("fetchtastic.download.firmware.logger") as mock_logger,
+        ):
+            result = downloader.cleanup_superseded_prereleases("v2.0.0")
+
+        # Should log error and continue
+        mock_logger.error.assert_called()
+        assert result is False  # No successful cleanup
+
+    # Lines 1348-1350: Cleanup scandir error at outer level
+    @patch("os.path.exists")
+    def test_cleanup_old_versions_scandir_error(self, mock_exists, downloader, mocker):
+        """Test outer OSError handling when scandir fails."""
+        mock_exists.return_value = True
+
+        # Need releases for the first part of the method to succeed
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v1.0.0")])
+        downloader._sanitize_required = Mock(return_value="v1.0.0")
+        downloader._get_comparable_base_tag = Mock(return_value="v1.0.0")
+        downloader.collect_non_revoked_releases = Mock(
+            return_value=([Release(tag_name="v1.0.0")], [Release(tag_name="v1.0.0")], 8)
+        )
+
+        with (
+            patch("os.scandir", side_effect=OSError("Permission denied")),
+            patch("fetchtastic.download.firmware.logger") as mock_logger,
+        ):
+            downloader.cleanup_old_versions(keep_limit=2)
+
+        # The error should be caught and logged
+        error_calls = [
+            call
+            for call in mock_logger.error.call_args_list
+            if "cleaning up" in str(call).lower() or "cleanup" in str(call).lower()
+        ]
+        assert len(error_calls) > 0
+
+
+# Backwards compatibility - ensure existing test class still works

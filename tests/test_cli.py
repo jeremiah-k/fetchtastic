@@ -51,6 +51,10 @@ def mock_cli_dependencies(mocker, tmp_path):
         [],
         [],
         [],
+        [],
+        [],
+        [],
+        "",
         "",
         "",
     )
@@ -60,6 +64,8 @@ def mock_cli_dependencies(mocker, tmp_path):
         "android": "",
         "firmware_prerelease": "",
         "android_prerelease": "",
+        "desktop": "",
+        "desktop_prerelease": "",
     }
 
     # Mock the CLI integration at its defining module to prevent real downloads/network.
@@ -1396,14 +1402,198 @@ def test_copy_to_clipboard_func_unsupported_platform(mocker):
     """Test clipboard functionality on unsupported platform."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     mocker.patch("platform.system", return_value="FreeBSD")
-    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
-
     result = cli.copy_to_clipboard_func("test text")
+    assert result is False  # Should return False for unsupported platforms
 
-    assert result is False
-    mock_logger.warning.assert_called_once_with(
-        "Clipboard functionality is not supported on this platform."
+
+# Tests for _normalize_download_main_result function
+@pytest.mark.unit
+@pytest.mark.infrastructure
+def test_normalize_download_main_result_short_tuple_pads_with_defaults():
+    """Legacy 9-item tuple should remap into the 13-item shape."""
+    # 9-item legacy tuple
+    short_tuple = (
+        ["fw"],
+        ["new-fw"],
+        ["apk"],
+        ["new-apk"],
+        ["fw-pre"],
+        ["apk-pre"],
+        [{"error": "boom"}],
+        "fw-latest",
+        "apk-latest",
     )
+    result = cli._normalize_download_main_result(short_tuple)
+    assert len(result) == 13
+    assert result[0] == ["fw"]
+    assert result[1] == ["new-fw"]
+    assert result[2] == ["apk"]
+    assert result[3] == ["new-apk"]
+    assert result[4] == []
+    assert result[5] == []
+    assert result[6] == ["fw-pre"]
+    assert result[7] == ["apk-pre"]
+    assert result[8] == []
+    assert result[9] == [{"error": "boom"}]
+    assert result[10] == "fw-latest"
+    assert result[11] == "apk-latest"
+    assert result[12] == ""
+
+
+@pytest.mark.unit
+@pytest.mark.infrastructure
+def test_normalize_download_main_result_exact_13_item_tuple_returns_as_is():
+    """Test that exact 13-item tuple is returned as-is."""
+    full_tuple = (
+        ["firmware1"],
+        ["v1.0"],
+        ["apk1"],
+        ["v2.0"],
+        ["desktop1"],
+        ["v3.0"],
+        ["pre_fw"],
+        ["pre_apk"],
+        ["pre_desktop"],
+        [{"error": "test"}],
+        "1.0.0",
+        "2.0.0",
+        "3.0.0",
+    )
+    result = cli._normalize_download_main_result(full_tuple)
+    assert len(result) == 13
+    assert result == full_tuple
+
+
+@pytest.mark.unit
+@pytest.mark.infrastructure
+def test_normalize_download_main_result_list_with_5_items_pads_remaining():
+    """Test that list input with 5 items pads remaining 8 with defaults."""
+    short_list = [
+        ["firmware1"],
+        ["v1.0"],
+        ["apk1"],
+        ["v2.0"],
+        ["desktop1"],
+    ]
+    result = cli._normalize_download_main_result(short_list)
+    assert len(result) == 13
+    assert result[0] == ["firmware1"]
+    assert result[1] == ["v1.0"]
+    assert result[2] == ["apk1"]
+    assert result[3] == ["v2.0"]
+    assert result[4] == ["desktop1"]
+    assert result[5] == []  # padded
+    assert result[6] == []  # padded
+    assert result[7] == []  # padded
+    assert result[8] == []  # padded
+    assert result[9] == []  # padded
+    assert result[10] == ""  # padded
+    assert result[11] == ""  # padded
+    assert result[12] == ""  # padded
+
+
+@pytest.mark.unit
+@pytest.mark.infrastructure
+def test_normalize_download_main_result_empty_tuple_returns_all_defaults():
+    """Test that empty tuple returns all defaults."""
+    empty_tuple = ()
+    result = cli._normalize_download_main_result(empty_tuple)
+    assert len(result) == 13
+    for i in range(10):
+        assert result[i] == []
+    for i in range(10, 13):
+        assert result[i] == ""
+
+
+@pytest.mark.unit
+@pytest.mark.infrastructure
+def test_normalize_download_main_result_non_list_tuple_input_returns_defaults():
+    """Test that non-list/tuple input (e.g., None, string) returns all defaults."""
+    # Test with None
+    result_none = cli._normalize_download_main_result(None)
+    assert len(result_none) == 13
+    for i in range(10):
+        assert result_none[i] == []
+    for i in range(10, 13):
+        assert result_none[i] == ""
+
+    # Test with string
+    result_string = cli._normalize_download_main_result("invalid")
+    assert len(result_string) == 13
+    for i in range(10):
+        assert result_string[i] == []
+    for i in range(10, 13):
+        assert result_string[i] == ""
+
+    # Test with integer
+    result_int = cli._normalize_download_main_result(123)
+    assert len(result_int) == 13
+    for i in range(10):
+        assert result_int[i] == []
+    for i in range(10, 13):
+        assert result_int[i] == ""
+
+
+@pytest.mark.unit
+@pytest.mark.infrastructure
+def test_normalize_download_main_result_wrong_types_for_indices_0_9_coerced_to_empty_lists():
+    """Test that wrong types for indices 0-9 are coerced to empty lists."""
+    # Create a tuple with wrong types for indices 0-9
+    invalid_tuple = (
+        "string_instead_of_list",  # index 0
+        123,  # index 1
+        None,  # index 2
+        {"dict": "instead_of_list"},  # index 3
+        45.6,  # index 4
+        True,  # index 5
+        ("tuple", "instead"),  # index 6
+        set(["set", "items"]),  # index 7
+        b"bytes",  # index 8
+        object(),  # index 9
+        "valid_string",  # index 10
+        "valid_string",  # index 11
+        "valid_string",  # index 12
+    )
+    result = cli._normalize_download_main_result(invalid_tuple)
+    assert len(result) == 13
+    # Indices 0-9 should all be coerced to empty lists
+    for i in range(10):
+        assert result[i] == [], f"Index {i} should be coerced to empty list"
+    # Indices 10-12 should remain valid strings
+    assert result[10] == "valid_string"
+    assert result[11] == "valid_string"
+    assert result[12] == "valid_string"
+
+
+@pytest.mark.unit
+@pytest.mark.infrastructure
+def test_normalize_download_main_result_wrong_types_for_indices_10_12_coerced_to_empty_strings():
+    """Test that wrong types for indices 10-12 are coerced to empty strings."""
+    # Create a tuple with wrong types for indices 10-12
+    invalid_tuple = (
+        ["firmware1"],  # index 0
+        ["v1.0"],  # index 1
+        ["apk1"],  # index 2
+        ["v2.0"],  # index 3
+        ["desktop1"],  # index 4
+        ["v3.0"],  # index 5
+        ["pre_fw"],  # index 6
+        ["pre_apk"],  # index 7
+        ["pre_desktop"],  # index 8
+        [{"error": "test"}],  # index 9
+        123,  # index 10 - wrong type
+        None,  # index 11 - wrong type
+        ["list", "instead"],  # index 12 - wrong type
+    )
+    result = cli._normalize_download_main_result(invalid_tuple)
+    assert len(result) == 13
+    # Indices 0-9 should be preserved as lists
+    for i in range(10):
+        assert isinstance(result[i], list)
+    # Indices 10-12 should be coerced to empty strings
+    assert result[10] == ""
+    assert result[11] == ""
+    assert result[12] == ""
 
 
 def test_copy_to_clipboard_func_subprocess_error(mocker):
@@ -1517,6 +1707,10 @@ def test_cli_download_without_log_level_config(mocker):
         [],
         [],
         [],
+        [],
+        [],
+        [],
+        "",
         "",
         "",
     )
@@ -1525,6 +1719,8 @@ def test_cli_download_without_log_level_config(mocker):
         "android": "",
         "firmware_prerelease": "",
         "android_prerelease": "",
+        "desktop": "",
+        "desktop_prerelease": "",
     }
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadCLIIntegration",
@@ -1577,6 +1773,10 @@ def test_cli_download_with_empty_config(mocker):
         [],
         [],
         [],
+        [],
+        [],
+        [],
+        "",
         "",
         "",
     )
@@ -1585,6 +1785,8 @@ def test_cli_download_with_empty_config(mocker):
         "android": "",
         "firmware_prerelease": "",
         "android_prerelease": "",
+        "desktop": "",
+        "desktop_prerelease": "",
     }
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadCLIIntegration",

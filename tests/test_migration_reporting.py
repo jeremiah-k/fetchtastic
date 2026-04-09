@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from fetchtastic.constants import APKS_DIR_NAME, FIRMWARE_DIR_NAME
+from fetchtastic.constants import (
+    ANDROID_DIR_NAME,
+    APP_DIR_NAME,
+    FIRMWARE_DIR_NAME,
+)
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.download.interfaces import DownloadResult
 
@@ -55,7 +59,9 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
     skipped_android = DownloadResult(
         success=True,
         release_tag="v2.0.0",
-        file_path=Path(tmp_path / APKS_DIR_NAME / "v2.0.0" / "app.apk"),
+        file_path=Path(
+            tmp_path / APP_DIR_NAME / ANDROID_DIR_NAME / "v2.0.0" / "app.apk"
+        ),
         file_type="android",
         was_skipped=True,
     )
@@ -65,8 +71,11 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
         new_fw,
         apks,
         new_apks,
+        _downloaded_desktop,
+        _new_desktop_versions,
         _downloaded_firmware_prereleases,
         _downloaded_apk_prereleases,
+        _downloaded_desktop_prereleases,
     ) = integration._convert_results_to_legacy_format(
         [skipped_firmware, skipped_android]
     )
@@ -76,5 +85,8 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
     assert new_fw == []
     assert apks == []
     assert new_apks == []
+    assert _downloaded_desktop == []
+    assert _new_desktop_versions == []
     assert _downloaded_firmware_prereleases == []
     assert _downloaded_apk_prereleases == []
+    assert _downloaded_desktop_prereleases == []

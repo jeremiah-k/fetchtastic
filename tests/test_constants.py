@@ -55,7 +55,9 @@ TEST_APK_FILES = [
 TEST_FIRMWARE_DIR = "firmware"
 TEST_PRERELEASE_DIR = "prerelease"
 TEST_REPO_DIR = "repo-dls"
-TEST_APKS_DIR = "apks"
+TEST_APKS_DIR = (
+    "app/android"  # APKs are now in app/android under the download directory
+)
 
 # Test file sizes (in bytes)
 TEST_SMALL_FILE_SIZE = 1024  # 1KB

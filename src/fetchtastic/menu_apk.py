@@ -1,13 +1,19 @@
 # src/fetchtastic/menu_apk.py
 
 import json
-from typing import cast
+from typing import Any, Dict, Sequence, Union, cast
 
 import requests  # type: ignore[import-untyped]
 from pick import pick
 
+from fetchtastic.client_release_discovery import (
+    extract_matching_asset_dicts,
+    is_android_asset_name,
+    is_android_prerelease_tag,
+    select_best_release_with_assets,
+)
 from fetchtastic.constants import (
-    APK_EXTENSION,
+    BYTES_PER_MEGABYTE,
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
@@ -17,12 +23,46 @@ from fetchtastic.utils import (
 )
 
 
-def fetch_apk_assets() -> list[str]:
+def _get_apk_category(filename: str) -> tuple[str, str]:
     """
-    Retrieve APK filenames from the latest Meshtastic Android release on GitHub.
+    Categorize an APK filename and return (group_label, display_name).
 
     Returns:
-        list[str]: Alphabetically sorted APK asset filenames from the latest release. Empty list if no releases or matching assets are found.
+        tuple[str, str]: (group_label, display_name) where group_label is used for
+            sorting and display_name is the human-readable label for the architecture.
+    """
+    lower = filename.lower()
+
+    if "-google-" in lower:
+        return ("0", "Google")
+    if "-fdroid-universal-" in lower:
+        return ("1", "F-Droid Universal")
+    if "-fdroid-arm64-" in lower:
+        return ("2", "F-Droid ARM64")
+    if "-fdroid-armeabi-" in lower:
+        return ("3", "F-Droid ARMv7")
+    if "-fdroid-x86_64-" in lower:
+        return ("4", "F-Droid x86_64")
+    if "-fdroid-" in lower:
+        return ("5", "F-Droid Other")
+
+    return ("6", "Other")
+
+
+def _format_file_size(size_bytes: int) -> str:
+    """Format file size in MB, rounded to 1 decimal place."""
+    size_mb = size_bytes / BYTES_PER_MEGABYTE
+    return f"{size_mb:.1f} MB"
+
+
+def fetch_apk_assets() -> list[Dict[str, Any]]:
+    """
+    Retrieve APK asset info from the latest Meshtastic Android release on GitHub.
+
+    Returns:
+        list[Dict[str, Any]]: List of APK assets as dicts with `name` and `size`,
+            sorted alphabetically by name. Empty list if no releases or matching
+            assets are found.
     """
     try:
         response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
@@ -40,50 +80,128 @@ def fetch_apk_assets() -> list[str]:
     if not isinstance(releases, list) or not releases:
         logger.warning("No Android releases found from GitHub API.")
         return []
-    latest_release = releases[0] or {}
-    assets = latest_release.get("assets", []) or []
-    if not isinstance(assets, list):
-        logger.warning("Invalid assets data from GitHub API.")
+    max_releases_to_scan = min(10, len(releases))
+    selected_release = select_best_release_with_assets(
+        releases,
+        asset_name_matcher=is_android_asset_name,
+        tag_prerelease_matcher=is_android_prerelease_tag,
+        max_releases_to_scan=max_releases_to_scan,
+    )
+    if selected_release is None:
+        logger.warning("No Android releases with APK assets found in recent scan.")
         return []
-    asset_names = sorted(
-        [
-            asset_name
-            for asset in assets
-            if isinstance(asset, dict)
-            and (asset_name := asset.get("name"))
-            and asset_name.lower().endswith(APK_EXTENSION)
-        ]
+
+    asset_list = extract_matching_asset_dicts(
+        selected_release,
+        asset_name_matcher=is_android_asset_name,
     )
 
-    return asset_names
+    asset_list.sort(key=lambda item: item["name"])
+    return asset_list
 
 
-def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
+def _normalize_apk_assets(
+    assets: Sequence[Union[str, Dict[str, Any]]],
+) -> list[Dict[str, Any]]:
     """
-    Present an interactive multi-select prompt of APK filenames and return selected base-name patterns.
+    Normalize APK assets into dict items with `name` and `size` keys.
 
-    Displays the provided APK filenames for multi-selection; for each chosen filename this function computes a base-name pattern using `extract_base_name` and returns a dictionary `{"selected_assets": [base_pattern, ...]`. If no assets are selected, the function prints a short message and returns `None`.
+    Accepts either legacy string filenames or dict entries returned by GitHub API
+    processing. Invalid entries are ignored.
+    """
+    normalized: list[Dict[str, Any]] = []
+    for asset in assets:
+        if isinstance(asset, str):
+            if asset:
+                normalized.append({"name": asset, "size": 0})
+            continue
+        if not isinstance(asset, dict):
+            continue
+        name = asset.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        size = asset.get("size", 0)
+        normalized.append(
+            {"name": name, "size": size if isinstance(size, int) and size >= 0 else 0}
+        )
+    return normalized
+
+
+def select_assets(
+    assets: Sequence[Union[str, Dict[str, Any]]],
+) -> dict[str, list[str]] | None:
+    """
+    Present an interactive multi-select prompt of APK filenames grouped by architecture.
+
+    Displays the provided APK filenames for multi-selection, grouped by:
+    - Google flavor
+    - F-Droid Universal
+    - F-Droid ARM64
+    - F-Droid ARMv7
+    - F-Droid x86_64
+
+    For each chosen filename this function computes a base-name pattern using
+    `extract_base_name` and returns a dictionary `{"selected_assets": [base_pattern, ...]}`.
+    If no assets are selected, the function prints a short message and returns `None`.
 
     Parameters:
-        assets (list[str]): APK asset filenames to present for selection.
+        assets (list[Union[str, dict]]): APK assets as filenames or dict entries
+            containing `name` and optional `size`.
 
     Returns:
-        dict[str, list[str]] | None: `{"selected_assets": [base_pattern, ...]}` when one or more assets are selected, `None` if no selection was made.
+        dict[str, list[str]] | None: `{"selected_assets": [base_pattern, ...]}` when
+            one or more assets are selected, `None` if no selection was made.
     """
     title = """Select the APK files you want to download (press SPACE to select, ENTER to confirm):
-Note: These are files from the latest release. Version numbers may change in other releases."""
-    options = assets
+Note: Options are grouped by flavor and architecture. File sizes shown in parentheses."""
+
+    normalized_assets = _normalize_apk_assets(assets)
+    if not normalized_assets:
+        print("No valid APK files found. APKs will not be downloaded.")
+        return None
+
+    grouped: dict[str, list[Dict[str, Any]]] = {}
+    for asset in normalized_assets:
+        group_label, _ = _get_apk_category(asset["name"])
+        grouped.setdefault(group_label, []).append(asset)
+
+    display_options: list[str] = []
+    option_map: dict[str, str] = {}
+
+    ordered_groups = sorted(grouped.keys())
+    for group_key in ordered_groups:
+        group_assets = grouped[group_key]
+        if not group_assets:
+            continue
+        _, display_name = _get_apk_category(group_assets[0]["name"])
+        display_options.append(f"--- {display_name} ---")
+        for asset in sorted(group_assets, key=lambda x: x["name"]):
+            size_bytes = asset["size"] if isinstance(asset["size"], int) else 0
+            size_str = _format_file_size(max(0, size_bytes))
+            display = f"{asset['name']} ({size_str})"
+            display_options.append(display)
+            option_map[display] = asset["name"]
+
     selected_options = pick(
-        options, title, multiselect=True, min_selection_count=0, indicator="*"
+        display_options, title, multiselect=True, min_selection_count=0, indicator="*"
     )
-    selected_assets = [
+    selected_display = [
         option[0] for option in cast(list[tuple[str, int]], selected_options)
     ]
+
+    asset_names = {asset["name"] for asset in normalized_assets}
+    selected_assets = []
+    for display_str in selected_display:
+        if display_str in option_map:
+            selected_assets.append(option_map[display_str])
+        elif display_str in asset_names:
+            # Backward-compatible path for tests/mocks that return raw filenames.
+            selected_assets.append(display_str)
+
     if not selected_assets:
         print("No APK files selected. APKs will not be downloaded.")
         return None
 
-    # Extract base patterns from selected filenames
     base_patterns = []
     for asset_name in selected_assets:
         pattern = extract_base_name(asset_name)
@@ -95,8 +213,9 @@ def run_menu() -> dict[str, list[str]] | None:
     """
     Show an interactive APK selection menu and return the chosen base-name patterns.
 
-    Presents a multi-select prompt for available APK filenames and returns a dictionary
-    with selected base-name patterns when one or more items are chosen.
+    Presents a multi-select prompt for available APK filenames grouped by architecture
+    and returns a dictionary with selected base-name patterns when one or more items
+    are chosen.
 
     Returns:
         dict[str, list[str]]: A mapping with key "selected_assets" to the list of selected
@@ -105,23 +224,22 @@ def run_menu() -> dict[str, list[str]] | None:
     """
     try:
         assets = fetch_apk_assets()
+        if not assets:
+            print("No APK files found. APKs will not be downloaded.")
+            return None
         selected_result = select_assets(assets)
         if selected_result is None:
             return None
         return selected_result
     except (json.JSONDecodeError, ValueError):
-        # Handle JSON parsing and data validation errors
         logger.exception("APK menu failed due to data error")
         return None
     except (requests.RequestException, OSError):
-        # Handle network and I/O errors
         logger.exception("APK menu failed due to network/I/O error")
         return None
     except (TypeError, KeyError, AttributeError):
-        # Handle unexpected data structure errors
         logger.exception("APK menu failed due to data structure error")
         return None
     except Exception:  # noqa: BLE001
-        # Catch-all for unexpected errors (backward compatibility)
         logger.exception("APK menu failed due to unexpected error")
         return None

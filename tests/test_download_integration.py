@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.download.interfaces import Release
+from fetchtastic.download.interfaces import DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
 
@@ -74,11 +74,11 @@ class TestDownloadIntegration:
             patch.object(orchestrator, "_manage_prerelease_tracking"),
             patch.object(orchestrator, "_log_download_summary"),
         ):
-            # Should handle the error gracefully
             result = orchestrator.run_download_pipeline()
-
-            # Should complete without errors
-            assert result is not None or True  # Allow None return
+            assert isinstance(result, tuple)
+            assert len(result) == 2
+            assert isinstance(result[0], list)
+            assert isinstance(result[1], list)
 
     def test_orchestrator_initialization(self, integration_config):
         """Test that orchestrator initializes all components correctly."""
@@ -99,7 +99,9 @@ class TestDownloadIntegration:
         # Initially should have empty statistics
         stats = orchestrator.get_download_statistics()
         assert isinstance(stats, dict)
-        assert "total_downloads" in stats or len(stats) >= 0  # Allow empty dict
+        assert "total_downloads" in stats
+        assert "successful_downloads" in stats
+        assert "failed_downloads" in stats
 
     def test_version_management_integration(self, orchestrator):
         """Test integration with version management."""
@@ -115,9 +117,16 @@ class TestDownloadIntegration:
             patch.object(
                 orchestrator.firmware_downloader, "get_releases", return_value=[]
             ),
+            patch.object(
+                orchestrator.desktop_downloader, "get_releases", return_value=[]
+            ) as mock_get_releases,
         ):
+            orchestrator.config["SAVE_DESKTOP_APP"] = True
             versions = orchestrator.get_latest_versions()
+        mock_get_releases.assert_called_once()
         assert isinstance(versions, dict)
+        assert versions["desktop"] is None
+        assert versions["desktop_prerelease"] is None
 
     def test_error_handling_in_pipeline(self, orchestrator):
         """Test error handling in the download pipeline."""
@@ -136,10 +145,11 @@ class TestDownloadIntegration:
             patch.object(orchestrator, "_manage_prerelease_tracking"),
             patch.object(orchestrator, "_log_download_summary"),
         ):
-            # Should handle the error gracefully
             result = orchestrator.run_download_pipeline()
-            # Should not crash, even with errors
-            assert result is not None or True
+            assert isinstance(result, tuple)
+            assert len(result) == 2
+            assert isinstance(result[0], list)
+            assert isinstance(result[1], list)
 
     def test_configuration_isolation(self, integration_config):
         """Test that different orchestrator instances maintain separate configuration."""
@@ -202,13 +212,19 @@ class TestDownloadIntegration:
 
     def test_artifact_download_counting(self, orchestrator):
         """Test artifact download counting."""
+        orchestrator.download_results = [
+            DownloadResult(success=True, file_type="firmware"),
+            DownloadResult(success=True, file_type="firmware", was_skipped=True),
+            DownloadResult(success=False, file_type="firmware"),
+            DownloadResult(success=True, file_type="android"),
+        ]
         firmware_count = orchestrator._count_artifact_downloads("firmware")
         android_count = orchestrator._count_artifact_downloads("android")
 
         assert isinstance(firmware_count, int)
         assert isinstance(android_count, int)
-        assert firmware_count >= 0
-        assert android_count >= 0
+        assert firmware_count == 1
+        assert android_count == 1
 
     def test_end_to_end_workflow_simulation(self, orchestrator):
         """Simulate a complete end-to-end workflow."""
@@ -237,11 +253,11 @@ class TestDownloadIntegration:
             patch.object(orchestrator, "_manage_prerelease_tracking"),
             patch.object(orchestrator, "_log_download_summary"),
         ):
-            # Run the complete workflow
             result = orchestrator.run_download_pipeline()
-
-            # Should complete successfully
-            assert result is not None or True
+            assert isinstance(result, tuple)
+            assert len(result) == 2
+            assert isinstance(result[0], list)
+            assert isinstance(result[1], list)
 
     def test_configuration_validation(self, integration_config):
         """Test that configuration is properly validated."""

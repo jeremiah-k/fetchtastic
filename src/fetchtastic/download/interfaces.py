@@ -61,6 +61,47 @@ class Asset:
 
 
 @dataclass
+class FirmwareManifest:
+    """Represents a Meshtastic firmware manifest file (.mt.json)."""
+
+    version: Optional[str] = None
+    """Firmware version string (e.g., '2.7.21.abc1234')"""
+
+    hwModel: Optional[int] = None
+    """Hardware model identifier number"""
+
+    hwModelSlug: Optional[str] = None
+    """Human-readable hardware model slug (e.g., 'T_DECK')"""
+
+    architecture: Optional[str] = None
+    """CPU architecture (e.g., 'esp32-s3')"""
+
+    activelySupported: Optional[bool] = None
+    """Whether the firmware is actively supported"""
+
+    displayName: Optional[str] = None
+    """Human-readable device display name (e.g., 'LILYGO T-Deck')"""
+
+    supportLevel: Optional[int] = None
+    """Support level indicator (1 = actively supported)"""
+
+    has_mui: Optional[bool] = None
+    """Whether the firmware image includes MUI assets."""
+
+    has_inkhud: Optional[bool] = None
+    """Whether the firmware image includes InkHUD assets."""
+
+    files: list[dict[str, Any]] = field(default_factory=list)
+    """List of firmware files with metadata (name, md5, bytes)"""
+
+    part: list[dict[str, Any]] = field(default_factory=list)
+    """Partition information (name, offset, size)"""
+
+    raw_data: Optional[dict[str, Any]] = None
+    """Raw manifest data for extensibility"""
+
+
+@dataclass
 class DownloadResult:
     """Result of a download operation."""
 

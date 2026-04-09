@@ -5,7 +5,7 @@ import platform
 import shutil
 from typing import Any
 
-from fetchtastic import menu_repo, setup_config
+from fetchtastic import menu_repo, setup_config, utils
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_NAME,
@@ -256,7 +256,7 @@ def main(config: dict[str, Any]) -> None:  # log_message_func removed
                         "\nWould you like to open this folder? [y/n] (default: yes): ",
                         default="y",
                     )
-                    if setup_config._coerce_bool(resp, default=True):
+                    if utils.coerce_bool(resp, default=True):
                         os.startfile(download_folder)  # type: ignore[attr-defined]  # nosec B606
                 except OSError as e:  # os.startfile can raise OSError
                     logger.error(

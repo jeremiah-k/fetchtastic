@@ -28,6 +28,11 @@ class TestGitHubAPIConstants:
         expected = "https://api.github.com/repos/meshtastic/firmware/releases"
         assert constants.MESHTASTIC_FIRMWARE_RELEASES_URL == expected
 
+    def test_meshtastic_desktop_releases_url(self):
+        """Test Meshtastic desktop releases URL."""
+        expected = "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
+        assert constants.MESHTASTIC_DESKTOP_RELEASES_URL == expected
+
     def test_meshtastic_github_io_contents_url(self):
         """Test Meshtastic GitHub.io contents URL."""
         expected = (

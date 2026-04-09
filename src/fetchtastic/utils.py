@@ -3,6 +3,7 @@ import gc  # For Windows file operation retries
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 import platform
 import re
@@ -33,16 +34,67 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger  # Import the new logger
 
+
+def coerce_bool(value: Any, default: bool = False) -> bool:
+    """
+    Normalize a variety of common truthy and falsey representations to a boolean.
+
+    Accepts booleans, integers, and common string forms such as "y"/"yes", "n"/"no",
+    "true"/"false", "1"/"0", and "on"/"off". If the input cannot be interpreted,
+    returns the provided default.
+
+    Parameters:
+        value (Any): The value to coerce to bool.
+        default (bool): Value to return when `value` is unrecognized (defaults to False).
+
+    Returns:
+        bool: `True` if `value` represents truth, `False` if it represents falsehood,
+        or `default` when the representation is unrecognized.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return default
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if re.fullmatch(r"[+-]?\d+", normalized or ""):
+            return int(normalized) != 0
+        if normalized in {"y", "yes", "true", "t", "1", "on"}:
+            return True
+        if normalized in {"n", "no", "false", "f", "0", "off"}:
+            return False
+    return default
+
+
 # Precompiled regexes for version stripping
 MODERN_VER_RX = re.compile(
-    r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
+    r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|b|alpha)\d*)?(?=[-_.]|$)"
 )
 LEGACY_VER_RX = re.compile(
-    r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
+    r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|b|alpha)\d*)?(?=[-_.]|$)"
 )
 
 # Precompiled regex for punctuation stripping (performance optimization)
 _PUNC_RX = re.compile(r"[^a-z0-9]+")
+
+# Android APK pattern compatibility between legacy single F-Droid asset naming
+# and newer architecture-split F-Droid naming.
+_ANDROID_FDROID_SPLIT_PATTERNS = (
+    "app-fdroid-universal-release.apk",
+    "app-fdroid-arm64-v8a-release.apk",
+    "app-fdroid-armeabi-v7a-release.apk",
+    "app-fdroid-x86-release.apk",
+    "app-fdroid-x86_64-release.apk",
+)
+_ANDROID_FDROID_LEGACY_PATTERNS = (
+    "app-fdroid-release.apk",
+    "fdroidRelease.apk",
+)
+_ANDROID_FDROID_ARCH_MARKERS = ("arm64", "armeabi", "x8664", "x86", "universal")
 
 # Cache for the User-Agent string to avoid repeated metadata lookups
 _USER_AGENT_CACHE = None
@@ -898,7 +950,7 @@ def load_file_hash(file_path: str) -> Optional[str]:
     return None
 
 
-def verify_file_integrity(file_path: str) -> bool:
+def verify_file_integrity(file_path: str, release_tag: Optional[str] = None) -> bool:
     """
     Check whether a file's contents match the stored SHA-256 hash, creating and storing an initial hash if none exists.
 
@@ -930,12 +982,22 @@ def verify_file_integrity(file_path: str) -> bool:
         return False
 
     if current_hash == stored_hash:
-        logger.debug(f"Hash verified for {os.path.basename(file_path)}")
+        if release_tag:
+            logger.debug(
+                f"Hash verified for {release_tag}/{os.path.basename(file_path)}"
+            )
+        else:
+            logger.debug(f"Hash verified for {os.path.basename(file_path)}")
         return True
     else:
-        logger.warning(
-            f"Hash mismatch for {os.path.basename(file_path)} - file may be corrupted"
-        )
+        if release_tag:
+            logger.warning(
+                f"Hash mismatch for {release_tag}/{os.path.basename(file_path)} - file may be corrupted"
+            )
+        else:
+            logger.warning(
+                f"Hash mismatch for {os.path.basename(file_path)} - file may be corrupted"
+            )
         return False
 
 
@@ -1327,6 +1389,87 @@ def legacy_strip_version_numbers(filename: str) -> str:
     legacy = LEGACY_VER_RX.sub(r"\1", filename)
     legacy = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], legacy)
     return legacy
+
+
+def _classify_fdroid_apk_pattern(pattern: str) -> Optional[str]:
+    """
+    Classify an APK pattern as legacy/split F-Droid naming, or None.
+
+    Returns:
+        Optional[str]: "legacy" for non-architecture F-Droid release patterns,
+            "split" for architecture-suffixed F-Droid patterns, else None.
+    """
+    lowered = pattern.lower()
+    if (
+        re.search(r"fdroid[-_][^/\\]*[*?][^/\\]*[-_]release", lowered)
+        and "release" in lowered
+    ):
+        return "split"
+    token = _PUNC_RX.sub("", lowered)
+    if "fdroid" not in token or "release" not in token:
+        return None
+    if any(marker in token for marker in _ANDROID_FDROID_ARCH_MARKERS):
+        return "split"
+    return "legacy"
+
+
+def expand_apk_selected_patterns(selected_patterns: Optional[List[str]]) -> List[str]:
+    """
+    Expand selected APK patterns for cross-generation F-Droid naming compatibility.
+
+    Compatibility rules:
+    - If a legacy F-Droid pattern is selected (for example `app-fdroid-release.apk`
+      or `fdroidRelease.apk`), add the newer architecture-split F-Droid APK patterns.
+    - If any split F-Droid pattern is selected, add legacy F-Droid patterns so older
+      releases continue matching until users intentionally reconfigure.
+
+    The function is idempotent and preserves user-provided order while appending only
+    missing compatibility entries (case-insensitive de-duplication).
+
+    Parameters:
+        selected_patterns (Optional[List[str]]): Selected APK include patterns.
+
+    Returns:
+        List[str]: Expanded pattern list.
+    """
+    if not selected_patterns:
+        return []
+
+    expanded: List[str] = []
+    seen: set[str] = set()
+
+    def _append_unique(value: str) -> None:
+        item = value.strip()
+        if not item:
+            return
+        key = item.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        expanded.append(item)
+
+    for raw_pattern in selected_patterns:
+        if isinstance(raw_pattern, str):
+            _append_unique(raw_pattern)
+
+    if not expanded:
+        return []
+
+    classifications = {
+        classification
+        for pattern in expanded
+        if (classification := _classify_fdroid_apk_pattern(pattern)) is not None
+    }
+
+    if "legacy" in classifications:
+        for pattern in _ANDROID_FDROID_SPLIT_PATTERNS:
+            _append_unique(pattern)
+
+    if "split" in classifications:
+        for pattern in _ANDROID_FDROID_LEGACY_PATTERNS:
+            _append_unique(pattern)
+
+    return expanded
 
 
 def matches_selected_patterns(

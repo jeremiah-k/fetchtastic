@@ -1,45 +1,45 @@
 """
-Meshtastic Android App Downloader
+Meshtastic Desktop App Downloader
 
-This module implements the specific downloader for Meshtastic Android APK files.
+This module implements the specific downloader for Meshtastic Desktop application files.
 """
 
 import fnmatch
 import json
+import math
 import os
-import shutil
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests  # type: ignore[import-untyped]
 
 from fetchtastic.client_release_discovery import (
-    is_android_asset_name,
-    is_android_prerelease_tag,
+    is_desktop_asset_name,
+    is_desktop_prerelease_tag,
     is_release_at_or_above_minimum,
     is_release_prerelease,
 )
 from fetchtastic.constants import (
-    ANDROID_DIR_NAME,
-    ANDROID_RELEASE_HISTORY_JSON_FILE,
-    APK_PRERELEASES_DIR_NAME,
-    APKS_DIR_NAME,
     APP_DIR_NAME,
-    DEFAULT_ANDROID_VERSIONS_TO_KEEP,
+    DEFAULT_DESKTOP_VERSIONS_TO_KEEP,
+    DESKTOP_DIR_NAME,
+    DESKTOP_PRERELEASES_DIR_NAME,
+    DESKTOP_RELEASE_HISTORY_JSON_FILE,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_VALIDATION,
-    FILE_TYPE_ANDROID,
-    FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_DESKTOP,
+    FILE_TYPE_DESKTOP_PRERELEASE,
     GITHUB_MAX_PER_PAGE,
-    LATEST_ANDROID_PRERELEASE_JSON_FILE,
-    LATEST_ANDROID_RELEASE_JSON_FILE,
-    MESHTASTIC_ANDROID_RELEASES_URL,
+    LATEST_DESKTOP_PRERELEASE_JSON_FILE,
+    LATEST_DESKTOP_RELEASE_JSON_FILE,
+    MESHTASTIC_DESKTOP_RELEASES_URL,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import expand_apk_selected_patterns, matches_selected_patterns
+from fetchtastic.utils import coerce_bool, matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
@@ -54,50 +54,80 @@ from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
 
-class MeshtasticAndroidAppDownloader(BaseDownloader):
+class MeshtasticDesktopDownloader(BaseDownloader):
     """
-    Downloader for Meshtastic Android APK files.
+    Downloader for Meshtastic Desktop application files.
 
     This class handles:
-    - Fetching Android APK releases from GitHub
-    - Downloading APK files
-    - Managing Android-specific version tracking
-    - Handling Android prereleases
-    - Cleaning up old Android versions
+    - Fetching Desktop releases from GitHub
+    - Downloading Desktop installer files (.dmg, .msi, .exe, .deb, .rpm, .AppImage)
+    - Managing Desktop-specific version tracking
+    - Handling Desktop prereleases
+    - Cleaning up old Desktop versions
     """
 
     def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
-        Initialize the Meshtastic Android APK downloader and prepare its release sources, cache paths, and history manager.
+        Initialize the Meshtastic Desktop downloader and prepare its release sources, cache paths, and history manager.
 
         Parameters:
             config (dict): Downloader configuration used to control behavior, selection patterns, and storage locations.
             cache_manager (CacheManager): Cache manager for reading/writing tracked release files and cached release data.
 
         Detailed behavior:
-            - Creates a GithubReleaseSource configured for Meshtastic Android releases and exposes it as `github_source`.
+            - Creates a GithubReleaseSource configured for Meshtastic Desktop releases and exposes it as `github_source`.
             - Determines and stores paths for latest-release and prerelease tracking files and for the release history file.
             - Initializes a ReleaseHistoryManager for persistent release history management.
         """
         super().__init__(config)
         self.cache_manager = cache_manager
-        self.android_releases_url = MESHTASTIC_ANDROID_RELEASES_URL
+        self.desktop_releases_url = MESHTASTIC_DESKTOP_RELEASES_URL
         self.github_source = GithubReleaseSource(
-            releases_url=MESHTASTIC_ANDROID_RELEASES_URL,
+            releases_url=self.desktop_releases_url,
             cache_manager=cache_manager,
             config=config,
         )
-        self.latest_release_file = LATEST_ANDROID_RELEASE_JSON_FILE
-        self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
+        self.latest_release_file = LATEST_DESKTOP_RELEASE_JSON_FILE
+        self.latest_prerelease_file = LATEST_DESKTOP_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
         )
         self.release_history_path = self.cache_manager.get_cache_file_path(
-            ANDROID_RELEASE_HISTORY_JSON_FILE
+            DESKTOP_RELEASE_HISTORY_JSON_FILE
         )
         self.release_history_manager = ReleaseHistoryManager(
             self.cache_manager, self.release_history_path
         )
+        self._wip_2714_prerelease_mismatch_tags: set[str] = set()
+        self._logged_known_2714_mismatch_info = False
+
+    def has_known_2714_prerelease_version_mismatch(self) -> bool:
+        """
+        Return whether this run observed Desktop installer version-name mismatches for 2.7.14 prereleases.
+        """
+        return bool(self._wip_2714_prerelease_mismatch_tags)
+
+    def get_known_2714_prerelease_mismatch_tags(self) -> List[str]:
+        """
+        Return prerelease tags that showed the known 2.7.14 Desktop installer version-name mismatch.
+        """
+        tags = list(self._wip_2714_prerelease_mismatch_tags)
+
+        def _known_mismatch_sort_key(tag: str) -> tuple[int, int, int, int, str]:
+            match = re.search(
+                r"^v?(\d+)\.(\d+)\.(\d+)-(?:open|closed|internal)\.(\d+)$",
+                tag,
+                re.IGNORECASE,
+            )
+            if not match:
+                return (0, 0, 0, 0, tag)
+            major, minor, patch, prerelease_num = (
+                int(match.group(index)) for index in range(1, 5)
+            )
+            return (major, minor, patch, prerelease_num, tag)
+
+        tags.sort(key=_known_mismatch_sort_key, reverse=True)
+        return tags
 
     def get_target_path_for_release(
         self,
@@ -107,9 +137,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         release: Optional[Release] = None,
     ) -> str:
         """
-        Compute the filesystem path for an APK asset and ensure the corresponding release directory exists.
+        Compute the filesystem path for a Desktop asset and ensure the corresponding release directory exists.
 
-        Sanitizes inputs and places prerelease APKs under the prerelease APKs subdirectory when `is_prerelease` is True or inferred; creates the release version directory if it does not exist.
+        Sanitizes inputs and places prerelease Desktop files under the prerelease subdirectory when `is_prerelease` is True or inferred; creates the release version directory if it does not exist.
 
         Parameters:
             is_prerelease (Optional[bool]): If provided, override inference and use the specified prerelease status to choose the base directory. Note: This parameter is only used when `release` is None; when a Release object is provided, prerelease status is determined from the Release object itself.
@@ -124,11 +154,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         # Use Release object for comprehensive prerelease detection when available
         if release is not None:
             safe_release = self._get_storage_tag_for_release(release)
-            is_prerelease = self._is_android_prerelease(release)
+            is_prerelease = self._is_desktop_prerelease(release)
         else:
             # Infer prerelease status from tag name when Release object not available
             if is_prerelease is None:
-                is_prerelease = _is_apk_prerelease_by_name(
+                is_prerelease = _is_desktop_prerelease_by_name(
                     release_tag
                 ) or self.version_manager.is_prerelease_version(release_tag)
 
@@ -141,30 +171,117 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _get_prerelease_base_dir(self) -> str:
         """
-        Return the absolute path to the prerelease APKs directory, creating the directory if it does not exist.
+        Return the absolute path to the prerelease Desktop directory, creating the directory if it does not exist.
 
         Returns:
-            str: Absolute filesystem path to the prerelease APKs directory under the APK downloads directory.
-        """
-        prerelease_dir = os.path.join(
-            self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME, APK_PRERELEASES_DIR_NAME
-        )
-        os.makedirs(prerelease_dir, exist_ok=True)
-        return prerelease_dir
+            str: Absolute filesystem path to the prerelease Desktop directory under the Desktop downloads directory.
 
-    def _get_legacy_android_base_dir(self) -> str:
+        Raises:
+            ValueError: If the prerelease directory is unsafe (symlink or outside download tree).
         """
-        Return the legacy Android stable base directory (`<download_dir>/apks`).
-        """
-        return os.path.join(self.download_dir, APKS_DIR_NAME)
-
-    def _get_legacy_prerelease_base_dir(self) -> str:
-        """
-        Return the legacy Android prerelease base directory (`<download_dir>/apks/prereleases`).
-        """
-        return os.path.join(
-            self._get_legacy_android_base_dir(), APK_PRERELEASES_DIR_NAME
+        return self._resolve_desktop_base_dir(
+            is_prerelease=True,
+            create_if_missing=True,
         )
+
+    def _resolve_desktop_base_dir(
+        self,
+        *,
+        is_prerelease: bool,
+        create_if_missing: bool,
+    ) -> str:
+        """
+        Resolve and validate the Desktop base directory path.
+
+        Parameters:
+            is_prerelease (bool): Whether to resolve the prerelease base directory.
+            create_if_missing (bool): Whether to create the directory when absent.
+
+        Returns:
+            str: Validated Desktop base directory path.
+        """
+        base_dir = os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
+        if is_prerelease:
+            base_dir = os.path.join(base_dir, DESKTOP_PRERELEASES_DIR_NAME)
+
+        symlink_path = self._find_symlinked_ancestor(base_dir)
+        if symlink_path:
+            message = (
+                f"Refusing to use symlinked Desktop base directory: {symlink_path}"
+            )
+            logger.warning(message)
+            raise ValueError(message)
+        if not self._is_within_download_tree(base_dir):
+            message = (
+                f"Refusing to use Desktop base directory outside safe tree: {base_dir}"
+            )
+            logger.warning(message)
+            raise ValueError(message)
+        if os.path.exists(base_dir) and not self._is_safe_managed_dir(base_dir):
+            message = f"Desktop base directory is unsafe: {base_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+
+        if create_if_missing:
+            os.makedirs(base_dir, exist_ok=True)
+        return base_dir
+
+    def _find_symlinked_ancestor(self, path: str) -> Optional[str]:
+        """
+        Return the first symlinked path segment from `path` up to download_dir.
+        """
+        download_root = os.path.abspath(self.download_dir)
+        candidate = os.path.abspath(path)
+        try:
+            if os.path.commonpath([download_root, candidate]) != download_root:
+                return None
+        except ValueError:
+            return None
+
+        current = candidate
+        while True:
+            if os.path.islink(current):
+                return current
+            if current == download_root:
+                return None
+            parent = os.path.dirname(current)
+            if parent == current:
+                return None
+            current = parent
+
+    def _resolve_release_dir(
+        self,
+        safe_release: str,
+        *,
+        is_prerelease: bool,
+        create_if_missing: bool,
+    ) -> str:
+        """
+        Resolve and validate a Desktop release directory under the managed tree.
+        """
+        base_dir = self._resolve_desktop_base_dir(
+            is_prerelease=is_prerelease,
+            create_if_missing=create_if_missing,
+        )
+        release_dir = os.path.join(base_dir, safe_release)
+
+        symlink_path = self._find_symlinked_ancestor(release_dir)
+        if symlink_path:
+            message = f"Refusing symlinked Desktop release directory: {symlink_path}"
+            logger.warning(message)
+            raise ValueError(message)
+        if not self._is_within_download_tree(release_dir):
+            message = f"Desktop release directory is outside safe tree: {release_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+        if os.path.exists(release_dir) and not self._is_safe_managed_dir(release_dir):
+            message = f"Desktop release directory is unsafe: {release_dir}"
+            logger.warning(message)
+            raise ValueError(message)
+
+        if create_if_missing:
+            os.makedirs(release_dir, exist_ok=True)
+        return release_dir
 
     def _is_within_download_tree(self, path: str) -> bool:
         """
@@ -187,227 +304,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             and self._is_within_download_tree(path)
         )
 
-    def _move_legacy_path(self, source_path: str, destination_path: str) -> bool:
+    def _is_desktop_prerelease(self, release: Release) -> bool:
         """
-        Move a legacy path into the preferred Android layout when safe.
-
-        Returns:
-            bool: True when migration succeeded, False otherwise.
-        """
-        if not os.path.exists(source_path):
-            return False
-        if os.path.islink(source_path):
-            logger.debug(
-                "Skipping Android legacy migration because source is symlinked: %s",
-                source_path,
-            )
-            return False
-        if os.path.exists(destination_path):
-            logger.debug(
-                "Skipping Android legacy migration because destination exists: %s",
-                destination_path,
-            )
-            return False
-        try:
-            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-            shutil.move(source_path, destination_path)
-            logger.info(
-                "Migrated Android legacy path %s -> %s",
-                source_path,
-                destination_path,
-            )
-            return True
-        except OSError as exc:
-            logger.warning(
-                "Failed to migrate Android legacy path %s -> %s: %s",
-                source_path,
-                destination_path,
-                exc,
-            )
-            return False
-
-    def _prune_empty_legacy_android_dirs(self) -> None:
-        """
-        Remove empty legacy Android directories after successful migration attempts.
-        """
-        legacy_prerelease_dir = self._get_legacy_prerelease_base_dir()
-        legacy_android_dir = self._get_legacy_android_base_dir()
-        for directory in (legacy_prerelease_dir, legacy_android_dir):
-            try:
-                os.rmdir(directory)
-                logger.debug("Removed empty legacy Android directory: %s", directory)
-            except OSError:
-                continue
-
-    def migrate_legacy_layout(self) -> None:
-        """
-        Migrate legacy Android directories from `<download_dir>/apks` to `app/android`.
-        """
-        legacy_android_dir = self._get_legacy_android_base_dir()
-        if not self._is_safe_managed_dir(legacy_android_dir):
-            return
-
-        preferred_android_dir = os.path.join(
-            self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME
-        )
-        preferred_prerelease_dir = os.path.join(
-            preferred_android_dir, APK_PRERELEASES_DIR_NAME
-        )
-        if os.path.islink(preferred_android_dir):
-            logger.warning(
-                "Skipping Android legacy migration because preferred root is symlinked: %s",
-                preferred_android_dir,
-            )
-            return
-        if not self._is_within_download_tree(preferred_android_dir):
-            logger.warning(
-                "Skipping Android legacy migration because preferred root is outside download tree: %s",
-                preferred_android_dir,
-            )
-            return
-        os.makedirs(preferred_android_dir, exist_ok=True)
-
-        try:
-            with os.scandir(legacy_android_dir) as it:
-                legacy_entries = list(it)
-        except OSError as exc:
-            logger.warning(
-                "Unable to scan legacy Android directory %s: %s",
-                legacy_android_dir,
-                exc,
-            )
-            return
-
-        for entry in legacy_entries:
-            if entry.is_symlink():
-                logger.warning(
-                    "Skipping symlink during Android legacy migration: %s", entry.path
-                )
-                continue
-            if entry.name == APK_PRERELEASES_DIR_NAME:
-                continue
-            self._move_legacy_path(
-                entry.path,
-                os.path.join(preferred_android_dir, entry.name),
-            )
-
-        legacy_prerelease_dir = self._get_legacy_prerelease_base_dir()
-        if self._is_safe_managed_dir(legacy_prerelease_dir):
-            os.makedirs(preferred_prerelease_dir, exist_ok=True)
-            try:
-                with os.scandir(legacy_prerelease_dir) as it:
-                    prerelease_entries = list(it)
-            except OSError as exc:
-                logger.warning(
-                    "Unable to scan legacy Android prerelease directory %s: %s",
-                    legacy_prerelease_dir,
-                    exc,
-                )
-                prerelease_entries = []
-
-            for entry in prerelease_entries:
-                if entry.is_symlink():
-                    logger.warning(
-                        "Skipping symlink during Android prerelease migration: %s",
-                        entry.path,
-                    )
-                    continue
-                self._move_legacy_path(
-                    entry.path,
-                    os.path.join(preferred_prerelease_dir, entry.name),
-                )
-
-        self._prune_empty_legacy_android_dirs()
-
-    def _resolve_release_dir(
-        self,
-        safe_release: str,
-        *,
-        is_prerelease: bool,
-        create_if_missing: bool,
-    ) -> str:
-        """
-        Resolve the release directory in the `app/android/...` layout.
-
-        If only a legacy `apks/...` directory exists for the release, this method
-        attempts to migrate it into the preferred location before returning.
-        """
-        preferred_base_dir = (
-            os.path.join(
-                self.download_dir,
-                APP_DIR_NAME,
-                ANDROID_DIR_NAME,
-                APK_PRERELEASES_DIR_NAME,
-            )
-            if is_prerelease
-            else os.path.join(self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME)
-        )
-        legacy_base_dir = (
-            self._get_legacy_prerelease_base_dir()
-            if is_prerelease
-            else self._get_legacy_android_base_dir()
-        )
-
-        preferred_release_dir = os.path.join(preferred_base_dir, safe_release)
-        legacy_release_dir = os.path.join(legacy_base_dir, safe_release)
-
-        if os.path.islink(preferred_release_dir):
-            message = (
-                f"Refusing symlinked Android release directory: {preferred_release_dir}"
-            )
-            logger.warning(message)
-            raise ValueError(message)
-
-        if self._is_safe_managed_dir(preferred_release_dir):
-            return preferred_release_dir
-        if os.path.islink(legacy_release_dir):
-            logger.warning(
-                "Ignoring symlinked legacy Android release directory: %s",
-                legacy_release_dir,
-            )
-        elif self._is_safe_managed_dir(legacy_release_dir):
-            if os.path.islink(preferred_base_dir):
-                logger.warning(
-                    "Skipping legacy Android release migration because preferred base is symlinked: %s",
-                    preferred_base_dir,
-                )
-                return legacy_release_dir
-            if self._is_within_download_tree(preferred_release_dir):
-                if self._move_legacy_path(legacy_release_dir, preferred_release_dir):
-                    self._prune_empty_legacy_android_dirs()
-                    return preferred_release_dir
-                return legacy_release_dir
-            else:
-                logger.warning(
-                    "Skipping legacy Android release migration because destination is not safe: %s",
-                    preferred_release_dir,
-                )
-                return legacy_release_dir
-
-        if create_if_missing:
-            if os.path.islink(preferred_base_dir):
-                message = f"Refusing to create Android release directory under symlinked base: {preferred_base_dir}"
-                logger.warning(message)
-                raise ValueError(message)
-            if not self._is_within_download_tree(preferred_release_dir):
-                message = f"Refusing to create Android release directory outside download tree: {preferred_release_dir}"
-                logger.warning(message)
-                raise ValueError(message)
-            os.makedirs(preferred_release_dir, exist_ok=True)
-
-        # Safety check: verify preferred_release_dir is safe before returning
-        # When create_if_missing=False, an existing unsafe directory should not be used
-        if not create_if_missing and os.path.exists(preferred_release_dir):
-            if not self._is_safe_managed_dir(preferred_release_dir):
-                message = f"Refusing unsafe Android release directory: {preferred_release_dir}"
-                logger.warning(message)
-                raise ValueError(message)
-
-        return preferred_release_dir
-
-    def _is_android_prerelease(self, release: Release) -> bool:
-        """
-        Determine if an Android release is a prerelease.
+        Determine if a Desktop release is a prerelease.
 
         Parameters:
             release (Release): Release object to check.
@@ -417,15 +316,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         return (
             release.prerelease
-            or _is_apk_prerelease_by_name(release.tag_name)
+            or _is_desktop_prerelease_by_name(release.tag_name)
             or self.version_manager.is_prerelease_version(release.tag_name)
         )
 
     def _get_storage_tag_for_release(self, release: Release) -> str:
         """
-        Compute storage tag for an APK release.
+        Compute storage tag for a Desktop release.
 
-        APK releases do not use channel suffixes; returns only the sanitized tag name.
+        Desktop releases do not use channel suffixes; returns only the sanitized tag name.
 
         Parameters:
             release (Release): Release object containing tag_name and other metadata.
@@ -439,7 +338,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self, releases: List[Release], *, log_summary: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
-        Update the on-disk Android release history and optionally emit a summary log.
+        Update the on-disk Desktop release history and optionally emit a summary log.
 
         Records only stable (non-prerelease) releases from the provided list into the persistent
         release history. If no releases are provided or no stable releases are present, the
@@ -455,14 +354,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         if not releases:
             return None
-        stable_releases = [r for r in releases if not self._is_android_prerelease(r)]
+        stable_releases = [r for r in releases if not self._is_desktop_prerelease(r)]
         if not stable_releases:
             return None
 
         history = self.release_history_manager.update_release_history(stable_releases)
         if log_summary:
             self.release_history_manager.log_release_status_summary(
-                history, label="Android"
+                history, label="Desktop"
             )
         return history
 
@@ -480,7 +379,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
-        Write the release notes for the given release into the appropriate APK directory and return the notes file path.
+        Write the release notes for the given release into the appropriate Desktop directory and return the notes file path.
 
         Parameters:
             release (Release): Release metadata containing tag_name and body used to determine the notes filename and content.
@@ -491,11 +390,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         safe_release = _sanitize_path_component(release.tag_name)
         if safe_release is None:
             logger.warning(
-                "Skipping release notes for unsafe Android tag: %s", release.tag_name
+                "Skipping release notes for unsafe Desktop tag: %s", release.tag_name
             )
             return None
 
-        is_prerelease = self._is_android_prerelease(release)
+        is_prerelease = self._is_desktop_prerelease(release)
 
         storage_tag = self._get_storage_tag_for_release(release)
 
@@ -507,6 +406,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
         except ValueError:
             return None
+
         base_dir = os.path.dirname(release_dir)
         return self._write_release_notes(
             release_dir=release_dir,
@@ -543,9 +443,77 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         return True
 
+    def _record_release_asset_version_mismatch(
+        self,
+        release: Release,
+        desktop_assets: List[Asset],
+        logged_mismatch_tags: set[str],
+    ) -> None:
+        """
+        Detect and log installer filename version mismatches compared to the release tag version.
+        """
+        expected_release_tuple = self.version_manager.get_release_tuple(
+            release.tag_name
+        )
+        if not expected_release_tuple or len(expected_release_tuple) < 3:
+            return
+
+        expected_version_tuple = expected_release_tuple[:3]
+        mismatches: List[Tuple[str, Tuple[int, int, int]]] = []
+        for asset in desktop_assets:
+            embedded_version_tuple = _extract_embedded_asset_version_tuple(asset.name)
+            if embedded_version_tuple is None:
+                continue
+            if embedded_version_tuple != expected_version_tuple:
+                mismatches.append((asset.name, embedded_version_tuple))
+
+        if not mismatches:
+            return
+
+        if (
+            release.prerelease
+            and expected_version_tuple == DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION
+        ):
+            self._wip_2714_prerelease_mismatch_tags.add(release.tag_name)
+
+        if release.tag_name in logged_mismatch_tags:
+            return
+
+        logged_mismatch_tags.add(release.tag_name)
+        expected_label = ".".join(str(part) for part in expected_version_tuple)
+        mismatch_preview = ", ".join(
+            f"{asset_name} -> {'.'.join(str(part) for part in version_tuple)}"
+            for asset_name, version_tuple in mismatches[:3]
+        )
+        if (
+            release.prerelease
+            and expected_version_tuple == DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION
+        ):
+            if not self._logged_known_2714_mismatch_info:
+                logger.info(
+                    "Desktop prerelease %s uses known transitional packaging names (expected %s): %s. 2.7.14 prerelease installer version-label discrepancies are currently expected while upstream CI packaging is being finalized.",
+                    release.tag_name,
+                    expected_label,
+                    mismatch_preview,
+                )
+                self._logged_known_2714_mismatch_info = True
+            else:
+                logger.debug(
+                    "Desktop prerelease %s also matches the known 2.7.14 transitional packaging discrepancy.",
+                    release.tag_name,
+                )
+            return
+
+        logger.warning(
+            "Desktop release %s has installer filename version mismatch (expected %s): %s",
+            release.tag_name,
+            expected_label,
+            mismatch_preview,
+        )
+
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Retrieve Android APK releases from GitHub and construct Release objects populated with their APK assets.
+        Retrieve Desktop releases from GitHub and construct Release objects populated with their Desktop assets.
 
         Respects cached responses and the configured scan window; when no `limit` is provided the function expands its scan to collect a configured minimum number of stable releases.
 
@@ -553,12 +521,19 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             limit (Optional[int]): Maximum number of releases to return. If `None`, the function uses configured scan parameters to determine how many releases to fetch.
 
         Returns:
-            List[Release]: Release objects populated with their APK Asset entries; returns an empty list on error or if no valid releases are found.
+            List[Release]: Release objects populated with their Desktop Asset entries; returns an empty list on error or if no valid releases are found.
         """
+        # Keep mismatch observations scoped to the active release scan so CLI run
+        # summary messaging reflects the current run only.
+        self._wip_2714_prerelease_mismatch_tags.clear()
+        self._logged_known_2714_mismatch_info = False
+        logged_mismatch_tags: set[str] = set()
         try:
             max_scan = GITHUB_MAX_PER_PAGE
             min_stable_releases = int(
-                self.config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
+                self.config.get(
+                    "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+                )
             )
             scan_count = min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
             if limit is not None:
@@ -566,19 +541,51 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     return []
                 scan_count = min(max_scan, limit)
 
+            # Bound pagination to avoid long-running scans when a repository has
+            # many pages but very few eligible Desktop installer releases.
+            desired_release_window = max(min_stable_releases * 2, RELEASE_SCAN_COUNT)
+            min_pages = max(2, math.ceil(desired_release_window / max(1, scan_count)))
+            configured_max_pages = int(
+                self.config.get("DESKTOP_RELEASE_SCAN_MAX_PAGES", min_pages)
+            )
+            max_pages = max(min_pages, configured_max_pages)
+
+            releases: List[Release] = []
+            stable_count = 0
+            skipped_legacy_count = 0
+            page = 1
+            seen_page_signatures: set[tuple[str, ...]] = set()
+
             while True:
-                params = {"per_page": scan_count}
+                params = {"per_page": scan_count, "page": page}
                 releases_data = self.github_source.fetch_raw_releases_data(params)
 
                 if releases_data is None:
                     return []
 
-                releases: List[Release] = []
-                stable_count = 0
+                page_signature = tuple(
+                    str(item.get("tag_name", ""))
+                    for item in releases_data
+                    if isinstance(item, dict)
+                )
+                if page_signature and page_signature in seen_page_signatures:
+                    logger.debug(
+                        "Desktop scan detected repeated release page payload at page %d; stopping scan.",
+                        page,
+                    )
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
+                    return releases
+                if page_signature:
+                    seen_page_signatures.add(page_signature)
+
                 for release_data in releases_data:
                     if not isinstance(release_data, dict):
                         logger.warning(
-                            "Skipping malformed Android release entry: expected dict, got %s",
+                            "Skipping malformed Desktop release entry: expected dict, got %s",
                             type(release_data).__name__,
                         )
                         continue
@@ -591,42 +598,49 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     tag_name = release_data.get("tag_name", "")
                     if not isinstance(tag_name, str) or not tag_name.strip():
                         logger.warning(
-                            "Skipping Android release with missing or invalid tag_name"
+                            "Skipping Desktop release with missing or invalid tag_name"
                         )
                         continue
-                    if not _is_supported_android_release(
+                    if not _is_supported_desktop_release(
                         tag_name, version_manager=self.version_manager
                     ):
-                        logger.debug(
-                            "Skipping legacy Android release %s (pre-2.7.0 tagging scheme)",
-                            tag_name or "<unknown>",
-                        )
+                        skipped_legacy_count += 1
                         continue
 
                     release = Release(
                         tag_name=tag_name,
-                        prerelease=_is_apk_prerelease(release_data),
+                        prerelease=False,
                         published_at=release_data.get("published_at"),
                         name=release_data.get("name"),
                         body=release_data.get("body"),
                     )
+                    release.prerelease = self._is_desktop_prerelease(release)
 
                     # Add assets to the release
                     for asset_data in assets_data:
                         asset = create_asset_from_github_data(
                             asset_data,
                             tag_name,
-                            asset_label="Android asset",
+                            asset_label="Desktop asset",
                         )
                         if asset is not None:
                             release.assets.append(asset)
 
-                    if not release.assets:
+                    desktop_assets = self.get_assets(release)
+
+                    # Only count releases with valid installer assets
+                    if not desktop_assets:
                         logger.warning(
-                            "Skipping Android release %s with no valid assets",
+                            "Skipping Desktop release %s with no valid installer assets",
                             tag_name,
                         )
                         continue
+
+                    self._record_release_asset_version_mismatch(
+                        release,
+                        desktop_assets,
+                        logged_mismatch_tags,
+                    )
 
                     releases.append(release)
                     if not release.prerelease:
@@ -634,27 +648,49 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
                     # Respect limit if specified
                     if limit is not None and len(releases) >= limit:
-                        break
+                        if skipped_legacy_count > 0:
+                            logger.debug(
+                                "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                                skipped_legacy_count,
+                            )
+                        return releases
 
-                if limit is not None:
+                if limit is None and stable_count >= min_stable_releases:
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
                     return releases
 
-                if (
-                    stable_count >= min_stable_releases
-                    or len(releases_data) < scan_count
-                ):
+                # No more pages available from API.
+                if len(releases_data) < scan_count:
+                    if limit is None and stable_count < min_stable_releases:
+                        logger.debug(
+                            "Desktop scan found fewer stable releases than configured target; returning all eligible releases."
+                        )
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
                     return releases
 
-                if scan_count >= max_scan:
-                    logger.debug(
-                        "Reached maximum APK scan window (%d) without finding %d stable releases; proceeding with %d stable release(s).",
-                        max_scan,
-                        min_stable_releases,
-                        stable_count,
-                    )
+                if page >= max_pages:
+                    if limit is None and stable_count < min_stable_releases:
+                        logger.debug(
+                            "Desktop scan reached max pages (%d) before finding target stable count (%d); returning eligible releases.",
+                            max_pages,
+                            min_stable_releases,
+                        )
+                    if skipped_legacy_count > 0:
+                        logger.debug(
+                            "Desktop scan ignored %d legacy Android-only releases before 2.7.14",
+                            skipped_legacy_count,
+                        )
                     return releases
 
-                scan_count = min(max_scan, scan_count * 2)
+                page += 1
 
         except (
             requests.RequestException,
@@ -663,19 +699,19 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             json.JSONDecodeError,
             TypeError,
         ) as exc:
-            logger.exception("Error fetching Android releases: %s", exc)
+            logger.exception("Error fetching Desktop releases: %s", exc)
             return []
 
     def get_assets(self, release: Release) -> List[Asset]:
         """
-        Get APK assets included in the given release.
+        Get Desktop assets included in the given release.
 
         Returns:
-            List[Asset]: Assets from the release whose names end with ".apk" (case-insensitive).
+            List[Asset]: Assets from the release whose names end with a Desktop extension (.dmg, .msi, .exe, .deb, .rpm, .AppImage) (case-insensitive).
         """
-        # Filter for APK files only
+        # Filter for Desktop installer files only
         assets = release.assets or []
-        return [asset for asset in assets if is_android_asset_name(asset.name)]
+        return [asset for asset in assets if is_desktop_asset_name(asset.name)]
 
     def get_download_url(self, asset: Asset) -> str:
         """
@@ -688,16 +724,19 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def should_download_asset(self, asset_name: str) -> bool:
         """
-        Determine if an APK asset should be downloaded based on configured include and exclude patterns.
+        Determine if a Desktop asset should be downloaded based on configured include and exclude patterns.
 
         Exclude patterns take precedence over include (selected) patterns. If no selected patterns are configured, the asset is allowed.
 
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.
         """
-        selected = expand_apk_selected_patterns(
-            self.config.get("SELECTED_APK_ASSETS") or []
-        )
+        # Check both old and new config keys for backward compatibility.
+        # Prefer the new key by presence so an intentional empty list remains authoritative.
+        if "SELECTED_DESKTOP_ASSETS" in self.config:
+            selected = self.config.get("SELECTED_DESKTOP_ASSETS") or []
+        else:
+            selected = self.config.get("SELECTED_DESKTOP_PLATFORMS") or []
         exclude = self._get_exclude_patterns()
 
         if exclude and any(
@@ -710,9 +749,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         return matches_selected_patterns(asset_name, selected)
 
-    def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
+    def download_desktop(self, release: Release, asset: Asset) -> DownloadResult:
         """
-        Download and verify the APK asset for the given release.
+        Download and verify the Desktop asset for the given release.
 
         Attempts to reuse an existing, validated file when present; otherwise downloads the asset, verifies the saved file, and removes it on verification failure.
 
@@ -724,22 +763,21 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             DownloadResult: Success entries include `file_path`, `download_url`, `file_size`, `file_type`, and `was_skipped` when applicable; failure entries include `error_message`, `error_type`, and `is_retryable`.
         """
         target_path: Optional[str] = None
-        file_type = (
-            FILE_TYPE_ANDROID_PRERELEASE if release.prerelease else FILE_TYPE_ANDROID
-        )
+        is_prerelease = self._is_desktop_prerelease(release)
+        file_type = FILE_TYPE_DESKTOP_PRERELEASE if is_prerelease else FILE_TYPE_DESKTOP
         try:
-            # Get target path for the APK
+            # Get target path for the Desktop file
             target_path = self.get_target_path_for_release(
                 release.tag_name,
                 asset.name,
-                is_prerelease=release.prerelease,
+                is_prerelease=is_prerelease,
                 release=release,
             )
 
             # Check if we need to download
             if self._is_asset_complete_for_target(target_path, asset):
                 logger.debug(
-                    f"APK {asset.name} (release {release.tag_name}) already exists and is complete"
+                    f"Desktop file {asset.name} (release {release.tag_name}) already exists and is complete"
                 )
                 return self.create_download_result(
                     success=True,
@@ -751,7 +789,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     was_skipped=True,
                 )
 
-            # Download the APK
+            # Download the Desktop file
             success = self.download(asset.download_url, target_path)
 
             if success:
@@ -797,9 +835,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 )
 
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
-            logger.exception("Error downloading APK %s: %s", asset.name, exc)
+            logger.exception("Error downloading Desktop file %s: %s", asset.name, exc)
             safe_path = target_path or os.path.join(
-                self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME
+                self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME
             )
             if isinstance(exc, requests.RequestException):
                 error_type = ERROR_TYPE_NETWORK
@@ -824,24 +862,26 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def is_release_complete(self, release: Release) -> bool:
         """
-        Determine whether all APK assets selected for the given release are present on disk and match their expected sizes.
+        Determine whether all Desktop assets selected for the given release are present on disk and match their expected sizes.
 
         Parameters:
-            release (Release): Release whose APK assets are checked. Only assets that pass the downloader's selection rules are considered.
+            release (Release): Release whose Desktop assets are checked. Only assets that pass the downloader's selection rules are considered.
 
         Returns:
             True if all selected assets are present and each file size equals the asset's expected size, False otherwise.
         """
         safe_tag = self._get_storage_tag_for_release(release)
 
+        is_prerelease = self._is_desktop_prerelease(release)
         try:
             version_dir = self._resolve_release_dir(
                 safe_tag,
-                is_prerelease=self._is_android_prerelease(release),
+                is_prerelease=is_prerelease,
                 create_if_missing=False,
             )
         except ValueError:
             return False
+
         if not os.path.isdir(version_dir):
             return False
 
@@ -877,12 +917,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         keep_last_beta: bool = False,
     ) -> None:
         """
-        Remove older Android APK version directories while preserving a configured number of recent versions.
+        Remove older Desktop version directories while preserving a configured number of recent versions.
 
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain.
             cached_releases (Optional[List[Release]]): Optional list of releases to use instead of fetching current releases.
-            keep_last_beta (bool): Ignored for APK cleanup; present only for signature compatibility.
+            keep_last_beta (bool): Ignored for Desktop cleanup; present only for signature compatibility.
         """
         try:
             del keep_last_beta  # intentionally unused (signature compatibility)
@@ -893,7 +933,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 cached_releases=releases, keep_limit_override=keep_limit
             )
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
-            logger.error("Error cleaning up old Android versions: %s", exc)
+            logger.error("Error cleaning up old Desktop versions: %s", exc)
 
     def cleanup_prerelease_directories(
         self,
@@ -901,9 +941,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         keep_limit_override: Optional[int] = None,
     ) -> None:
         """
-        Ensure APK version directories are organized and remove filesystem entries that are not part of the expected stable or prerelease sets.
+        Ensure Desktop version directories are organized and remove filesystem entries that are not part of the expected stable or prerelease sets.
 
-        Scans the APK root and the prerelease subdirectory, preserving symlinks and any entries whose sanitized tag names match the expected stable or prerelease sets derived from `cached_releases`. No filesystem changes are made if `cached_releases` is None/empty, the APK root is missing, or there are no stable releases. The number of stable versions retained is determined by `keep_limit_override` when provided, otherwise by the `ANDROID_VERSIONS_TO_KEEP` configuration value.
+        Scans the Desktop root and the prerelease subdirectory, preserving symlinks and any entries whose sanitized tag names match the expected stable or prerelease sets derived from `cached_releases`. No filesystem changes are made if `cached_releases` is None/empty, the Desktop root is missing, or there are no stable releases. The number of stable versions retained is determined by `keep_limit_override` when provided, otherwise by the `DESKTOP_VERSIONS_TO_KEEP` configuration value.
 
         Parameters:
             cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease directories should be retained; if None or empty, the method returns without modifying the filesystem.
@@ -913,28 +953,38 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             if not cached_releases:
                 return
 
-            preferred_android_dir = os.path.join(
-                self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME
+            desktop_dir = os.path.join(
+                self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME
             )
-            legacy_android_dir = self._get_legacy_android_base_dir()
-            android_dirs = [
-                directory
-                for directory in (preferred_android_dir, legacy_android_dir)
-                if self._is_safe_managed_dir(directory)
-            ]
-            if not android_dirs:
+            if not os.path.exists(desktop_dir):
+                return
+            if not self._is_safe_managed_dir(desktop_dir):
+                logger.warning(
+                    "Skipping Desktop cleanup: desktop directory is unsafe (symlink or outside tree): %s",
+                    desktop_dir,
+                )
+                return
+
+            prerelease_dir = os.path.join(desktop_dir, DESKTOP_PRERELEASES_DIR_NAME)
+            if os.path.exists(prerelease_dir) and not self._is_safe_managed_dir(
+                prerelease_dir
+            ):
+                logger.warning(
+                    "Skipping Desktop prerelease cleanup: prerelease directory is unsafe: %s",
+                    prerelease_dir,
+                )
                 return
             raw_keep_limit = (
                 keep_limit_override
                 if keep_limit_override is not None
                 else self.config.get(
-                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+                    "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
                 )
             )
             try:
                 keep_limit = max(0, int(raw_keep_limit))
             except (TypeError, ValueError):
-                keep_limit = int(DEFAULT_ANDROID_VERSIONS_TO_KEEP)
+                keep_limit = int(DEFAULT_DESKTOP_VERSIONS_TO_KEEP)
 
             def _stable_release_sort_key(release: Release) -> tuple[Any, ...]:
                 release_tuple = self.version_manager.get_release_tuple(release.tag_name)
@@ -952,14 +1002,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 [
                     release
                     for release in cached_releases
-                    if not self._is_android_prerelease(release)
+                    if not self._is_desktop_prerelease(release)
+                    and _is_supported_desktop_release(
+                        release.tag_name, version_manager=self.version_manager
+                    )
                 ],
                 key=_stable_release_sort_key,
                 reverse=True,
             )
             if not stable_releases:
                 logger.debug(
-                    "Skipping APK cleanup because no stable releases are available."
+                    "Skipping Desktop cleanup because no stable releases are available."
                 )
                 return
             prerelease_releases = self.handle_prereleases(cached_releases)
@@ -997,7 +1050,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             if not expected_stable and keep_limit > 0:
                 logger.warning(
-                    "Skipping APK cleanup: no safe release tags found to keep."
+                    "Skipping Desktop cleanup: no safe release tags found to keep."
                 )
                 return
 
@@ -1028,100 +1081,50 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 for entry in scan_entries:
                     if entry.is_symlink():
                         logger.warning(
-                            "Skipping symlink in APK cleanup: %s", entry.name
+                            "Skipping symlink in Desktop cleanup: %s", entry.name
                         )
                         continue
                     if entry.name in allowed:
                         continue
-                    logger.info("Removing unexpected APK entry: %s", entry.name)
+                    logger.info("Removing unexpected Desktop entry: %s", entry.name)
                     _safe_rmtree(entry.path, base_dir, entry.name)
 
-            # Compute union of existing entries across all android roots BEFORE the loop.
-            # This ensures the disjoint check considers the combined state of all roots,
-            # preventing the legacy root from being skipped when stable releases are in
-            # the preferred root but stale versions remain in the legacy root.
-            all_existing_entries: set[str] = set()
-            for android_dir in android_dirs:
-                try:
-                    with os.scandir(android_dir) as it:
-                        for entry in it:
-                            if not entry.is_symlink():
-                                all_existing_entries.add(entry.name)
-                except FileNotFoundError:
-                    pass
+            try:
+                with os.scandir(desktop_dir) as it:
+                    desktop_entries = list(it)
+            except FileNotFoundError:
+                return
 
+            existing_entries = {
+                entry.name for entry in desktop_entries if not entry.is_symlink()
+            }
             if (
                 keep_limit > 0
                 and expected_stable
-                and all_existing_entries
-                and expected_stable.isdisjoint(all_existing_entries)
+                and existing_entries
+                and expected_stable.isdisjoint(existing_entries)
             ):
                 logger.warning(
-                    "Skipping APK cleanup: keep set does not match existing directories in any android root."
+                    "Skipping Desktop cleanup: keep set does not match existing directories."
                 )
                 return
 
-            for android_dir in android_dirs:
-                prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
+            _remove_unexpected_entries(
+                desktop_dir,
+                expected_stable | {DESKTOP_PRERELEASES_DIR_NAME},
+                entries=desktop_entries,
+            )
 
-                # Determine if this is the legacy root
-                is_legacy = android_dir == legacy_android_dir
+            if not os.path.exists(prerelease_dir):
+                return
 
-                # For legacy roots, compute releases present in preferred destination
-                # and subtract them from expected sets to clean up duplicates
-                if is_legacy:
-                    preferred_entries: set[str] = set()
-                    preferred_prerelease_dir = os.path.join(
-                        preferred_android_dir, APK_PRERELEASES_DIR_NAME
-                    )
-                    if self._is_safe_managed_dir(preferred_android_dir):
-                        try:
-                            with os.scandir(preferred_android_dir) as it:
-                                for entry in it:
-                                    if entry.is_dir() and not entry.is_symlink():
-                                        preferred_entries.add(entry.name)
-                        except (FileNotFoundError, OSError):
-                            pass
-                    expected_stable_for_dir = expected_stable - preferred_entries
-
-                    preferred_prerelease_entries: set[str] = set()
-                    if self._is_safe_managed_dir(preferred_prerelease_dir):
-                        try:
-                            with os.scandir(preferred_prerelease_dir) as it:
-                                for entry in it:
-                                    if entry.is_dir() and not entry.is_symlink():
-                                        preferred_prerelease_entries.add(entry.name)
-                        except (FileNotFoundError, OSError):
-                            pass
-                    expected_prerelease_for_dir = (
-                        expected_prerelease - preferred_prerelease_entries
-                    )
-                else:
-                    expected_stable_for_dir = expected_stable
-                    expected_prerelease_for_dir = expected_prerelease
-
-                try:
-                    with os.scandir(android_dir) as it:
-                        android_entries = list(it)
-                except FileNotFoundError:
-                    continue
-
-                _remove_unexpected_entries(
-                    android_dir,
-                    expected_stable_for_dir | {APK_PRERELEASES_DIR_NAME},
-                    entries=android_entries,
-                )
-
-                if not self._is_safe_managed_dir(prerelease_dir):
-                    continue
-
-                _remove_unexpected_entries(prerelease_dir, expected_prerelease_for_dir)
+            _remove_unexpected_entries(prerelease_dir, expected_prerelease)
         except (OSError, ValueError) as exc:
-            logger.error("Error cleaning up APK prerelease directories: %s", exc)
+            logger.error("Error cleaning up Desktop prerelease directories: %s", exc)
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
-        Get the latest Android release tag recorded in the downloader's tracking file.
+        Get the latest Desktop release tag recorded in the downloader's tracking file.
 
         Returns:
             The tracked release tag string (value of "latest_version") if present, `None` otherwise.
@@ -1141,7 +1144,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def update_latest_release_tag(self, release_tag: str) -> bool:
         """
-        Record the given release tag as the latest Android release in the tracking file.
+        Record the given release tag as the latest Desktop release in the tracking file.
 
         Returns:
             `True` if the tracking file was written successfully, `False` otherwise.
@@ -1149,7 +1152,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         latest_file = self.latest_release_path
         data = {
             "latest_version": release_tag,
-            "file_type": "android",
+            "file_type": "desktop",
             "last_updated": self._get_current_iso_timestamp(),
         }
         return self.cache_manager.atomic_write_json(latest_file, data)
@@ -1169,9 +1172,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         recent_commits: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Release]:
         """
-        Selects and returns Android prerelease releases that should be considered for download.
+        Selects and returns Desktop prerelease releases that should be considered for download.
 
-        Filters the provided releases according to the downloader's prerelease configuration: honors the CHECK_APK_PRERELEASES/CHECK_PRERELEASES flag, applies include/exclude tag patterns, restricts to prereleases that match the expected base version derived from the latest stable release, and optionally narrows results to tags containing short commit SHAs from recent_commits.
+        Filters the provided releases according to the downloader's prerelease configuration: honors the CHECK_DESKTOP_PRERELEASES/CHECK_PRERELEASES flag, applies include/exclude tag patterns, restricts to prereleases that match the expected base version derived from the latest stable release, and optionally narrows results to tags containing short commit SHAs from recent_commits.
 
         Parameters:
             releases (List[Release]): All releases to evaluate; prerelease candidates are selected from this list.
@@ -1181,8 +1184,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             List[Release]: Prerelease Release objects that match configured patterns, expected base version, and (when applicable) recent commit hashes.
         """
         # Check if prereleases are enabled in config
-        check_prereleases = self.config.get(
-            "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        check_prereleases = coerce_bool(
+            self.config.get(
+                "CHECK_DESKTOP_PRERELEASES",
+                self.config.get("CHECK_PRERELEASES", False),
+            )
         )
 
         if not check_prereleases:
@@ -1191,14 +1197,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         version_manager = self.version_manager
 
         # Filter prereleases
-        prereleases = [r for r in releases if r.prerelease]
+        prereleases = [r for r in releases if self._is_desktop_prerelease(r)]
 
         # Sort by published date (newest first)
         prereleases.sort(key=lambda r: r.published_at or "", reverse=True)
 
         # Apply pattern filtering if configured
-        include_patterns = self.config.get("APK_PRERELEASE_INCLUDE_PATTERNS", [])
-        exclude_patterns = self.config.get("APK_PRERELEASE_EXCLUDE_PATTERNS", [])
+        include_patterns = self.config.get("DESKTOP_PRERELEASE_INCLUDE_PATTERNS", [])
+        exclude_patterns = self.config.get("DESKTOP_PRERELEASE_EXCLUDE_PATTERNS", [])
 
         if include_patterns or exclude_patterns:
             prerelease_tags = [r.tag_name for r in prereleases]
@@ -1209,7 +1215,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         # Restrict to prereleases matching expected base version of latest stable
         expected_base = None
-        latest_release = next((r for r in releases if not r.prerelease), None)
+        latest_release = max(
+            (r for r in releases if not self._is_desktop_prerelease(r)),
+            key=lambda release: release.published_at or "",
+            default=None,
+        )
         if latest_release:
             expected_base = version_manager.calculate_expected_prerelease_version(
                 latest_release.tag_name
@@ -1248,7 +1258,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self, releases: Optional[List[Release]] = None
     ) -> Optional[str]:
         """
-        Return the newest APK prerelease tag, filtering out prereleases that are obsolete compared to the latest stable release.
+        Return the newest Desktop prerelease tag, filtering out prereleases that are obsolete compared to the latest stable release.
 
         Parameters:
             releases (Optional[List[Release]]): Optional release list to inspect; when omitted, releases are fetched from GitHub.
@@ -1266,7 +1276,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             reverse=True,
         )
         latest_stable = next(
-            (release for release in sorted_releases if not release.prerelease), None
+            (
+                release
+                for release in sorted_releases
+                if not self._is_desktop_prerelease(release)
+            ),
+            None,
         )
         latest_stable_tuple = (
             self.version_manager.get_release_tuple(latest_stable.tag_name)
@@ -1275,7 +1290,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         )
 
         for release in sorted_releases:
-            if not release.prerelease:
+            if not self._is_desktop_prerelease(release):
                 continue
             prerelease_tuple = self.version_manager.get_release_tuple(release.tag_name)
             if (
@@ -1289,7 +1304,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_prerelease_tracking_file(self) -> str:
         """
-        Get the filesystem path to the Android prerelease tracking JSON file.
+        Get the filesystem path to the Desktop prerelease tracking JSON file.
 
         Returns:
             str: Path to prerelease tracking JSON file within the cache manager's directory.
@@ -1298,7 +1313,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """
-        Record the prerelease tag and extracted prerelease metadata to the Android prerelease tracking JSON file.
+        Record the prerelease tag and extracted prerelease metadata to the Desktop prerelease tracking JSON file.
 
         Parameters:
             prerelease_tag (str): Prerelease tag to record (e.g., "v1.2.3-open-1"); used to extract base version, prerelease type/number, and commit hash.
@@ -1316,7 +1331,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         # Create tracking data with enhanced metadata
         data = {
             "latest_version": prerelease_tag,
-            "file_type": FILE_TYPE_ANDROID_PRERELEASE,
+            "file_type": FILE_TYPE_DESKTOP_PRERELEASE,
             "last_updated": self._get_current_iso_timestamp(),
             "base_version": metadata.get("base_version", ""),
             "prerelease_type": metadata.get("prerelease_type", ""),
@@ -1330,9 +1345,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self, patterns: List[str], exclude_patterns: List[str]
     ) -> bool:
         """
-        Validate extraction patterns for Android APK files.
+        Validate extraction patterns for Desktop files.
 
-        Since APK files are not extracted in this downloader, this method
+        Since Desktop installer files are not extracted in this downloader, this method
         always returns False to indicate that extraction is not supported.
 
         Args:
@@ -1340,10 +1355,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             exclude_patterns: List of filename patterns to exclude
 
         Returns:
-            bool: False (extraction not supported for APK files)
+            bool: False (extraction not supported for Desktop files)
         """
-        # APK files are not extracted, so patterns are not applicable
-        logger.debug("Extraction validation called for Android APK - not applicable")
+        # Desktop installer files are not extracted, so patterns are not applicable
+        logger.debug("Extraction validation called for Desktop - not applicable")
         return False
 
     def check_extraction_needed(
@@ -1354,22 +1369,22 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         exclude_patterns: List[str],
     ) -> bool:
         """
-        Indicates whether the given APK file requires extraction (always false for APKs).
+        Indicates whether the given Desktop file requires extraction (always false for Desktop installers).
 
-        This downloader does not perform APK extraction; extraction is never needed or performed.
+        This downloader does not perform Desktop file extraction; extraction is never needed or performed.
 
         Returns:
-            `False` always — APK files are not extracted.
+            `False` always — Desktop installer files are not extracted.
         """
-        # APK files are not extracted, so extraction is never needed
-        logger.debug("Extraction need check called for Android APK - not applicable")
+        # Desktop installer files are not extracted, so extraction is never needed
+        logger.debug("Extraction need check called for Desktop - not applicable")
         return False
 
     def should_download_prerelease(self, prerelease_tag: str) -> bool:
         """
         Determine whether the provided prerelease tag should be downloaded based on configuration and existing prerelease tracking.
 
-        Checks the CHECK_APK_PRERELEASES / CHECK_PRERELEASES configuration and, if a valid prerelease tracking file exists, compares the given prerelease tag to the tracked prerelease to decide if it is newer.
+        Checks the CHECK_DESKTOP_PRERELEASES / CHECK_PRERELEASES configuration and, if a valid prerelease tracking file exists, compares the given prerelease tag to the tracked prerelease to decide if it is newer.
 
         Parameters:
             prerelease_tag (str): The prerelease tag or identifier to evaluate.
@@ -1378,8 +1393,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             `True` if prereleases are enabled and either no valid tracking entry exists or `prerelease_tag` is newer than the tracked prerelease, `False` otherwise.
         """
         # Check if prereleases are enabled in config
-        check_prereleases = self.config.get(
-            "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        check_prereleases = coerce_bool(
+            self.config.get(
+                "CHECK_DESKTOP_PRERELEASES",
+                self.config.get("CHECK_PRERELEASES", False),
+            )
         )
         if not check_prereleases:
             return False
@@ -1396,7 +1414,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_current_tracked_prerelease_tag(self) -> Optional[str]:
         """
-        Return the currently tracked Android prerelease tag from the tracking file.
+        Return the currently tracked Desktop prerelease tag from the tracking file.
 
         Returns:
             Optional[str]: The tracked prerelease tag, or `None` when not available.
@@ -1409,7 +1427,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             data = self.cache_manager.read_json(tracking_file) or {}
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             logger.debug(
-                "Error reading Android prerelease tracking file %s: %s",
+                "Error reading Desktop prerelease tracking file %s: %s",
                 tracking_file,
                 exc,
             )
@@ -1424,15 +1442,18 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self, cached_releases: Optional[List[Release]] = None
     ) -> None:
         """
-        Remove Android prerelease tracking files that are superseded or expired when prerelease handling is enabled.
+        Remove Desktop prerelease tracking files that are superseded or expired when prerelease handling is enabled.
 
         Scans for prerelease tracking directory for existing tracking JSON files, determines the currently relevant prereleases from remote releases, builds corresponding tracking entries, and delegates deletion of superseded or expired tracking files to the PrereleaseHistoryManager. No value is returned.
 
         Parameters:
             cached_releases (Optional[List[Release]]): Optional cached releases to avoid redundant API calls.
         """
-        check_prereleases = self.config.get(
-            "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        check_prereleases = coerce_bool(
+            self.config.get(
+                "CHECK_DESKTOP_PRERELEASES",
+                self.config.get("CHECK_PRERELEASES", False),
+            )
         )
         if not check_prereleases:
             return
@@ -1509,49 +1530,65 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         )
 
 
-def _is_apk_prerelease_by_name(tag_name: str) -> bool:
+def _is_desktop_prerelease_by_name(tag_name: str) -> bool:
     """
-    Check if a tag name indicates an APK prerelease.
+    Check if a tag name indicates a Desktop prerelease.
 
     Returns:
-        True if the tag contains "-open" or "-closed" (case-insensitive), False otherwise.
+        True if the tag contains "-open", "-closed", or "-internal" (case-insensitive), False otherwise.
     """
-    return is_android_prerelease_tag(tag_name)
+    return is_desktop_prerelease_tag(tag_name)
 
 
-MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
+MIN_DESKTOP_TRACKED_VERSION = (2, 7, 14)
+# TEMP(maint-331): remove this known transitional mismatch guard once upstream
+# 2.7.14 prerelease packaging stops emitting 1.0.0-named Desktop installers.
+DESKTOP_WIP_VERSION_MISMATCH_BASE_VERSION = (2, 7, 14)
+ASSET_VERSION_RX = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)")
 
 
-def _is_supported_android_release(
+def _extract_embedded_asset_version_tuple(
+    asset_name: str,
+) -> Optional[Tuple[int, int, int]]:
+    """
+    Extract the first semantic-like X.Y.Z version tuple from an installer filename.
+    """
+    match = ASSET_VERSION_RX.search(asset_name)
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def _is_supported_desktop_release(
     tag_name: str, version_manager: Optional[VersionManager] = None
 ) -> bool:
     """
-    Return True when the tag_name represents an Android release at or beyond the
-    version where the new tagging scheme began (2.7.0+).
+    Return True when the tag_name represents a Desktop release at or beyond the
+    version where Desktop builds began (2.7.14+).
 
-    Older prerelease tags (e.g., 2.6.x-open) should be ignored so they are not
+    Older prerelease tags should be ignored so they are not
     treated as current prereleases. Unparsable tags are allowed through to
     avoid blocking future formats.
     """
     manager = version_manager or VersionManager()
     return is_release_at_or_above_minimum(
         tag_name,
-        minimum_version=MIN_ANDROID_TRACKED_VERSION,
+        minimum_version=MIN_DESKTOP_TRACKED_VERSION,
         version_manager=manager,
     )
 
 
-def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
+def _is_desktop_prerelease(release: Dict[str, Any]) -> bool:
     """
-    Determine whether a GitHub release represents an Android APK prerelease.
+    Determine whether a GitHub release represents a Desktop prerelease.
 
     Parameters:
         release (dict): GitHub release payload (or partial dict) expected to include at least `tag_name` and/or `prerelease` keys.
 
     Returns:
-        bool: `True` if the release is identified as an APK prerelease (by legacy tag name patterns or the GitHub `prerelease` flag), `False` otherwise.
+        bool: `True` if the release is identified as a Desktop prerelease (by legacy tag name patterns or the GitHub `prerelease` flag), `False` otherwise.
     """
     return is_release_prerelease(
         release or {},
-        tag_prerelease_matcher=is_android_prerelease_tag,
+        tag_prerelease_matcher=is_desktop_prerelease_tag,
     )

@@ -8,6 +8,7 @@ separation of concerns and interface-driven design.
 Core Components:
 - interfaces: Base interfaces and protocols
 - android: Meshtastic Android app downloader
+- desktop: Meshtastic Desktop app downloader
 - firmware: Firmware release downloader
 - repository: Repository file downloader
 - orchestrator: Download pipeline coordination
@@ -32,6 +33,7 @@ from .base import BaseDownloader
 from .cache import CacheManager
 from .cli_integration import DownloadCLIIntegration
 from .config_utils import get_prerelease_patterns
+from .desktop import MeshtasticDesktopDownloader
 from .files import FileOperations
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import (
@@ -66,6 +68,7 @@ __all__ = [
     "download_with_progress",
     # Downloaders
     "MeshtasticAndroidAppDownloader",
+    "MeshtasticDesktopDownloader",
     "FirmwareReleaseDownloader",
     "RepositoryDownloader",
     # Orchestration

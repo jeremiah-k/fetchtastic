@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 import requests
 
-from fetchtastic.constants import APKS_DIR_NAME
+from fetchtastic.constants import ANDROID_DIR_NAME, APP_DIR_NAME
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
@@ -79,7 +79,11 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         expected_path = os.path.join(
-            android_downloader.download_dir, APKS_DIR_NAME, release_tag, file_name
+            android_downloader.download_dir,
+            APP_DIR_NAME,
+            ANDROID_DIR_NAME,
+            release_tag,
+            file_name,
         )
         assert target_path == expected_path
 
@@ -126,17 +130,15 @@ class TestMeshtasticAndroidAppDownloader:
         assert android_downloader.should_download_asset("readme.txt") is True
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
-    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.verify")
     @patch(
-        "fetchtastic.download.android.MeshtasticAndroidAppDownloader.is_asset_complete"
+        "fetchtastic.download.android.MeshtasticAndroidAppDownloader._is_asset_complete_for_target"
     )
     def test_download_apk_success(
-        self, mock_is_complete, mock_verify, mock_download, android_downloader
+        self, mock_is_complete, mock_download, android_downloader
     ):
         """Test successful APK download."""
-        mock_is_complete.return_value = False
+        mock_is_complete.side_effect = [False, True]
         mock_download.return_value = True
-        mock_verify.return_value = True
 
         release = Release(tag_name="v2.7.14", prerelease=False)
         asset = Asset(
@@ -152,12 +154,11 @@ class TestMeshtasticAndroidAppDownloader:
         assert result.file_type == "android"
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
-    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.verify")
     @patch(
-        "fetchtastic.download.android.MeshtasticAndroidAppDownloader.is_asset_complete"
+        "fetchtastic.download.android.MeshtasticAndroidAppDownloader._is_asset_complete_for_target"
     )
     def test_download_apk_method_exists(
-        self, mock_is_complete, mock_verify, mock_download, android_downloader
+        self, mock_is_complete, mock_download, android_downloader
     ):
         """Test that download_apk method exists and can be called."""
         release = Release(tag_name="v2.7.14", prerelease=False)
@@ -168,9 +169,8 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         # Method should exist and return a result
-        mock_is_complete.return_value = False
+        mock_is_complete.side_effect = [False, True]
         mock_download.return_value = True
-        mock_verify.return_value = True
         result = android_downloader.download_apk(release, asset)
         assert hasattr(result, "success")
         assert result.file_type == "android"
@@ -182,14 +182,14 @@ class TestMeshtasticAndroidAppDownloader:
         # Create multiple version directories
         versions = ["v2.7.10", "v2.7.11", "v2.7.12", "v2.7.13", "v2.7.14"]
         for version in versions:
-            version_dir = tmp_path / APKS_DIR_NAME / version
+            version_dir = tmp_path / APP_DIR_NAME / ANDROID_DIR_NAME / version
             version_dir.mkdir(parents=True)
 
         releases = [Release(tag_name=version, prerelease=False) for version in versions]
         android_downloader.cleanup_old_versions(keep_limit=2, cached_releases=releases)
 
         # Should keep 2 newest versions
-        remaining_dirs = list((tmp_path / APKS_DIR_NAME).iterdir())
+        remaining_dirs = list((tmp_path / APP_DIR_NAME / ANDROID_DIR_NAME).iterdir())
         assert len(remaining_dirs) == 2
 
         # Check that the newest versions are kept

@@ -147,6 +147,38 @@ def test_run_setup_handles_empty_partial_sections(mocker, capsys):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_run_setup_mixed_partial_sections_do_not_return_early(mocker):
+    """Mixed partial runs should still process non-download sections when downloads are disabled."""
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, None))
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("fetchtastic.setup_config._setup_base", return_value={})
+    mocker.patch(
+        "fetchtastic.setup_config._setup_downloads", return_value=({}, False, False)
+    )
+    mocker.patch(
+        "fetchtastic.setup_config._setup_automation",
+        side_effect=lambda config, *_: config,
+    )
+    mock_notifications = mocker.patch(
+        "fetchtastic.setup_config._setup_notifications",
+        side_effect=lambda config: {**config, "NOTIFY": True},
+    )
+    mocker.patch(
+        "fetchtastic.setup_config._setup_github", side_effect=lambda config: config
+    )
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.0.0")
+    mocker.patch("fetchtastic.setup_config.os.path.exists", return_value=True)
+    mocker.patch("builtins.open", mocker.mock_open())
+    mock_yaml_dump = mocker.patch("fetchtastic.setup_config.yaml.safe_dump")
+
+    setup_config.run_setup(sections=["desktop", "notifications"])
+
+    mock_notifications.assert_called_once()
+    mock_yaml_dump.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_run_setup_first_run_calls_download_cli_integration(mocker, tmp_path):
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)

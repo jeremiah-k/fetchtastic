@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import platformdirs
 
-from fetchtastic import log_utils, setup_config
+from fetchtastic import log_utils, setup_config, utils
 from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
@@ -219,6 +219,86 @@ def _perform_cache_clear(
     return success
 
 
+def _normalize_download_main_result(
+    raw_result: Any,
+) -> tuple[
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[str],
+    List[Dict[str, Any]],
+    str,
+    str,
+    str,
+]:
+    """
+    Normalize integration.main() output to a stable 13-item shape.
+
+    Accepts older/shorter tuple shapes from mocks or legacy code paths and pads
+    missing values with safe defaults.
+    """
+    defaults: list[Any] = [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        "",
+        "",
+        "",
+    ]
+    items = list(raw_result) if isinstance(raw_result, (tuple, list)) else []
+
+    # Legacy 9-item shape (pre-desktop fields) needs explicit remapping because
+    # desktop slots were inserted in the middle of the tuple contract.
+    if len(items) == 9:
+        defaults[0] = items[0]  # downloaded_firmwares
+        defaults[1] = items[1]  # new_firmware_versions
+        defaults[2] = items[2]  # downloaded_apks
+        defaults[3] = items[3]  # new_apk_versions
+        defaults[6] = items[4]  # downloaded_firmware_prereleases
+        defaults[7] = items[5]  # downloaded_apk_prereleases
+        defaults[9] = items[6]  # failed_downloads
+        defaults[10] = items[7]  # latest_firmware_version
+        defaults[11] = items[8]  # latest_apk_version
+    else:
+        for index, value in enumerate(items[: len(defaults)]):
+            defaults[index] = value
+
+    for index in range(10):
+        if not isinstance(defaults[index], list):
+            defaults[index] = []
+    for index in range(10, 13):
+        if not isinstance(defaults[index], str):
+            defaults[index] = ""
+
+    return (
+        defaults[0],
+        defaults[1],
+        defaults[2],
+        defaults[3],
+        defaults[4],
+        defaults[5],
+        defaults[6],
+        defaults[7],
+        defaults[8],
+        defaults[9],
+        defaults[10],
+        defaults[11],
+        defaults[12],
+    )
+
+
 def _handle_download_subcommand(
     args: argparse.Namespace,
     integration: download_cli_integration.DownloadCLIIntegration,
@@ -239,17 +319,26 @@ def _handle_download_subcommand(
         return
 
     start_time = time.time()
+    raw_result = integration.main(
+        config=config,
+        force_refresh=args.force_download,
+        include_desktop=True,
+    )
     (
         downloaded_firmwares,
         new_firmware_versions,
         downloaded_apks,
         new_apk_versions,
+        downloaded_desktop,
+        new_desktop_versions,
         downloaded_firmware_prereleases,
         downloaded_apk_prereleases,
+        downloaded_desktop_prereleases,
         failed_downloads,
         latest_firmware_version,
         latest_apk_version,
-    ) = integration.main(config=config, force_refresh=args.force_download)
+        latest_desktop_version,
+    ) = _normalize_download_main_result(raw_result)
 
     elapsed = time.time() - start_time
     integration.log_download_results_summary(
@@ -257,13 +346,17 @@ def _handle_download_subcommand(
         elapsed_seconds=elapsed,
         downloaded_firmwares=downloaded_firmwares,
         downloaded_apks=downloaded_apks,
+        downloaded_desktop=downloaded_desktop,
         downloaded_firmware_prereleases=downloaded_firmware_prereleases,
         downloaded_apk_prereleases=downloaded_apk_prereleases,
+        downloaded_desktop_prereleases=downloaded_desktop_prereleases,
         failed_downloads=failed_downloads,
         latest_firmware_version=latest_firmware_version,
         latest_apk_version=latest_apk_version,
+        latest_desktop_version=latest_desktop_version,
         new_firmware_versions=new_firmware_versions,
         new_apk_versions=new_apk_versions,
+        new_desktop_versions=new_desktop_versions,
     )
 
 
@@ -482,7 +575,7 @@ def main() -> None:
                 text_to_copy = full_url
 
             resp = setup_config._safe_input(copy_prompt_text, default="y")
-            if setup_config._coerce_bool(resp, default=True):
+            if utils.coerce_bool(resp, default=True):
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
@@ -677,7 +770,7 @@ def run_clean() -> None:
     confirm = setup_config._safe_input(
         "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
     )
-    if not setup_config._coerce_bool(confirm, default=False):
+    if not utils.coerce_bool(confirm, default=False):
         print("Clean operation cancelled.")
         return
 
@@ -900,7 +993,7 @@ def run_repo_clean(config: Dict[str, Any]) -> None:
     confirm = setup_config._safe_input(
         "Are you sure you want to proceed? [y/n] (default: no): ", default="n"
     )
-    confirmed = setup_config._coerce_bool(confirm, default=False)
+    confirmed = utils.coerce_bool(confirm, default=False)
     if not confirmed:
         print("Clean operation cancelled.")
         return

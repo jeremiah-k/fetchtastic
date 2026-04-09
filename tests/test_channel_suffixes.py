@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fetchtastic.constants import APKS_DIR_NAME
+from fetchtastic.constants import ANDROID_DIR_NAME, APP_DIR_NAME
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
@@ -204,8 +204,15 @@ class TestChannelSuffixes:
 
         notes_path = downloader.ensure_release_notes(release)
         assert notes_path is not None
-        assert "v1.0.0" in notes_path
-        assert (Path(config["DOWNLOAD_DIR"]) / APKS_DIR_NAME / "v1.0.0").exists()
+        notes_file = Path(notes_path)
+        expected_dir = (
+            Path(config["DOWNLOAD_DIR"]) / APP_DIR_NAME / ANDROID_DIR_NAME / "v1.0.0"
+        )
+        expected_file = expected_dir / "release_notes-v1.0.0.md"
+        assert notes_file == expected_file
+        assert notes_file.parent == expected_dir
+        assert notes_file.exists()
+        assert notes_file.read_text(encoding="utf-8") == "Alpha release notes"
 
     def test_revoked_alpha_channel_suffix(self, tmp_path):
         """Revoked alpha releases should produce v1.0.0-revoked (no -alpha suffix)."""

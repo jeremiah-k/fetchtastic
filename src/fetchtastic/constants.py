@@ -11,6 +11,8 @@ MESHTASTIC_ANDROID_RELEASES_URL = (
     f"{GITHUB_API_BASE}/meshtastic/Meshtastic-Android/releases"
 )
 MESHTASTIC_FIRMWARE_RELEASES_URL = f"{GITHUB_API_BASE}/meshtastic/firmware/releases"
+# Desktop assets are currently published in the Android releases feed.
+MESHTASTIC_DESKTOP_RELEASES_URL = MESHTASTIC_ANDROID_RELEASES_URL
 MESHTASTIC_GITHUB_IO_CONTENTS_URL = (
     f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/contents"
 )
@@ -36,13 +38,20 @@ WINDOWS_INITIAL_RETRY_DELAY = 1.0  # seconds
 REPO_DOWNLOADS_DIR = "repo-dls"
 FIRMWARE_PRERELEASES_DIR_NAME = "prerelease"
 APK_PRERELEASES_DIR_NAME = "prerelease"
+DESKTOP_PRERELEASES_DIR_NAME = "prerelease"
 FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
+APP_DIR_NAME = "app"
+ANDROID_DIR_NAME = "android"
+DESKTOP_DIR_NAME = "desktop"
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
 LATEST_ANDROID_PRERELEASE_JSON_FILE = "latest_android_prerelease.json"
 LATEST_FIRMWARE_PRERELEASE_JSON_FILE = "latest_firmware_prerelease.json"
 LATEST_FIRMWARE_RELEASE_JSON_FILE = "latest_firmware_release.json"
+LATEST_DESKTOP_RELEASE_JSON_FILE = "latest_desktop_release.json"
+LATEST_DESKTOP_PRERELEASE_JSON_FILE = "latest_desktop_prerelease.json"
+DESKTOP_RELEASE_HISTORY_JSON_FILE = "desktop_release_history.json"
 ANDROID_RELEASE_HISTORY_JSON_FILE = "android_release_history.json"
 FIRMWARE_RELEASE_HISTORY_JSON_FILE = "firmware_release_history.json"
 PRERELEASE_TRACKING_JSON_FILE = "prerelease_tracking.json"
@@ -66,6 +75,8 @@ DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
 DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
 DEFAULT_KEEP_LAST_BETA = False
 DEFAULT_CHECK_APK_PRERELEASES = True
+DEFAULT_CHECK_DESKTOP_PRERELEASES = True
+DEFAULT_DESKTOP_VERSIONS_TO_KEEP = 2
 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES = True
 DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS = True
 DEFAULT_FILTER_REVOKED_RELEASES = True
@@ -96,6 +107,7 @@ MANAGED_DIRECTORIES = (
     REPO_DOWNLOADS_DIR,
     FIRMWARE_DIR_NAME,
     APKS_DIR_NAME,
+    APP_DIR_NAME,
 )
 
 # Default configuration values
@@ -103,8 +115,10 @@ MANAGED_DIRECTORIES = (
 
 # File extensions and patterns
 APK_EXTENSION = ".apk"
+DESKTOP_EXTENSIONS = (".dmg", ".msi", ".exe", ".deb", ".rpm", ".appimage")
 ZIP_EXTENSION = ".zip"
 SHELL_SCRIPT_EXTENSION = ".sh"
+FIRMWARE_MANIFEST_EXTENSION = ".mt.json"
 
 # Clean operation messages
 MSG_REMOVED_MANAGED_DIR = "Removed managed directory: {path}"
@@ -206,6 +220,9 @@ FILE_TYPE_ANDROID_PRERELEASE = "android_prerelease"
 FILE_TYPE_FIRMWARE = "firmware"
 FILE_TYPE_FIRMWARE_PRERELEASE = "firmware_prerelease"
 FILE_TYPE_FIRMWARE_PRERELEASE_REPO = "firmware_prerelease_repo"
+FILE_TYPE_FIRMWARE_MANIFEST = "firmware_manifest"
+FILE_TYPE_DESKTOP = "desktop"
+FILE_TYPE_DESKTOP_PRERELEASE = "desktop_prerelease"
 FILE_TYPE_REPOSITORY = "repository"
 FILE_TYPE_UNKNOWN = "unknown"
 
@@ -222,8 +239,22 @@ FIRMWARE_FILE_TYPES = {
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+    FILE_TYPE_FIRMWARE_MANIFEST,
 }
 ANDROID_FILE_TYPES = {
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
 }
+DESKTOP_FILE_TYPES = {
+    FILE_TYPE_DESKTOP,
+    FILE_TYPE_DESKTOP_PRERELEASE,
+}
+
+ANDROID_ARCHITECTURES = {
+    "arm64": "arm64-v8a",
+    "armv7": "armeabi-v7a",
+    "x86_64": "x86_64",
+    "universal": "universal",
+}
+
+DEFAULT_ARCH_PREFERENCE = "universal"

@@ -27,9 +27,11 @@ from fetchtastic.constants import (
     ERROR_TYPE_VALIDATION,
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_MANIFEST,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
+    FIRMWARE_MANIFEST_EXTENSION,
     FIRMWARE_PRERELEASES_DIR_NAME,
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
@@ -53,7 +55,7 @@ from .base import BaseDownloader
 from .cache import CacheManager
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .github_source import GithubReleaseSource, create_release_from_github_data
-from .interfaces import Asset, DownloadResult, Release
+from .interfaces import Asset, DownloadResult, FirmwareManifest, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
@@ -622,6 +624,380 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 is_retryable=is_retryable,
                 error_type=error_type,
             )
+
+    def _is_release_manifest_name(self, asset_name: str) -> bool:
+        """
+        Determine whether an asset name is the release-level firmware manifest JSON.
+
+        Examples of accepted names include `firmware-2.7.20.6658ec2.json`.
+        Per-device manifests (`*.mt.json`) are excluded by this helper.
+        """
+        asset_name_lower = asset_name.lower()
+        return (
+            asset_name_lower.startswith(FIRMWARE_DIR_PREFIX)
+            and asset_name_lower.endswith(".json")
+            and not asset_name_lower.endswith(FIRMWARE_MANIFEST_EXTENSION)
+        )
+
+    def _is_manifest_asset_name(self, asset_name: str) -> bool:
+        """
+        Return True when an asset is either a per-device (`.mt.json`) or release-level JSON manifest.
+        """
+        asset_name_lower = asset_name.lower()
+        return asset_name_lower.endswith(
+            FIRMWARE_MANIFEST_EXTENSION
+        ) or self._is_release_manifest_name(asset_name_lower)
+
+    def download_manifests(self, release: Release) -> List[DownloadResult]:
+        """
+        Download firmware manifest files for a firmware release.
+
+        This includes:
+        - Per-device manifests (`*.mt.json`) with hardware/file metadata.
+        - Release-level manifests (`firmware-<version>.json`) with target lists.
+
+        Parameters:
+            release (Release): Release whose manifest files should be downloaded.
+
+        Returns:
+            List[DownloadResult]: List of download results for each manifest file.
+        """
+        results: List[DownloadResult] = []
+
+        if self._filter_revoked_releases and self.is_release_revoked(release):
+            logger.info(
+                "Skipping revoked firmware manifests for %s because revoked filtering is enabled.",
+                release.tag_name,
+            )
+            return results
+
+        try:
+            storage_tag = self._get_release_storage_tag(release)
+        except ValueError:
+            logger.warning(
+                "Skipping manifests for unsafe firmware tag: %s", release.tag_name
+            )
+            return results
+
+        for asset in release.assets:
+            if not asset.name or not self._is_manifest_asset_name(asset.name):
+                continue
+            is_device_manifest = asset.name.lower().endswith(
+                FIRMWARE_MANIFEST_EXTENSION
+            )
+
+            try:
+                target_path = self.get_target_path_for_release(storage_tag, asset.name)
+            except ValueError as exc:
+                logger.warning(
+                    "Skipping manifest with unsafe name %s: %s", asset.name, exc
+                )
+                results.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=release.tag_name,
+                        file_path=os.path.join(
+                            self.download_dir, FIRMWARE_DIR_NAME, storage_tag
+                        ),
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
+                        is_retryable=False,
+                        error_type=ERROR_TYPE_VALIDATION,
+                    )
+                )
+                continue
+
+            if os.path.exists(target_path):
+                try:
+                    with open(target_path, "r", encoding="utf-8") as f:
+                        manifest_data = json.load(f)
+                    if (
+                        is_device_manifest
+                        and self._parse_manifest_data(manifest_data) is None
+                    ):
+                        raise ValueError("Manifest schema is invalid")
+                    size_matches = asset.size is None or (
+                        os.path.getsize(target_path) == asset.size
+                    )
+                    if size_matches and self.verify(target_path):
+                        logger.debug(
+                            "Manifest %s already exists and is valid", asset.name
+                        )
+                        results.append(
+                            self.create_download_result(
+                                success=True,
+                                release_tag=release.tag_name,
+                                file_path=target_path,
+                                download_url=asset.download_url,
+                                file_size=asset.size,
+                                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                was_skipped=True,
+                            )
+                        )
+                        continue
+                except (json.JSONDecodeError, IOError, OSError, ValueError):
+                    pass
+
+            try:
+                success = self.download(asset.download_url, target_path)
+                if success:
+                    if self.verify(target_path):
+                        try:
+                            with open(target_path, "r", encoding="utf-8") as f:
+                                manifest_data = json.load(f)
+                            if (
+                                is_device_manifest
+                                and self._parse_manifest_data(manifest_data) is None
+                            ):
+                                raise ValueError("Manifest schema is invalid")
+                        except (json.JSONDecodeError, ValueError):
+                            logger.error("Malformed manifest %s", asset.name)
+                            self.cleanup_file(target_path)
+                            results.append(
+                                self.create_download_result(
+                                    success=False,
+                                    release_tag=release.tag_name,
+                                    file_path=target_path,
+                                    error_message="Manifest JSON is invalid",
+                                    download_url=asset.download_url,
+                                    file_size=asset.size,
+                                    file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                    is_retryable=True,
+                                    error_type=ERROR_TYPE_VALIDATION,
+                                )
+                            )
+                            continue
+                        except OSError as exc:
+                            logger.exception(
+                                "Error reading manifest %s at %s: %s",
+                                asset.name,
+                                target_path,
+                                exc,
+                            )
+                            self.cleanup_file(target_path)
+                            results.append(
+                                self.create_download_result(
+                                    success=False,
+                                    release_tag=release.tag_name,
+                                    file_path=target_path,
+                                    error_message=str(exc),
+                                    download_url=asset.download_url,
+                                    file_size=asset.size,
+                                    file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                    is_retryable=False,
+                                    error_type=ERROR_TYPE_FILESYSTEM,
+                                )
+                            )
+                            continue
+                        logger.info("Downloaded manifest %s", asset.name)
+                        results.append(
+                            self.create_download_result(
+                                success=True,
+                                release_tag=release.tag_name,
+                                file_path=target_path,
+                                download_url=asset.download_url,
+                                file_size=asset.size,
+                                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                            )
+                        )
+                    else:
+                        logger.error("Verification failed for manifest %s", asset.name)
+                        self.cleanup_file(target_path)
+                        results.append(
+                            self.create_download_result(
+                                success=False,
+                                release_tag=release.tag_name,
+                                file_path=target_path,
+                                error_message="Verification failed",
+                                download_url=asset.download_url,
+                                file_size=asset.size,
+                                file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                                is_retryable=True,
+                                error_type=ERROR_TYPE_VALIDATION,
+                            )
+                        )
+                else:
+                    logger.error("Download failed for manifest %s", asset.name)
+                    results.append(
+                        self.create_download_result(
+                            success=False,
+                            release_tag=release.tag_name,
+                            file_path=target_path,
+                            error_message="download(...) returned False",
+                            download_url=asset.download_url,
+                            file_size=asset.size,
+                            file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                            is_retryable=True,
+                            error_type=ERROR_TYPE_NETWORK,
+                        )
+                    )
+            except requests.RequestException as exc:
+                logger.exception("Error downloading manifest %s: %s", asset.name, exc)
+                self.cleanup_file(target_path)
+                results.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=release.tag_name,
+                        file_path=target_path,
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
+                        is_retryable=True,
+                        error_type=ERROR_TYPE_NETWORK,
+                    )
+                )
+            except OSError as exc:
+                logger.exception("Error downloading manifest %s: %s", asset.name, exc)
+                self.cleanup_file(target_path)
+                results.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=release.tag_name,
+                        file_path=target_path,
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
+                        is_retryable=False,
+                        error_type=ERROR_TYPE_FILESYSTEM,
+                    )
+                )
+            except ValueError as exc:
+                logger.exception(
+                    "Validation error for manifest %s: %s", asset.name, exc
+                )
+                self.cleanup_file(target_path)
+                results.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=release.tag_name,
+                        file_path=target_path,
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type=FILE_TYPE_FIRMWARE_MANIFEST,
+                        error_message=str(exc),
+                        is_retryable=False,
+                        error_type=ERROR_TYPE_VALIDATION,
+                    )
+                )
+
+        return results
+
+    def get_manifest_for_device(
+        self, release: Release, hwModelSlug: Optional[str] = None
+    ) -> Optional[FirmwareManifest]:
+        """
+        Get the firmware manifest for a specific device model.
+
+        Searches the release's manifest files for one matching the given
+        hardware model slug and returns the parsed manifest data.
+
+        Parameters:
+            release (Release): Release to search for manifest.
+            hwModelSlug (Optional[str]): Hardware model slug to find
+                (e.g., 'T_DECK', 'T_BEAM'). If None, returns the first
+                available manifest.
+
+        Returns:
+            Optional[FirmwareManifest]: Parsed manifest data, or None if not found.
+        """
+        try:
+            storage_tag = self._get_release_storage_tag(release)
+        except ValueError:
+            return None
+
+        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
+
+        if not os.path.isdir(version_dir):
+            return None
+
+        for filename in sorted(os.listdir(version_dir)):
+            if not filename.lower().endswith(FIRMWARE_MANIFEST_EXTENSION):
+                continue
+
+            manifest_path = os.path.join(version_dir, filename)
+            try:
+                if not self.verify(manifest_path):
+                    logger.debug(
+                        "Skipping manifest that failed integrity verification: %s",
+                        manifest_path,
+                    )
+                    continue
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                manifest = self._parse_manifest_data(data)
+                if manifest is None:
+                    continue
+
+                if hwModelSlug is None:
+                    return manifest
+
+                if manifest.hwModelSlug == hwModelSlug:
+                    return manifest
+
+            except (json.JSONDecodeError, IOError, ValueError):
+                continue
+
+        return None
+
+    def _parse_manifest_data(self, data: Any) -> Optional[FirmwareManifest]:
+        """
+        Parse raw manifest JSON data into a FirmwareManifest dataclass.
+
+        Parameters:
+            data (Any): Raw JSON manifest data.
+
+        Returns:
+            Optional[FirmwareManifest]: Parsed manifest, or None if parsing fails.
+        """
+        if not isinstance(data, dict):
+            logger.debug(
+                "Manifest data is not a dict, got %s: %s", type(data).__name__, data
+            )
+            return None
+
+        try:
+            # Validate required fields before constructing FirmwareManifest
+            hw_model_slug = data.get("hwModelSlug")
+            if not isinstance(hw_model_slug, str) or not hw_model_slug:
+                logger.debug("Manifest missing valid hwModelSlug: %s", hw_model_slug)
+                return None
+
+            files = data.get("files", [])
+            if not isinstance(files, list):
+                logger.debug(
+                    "Manifest files field is not a list: %s", type(files).__name__
+                )
+                return None
+
+            part = data.get("part", [])
+            if not isinstance(part, list):
+                logger.debug(
+                    "Manifest part field is not a list: %s", type(part).__name__
+                )
+                return None
+
+            return FirmwareManifest(
+                version=data.get("version"),
+                hwModel=data.get("hwModel"),
+                hwModelSlug=hw_model_slug,
+                architecture=data.get("architecture"),
+                activelySupported=data.get("activelySupported"),
+                displayName=data.get("displayName"),
+                supportLevel=data.get("supportLevel"),
+                has_mui=data.get("has_mui"),
+                has_inkhud=data.get("has_inkhud"),
+                files=files,
+                part=part,
+                raw_data=data,
+            )
+        except (TypeError, ValueError) as exc:
+            logger.debug("Failed to parse manifest data: %s", exc)
+            return None
 
     def is_release_complete(self, release: Release) -> bool:
         """
@@ -1231,6 +1607,28 @@ class FirmwareReleaseDownloader(BaseDownloader):
             for pattern in patterns or []
         )
 
+    def _matches_prerelease_selection(
+        self, filename: str, selected_patterns: List[str]
+    ) -> bool:
+        """
+        Determine whether a prerelease filename should be selected by include patterns.
+
+        Selection rules:
+        - If no patterns are configured, all files are eligible.
+        - Files matching legacy prerelease extraction patterns are eligible.
+        - Release-level manifest JSON (`firmware-<version>.json`) is always eligible
+          so target metadata remains available even with narrow pattern filters.
+        """
+        if not selected_patterns:
+            return True
+
+        if matches_extract_patterns(
+            filename, selected_patterns, device_manager=self.device_manager
+        ):
+            return True
+
+        return self._is_release_manifest_name(filename)
+
     def _fetch_prerelease_directory_listing(
         self,
         prerelease_dir: str,
@@ -1308,9 +1706,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     "Skipping pre-release file %s (matched exclude pattern)", name
                 )
                 continue
-            if selected_patterns and not matches_extract_patterns(
-                name, selected_patterns, device_manager=self.device_manager
-            ):
+            if not self._matches_prerelease_selection(name, selected_patterns):
                 continue
             matching.append(item)
 

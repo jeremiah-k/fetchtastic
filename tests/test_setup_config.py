@@ -92,6 +92,128 @@ def test_coerce_bool(value, default, expected):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_migrate_desktop_asset_key_normalizes_non_list_values():
+    """SELECTED_DESKTOP_ASSETS should be normalized to a list when malformed."""
+    from fetchtastic.setup_config import _migrate_desktop_asset_key
+
+    config = {
+        "SELECTED_DESKTOP_ASSETS": "linux",
+        "SELECTED_DESKTOP_PLATFORMS": ["*.dmg"],
+    }
+
+    migrated = _migrate_desktop_asset_key(config)
+
+    assert migrated["SELECTED_DESKTOP_ASSETS"] == []
+    assert "SELECTED_DESKTOP_PLATFORMS" not in migrated
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_non_download_sections_skip_no_download_warning(capsys):
+    """Partial runs for non-download sections should not print download-selection warnings."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": False,
+    }
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config,
+        is_partial_run=True,
+        wants=lambda section: section == "notifications",
+    )
+    captured = capsys.readouterr()
+
+    assert "Please select at least one type of asset to download" not in captured.out
+    assert updated["SAVE_APKS"] is False
+    assert updated["SAVE_FIRMWARE"] is False
+    assert updated["SAVE_DESKTOP_APP"] is False
+    assert save_apks is False
+    assert save_firmware is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_mixed_sections_uses_continue_guidance(mocker, capsys):
+    """Mixed partial runs should use continue messaging instead of hard-stop rerun guidance."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": False,
+    }
+
+    mocker.patch("builtins.input", side_effect=["n"])
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config,
+        is_partial_run=True,
+        wants=lambda section: section in {"android", "notifications"},
+    )
+    captured = capsys.readouterr()
+
+    assert "Please select at least one type of asset to download" in captured.out
+    assert (
+        "Continuing setup for non-download sections requested in this partial run."
+        in captured.out
+    )
+    assert (
+        "Run 'fetchtastic setup' again and select at least one asset."
+        not in captured.out
+    )
+    assert updated["SAVE_APKS"] is False
+    assert updated["SAVE_FIRMWARE"] is False
+    assert updated["SAVE_DESKTOP_APP"] is False
+    assert save_apks is False
+    assert save_firmware is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_desktop_no_selection_avoids_duplicate_message(mocker, capsys):
+    """Desktop no-selection flow should emit only the direct no-selection message."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": False,
+        "SAVE_FIRMWARE": False,
+        "SAVE_DESKTOP_APP": False,
+    }
+
+    mocker.patch("builtins.input", side_effect=["d"])
+    mocker.patch(
+        "fetchtastic.setup_config.menu_desktop.run_menu",
+        return_value={"selected_assets": []},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config,
+        is_partial_run=False,
+        wants=lambda section: True,
+    )
+    captured = capsys.readouterr()
+
+    assert (
+        captured.out.count(
+            "No desktop assets selected. Desktop clients will not be downloaded."
+        )
+        == 1
+    )
+    assert (
+        "No existing desktop selection found. Desktop clients will not be downloaded."
+        not in captured.out
+    )
+    assert updated["SAVE_DESKTOP_APP"] is False
+    assert updated["CHECK_DESKTOP_PRERELEASES"] is False
+    assert save_apks is False
+    assert save_firmware is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_partial_skips_firmware_menu(mocker):
     """Partial runs should respect "keep existing" and skip the firmware menu."""
     from fetchtastic.setup_config import _setup_downloads
@@ -256,6 +378,71 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
     assert save_firmware is False
     assert updated["SELECTED_APK_ASSETS"] == ["meshtastic-debug.apk"]
     mock_menu.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_keeps_existing_apk_patterns_with_fdroid_compat(
+    mocker,
+):
+    """Keeping existing APK patterns should auto-expand legacy/split F-Droid compatibility."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["app-fdroid-release.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "n", "n"],
+    )
+    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "android"
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-universal-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
+    mock_menu.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker):
+    """Selecting split F-Droid APKs should include legacy fallback pattern."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["existing.apk"],
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=["y", "y", "n"],
+    )
+    mocker.patch(
+        "fetchtastic.menu_apk.run_menu",
+        return_value={"selected_assets": ["app-fdroid-arm64-v8a-release.apk"]},
+    )
+
+    updated, save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "android"
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
 
 
 @pytest.mark.configuration
@@ -1794,12 +1981,13 @@ def test_section_shortcuts_mapping():
     assert SECTION_SHORTCUTS["b"] == "base"
     assert SECTION_SHORTCUTS["a"] == "android"
     assert SECTION_SHORTCUTS["f"] == "firmware"
+    assert SECTION_SHORTCUTS["d"] == "desktop"
     assert SECTION_SHORTCUTS["n"] == "notifications"
     assert SECTION_SHORTCUTS["m"] == "automation"
     assert SECTION_SHORTCUTS["g"] == "github"
 
     # Test that all expected shortcuts exist
-    expected_shortcuts = {"b", "a", "f", "n", "m", "g"}
+    expected_shortcuts = {"b", "a", "f", "d", "n", "m", "g"}
     assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
 
 
@@ -1813,6 +2001,7 @@ def test_setup_section_choices():
         "base",
         "android",
         "firmware",
+        "desktop",
         "notifications",
         "automation",
         "github",
@@ -1842,6 +2031,18 @@ def test_prompt_for_setup_sections_shortcuts(mock_input):
     mock_input.return_value = "f, a"
     result = _prompt_for_setup_sections()
     assert result == {"firmware", "android"}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_desktop_shortcut(mock_input):
+    """Test _prompt_for_setup_sections accepts desktop shortcut."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "d"
+    result = _prompt_for_setup_sections()
+    assert result == {"desktop"}
 
 
 @pytest.mark.configuration
