@@ -4,7 +4,7 @@ pick==2.6.0
 PyYAML==6.0.3
 urllib3==2.6.3
 packaging==26.0
-platformdirs==4.9.4
+platformdirs==4.9.6
 rich==14.3.3
 
 # Async support for parallel downloads
