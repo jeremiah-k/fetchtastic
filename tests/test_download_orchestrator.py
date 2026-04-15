@@ -3265,7 +3265,7 @@ class TestDownloadOrchestrator:
         assert call_tag != "v2.7.16.9058cce"
 
     def test_no_official_stable_firmware_skips_repo_prerelease(self, orchestrator):
-        """When all releases are hash-suffixed, repo-prerelease download and cleanup must be skipped."""
+        """With 0.10.4 behavior, the latest release by version (even hash-suffixed) is used as baseline."""
         from fetchtastic.download.version import VersionManager
 
         orchestrator.config["SAVE_FIRMWARE"] = True
@@ -3277,16 +3277,26 @@ class TestDownloadOrchestrator:
 
         orchestrator.firmware_downloader.get_releases.return_value = [hash_a, hash_b]
         orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
 
         orchestrator._process_firmware_downloads()
 
-        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_not_called()
-        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_not_called()
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.16.9058cce", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.16.9058cce"
+        )
 
     def test_process_firmware_uses_official_baseline_with_mixed_releases(
         self, orchestrator
     ):
-        """Official stable must be chosen even when hash-suffixed and GH-prerelease releases are present."""
+        """Latest release by version is used as baseline regardless of hash suffix or prerelease flag."""
         from fetchtastic.download.version import VersionManager
 
         orchestrator.config["SAVE_FIRMWARE"] = True
@@ -3379,9 +3389,6 @@ class TestFirmwarePrereleaseBaselineRegression:
         )
 
         orch._ensure_firmware_releases = Mock(return_value=releases)
-
-        latest = orch._select_latest_release_by_version(releases)
-        orch._select_latest_official_firmware_release = Mock(return_value=latest)
 
         return orch
 

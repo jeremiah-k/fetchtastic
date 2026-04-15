@@ -773,14 +773,6 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
-            stable_baseline_release = self._select_latest_official_firmware_release(
-                firmware_releases
-            )
-            if stable_baseline_release is None:
-                logger.info(
-                    "No official stable firmware release found; "
-                    "skipping repo-prerelease detection and cleanup"
-                )
             (
                 releases_for_processing,
                 firmware_releases,
@@ -827,14 +819,14 @@ class DownloadOrchestrator:
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
 
-            if stable_baseline_release:
+            if latest_release:
                 (
                     successes,
                     failures,
                     _active_dir,
                     prerelease_summary,
                 ) = self.firmware_downloader.download_repo_prerelease_firmware(
-                    stable_baseline_release.tag_name, force_refresh=False
+                    latest_release.tag_name, force_refresh=False
                 )
                 if prerelease_summary:
                     self.firmware_prerelease_summary = prerelease_summary
@@ -854,9 +846,9 @@ class DownloadOrchestrator:
 
             # Remove prerelease directories whose version is <= the latest
             # release to prevent accumulation of old prereleases.
-            if stable_baseline_release:
+            if latest_release:
                 self.firmware_downloader.cleanup_superseded_prereleases(
-                    stable_baseline_release.tag_name
+                    latest_release.tag_name
                 )
 
             # Clean up prerelease directory
@@ -937,42 +929,6 @@ class DownloadOrchestrator:
         return (
             best_release or best_revoked_release or (releases[0] if releases else None)
         )
-
-    def _select_latest_official_firmware_release(
-        self, releases: List[Release]
-    ) -> Optional[Release]:
-        """Select the latest official stable firmware release for prerelease baseline derivation.
-
-        Unlike ``_select_latest_release_by_version``, this method excludes
-        hash-suffixed firmware tags (e.g. ``v2.7.16.9058cce``) and
-        prerelease-style tags (rc/beta/dev).  Only plain official stable
-        release tags like ``v2.7.22`` are considered, ensuring that
-        repo-prerelease detection anchors to the correct version family.
-
-        Parameters:
-            releases (List[Release]): Firmware releases to evaluate.
-
-        Returns:
-            Optional[Release]: The latest official stable firmware release, or
-            ``None`` when no suitable release is found.
-        """
-        official_releases = []
-        for r in releases:
-            base_tag = r.tag_name.lstrip("vV")
-            if self.version_manager.is_prerelease_version(base_tag):
-                logger.debug(
-                    "Excluding non-official firmware release from baseline: %s",
-                    r.tag_name,
-                )
-                continue
-            if r.prerelease:
-                continue
-            official_releases.append(r)
-
-        if not official_releases:
-            return None
-
-        return self._select_latest_release_by_version(official_releases)
 
     def _download_android_release(self, release: Release) -> bool:
         """
