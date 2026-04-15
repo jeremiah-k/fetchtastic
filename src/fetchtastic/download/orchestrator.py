@@ -168,6 +168,7 @@ class DownloadOrchestrator:
         self.firmware_release_history: Optional[Dict[str, Any]] = None
         # Single-run only: cleared by log_firmware_release_history_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
+        self.wifi_skipped: bool = False
 
     def run_download_pipeline(
         self,
@@ -190,6 +191,7 @@ class DownloadOrchestrator:
         if is_termux() and self.config.get("WIFI_ONLY", False):
             if not is_connected_to_wifi():
                 logger.warning("Not connected to Wi-Fi. Skipping all downloads.")
+                self.wifi_skipped = True
                 return [], []
 
         cleanup_legacy_hash_sidecars(self.config.get("DOWNLOAD_DIR", ""))

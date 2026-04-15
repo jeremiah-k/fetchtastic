@@ -32,6 +32,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
     send_download_completion_notification,
+    send_new_releases_available_notification,
     send_up_to_date_notification,
 )
 from fetchtastic.utils import (
@@ -497,6 +498,13 @@ class DownloadCLIIntegration:
                     downloaded_apk_prereleases,
                     downloaded_desktop,
                     downloaded_desktop_prereleases,
+                )
+            elif self.orchestrator and self.orchestrator.wifi_skipped:
+                send_new_releases_available_notification(
+                    self.config,
+                    new_firmware_versions or [],
+                    new_apk_versions or [],
+                    downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
                 )
             elif not failed_downloads and not new_versions_available:
                 send_up_to_date_notification(self.config)

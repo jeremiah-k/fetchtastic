@@ -20,6 +20,7 @@ def integration(mocker):
     )
     mocker.patch("fetchtastic.download.cli_integration.time", wraps=time)
     integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.wifi_skipped = False
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.8.0",
         "android": "v1.8.0",
