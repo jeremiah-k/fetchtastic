@@ -748,6 +748,13 @@ class DownloadOrchestrator:
             if not any_firmware_downloaded and not releases_to_download:
                 logger.info("All Firmware assets are up to date.")
 
+            # Remove prerelease directories whose version is <= the latest
+            # stable release to prevent accumulation of old prereleases.
+            if latest_release:
+                self.firmware_downloader.cleanup_superseded_prereleases(
+                    latest_release.tag_name
+                )
+
             # Clean up prerelease directory
             prerelease_dir = (
                 Path(self.firmware_downloader.download_dir)

@@ -18,3 +18,7 @@ coverage.xml
 htmlcov/
 junit.xml
 build/
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
