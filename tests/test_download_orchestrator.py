@@ -2322,6 +2322,7 @@ class TestDownloadOrchestrator:
     def test_process_firmware_downloads_with_prerelease_success(self, orchestrator):
         """Test firmware processing when prerelease download succeeds."""
         orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager.is_prerelease_version.return_value = False
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
         mock_release.prerelease = False
@@ -2355,6 +2356,7 @@ class TestDownloadOrchestrator:
     def test_process_firmware_downloads_with_prerelease_failure(self, orchestrator):
         """Test firmware processing when prerelease download has failures."""
         orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager.is_prerelease_version.return_value = False
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
         mock_release.prerelease = False
@@ -2831,6 +2833,7 @@ class TestDownloadOrchestrator:
     def test_process_firmware_prerelease_skipped_no_any_firmware(self, orchestrator):
         """Test firmware prerelease handling when skipped (line 621->623)."""
         orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager.is_prerelease_version.return_value = False
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
         mock_release.prerelease = False
@@ -2860,6 +2863,7 @@ class TestDownloadOrchestrator:
     ):
         """Repo prerelease download and cleanup should use the latest stable release tag."""
         orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager.is_prerelease_version.return_value = False
         stable = Release(tag_name="v2.7.15", prerelease=False, assets=[])
         gh_prerelease = Release(tag_name="v2.7.16.a597230", prerelease=True, assets=[])
 
@@ -3220,3 +3224,211 @@ class TestDownloadOrchestrator:
         assert result == ([], [])
         assert orchestrator.available_new_firmware_versions == []
         assert "v2.7.10" in orchestrator.available_new_apk_versions
+
+    def test_process_firmware_excludes_hash_suffixed_from_baseline(self, orchestrator):
+        """Hash-suffixed releases must be excluded from the stable baseline selection."""
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        official_stable = Release(tag_name="v2.7.22", prerelease=False, assets=[])
+        hash_suffixed = Release(tag_name="v2.7.16.9058cce", prerelease=False, assets=[])
+
+        real_vm = VersionManager()
+        orchestrator.version_manager = real_vm
+
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            hash_suffixed,
+            official_stable,
+        ]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.22", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.22"
+        )
+        call_tag = orchestrator.firmware_downloader.download_repo_prerelease_firmware.call_args[
+            0
+        ][
+            0
+        ]
+        assert call_tag == "v2.7.22"
+        assert call_tag != "v2.7.16.9058cce"
+
+    def test_no_official_stable_firmware_skips_repo_prerelease(self, orchestrator):
+        """When all releases are hash-suffixed, repo-prerelease download and cleanup must be skipped."""
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        hash_a = Release(tag_name="v2.7.16.9058cce", prerelease=False, assets=[])
+        hash_b = Release(tag_name="v2.7.14.abcdef12", prerelease=False, assets=[])
+
+        real_vm = VersionManager()
+        orchestrator.version_manager = real_vm
+
+        orchestrator.firmware_downloader.get_releases.return_value = [hash_a, hash_b]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_not_called()
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_not_called()
+
+    def test_process_firmware_uses_official_baseline_with_mixed_releases(
+        self, orchestrator
+    ):
+        """Official stable must be chosen even when hash-suffixed and GH-prerelease releases are present."""
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        official_stable = Release(tag_name="v2.7.22", prerelease=False, assets=[])
+        hash_suffixed_stable = Release(
+            tag_name="v2.7.21.abcdef12", prerelease=False, assets=[]
+        )
+        hash_suffixed_pre = Release(
+            tag_name="v2.7.20.1234567", prerelease=True, assets=[]
+        )
+
+        real_vm = VersionManager()
+        orchestrator.version_manager = real_vm
+
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            hash_suffixed_pre,
+            hash_suffixed_stable,
+            official_stable,
+        ]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.22", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.22"
+        )
+
+
+class TestFirmwarePrereleaseBaselineRegression:
+    """Regression tests for the repo-prerelease baseline selection fix.
+
+    Verifies that the orchestrator selects the latest release by version
+    (not filtered by the GitHub prerelease flag) as the baseline for
+    repo-prerelease download and superseded prerelease cleanup.
+    """
+
+    @staticmethod
+    def _make_releases():
+        return [
+            Release(tag_name="v2.7.22.96dd647", prerelease=True, assets=[]),
+            Release(tag_name="v2.7.21.1370b23", prerelease=True, assets=[]),
+            Release(tag_name="v2.7.20.6658ec2", prerelease=True, assets=[]),
+            Release(tag_name="v2.7.15.567b8ea", prerelease=False, assets=[]),
+        ]
+
+    def _setup_orchestrator(self, tmp_path):
+        from fetchtastic.download.version import VersionManager
+
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": True,
+            "SELECTED_FIRMWARE_ASSETS": [],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+        releases = self._make_releases()
+
+        orch.version_manager = VersionManager()
+
+        orch.firmware_downloader.download_dir = str(tmp_path)
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+        orch.firmware_downloader.cleanup_superseded_prereleases = Mock(
+            return_value=False
+        )
+        orch.firmware_downloader.update_release_history = Mock(return_value={})
+        orch.firmware_downloader.ensure_release_notes = Mock()
+        orch.firmware_downloader.format_release_log_suffix = Mock(return_value="")
+
+        def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_kw):
+            return initial_releases, initial_releases, current_fetch_limit
+
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            side_effect=_collect_non_revoked
+        )
+
+        orch._ensure_firmware_releases = Mock(return_value=releases)
+
+        latest = orch._select_latest_release_by_version(releases)
+        orch._select_latest_official_firmware_release = Mock(return_value=latest)
+
+        return orch
+
+    def test_repo_prerelease_uses_latest_by_version_not_latest_non_prerelease(
+        self, tmp_path
+    ):
+        """Test A: download_repo_prerelease_firmware must receive the latest
+        version (v2.7.22.96dd647), NOT the latest non-prerelease
+        (v2.7.15.567b8ea)."""
+        orch = self._setup_orchestrator(tmp_path)
+
+        orch._process_firmware_downloads()
+
+        orch.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.22.96dd647", force_refresh=False
+        )
+        orch.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.22.96dd647"
+        )
+
+    def test_repo_prerelease_does_not_use_latest_non_prerelease(self, tmp_path):
+        """Test A (negative): baseline must NOT be the latest non-prerelease tag."""
+        orch = self._setup_orchestrator(tmp_path)
+
+        orch._process_firmware_downloads()
+
+        download_tag = (
+            orch.firmware_downloader.download_repo_prerelease_firmware.call_args[0][0]
+        )
+        cleanup_tag = orch.firmware_downloader.cleanup_superseded_prereleases.call_args[
+            0
+        ][0]
+
+        assert download_tag != "v2.7.15.567b8ea"
+        assert cleanup_tag != "v2.7.15.567b8ea"
+
+    def test_cross_path_consistency_download_and_cleanup_share_tag(self, tmp_path):
+        """Test C: repo-prerelease download and cleanup must agree on the same tag."""
+        orch = self._setup_orchestrator(tmp_path)
+
+        orch._process_firmware_downloads()
+
+        download_tag = (
+            orch.firmware_downloader.download_repo_prerelease_firmware.call_args[0][0]
+        )
+        cleanup_tag = orch.firmware_downloader.cleanup_superseded_prereleases.call_args[
+            0
+        ][0]
+
+        assert download_tag == cleanup_tag == "v2.7.22.96dd647"

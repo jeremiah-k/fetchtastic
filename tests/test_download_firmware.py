@@ -2995,3 +2995,106 @@ class TestFirmwareUncoveredBranches:
 
 
 # Backwards compatibility - ensure existing test class still works
+
+
+class TestFirmwarePrereleaseBaselineDerivation:
+    """Tests that firmware prerelease baseline derivation produces correct version families."""
+
+    def test_baseline_from_official_tag_derives_next_patch(self):
+        """calculate_expected_prerelease_version should derive 2.7.23 from v2.7.22."""
+        vm = VersionManager()
+        clean = vm.extract_clean_version("v2.7.22")
+        assert clean == "v2.7.22"
+        expected = vm.calculate_expected_prerelease_version(clean)
+        assert expected == "2.7.23"
+
+    def test_baseline_from_hash_suffixed_tag_still_clean(self):
+        """extract_clean_version should strip the hash suffix for baseline derivation."""
+        vm = VersionManager()
+        clean = vm.extract_clean_version("v2.7.16.9058cce")
+        assert clean == "v2.7.16"
+        expected = vm.calculate_expected_prerelease_version(clean)
+        assert expected == "2.7.17"
+
+    def test_baseline_derivation_consistent_with_official_release(self):
+        """When v2.7.22 is the official release, derived prerelease must be 2.7.23 not 2.7.17."""
+        vm = VersionManager()
+        official_clean = vm.extract_clean_version("v2.7.22")
+        official_expected = vm.calculate_expected_prerelease_version(official_clean)
+        hash_suffixed_clean = vm.extract_clean_version("v2.7.16.9058cce")
+        hash_suffixed_expected = vm.calculate_expected_prerelease_version(
+            hash_suffixed_clean
+        )
+        assert official_expected == "2.7.23"
+        assert hash_suffixed_expected == "2.7.17"
+        assert official_expected != hash_suffixed_expected
+
+    def test_expected_family_from_hash_suffixed_tag(self, downloader):
+        """download_repo_prerelease_firmware should compute expected_version 2.7.23 from v2.7.22.96dd647."""
+        active_dir = "firmware-2.7.23.abcdef1"
+        history_entries = [
+            {"identifier": "abcdef1", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            results, failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        assert summary is not None
+        assert summary["expected_version"] == "2.7.23"
+        assert summary["expected_version"] != "2.7.16"
+        assert summary["clean_latest_release"] == "v2.7.22"
+
+    def test_hash_suffixed_tag_baseline_tuple(self):
+        """get_release_tuple should derive (2, 7, 22) from 2.7.22.96dd647, not include the hash or use wrong baseline."""
+        vm = VersionManager()
+        release_tuple = vm.get_release_tuple("2.7.22.96dd647")
+        assert release_tuple is not None
+        assert release_tuple == (2, 7, 22)
+        assert len(release_tuple) == 3
+        assert release_tuple != (2, 7, 15)
+
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_superseded_prereleases_hash_suffixed_tag(
+        self, mock_rmtree, mock_scandir, downloader
+    ):
+        """cleanup_superseded_prereleases should use (2, 7, 22) as baseline from v2.7.22.96dd647."""
+        mock_prerelease_keep = Mock()
+        mock_prerelease_keep.name = "firmware-2.7.23.abcdef1"
+        mock_prerelease_keep.is_symlink.return_value = False
+        mock_prerelease_keep.is_dir.return_value = True
+        mock_prerelease_keep.path = "/mock/prerelease/firmware-2.7.23.abcdef1"
+
+        mock_prerelease_remove = Mock()
+        mock_prerelease_remove.name = "firmware-2.7.22.oldhash"
+        mock_prerelease_remove.is_symlink.return_value = False
+        mock_prerelease_remove.is_dir.return_value = True
+        mock_prerelease_remove.path = "/mock/prerelease/firmware-2.7.22.oldhash"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            mock_prerelease_keep,
+            mock_prerelease_remove,
+        ]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        result = downloader.cleanup_superseded_prereleases("v2.7.22.96dd647")
+
+        assert result is True
+        mock_rmtree.assert_called_once_with("/mock/prerelease/firmware-2.7.22.oldhash")
