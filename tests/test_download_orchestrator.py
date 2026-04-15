@@ -3093,20 +3093,22 @@ class TestDownloadOrchestrator:
         orchestrator.config["WIFI_ONLY"] = True
         orchestrator.config["KEEP_LAST_BETA"] = False
         orchestrator.config["FILTER_REVOKED_RELEASES"] = False
-        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 2
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 5
 
         pre1 = Release(tag_name="v2.7.22-beta.1", prerelease=True, assets=[])
         pre2 = Release(tag_name="v2.7.22-beta.2", prerelease=True, assets=[])
         stable1 = Release(tag_name="v2.7.21", prerelease=False, assets=[])
         stable2 = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        stable3 = Release(tag_name="v2.7.19", prerelease=False, assets=[])
 
         orchestrator.firmware_downloader.get_releases.return_value = [
             pre1,
             pre2,
             stable1,
             stable2,
+            stable3,
         ]
-        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.18"
         orchestrator.android_downloader.get_releases.return_value = []
 
         def _cmp_ver(v1, v2):
@@ -3133,6 +3135,8 @@ class TestDownloadOrchestrator:
 
         assert "v2.7.21" in orchestrator.available_new_firmware_versions
         assert "v2.7.20" in orchestrator.available_new_firmware_versions
+        assert "v2.7.19" in orchestrator.available_new_firmware_versions
+        assert "v2.7.22-beta.1" not in orchestrator.available_new_firmware_versions
 
     def test_apk_skip_discovery_no_underfetch_with_prereleases(self, orchestrator):
         """APK skip discovery should not under-fetch when prereleases are interleaved."""
