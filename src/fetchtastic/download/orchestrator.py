@@ -226,47 +226,89 @@ class DownloadOrchestrator:
         return self.download_results, self.failed_downloads
 
     def _discover_available_versions_when_wifi_skipped(self) -> None:
-        try:
-            if self.config.get("SAVE_FIRMWARE", False):
-                keep_limit = self._get_firmware_keep_limit()
-                firmware_releases = self._ensure_firmware_releases(limit=keep_limit)
-                stable_releases = [r for r in firmware_releases if not r.prerelease]
-                releases_in_window = stable_releases[:keep_limit]
-                tracked_tag = self.firmware_downloader.get_latest_release_tag()
-                new_versions: List[str] = []
-                for release in releases_in_window:
-                    if (
-                        tracked_tag is None
-                        or self.version_manager.compare_versions(
-                            release.tag_name, tracked_tag
-                        )
-                        > 0
-                    ):
-                        new_versions.append(release.tag_name)
-                self.available_new_firmware_versions = list(dict.fromkeys(new_versions))
+        self._discover_available_firmware_versions_when_wifi_skipped()
+        self._discover_available_apk_versions_when_wifi_skipped()
 
-            if self.config.get("SAVE_APKS", False):
-                keep_count = self.config.get(
-                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
-                )
-                android_releases = self._ensure_android_releases(limit=keep_count)
-                stable_releases = [r for r in android_releases if not r.prerelease]
-                releases_in_window = stable_releases[:keep_count]
-                tracked_tag = self.android_downloader.get_latest_release_tag()
-                new_versions = []
-                for release in releases_in_window:
-                    if (
-                        tracked_tag is None
-                        or self.version_manager.compare_versions(
-                            release.tag_name, tracked_tag
-                        )
-                        > 0
-                    ):
-                        new_versions.append(release.tag_name)
-                self.available_new_apk_versions = list(dict.fromkeys(new_versions))
+    def _discover_available_firmware_versions_when_wifi_skipped(self) -> None:
+        try:
+            if not self.config.get("SAVE_FIRMWARE", False):
+                return
+
+            keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+            keep_limit = self._get_firmware_keep_limit()
+            filter_revoked = self.config.get(
+                "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+            )
+            fetch_limit = (
+                max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
+            )
+            if filter_revoked and fetch_limit > 0:
+                fetch_limit += RELEASE_SCAN_COUNT
+            fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
+
+            firmware_releases = self._ensure_firmware_releases(limit=fetch_limit)
+            if not firmware_releases:
+                return
+
+            (
+                releases_for_processing,
+                firmware_releases,
+                fetch_limit,
+            ) = self.firmware_downloader.collect_non_revoked_releases(
+                initial_releases=firmware_releases,
+                target_count=keep_limit,
+                current_fetch_limit=fetch_limit,
+            )
+            self.firmware_releases = firmware_releases
+
+            stable_releases = [
+                r for r in releases_for_processing[:keep_limit] if not r.prerelease
+            ]
+            tracked_tag = self.firmware_downloader.get_latest_release_tag()
+            new_versions: List[str] = []
+            for release in stable_releases:
+                if (
+                    tracked_tag is None
+                    or self.version_manager.compare_versions(
+                        release.tag_name, tracked_tag
+                    )
+                    > 0
+                ):
+                    new_versions.append(release.tag_name)
+            self.available_new_firmware_versions = list(dict.fromkeys(new_versions))
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.debug(
-                "Error discovering available versions during Wi-Fi skip: %s",
+                "Error discovering available firmware versions during Wi-Fi skip: %s",
+                e,
+                exc_info=True,
+            )
+
+    def _discover_available_apk_versions_when_wifi_skipped(self) -> None:
+        try:
+            if not self.config.get("SAVE_APKS", False):
+                return
+
+            keep_count = self.config.get(
+                "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+            )
+            android_releases = self._ensure_android_releases()
+            stable_releases = [r for r in android_releases if not r.prerelease]
+            releases_in_window = stable_releases[:keep_count]
+            tracked_tag = self.android_downloader.get_latest_release_tag()
+            new_versions: List[str] = []
+            for release in releases_in_window:
+                if (
+                    tracked_tag is None
+                    or self.version_manager.compare_versions(
+                        release.tag_name, tracked_tag
+                    )
+                    > 0
+                ):
+                    new_versions.append(release.tag_name)
+            self.available_new_apk_versions = list(dict.fromkeys(new_versions))
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.debug(
+                "Error discovering available APK versions during Wi-Fi skip: %s",
                 e,
                 exc_info=True,
             )
