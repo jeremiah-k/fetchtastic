@@ -501,8 +501,8 @@ class DownloadCLIIntegration:
             elif self.orchestrator and self.orchestrator.wifi_skipped:
                 send_new_releases_available_notification(
                     self.config,
-                    new_firmware_versions or [],
-                    new_apk_versions or [],
+                    self.orchestrator.available_new_firmware_versions,
+                    self.orchestrator.available_new_apk_versions,
                     downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
                 )
             elif not failed_downloads and not new_versions_available:

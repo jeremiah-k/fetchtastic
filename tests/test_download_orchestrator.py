@@ -2897,3 +2897,138 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
             "v2.7.15"
         )
+
+    def test_discover_available_versions_populates_lists_when_wifi_skipped(
+        self, orchestrator
+    ):
+        """Discovery should populate available-new lists with versions newer than tracked."""
+        orchestrator.config["WIFI_ONLY"] = True
+        firmware_releases = [
+            Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.19", prerelease=False, assets=[]),
+        ]
+        apk_releases = [
+            Release(tag_name="v2.7.10", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.9", prerelease=False, assets=[]),
+        ]
+        orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
+        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
+        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+
+        def _cmp_ver(v1, v2):
+            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
+            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
+            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+
+        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            result = orchestrator.run_download_pipeline()
+
+        assert result == ([], [])
+        assert orchestrator.wifi_skipped is True
+        assert "v2.7.20" in orchestrator.available_new_firmware_versions
+        assert "v2.7.19" not in orchestrator.available_new_firmware_versions
+        assert "v2.7.10" in orchestrator.available_new_apk_versions
+        assert "v2.7.9" not in orchestrator.available_new_apk_versions
+
+    def test_discover_available_versions_no_side_effects(self, orchestrator):
+        """Wi-Fi skip discovery must not call download, cleanup, or tracking-update methods."""
+        orchestrator.config["WIFI_ONLY"] = True
+        firmware_releases = [
+            Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+        ]
+        apk_releases = [
+            Release(tag_name="v2.7.10", prerelease=False, assets=[]),
+        ]
+        orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
+        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
+        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+
+        def _cmp_ver(v1, v2):
+            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
+            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
+            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+
+        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            orchestrator.run_download_pipeline()
+
+        orchestrator.firmware_downloader.download_firmware.assert_not_called()
+        orchestrator.android_downloader.download_apk.assert_not_called()
+        orchestrator.firmware_downloader.update_latest_release_tag.assert_not_called()
+        orchestrator.android_downloader.update_latest_release_tag.assert_not_called()
+        orchestrator.firmware_downloader.cleanup_old_versions.assert_not_called()
+        orchestrator.android_downloader.cleanup_old_versions.assert_not_called()
+        assert orchestrator.download_results == []
+        assert orchestrator.failed_downloads == []
+
+    def test_discover_available_versions_empty_when_no_tracked_version(
+        self, orchestrator
+    ):
+        """When no tracked version exists, discovery should include all releases in window."""
+        orchestrator.config["WIFI_ONLY"] = True
+        firmware_releases = [
+            Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.19", prerelease=False, assets=[]),
+        ]
+        apk_releases = [
+            Release(tag_name="v2.7.10", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.9", prerelease=False, assets=[]),
+        ]
+        orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
+        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = None
+        orchestrator.android_downloader.get_latest_release_tag.return_value = None
+        orchestrator.version_manager.compare_versions.side_effect = lambda v1, v2: (
+            1 if v1 > v2 else (-1 if v1 < v2 else 0)
+        )
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            result = orchestrator.run_download_pipeline()
+
+        assert result == ([], [])
+        assert orchestrator.available_new_firmware_versions == [
+            "v2.7.20",
+            "v2.7.19",
+        ]
+        assert orchestrator.available_new_apk_versions == ["v2.7.10", "v2.7.9"]
