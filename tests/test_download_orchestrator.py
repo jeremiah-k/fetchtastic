@@ -1867,6 +1867,21 @@ class TestDownloadOrchestrator:
 
         orchestrator._manage_prerelease_tracking()
 
+    def test_run_download_pipeline_resets_stale_wifi_skipped(self, orchestrator):
+        """Stale wifi_skipped=True must be cleared at the start of a subsequent run."""
+        orchestrator.wifi_skipped = True
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with patch("fetchtastic.download.orchestrator.is_termux", return_value=False):
+            orchestrator.run_download_pipeline()
+
+        assert orchestrator.wifi_skipped is False
+
     def test_run_download_pipeline_wifi_only_not_connected(self, orchestrator):
         """Pipeline should skip when WIFI_ONLY and not connected."""
         orchestrator.config["WIFI_ONLY"] = True
@@ -2309,6 +2324,7 @@ class TestDownloadOrchestrator:
         orchestrator.config["SAVE_FIRMWARE"] = True
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
+        mock_release.prerelease = False
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
@@ -2341,6 +2357,7 @@ class TestDownloadOrchestrator:
         orchestrator.config["SAVE_FIRMWARE"] = True
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
+        mock_release.prerelease = False
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = False
 
@@ -2816,6 +2833,7 @@ class TestDownloadOrchestrator:
         orchestrator.config["SAVE_FIRMWARE"] = True
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
+        mock_release.prerelease = False
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = True  # Skipped, not actually downloaded
@@ -2833,7 +2851,49 @@ class TestDownloadOrchestrator:
 
         orchestrator._process_firmware_downloads()
 
-        # Should still call handle_download_result for the skipped result
         orchestrator._handle_download_result.assert_called_with(
             mock_result, "firmware_prerelease_repo"
+        )
+
+    def test_process_firmware_uses_stable_baseline_for_repo_prerelease(
+        self, orchestrator
+    ):
+        """Repo prerelease download and cleanup should use the latest stable release tag."""
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        stable = Release(tag_name="v2.7.15", prerelease=False, assets=[])
+        gh_prerelease = Release(tag_name="v2.7.16.a597230", prerelease=True, assets=[])
+
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            gh_prerelease,
+            stable,
+        ]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        call_count = 0
+
+        def select_side_effect(releases):
+            nonlocal call_count
+            call_count += 1
+            non_prerelease = [r for r in releases if not r.prerelease]
+            if non_prerelease:
+                return non_prerelease[0]
+            return releases[0] if releases else None
+
+        orchestrator._select_latest_release_by_version = Mock(
+            side_effect=select_side_effect
+        )
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.15", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.15"
         )

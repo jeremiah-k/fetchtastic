@@ -180,6 +180,7 @@ class DownloadOrchestrator:
             Tuple[List[DownloadResult], List[DownloadResult]]: A tuple (successful_results, failed_results) where `successful_results` is the list of completed DownloadResult entries and `failed_results` is the list of DownloadResult entries that remain failed after retry attempts.
         """
         start_time = time.time()
+        self.wifi_skipped = False
         logger.info("Starting download pipeline...")
         logger.debug(
             "Execution context: cwd=%s, python=%s, fetchtastic=%s",
@@ -679,6 +680,15 @@ class DownloadOrchestrator:
                 )
             )
             latest_release = self._select_latest_release_by_version(firmware_releases)
+
+            stable_releases_for_baseline = [
+                r for r in firmware_releases if not r.prerelease
+            ]
+            stable_baseline_release = (
+                self._select_latest_release_by_version(stable_releases_for_baseline)
+                if stable_releases_for_baseline
+                else None
+            )
             (
                 releases_for_processing,
                 firmware_releases,
@@ -725,14 +735,14 @@ class DownloadOrchestrator:
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
 
-            if latest_release:
+            if stable_baseline_release:
                 (
                     successes,
                     failures,
                     _active_dir,
                     prerelease_summary,
                 ) = self.firmware_downloader.download_repo_prerelease_firmware(
-                    latest_release.tag_name, force_refresh=False
+                    stable_baseline_release.tag_name, force_refresh=False
                 )
                 if prerelease_summary:
                     self.firmware_prerelease_summary = prerelease_summary
@@ -752,9 +762,9 @@ class DownloadOrchestrator:
 
             # Remove prerelease directories whose version is <= the latest
             # stable release to prevent accumulation of old prereleases.
-            if latest_release:
+            if stable_baseline_release:
                 self.firmware_downloader.cleanup_superseded_prereleases(
-                    latest_release.tag_name
+                    stable_baseline_release.tag_name
                 )
 
             # Clean up prerelease directory

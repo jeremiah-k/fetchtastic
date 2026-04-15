@@ -239,6 +239,29 @@ class TestSendNewReleasesAvailableNotification:
         notifications.send_new_releases_available_notification(config, [], [])
         mock_send.assert_not_called()
 
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    @patch("fetchtastic.notifications.datetime")
+    def test_send_skip_notification_with_empty_versions(self, mock_datetime, mock_send):
+        """Wi-Fi skip notification should be sent even when version lists are empty."""
+        mock_datetime.now.return_value.astimezone.return_value.isoformat.return_value = (
+            "2024-01-01T12:00:00"
+        )
+
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_new_releases_available_notification(
+            config,
+            [],
+            [],
+            downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
+        )
+
+        mock_send.assert_called_once_with(
+            "https://ntfy.sh",
+            "test",
+            "Downloads skipped: not connected to Wi-Fi.\n2024-01-01T12:00:00",
+            title="Fetchtastic Downloads Skipped",
+        )
+
 
 class TestSendUpToDateNotification:
     """Test suite for send_up_to_date_notification function."""
