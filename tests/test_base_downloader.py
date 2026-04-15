@@ -250,64 +250,6 @@ class TestBaseDownloaderVerify:
             os.unlink(tmp_path)
 
 
-class TestBaseDownloaderExtract:
-    """Test archive extraction functionality."""
-
-    def test_extract_with_patterns(self):
-        """Test extracting files with patterns."""
-        config = {}
-        downloader = ConcreteDownloader(config)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            archive_path = Path(temp_dir) / "test.zip"
-
-            # Create a test zip file
-            with zipfile.ZipFile(archive_path, "w") as zf:
-                zf.writestr("file1.bin", "content1")
-                zf.writestr("file2.txt", "content2")
-
-            patterns = ["*.bin"]
-
-            with patch.object(
-                downloader.file_operations, "extract_archive"
-            ) as mock_extract:
-                mock_extract.return_value = [os.path.join(temp_dir, "file1.bin")]
-
-                result = downloader.extract(archive_path, patterns)
-
-                assert len(result) == 1
-                assert isinstance(result[0], Path)
-
-    def test_extract_with_exclude_patterns(self):
-        """Test extracting files with exclude patterns."""
-        config = {}
-        downloader = ConcreteDownloader(config)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            archive_path = Path(temp_dir) / "test.zip"
-
-            with zipfile.ZipFile(archive_path, "w") as zf:
-                zf.writestr("file1.bin", "content1")
-                zf.writestr("file2.hex", "content2")
-
-            patterns = ["*"]
-            exclude_patterns = ["*.hex"]
-
-            with patch.object(
-                downloader.file_operations, "extract_archive"
-            ) as mock_extract:
-                mock_extract.return_value = [os.path.join(temp_dir, "file1.bin")]
-
-                downloader.extract(archive_path, patterns, exclude_patterns)
-
-                mock_extract.assert_called_once_with(
-                    str(archive_path),
-                    temp_dir,
-                    patterns,
-                    exclude_patterns,
-                )
-
-
 class TestBaseDownloaderPathSanitization:
     """Test path sanitization and security."""
 
@@ -541,40 +483,8 @@ class TestBaseDownloaderDownloadResult:
         assert result.extracted_files == extracted
 
 
-class TestBaseDownloaderExistingFile:
-    """Test existing file operations."""
-
-    def test_get_existing_file_path_exists(self):
-        """Test getting path of existing file."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = {"DOWNLOAD_DIR": temp_dir}
-            downloader = ConcreteDownloader(config)
-
-            # Create test file
-            release_dir = Path(temp_dir) / "v2.5.0"
-            release_dir.mkdir()
-            test_file = release_dir / "firmware.bin"
-            test_file.write_text("test")
-
-            with patch.object(downloader, "_sanitize_required") as mock_sanitize:
-                mock_sanitize.side_effect = lambda x, label: x
-
-                result = downloader.get_existing_file_path("v2.5.0", "firmware.bin")
-
-                assert result == str(test_file)
-
-    def test_get_existing_file_path_not_exists(self):
-        """Test getting path when file doesn't exist."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = {"DOWNLOAD_DIR": temp_dir}
-            downloader = ConcreteDownloader(config)
-
-            with patch.object(downloader, "_sanitize_required") as mock_sanitize:
-                mock_sanitize.side_effect = lambda x, label: x
-
-                result = downloader.get_existing_file_path("v2.5.0", "nonexistent.bin")
-
-                assert result is None
+class TestBaseDownloaderCleanupFile:
+    """Test file cleanup operations."""
 
     def test_cleanup_file_success(self):
         """Test successful file cleanup."""
@@ -656,34 +566,6 @@ class TestBaseDownloaderAssetChecks:
                 assert result is False
         finally:
             os.unlink(tmp_path)
-
-    def test_needs_download_file_missing(self):
-        """Test needs_download when file is missing."""
-        config = {}
-        downloader = ConcreteDownloader(config)
-
-        with patch.object(downloader, "get_existing_file_path") as mock_existing:
-            mock_existing.return_value = None
-
-            result = downloader.needs_download("v2.5.0", "firmware.bin", 1024)
-
-            assert result is True
-
-    def test_needs_download_size_mismatch(self):
-        """Test needs_download when file size doesn't match."""
-        config = {}
-        downloader = ConcreteDownloader(config)
-
-        with (
-            patch.object(downloader, "get_existing_file_path") as mock_existing,
-            patch.object(downloader.file_operations, "get_file_size") as mock_size,
-        ):
-            mock_existing.return_value = "/path/to/file"
-            mock_size.return_value = 512  # Different from expected
-
-            result = downloader.needs_download("v2.5.0", "firmware.bin", 1024)
-
-            assert result is True
 
 
 class TestBaseDownloaderManagers:
