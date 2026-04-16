@@ -3422,3 +3422,205 @@ class TestFirmwarePrereleaseBaselineRegression:
         ][0]
 
         assert download_tag == cleanup_tag == "v2.7.22.96dd647"
+
+
+class TestFirmwareSummaryUsesSelectedReleases:
+    """Tests that firmware summary uses the actual selected release set.
+
+    Verifies that when KEEP_LAST_BETA is enabled, the final firmware summary
+    reflects the actual retained set (including the beta) rather than
+    reconstructing from the full release list.
+    """
+
+    @pytest.fixture
+    def mock_config(self):
+        """Provide a mock configuration dictionary."""
+        return {
+            "DOWNLOAD_DIR": "/tmp/test",
+            "SAVE_APKS": True,
+            "SAVE_FIRMWARE": True,
+            "SAVE_DESKTOP_APP": True,
+            "CHECK_APK_PRERELEASES": True,
+            "CHECK_FIRMWARE_PRERELEASES": True,
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": ["*debug*"],
+            "GITHUB_TOKEN": "test_token",
+        }
+
+    @pytest.fixture
+    def orchestrator(self, mock_config):
+        """Create a DownloadOrchestrator for tests with mocked dependencies."""
+        from unittest.mock import Mock
+
+        orch = DownloadOrchestrator(mock_config)
+        # Mock the dependencies
+        orch.cache_manager = Mock()
+        orch.version_manager = Mock()
+        orch.prerelease_manager = Mock()
+        orch.android_downloader = Mock()
+        orch.android_downloader.download_dir = "/tmp/test"
+        orch.firmware_downloader = Mock()
+        orch.firmware_downloader.download_dir = "/tmp/test"
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.desktop_downloader = Mock()
+        orch.desktop_downloader.download_dir = "/tmp/test"
+
+        def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
+            return initial_releases, initial_releases, current_fetch_limit
+
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            side_effect=_collect_non_revoked
+        )
+        return orch
+
+    def test_summary_uses_actual_selected_set_with_keep_last_beta(self, orchestrator):
+        """Summary should use firmware_releases_selected including beta."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 2
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
+        # Create releases where beta is outside the normal keep window
+        stable_newer = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        stable_older = Release(tag_name="v2.7.19", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.18-beta.1", prerelease=True, assets=[])
+
+        # The releases_to_process that would be built in _process_firmware_downloads:
+        # - First 2 non-revoked: [stable_newer, stable_older]
+        # - Then beta appended: [stable_newer, stable_older, beta]
+        selected_releases = [stable_newer, stable_older, beta]
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [stable_newer, stable_older, beta]
+        orchestrator.firmware_releases_selected = selected_releases
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = selected_releases
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Verify log_release_channel_summary was called with the selected releases
+        # including the beta (3 releases, not 2)
+        manager.log_release_channel_summary.assert_called_once()
+        call_args = manager.log_release_channel_summary.call_args
+        passed_releases = call_args[0][0]
+        passed_keep_limit = call_args[1].get(
+            "keep_limit", call_args[0][2] if len(call_args[0]) > 2 else 0
+        )
+
+        # The releases passed should be the selected set (including beta)
+        assert len(passed_releases) == 3
+        assert beta in passed_releases
+        assert stable_newer in passed_releases
+        assert stable_older in passed_releases
+
+        # Keep limit should match actual count (3, not the original 2)
+        assert passed_keep_limit == 3
+
+    def test_summary_uses_actual_selected_set_excluding_revoked(self, orchestrator):
+        """Summary should filter revoked from firmware_releases_selected."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 2
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = True
+
+        stable = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.18-beta.1", prerelease=True, assets=[])
+        selected_releases = [stable, beta]
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [stable, beta]
+        orchestrator.firmware_releases_selected = selected_releases
+
+        # Mark beta as revoked
+        def is_revoked(release):
+            return release.tag_name == "v2.7.18-beta.1"
+
+        orchestrator.firmware_downloader.is_release_revoked.side_effect = is_revoked
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = [stable]
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Verify revoked beta was filtered from the summary
+        manager.log_release_channel_summary.assert_called_once()
+        passed_releases = manager.log_release_channel_summary.call_args[0][0]
+
+        # Beta should be filtered out due to revoked status
+        assert len(passed_releases) == 1
+        assert beta not in passed_releases
+        assert stable in passed_releases
+
+    def test_summary_fallback_when_selected_not_set(self, orchestrator):
+        """Summary should fall back to legacy behavior when selected not available."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 2
+        orchestrator.config["KEEP_LAST_BETA"] = False
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
+        stable_newer = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        stable_older = Release(tag_name="v2.7.19", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.18-beta.1", prerelease=True, assets=[])
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [stable_newer, stable_older, beta]
+        # firmware_releases_selected is None (not set)
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = [stable_newer, stable_older]
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Should use fallback logic (firmware_releases, not firmware_releases_selected)
+        manager.log_release_channel_summary.assert_called_once()
+        passed_releases = manager.log_release_channel_summary.call_args[0][0]
+
+        # Should be using all releases (firmware_releases)
+        assert len(passed_releases) == 3
+
+    def test_beta_outside_keep_window_included_in_summary(self, orchestrator):
+        """Beta outside normal keep window should appear in summary when KEEP_LAST_BETA."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1  # Very small window
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
+        # Setup: 3 stable releases and 1 beta
+        # Keep limit is 1, so only v2.7.22 would be in normal window
+        # Beta v2.7.20-beta.1 is outside but should be kept with KEEP_LAST_BETA
+        v2_7_22 = Release(tag_name="v2.7.22", prerelease=False, assets=[])
+        v2_7_21 = Release(tag_name="v2.7.21", prerelease=False, assets=[])
+        v2_7_20 = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.20-beta.1", prerelease=True, assets=[])
+
+        # Simulating what _process_firmware_downloads does:
+        # releases_for_processing[:keep_limit] = [v2_7_22]
+        # Then beta appended: [v2_7_22, beta]
+        selected_releases = [v2_7_22, beta]
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [v2_7_22, v2_7_21, v2_7_20, beta]
+        orchestrator.firmware_releases_selected = selected_releases
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = selected_releases
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Verify the summary includes both v2.7.22 and the beta
+        manager.log_release_channel_summary.assert_called_once()
+        passed_releases = manager.log_release_channel_summary.call_args[0][0]
+        passed_keep_limit = manager.log_release_channel_summary.call_args[1].get(
+            "keep_limit", 0
+        )
+
+        # Should have 2 releases (the one in window + the beta)
+        assert len(passed_releases) == 2
+        assert v2_7_22 in passed_releases
+        assert beta in passed_releases
+        assert v2_7_21 not in passed_releases
+        assert v2_7_20 not in passed_releases
+
+        # Keep limit should reflect actual count
+        assert passed_keep_limit == 2

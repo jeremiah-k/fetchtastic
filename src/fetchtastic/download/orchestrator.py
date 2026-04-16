@@ -168,6 +168,8 @@ class DownloadOrchestrator:
         self.firmware_release_history: Optional[Dict[str, Any]] = None
         # Single-run only: cleared by log_firmware_release_history_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
+        # Actual selected/kept releases for summary (including KEEP_LAST_BETA)
+        self.firmware_releases_selected: Optional[List[Release]] = None
         self.wifi_skipped: bool = False
         self.available_new_firmware_versions: List[str] = []
         self.available_new_apk_versions: List[str] = []
@@ -746,6 +748,9 @@ class DownloadOrchestrator:
         Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and prunes prerelease subdirectories that do not match the managed naming and versioning conventions.
         """
         try:
+            # Reset the selected releases at the start of each run
+            self.firmware_releases_selected = None
+
             if not self.config.get("SAVE_FIRMWARE", False):
                 logger.info("Firmware downloads are disabled in configuration")
                 return
@@ -892,6 +897,9 @@ class DownloadOrchestrator:
                             logger.warning(
                                 "Failed to safely remove directory: %s", item.name
                             )
+
+            # Store the actual selected releases for accurate summary reporting
+            self.firmware_releases_selected = releases_to_process
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
@@ -1680,6 +1688,11 @@ class DownloadOrchestrator:
         Emit firmware release summaries when firmware release history and releases are available.
 
         Logs three reports via the firmware release history manager: a release channel summary, a release status summary, and a duplicate base-version summary. If the `FILTER_REVOKED_RELEASES` config is enabled, revoked firmware releases are excluded from the channel and status summaries. If the `KEEP_LAST_BETA` config is enabled, the channel summary's retention window may be expanded to include the most recent beta release according to the configured firmware keep limit.
+
+        Uses `self.firmware_releases_selected` (the actual set of releases processed
+        during the download phase) as the source of truth for the summary when available.
+        This ensures the summary accurately reflects the retained firmware set, including
+        any beta appended via KEEP_LAST_BETA behavior.
         """
         if not self.firmware_release_history or not self.firmware_releases:
             return
@@ -1691,18 +1704,34 @@ class DownloadOrchestrator:
             "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
         )
 
-        releases_for_summary = self.firmware_releases
-        if filter_revoked:
-            releases_for_summary = [
-                release
-                for release in self.firmware_releases
-                if not self.firmware_downloader.is_release_revoked(release)
-            ]
+        # Use the actual selected releases as source of truth when available
+        # These are the releases that were actually processed/retained during the run
+        if self.firmware_releases_selected:
+            releases_for_summary = self.firmware_releases_selected
+            # Apply revoked filtering if enabled (beta appended via KEEP_LAST_BETA
+            # may need to be checked for revoked status)
+            if filter_revoked:
+                releases_for_summary = [
+                    release
+                    for release in releases_for_summary
+                    if not self.firmware_downloader.is_release_revoked(release)
+                ]
+            # Update keep_limit_for_summary to match actual count when using selected set
+            keep_limit_for_summary = len(releases_for_summary)
+        else:
+            # Fallback: reconstruct from all releases (legacy behavior)
+            releases_for_summary = self.firmware_releases
+            if filter_revoked:
+                releases_for_summary = [
+                    release
+                    for release in self.firmware_releases
+                    if not self.firmware_downloader.is_release_revoked(release)
+                ]
 
-        if keep_last_beta:
-            keep_limit_for_summary = manager.expand_keep_limit_to_include_beta(
-                releases_for_summary, keep_limit_for_summary
-            )
+            if keep_last_beta:
+                keep_limit_for_summary = manager.expand_keep_limit_to_include_beta(
+                    releases_for_summary, keep_limit_for_summary
+                )
 
         manager.log_release_channel_summary(
             releases_for_summary, label="Firmware", keep_limit=keep_limit_for_summary
