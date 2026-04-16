@@ -886,64 +886,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return results
 
-    def get_manifest_for_device(
-        self, release: Release, hwModelSlug: Optional[str] = None
-    ) -> Optional[FirmwareManifest]:
-        """
-        Get the firmware manifest for a specific device model.
-
-        Searches the release's manifest files for one matching the given
-        hardware model slug and returns the parsed manifest data.
-
-        Parameters:
-            release (Release): Release to search for manifest.
-            hwModelSlug (Optional[str]): Hardware model slug to find
-                (e.g., 'T_DECK', 'T_BEAM'). If None, returns the first
-                available manifest.
-
-        Returns:
-            Optional[FirmwareManifest]: Parsed manifest data, or None if not found.
-        """
-        try:
-            storage_tag = self._get_release_storage_tag(release)
-        except ValueError:
-            return None
-
-        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
-
-        if not os.path.isdir(version_dir):
-            return None
-
-        for filename in sorted(os.listdir(version_dir)):
-            if not filename.lower().endswith(FIRMWARE_MANIFEST_EXTENSION):
-                continue
-
-            manifest_path = os.path.join(version_dir, filename)
-            try:
-                if not self.verify(manifest_path):
-                    logger.debug(
-                        "Skipping manifest that failed integrity verification: %s",
-                        manifest_path,
-                    )
-                    continue
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                manifest = self._parse_manifest_data(data)
-                if manifest is None:
-                    continue
-
-                if hwModelSlug is None:
-                    return manifest
-
-                if manifest.hwModelSlug == hwModelSlug:
-                    return manifest
-
-            except (json.JSONDecodeError, IOError, ValueError):
-                continue
-
-        return None
-
     def _parse_manifest_data(self, data: Any) -> Optional[FirmwareManifest]:
         """
         Parse raw manifest JSON data into a FirmwareManifest dataclass.
@@ -1810,36 +1752,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return successes, failures, any_downloaded
 
-    def download_prerelease_assets(
-        self,
-        remote_dir: str,
-        selected_patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None,
-        *,
-        force_refresh: bool = False,
-    ) -> tuple[list[DownloadResult], list[DownloadResult], bool]:
-        """
-        Download prerelease assets from a remote prerelease directory into the local prerelease store using include and exclude patterns.
-
-        Parameters:
-            remote_dir (str): Remote prerelease directory identifier or path to fetch files from.
-            selected_patterns (Optional[List[str]]): Glob patterns to include; empty list means include all.
-            exclude_patterns (Optional[List[str]]): Glob patterns to exclude; empty list means exclude none.
-            force_refresh (bool): If true, refresh remote listing/cache before deciding which files to download.
-
-        Returns:
-            tuple[list[DownloadResult], list[DownloadResult], bool]: A 3-tuple containing:
-                - successes: list of successful DownloadResult entries,
-                - failures: list of failed DownloadResult entries,
-                - any_downloaded: `True` if any file was downloaded during this call, `False` otherwise.
-        """
-        return self._download_prerelease_assets(
-            remote_dir,
-            selected_patterns=selected_patterns or [],
-            exclude_patterns=exclude_patterns or [],
-            force_refresh=force_refresh,
-        )
-
     def download_repo_prerelease_firmware(
         self,
         latest_release_tag: str,
@@ -1855,7 +1767,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Check for and download firmware prerelease assets from the legacy repo-based workflow and update prerelease tracking.
 
         Parameters:
-            latest_release_tag (str): Tag of the latest official release used to derive the expected prerelease base version.
+            latest_release_tag (str): Tag of the latest firmware release selected for the current run; may be hash-suffixed (e.g. v2.7.22.96dd647).
             force_refresh (bool): When True, bypass cached directory listings and force remote refresh.
 
         Returns:
@@ -2268,10 +2180,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def cleanup_superseded_prereleases(self, latest_release_tag: str) -> bool:
         """
-        Remove prerelease firmware directories whose semantic version is less than or equal to a given official release.
+        Remove prerelease firmware directories whose semantic version is less than or equal to the given release tag.
+
+        Uses the latest release by version (stable) as the baseline for determining which prerelease
+        directories are superseded, regardless of prerelease flag.
 
         Parameters:
-            latest_release_tag (str): Official release tag used for comparison; may include a leading "v".
+            latest_release_tag (str): Release tag used for comparison. May include:
+                - a leading "v" (e.g., "v2.7.15")
+                - a hash/commit suffix (e.g., "v2.7.15.abc1234")
 
         Returns:
             bool: `True` if any prerelease directories were removed, `False` otherwise.

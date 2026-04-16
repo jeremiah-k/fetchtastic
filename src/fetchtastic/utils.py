@@ -265,8 +265,8 @@ def format_api_summary(summary: Dict[str, Any]) -> str:
         misses_str = "miss" if summary["cache_misses"] == 1 else "misses"
         log_parts.append(
             f"Cache: {total_cache_lookups} lookups → "
-            f"{summary['cache_hits']} {hits_str} (skipped), "
-            f"{summary['cache_misses']} {misses_str} (fetched) "
+            f"{summary['cache_hits']} {hits_str} (fresh data skipped), "
+            f"{summary['cache_misses']} {misses_str} (fetched or refreshed) "
             f"[{cache_hit_rate:.1f}% hit rate]"
         )
 
@@ -771,8 +771,11 @@ def make_github_api_request(
                             minutes_until_reset = int(
                                 time_until_reset.total_seconds() / 60
                             )
+                            minute_str = (
+                                "minute" if minutes_until_reset == 1 else "minutes"
+                            )
                             logger.debug(
-                                f"GitHub API rate limit resets in ~{minutes_until_reset} minutes"
+                                f"GitHub API rate limit resets in ~{minutes_until_reset} {minute_str}"
                             )
                     except (ValueError, OSError):
                         pass

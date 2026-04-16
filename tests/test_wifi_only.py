@@ -69,11 +69,23 @@ def test_wifi_only_skips_downloads_when_not_connected_to_wifi(
             return_value=False,
         ),
         patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
+        patch.object(
+            orchestrator,
+            "_discover_available_firmware_versions_when_wifi_skipped",
+            return_value=[],
+        ) as mock_discover_firmware,
+        patch.object(
+            orchestrator,
+            "_discover_available_apk_versions_when_wifi_skipped",
+            return_value=[],
+        ) as mock_discover_apk,
     ):
         successful_results, failed_results = orchestrator.run_download_pipeline()
 
         assert successful_results == []
         assert failed_results == []
+        mock_discover_firmware.assert_called_once()
+        mock_discover_apk.assert_called_once()
 
 
 def test_wifi_only_allows_downloads_when_connected_to_wifi(orchestrator, mock_config):

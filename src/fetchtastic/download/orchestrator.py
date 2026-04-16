@@ -166,8 +166,13 @@ class DownloadOrchestrator:
         self._desktop_releases_fetch_limit: Optional[int] = None
         self.desktop_releases: Optional[List[Release]] = None
         self.firmware_release_history: Optional[Dict[str, Any]] = None
-        # Single-run only: cleared by log_firmware_release_history_summary()
+        # Single-run only: cleared after _log_prerelease_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
+        # Run-scoped selected set: reset at start of _process_firmware_downloads()
+        self.firmware_releases_selected: Optional[List[Release]] = None
+        self.wifi_skipped: bool = False
+        self.available_new_firmware_versions: List[str] = []
+        self.available_new_apk_versions: List[str] = []
 
     def run_download_pipeline(
         self,
@@ -179,6 +184,9 @@ class DownloadOrchestrator:
             Tuple[List[DownloadResult], List[DownloadResult]]: A tuple (successful_results, failed_results) where `successful_results` is the list of completed DownloadResult entries and `failed_results` is the list of DownloadResult entries that remain failed after retry attempts.
         """
         start_time = time.time()
+        self.wifi_skipped = False
+        self.available_new_firmware_versions = []
+        self.available_new_apk_versions = []
         logger.info("Starting download pipeline...")
         logger.debug(
             "Execution context: cwd=%s, python=%s, fetchtastic=%s",
@@ -190,6 +198,8 @@ class DownloadOrchestrator:
         if is_termux() and self.config.get("WIFI_ONLY", False):
             if not is_connected_to_wifi():
                 logger.warning("Not connected to Wi-Fi. Skipping all downloads.")
+                self.wifi_skipped = True
+                self._discover_available_versions_when_wifi_skipped()
                 return [], []
 
         cleanup_legacy_hash_sidecars(self.config.get("DOWNLOAD_DIR", ""))
@@ -216,6 +226,94 @@ class DownloadOrchestrator:
         self._log_download_summary(start_time)
 
         return self.download_results, self.failed_downloads
+
+    def _discover_available_versions_when_wifi_skipped(self) -> None:
+        self._discover_available_firmware_versions_when_wifi_skipped()
+        self._discover_available_apk_versions_when_wifi_skipped()
+
+    def _discover_available_firmware_versions_when_wifi_skipped(self) -> None:
+        try:
+            if not self.config.get("SAVE_FIRMWARE", False):
+                return
+
+            keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
+            keep_limit = self._get_firmware_keep_limit()
+            filter_revoked = self.config.get(
+                "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
+            )
+            fetch_limit = (
+                max(keep_limit, RELEASE_SCAN_COUNT) if keep_last_beta else keep_limit
+            )
+            if filter_revoked and fetch_limit > 0:
+                fetch_limit += RELEASE_SCAN_COUNT
+            fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
+
+            firmware_releases = self._ensure_firmware_releases(limit=fetch_limit)
+            if not firmware_releases:
+                return
+
+            (
+                releases_for_processing,
+                firmware_releases,
+                fetch_limit,
+            ) = self.firmware_downloader.collect_non_revoked_releases(
+                initial_releases=firmware_releases,
+                target_count=keep_limit,
+                current_fetch_limit=fetch_limit,
+            )
+            self.firmware_releases = firmware_releases
+
+            stable_releases = [
+                r for r in releases_for_processing[:keep_limit] if not r.prerelease
+            ]
+            tracked_tag = self.firmware_downloader.get_latest_release_tag()
+            new_versions: List[str] = []
+            for release in stable_releases:
+                if (
+                    tracked_tag is None
+                    or self.version_manager.compare_versions(
+                        release.tag_name, tracked_tag
+                    )
+                    > 0
+                ):
+                    new_versions.append(release.tag_name)
+            self.available_new_firmware_versions = list(dict.fromkeys(new_versions))
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.debug(
+                "Error discovering available firmware versions during Wi-Fi skip: %s",
+                e,
+                exc_info=True,
+            )
+
+    def _discover_available_apk_versions_when_wifi_skipped(self) -> None:
+        try:
+            if not self.config.get("SAVE_APKS", False):
+                return
+
+            keep_count = self.config.get(
+                "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+            )
+            android_releases = self._ensure_android_releases()
+            stable_releases = [r for r in android_releases if not r.prerelease]
+            releases_in_window = stable_releases[:keep_count]
+            tracked_tag = self.android_downloader.get_latest_release_tag()
+            new_versions: List[str] = []
+            for release in releases_in_window:
+                if (
+                    tracked_tag is None
+                    or self.version_manager.compare_versions(
+                        release.tag_name, tracked_tag
+                    )
+                    > 0
+                ):
+                    new_versions.append(release.tag_name)
+            self.available_new_apk_versions = list(dict.fromkeys(new_versions))
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.debug(
+                "Error discovering available APK versions during Wi-Fi skip: %s",
+                e,
+                exc_info=True,
+            )
 
     def _process_android_downloads(self) -> None:
         """
@@ -650,6 +748,9 @@ class DownloadOrchestrator:
         Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and prunes prerelease subdirectories that do not match the managed naming and versioning conventions.
         """
         try:
+            # Reset the selected releases at the start of each run
+            self.firmware_releases_selected = None
+
             if not self.config.get("SAVE_FIRMWARE", False):
                 logger.info("Firmware downloads are disabled in configuration")
                 return
@@ -748,6 +849,13 @@ class DownloadOrchestrator:
             if not any_firmware_downloaded and not releases_to_download:
                 logger.info("All Firmware assets are up to date.")
 
+            # Remove prerelease directories whose version is <= the latest
+            # release to prevent accumulation of old prereleases.
+            if latest_release:
+                self.firmware_downloader.cleanup_superseded_prereleases(
+                    latest_release.tag_name
+                )
+
             # Clean up prerelease directory
             prerelease_dir = (
                 Path(self.firmware_downloader.download_dir)
@@ -789,6 +897,9 @@ class DownloadOrchestrator:
                             logger.warning(
                                 "Failed to safely remove directory: %s", item.name
                             )
+
+            # Store the actual selected releases for accurate summary reporting
+            self.firmware_releases_selected = list(releases_to_process)
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
@@ -1577,6 +1688,11 @@ class DownloadOrchestrator:
         Emit firmware release summaries when firmware release history and releases are available.
 
         Logs three reports via the firmware release history manager: a release channel summary, a release status summary, and a duplicate base-version summary. If the `FILTER_REVOKED_RELEASES` config is enabled, revoked firmware releases are excluded from the channel and status summaries. If the `KEEP_LAST_BETA` config is enabled, the channel summary's retention window may be expanded to include the most recent beta release according to the configured firmware keep limit.
+
+        Uses `self.firmware_releases_selected` (the actual set of releases processed
+        during the download phase) as the source of truth for the summary when available.
+        This ensures the summary accurately reflects the retained firmware set, including
+        any beta appended via KEEP_LAST_BETA behavior.
         """
         if not self.firmware_release_history or not self.firmware_releases:
             return
@@ -1588,18 +1704,34 @@ class DownloadOrchestrator:
             "FILTER_REVOKED_RELEASES", DEFAULT_FILTER_REVOKED_RELEASES
         )
 
-        releases_for_summary = self.firmware_releases
-        if filter_revoked:
-            releases_for_summary = [
-                release
-                for release in self.firmware_releases
-                if not self.firmware_downloader.is_release_revoked(release)
-            ]
+        # Use the actual selected releases as source of truth when available
+        # These are the releases that were actually processed/retained during the run
+        if self.firmware_releases_selected:
+            releases_for_summary = self.firmware_releases_selected
+            # Apply revoked filtering if enabled (beta appended via KEEP_LAST_BETA
+            # may need to be checked for revoked status)
+            if filter_revoked:
+                releases_for_summary = [
+                    release
+                    for release in releases_for_summary
+                    if not self.firmware_downloader.is_release_revoked(release)
+                ]
+            # Update keep_limit_for_summary to match actual count when using selected set
+            keep_limit_for_summary = len(releases_for_summary)
+        else:
+            # Fallback: reconstruct from all releases (legacy behavior)
+            releases_for_summary = self.firmware_releases
+            if filter_revoked:
+                releases_for_summary = [
+                    release
+                    for release in self.firmware_releases
+                    if not self.firmware_downloader.is_release_revoked(release)
+                ]
 
-        if keep_last_beta:
-            keep_limit_for_summary = manager.expand_keep_limit_to_include_beta(
-                releases_for_summary, keep_limit_for_summary
-            )
+            if keep_last_beta:
+                keep_limit_for_summary = manager.expand_keep_limit_to_include_beta(
+                    releases_for_summary, keep_limit_for_summary
+                )
 
         manager.log_release_channel_summary(
             releases_for_summary, label="Firmware", keep_limit=keep_limit_for_summary

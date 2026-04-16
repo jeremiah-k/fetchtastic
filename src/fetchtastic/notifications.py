@@ -169,8 +169,12 @@ def send_new_releases_available_notification(
     if notify_on_download_only:
         return
 
-    if not new_firmware_versions and not new_apk_versions:
-        return  # No new releases, no notification needed
+    if (
+        not new_firmware_versions
+        and not new_apk_versions
+        and not downloads_skipped_reason
+    ):
+        return  # No new releases and no skip reason, no notification needed
 
     message_lines: List[str] = []
 

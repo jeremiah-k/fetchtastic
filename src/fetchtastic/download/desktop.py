@@ -1012,7 +1012,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             )
             if not stable_releases:
                 logger.debug(
-                    "Skipping Desktop cleanup because no stable releases are available."
+                    "Skipping Desktop cleanup: no stable releases available to determine retention window."
                 )
                 return
             prerelease_releases = self.handle_prereleases(cached_releases)

@@ -322,31 +322,6 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
             return self.file_operations.verify_file_hash(str(file_path), expected_hash)
         return utils.verify_file_integrity(str(file_path))
 
-    def extract(
-        self,
-        file_path: Pathish,
-        patterns: List[str],
-        exclude_patterns: Optional[List[str]] = None,
-    ) -> List[Pathish]:
-        """
-        Extracts files from the given archive that match any of the provided include patterns and do not match the optional exclude patterns.
-
-        Parameters:
-            file_path (PathLike | str): Path to the archive file.
-            patterns (List[str]): Filename include patterns (e.g., glob or fnmatch) used to select files to extract.
-            exclude_patterns (Optional[List[str]]): Optional filename patterns to exclude from extraction.
-
-        Returns:
-            List[pathlib.Path]: Paths to the extracted files.
-        """
-        # Get the directory where the archive is located using pathlib
-        archive_path = Path(file_path)
-        archive_dir = str(archive_path.parent)
-        extracted = self.file_operations.extract_archive(
-            str(archive_path), archive_dir, patterns, exclude_patterns or []
-        )
-        return [Path(p) for p in extracted]  # Convert back to Path objects
-
     def cleanup_old_versions(
         self,
         keep_limit: int,
@@ -574,20 +549,6 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
             was_skipped=was_skipped,
         )
 
-    def get_existing_file_path(self, release_tag: str, file_name: str) -> Optional[str]:
-        """
-        Get the filesystem path of an existing asset for the given release.
-
-        Parameters:
-            release_tag (str): Release tag used to locate the version directory.
-            file_name (str): Asset filename within the release directory.
-
-        Returns:
-            Optional[str]: Path to the existing file as a string if present, `None` otherwise.
-        """
-        target_path = self.get_target_path_for_release(release_tag, file_name)
-        return target_path if os.path.exists(target_path) else None
-
     def cleanup_file(self, file_path: str) -> bool:
         """
         Delete the file at the given path if present.
@@ -749,29 +710,3 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
                 _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
             )
         return bool(is_release_revoked(release))
-
-    def needs_download(
-        self, release_tag: str, file_name: str, expected_size: int
-    ) -> bool:
-        """
-        Determine whether the specified release asset must be downloaded.
-
-        Parameters:
-            release_tag (str): Release tag used to locate the existing file.
-            file_name (str): Name of the asset file.
-            expected_size (int): Expected file size in bytes; used to detect incomplete or mismatched files.
-
-        Returns:
-            True if the file should be downloaded, False otherwise.
-        """
-        existing_path = self.get_existing_file_path(release_tag, file_name)
-        if not existing_path:
-            return True
-
-        # Check file size
-        actual_size = self.file_operations.get_file_size(existing_path)
-        if actual_size is None or actual_size != expected_size:
-            logger.debug(f"File {file_name} size mismatch - will redownload")
-            return True
-
-        return False

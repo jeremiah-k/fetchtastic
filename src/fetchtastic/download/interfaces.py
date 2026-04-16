@@ -274,25 +274,6 @@ class Downloader(ABC):
         """
 
     @abstractmethod
-    def extract(
-        self,
-        file_path: Pathish,
-        patterns: List[str],
-        exclude_patterns: Optional[List[str]],
-    ) -> List[Pathish]:
-        """
-        Extracts files from an archive that match the given include patterns and do not match the optional exclude patterns.
-
-        Parameters:
-            file_path (Pathish): Path to the archive file to extract.
-            patterns (List[str]): Filename patterns to include; matched against archive member names.
-            exclude_patterns (Optional[List[str]]): Filename patterns to exclude from extraction.
-
-        Returns:
-            List[Pathish]: Paths to the files extracted from the archive.
-        """
-
-    @abstractmethod
     def validate_extraction_patterns(
         self, patterns: List[str], exclude_patterns: List[str]
     ) -> bool:

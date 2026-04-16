@@ -20,6 +20,7 @@ def integration(mocker):
     )
     mocker.patch("fetchtastic.download.cli_integration.time", wraps=time)
     integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.wifi_skipped = False
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.8.0",
         "android": "v1.8.0",
@@ -163,5 +164,50 @@ def test_summary_does_not_send_up_to_date_notification_on_failures(integration):
                     "error": "failed",
                 }
             ],
+        )
+        mock_up_to_date.assert_not_called()
+
+
+def test_summary_sends_skip_notification_when_wifi_skipped(integration):
+    integration.orchestrator.wifi_skipped = True
+    integration.orchestrator.available_new_firmware_versions = []
+    integration.orchestrator.available_new_apk_versions = []
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ) as mock_skip,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
+        _call_summary(integration, [], [], new_fw=[], new_apks=[])
+        mock_skip.assert_called_once_with(
+            integration.config,
+            [],
+            [],
+            downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
+        )
+        mock_up_to_date.assert_not_called()
+
+
+def test_summary_sends_skip_notification_with_discovered_versions(integration):
+    integration.orchestrator.wifi_skipped = True
+    integration.orchestrator.available_new_firmware_versions = ["v2.7.20"]
+    integration.orchestrator.available_new_apk_versions = ["v2.7.10"]
+
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ) as mock_skip,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
+        _call_summary(integration, [], [], new_fw=[], new_apks=[])
+        mock_skip.assert_called_once_with(
+            integration.config,
+            ["v2.7.20"],
+            ["v2.7.10"],
+            downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
         )
         mock_up_to_date.assert_not_called()

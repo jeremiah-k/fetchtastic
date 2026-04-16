@@ -1299,7 +1299,7 @@ def test_format_api_summary():
     assert "3 API requests" in result
     assert "🌐 unauthenticated" in result
     assert "Cache: 3 lookups" in result
-    assert "2 hits (skipped), 1 miss (fetched)" in result
+    assert "2 hits (fresh data skipped), 1 miss (fetched or refreshed)" in result
     assert "66.7% hit rate" in result
 
     # Test request with no cache hits (should still show cache stats)
@@ -1315,7 +1315,7 @@ def test_format_api_summary():
     assert "4 API requests" in result
     assert "🌐 unauthenticated" in result
     assert "Cache: 4 lookups" in result
-    assert "0 hits (skipped), 4 misses (fetched)" in result
+    assert "0 hits (fresh data skipped), 4 misses (fetched or refreshed)" in result
     assert "0.0% hit rate" in result
 
     # Test with rate limit info (future reset time)
@@ -1336,7 +1336,7 @@ def test_format_api_summary():
     assert "min)" in result
     assert "📊 GitHub API Summary: 2 API requests (🔐 authenticated)" in result
     assert (
-        "Cache: 2 lookups → 1 hit (skipped), 1 miss (fetched) [50.0% hit rate]"
+        "Cache: 2 lookups → 1 hit (fresh data skipped), 1 miss (fetched or refreshed) [50.0% hit rate]"
         in result
     )
 

@@ -87,7 +87,7 @@ def test_cleanup_superseded_prereleases(firmware_downloader, tmp_path):
     # This one is still a pre-release, so it should be kept
     (prerelease_dir / "firmware-2.2.0").mkdir()
 
-    # The latest official release
+    # The latest release tag used as baseline
     latest_release_tag = "v2.1.0"
 
     # Use the new FirmwareReleaseDownloader directly

@@ -1867,6 +1867,21 @@ class TestDownloadOrchestrator:
 
         orchestrator._manage_prerelease_tracking()
 
+    def test_run_download_pipeline_resets_stale_wifi_skipped(self, orchestrator):
+        """Stale wifi_skipped=True must be cleared at the start of a subsequent run."""
+        orchestrator.wifi_skipped = True
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with patch("fetchtastic.download.orchestrator.is_termux", return_value=False):
+            orchestrator.run_download_pipeline()
+
+        assert orchestrator.wifi_skipped is False
+
     def test_run_download_pipeline_wifi_only_not_connected(self, orchestrator):
         """Pipeline should skip when WIFI_ONLY and not connected."""
         orchestrator.config["WIFI_ONLY"] = True
@@ -2307,8 +2322,10 @@ class TestDownloadOrchestrator:
     def test_process_firmware_downloads_with_prerelease_success(self, orchestrator):
         """Test firmware processing when prerelease download succeeds."""
         orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager.is_prerelease_version.return_value = False
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
+        mock_release.prerelease = False
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
@@ -2339,8 +2356,10 @@ class TestDownloadOrchestrator:
     def test_process_firmware_downloads_with_prerelease_failure(self, orchestrator):
         """Test firmware processing when prerelease download has failures."""
         orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager.is_prerelease_version.return_value = False
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
+        mock_release.prerelease = False
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = False
 
@@ -2814,8 +2833,10 @@ class TestDownloadOrchestrator:
     def test_process_firmware_prerelease_skipped_no_any_firmware(self, orchestrator):
         """Test firmware prerelease handling when skipped (line 621->623)."""
         orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager.is_prerelease_version.return_value = False
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
+        mock_release.prerelease = False
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = True  # Skipped, not actually downloaded
@@ -2833,7 +2854,763 @@ class TestDownloadOrchestrator:
 
         orchestrator._process_firmware_downloads()
 
-        # Should still call handle_download_result for the skipped result
         orchestrator._handle_download_result.assert_called_with(
             mock_result, "firmware_prerelease_repo"
         )
+
+    def test_process_firmware_repo_prerelease_uses_latest_by_version(
+        self, orchestrator
+    ):
+        """Repo prerelease download and cleanup must use the latest release by version, even if hash-suffixed."""
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager = VersionManager()
+
+        hash_latest = Release(tag_name="v2.7.22.96dd647", prerelease=True, assets=[])
+        older_stable = Release(tag_name="v2.7.15", prerelease=False, assets=[])
+
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            hash_latest,
+            older_stable,
+        ]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.22.96dd647", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.22.96dd647"
+        )
+
+    def test_discover_available_versions_populates_lists_when_wifi_skipped(
+        self, orchestrator
+    ):
+        """Discovery should populate available-new lists with versions newer than tracked."""
+        orchestrator.config["WIFI_ONLY"] = True
+        firmware_releases = [
+            Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.19", prerelease=False, assets=[]),
+        ]
+        apk_releases = [
+            Release(tag_name="v2.7.10", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.9", prerelease=False, assets=[]),
+        ]
+        orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
+        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
+        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            result = orchestrator.run_download_pipeline()
+
+        assert result == ([], [])
+        assert orchestrator.wifi_skipped is True
+        assert "v2.7.20" in orchestrator.available_new_firmware_versions
+        assert "v2.7.19" not in orchestrator.available_new_firmware_versions
+        assert "v2.7.10" in orchestrator.available_new_apk_versions
+        assert "v2.7.9" not in orchestrator.available_new_apk_versions
+
+    def test_discover_available_versions_no_side_effects(self, orchestrator):
+        """Wi-Fi skip discovery must not call download, cleanup, or tracking-update methods."""
+        orchestrator.config["WIFI_ONLY"] = True
+        firmware_releases = [
+            Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+        ]
+        apk_releases = [
+            Release(tag_name="v2.7.10", prerelease=False, assets=[]),
+        ]
+        orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
+        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
+        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            orchestrator.run_download_pipeline()
+
+        orchestrator.firmware_downloader.download_firmware.assert_not_called()
+        orchestrator.android_downloader.download_apk.assert_not_called()
+        orchestrator.firmware_downloader.update_latest_release_tag.assert_not_called()
+        orchestrator.android_downloader.update_latest_release_tag.assert_not_called()
+        orchestrator.firmware_downloader.cleanup_old_versions.assert_not_called()
+        orchestrator.android_downloader.cleanup_old_versions.assert_not_called()
+        assert orchestrator.download_results == []
+        assert orchestrator.failed_downloads == []
+
+    def test_discover_available_versions_empty_when_no_tracked_version(
+        self, orchestrator
+    ):
+        """When no tracked version exists, discovery should include all releases in window."""
+        orchestrator.config["WIFI_ONLY"] = True
+        firmware_releases = [
+            Release(tag_name="v2.7.20", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.19", prerelease=False, assets=[]),
+        ]
+        apk_releases = [
+            Release(tag_name="v2.7.10", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.9", prerelease=False, assets=[]),
+        ]
+        orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
+        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = None
+        orchestrator.android_downloader.get_latest_release_tag.return_value = None
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            result = orchestrator.run_download_pipeline()
+
+        assert result == ([], [])
+        assert orchestrator.available_new_firmware_versions == [
+            "v2.7.20",
+            "v2.7.19",
+        ]
+        assert orchestrator.available_new_apk_versions == ["v2.7.10", "v2.7.9"]
+
+    def test_firmware_skip_discovery_ignores_revoked_releases(self, orchestrator):
+        """Skip discovery should exclude revoked firmware releases just like normal processing."""
+        orchestrator.config["WIFI_ONLY"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = True
+        orchestrator.config["KEEP_LAST_BETA"] = False
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 3
+
+        revoked = Release(tag_name="v2.7.21", prerelease=False, assets=[])
+        valid = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        older = Release(tag_name="v2.7.19", prerelease=False, assets=[])
+
+        def _collect_non_revoked(
+            *, initial_releases, target_count, current_fetch_limit, **_kw
+        ):
+            non_revoked = [r for r in initial_releases if r is not revoked]
+            return non_revoked, initial_releases, current_fetch_limit
+
+        orchestrator.firmware_downloader.collect_non_revoked_releases = Mock(
+            side_effect=_collect_non_revoked
+        )
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            revoked,
+            valid,
+            older,
+        ]
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
+        orchestrator.android_downloader.get_releases.return_value = []
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            orchestrator.run_download_pipeline()
+
+        assert "v2.7.21" not in orchestrator.available_new_firmware_versions
+        assert "v2.7.20" in orchestrator.available_new_firmware_versions
+
+    def test_firmware_skip_discovery_fetches_enough_with_prereleases(
+        self, orchestrator
+    ):
+        """Skip discovery should find stable versions even when prereleases fill top slots."""
+        orchestrator.config["WIFI_ONLY"] = True
+        orchestrator.config["KEEP_LAST_BETA"] = False
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 5
+
+        pre1 = Release(tag_name="v2.7.22-beta.1", prerelease=True, assets=[])
+        pre2 = Release(tag_name="v2.7.22-beta.2", prerelease=True, assets=[])
+        stable1 = Release(tag_name="v2.7.21", prerelease=False, assets=[])
+        stable2 = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        stable3 = Release(tag_name="v2.7.19", prerelease=False, assets=[])
+
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            pre1,
+            pre2,
+            stable1,
+            stable2,
+            stable3,
+        ]
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.18"
+        orchestrator.android_downloader.get_releases.return_value = []
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            orchestrator.run_download_pipeline()
+
+        assert "v2.7.21" in orchestrator.available_new_firmware_versions
+        assert "v2.7.20" in orchestrator.available_new_firmware_versions
+        assert "v2.7.19" in orchestrator.available_new_firmware_versions
+        assert "v2.7.22-beta.1" not in orchestrator.available_new_firmware_versions
+
+    def test_apk_skip_discovery_no_underfetch_with_prereleases(self, orchestrator):
+        """APK skip discovery should not under-fetch when prereleases are interleaved."""
+        orchestrator.config["WIFI_ONLY"] = True
+        orchestrator.config["ANDROID_VERSIONS_TO_KEEP"] = 2
+
+        pre = Release(tag_name="v2.7.12-open.1", prerelease=True, assets=[])
+        stable1 = Release(tag_name="v2.7.11", prerelease=False, assets=[])
+        stable2 = Release(tag_name="v2.7.10", prerelease=False, assets=[])
+
+        orchestrator.android_downloader.get_releases.return_value = [
+            pre,
+            stable1,
+            stable2,
+        ]
+        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+        orchestrator.firmware_downloader.get_releases.return_value = []
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            orchestrator.run_download_pipeline()
+
+        assert "v2.7.11" in orchestrator.available_new_apk_versions
+        assert "v2.7.10" in orchestrator.available_new_apk_versions
+        assert "v2.7.12-open.1" not in orchestrator.available_new_apk_versions
+
+    def test_skip_discovery_isolates_firmware_and_apk_failures(self, orchestrator):
+        """Firmware discovery failure must not suppress APK discovery results."""
+        orchestrator.config["WIFI_ONLY"] = True
+
+        orchestrator.firmware_downloader.get_releases.side_effect = OSError(
+            "firmware fetch failed"
+        )
+
+        apk_releases = [
+            Release(tag_name="v2.7.10", prerelease=False, assets=[]),
+        ]
+        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
+        orchestrator._process_firmware_downloads = Mock()
+        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._retry_failed_downloads = Mock()
+        orchestrator._enhance_download_results_with_metadata = Mock()
+        orchestrator._log_download_summary = Mock()
+
+        with (
+            patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+            patch(
+                "fetchtastic.download.orchestrator.is_connected_to_wifi",
+                return_value=False,
+            ),
+        ):
+            result = orchestrator.run_download_pipeline()
+
+        assert result == ([], [])
+        assert orchestrator.available_new_firmware_versions == []
+        assert "v2.7.10" in orchestrator.available_new_apk_versions
+
+    def test_process_firmware_hash_suffixed_is_valid_baseline_when_latest(
+        self, orchestrator
+    ):
+        """A hash-suffixed tag that is latest by version must be used as baseline."""
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        orchestrator.version_manager = VersionManager()
+
+        hash_newer = Release(tag_name="v2.7.22.96dd647", prerelease=True, assets=[])
+        stable_older = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            hash_newer,
+            stable_older,
+        ]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.22.96dd647", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.22.96dd647"
+        )
+
+    def test_hash_suffixed_only_releases_still_provide_baseline(self, orchestrator):
+        """When all releases are hash-suffixed, the latest by version is still used as baseline."""
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        hash_a = Release(tag_name="v2.7.16.9058cce", prerelease=False, assets=[])
+        hash_b = Release(tag_name="v2.7.14.abcdef12", prerelease=False, assets=[])
+
+        real_vm = VersionManager()
+        orchestrator.version_manager = real_vm
+
+        orchestrator.firmware_downloader.get_releases.return_value = [hash_a, hash_b]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.16.9058cce", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.16.9058cce"
+        )
+
+    def test_process_firmware_uses_latest_by_version_with_mixed_releases(
+        self, orchestrator
+    ):
+        """Latest release by version is used as baseline regardless of hash suffix or prerelease flag."""
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        official_stable = Release(tag_name="v2.7.22", prerelease=False, assets=[])
+        hash_suffixed_stable = Release(
+            tag_name="v2.7.21.abcdef12", prerelease=False, assets=[]
+        )
+        hash_suffixed_pre = Release(
+            tag_name="v2.7.20.1234567", prerelease=True, assets=[]
+        )
+
+        real_vm = VersionManager()
+        orchestrator.version_manager = real_vm
+
+        orchestrator.firmware_downloader.get_releases.return_value = [
+            hash_suffixed_pre,
+            hash_suffixed_stable,
+            official_stable,
+        ]
+        orchestrator.firmware_downloader.is_release_complete.return_value = True
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.22", force_refresh=False
+        )
+        orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.22"
+        )
+
+
+class TestFirmwarePrereleaseBaselineRegression:
+    """Regression tests for the repo-prerelease baseline selection fix.
+
+    Verifies that the orchestrator selects the latest release by version
+    (not filtered by the GitHub prerelease flag) as the baseline for
+    repo-prerelease download and superseded prerelease cleanup.
+    """
+
+    @staticmethod
+    def _make_releases():
+        return [
+            Release(tag_name="v2.7.22.96dd647", prerelease=True, assets=[]),
+            Release(tag_name="v2.7.21.1370b23", prerelease=True, assets=[]),
+            Release(tag_name="v2.7.20.6658ec2", prerelease=True, assets=[]),
+            Release(tag_name="v2.7.15.567b8ea", prerelease=False, assets=[]),
+        ]
+
+    def _setup_orchestrator(self, tmp_path):
+        from fetchtastic.download.version import VersionManager
+
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": True,
+            "SELECTED_FIRMWARE_ASSETS": [],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+        releases = self._make_releases()
+
+        orch.version_manager = VersionManager()
+
+        orch.firmware_downloader.download_dir = str(tmp_path)
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+        orch.firmware_downloader.cleanup_superseded_prereleases = Mock(
+            return_value=False
+        )
+        orch.firmware_downloader.update_release_history = Mock(return_value={})
+        orch.firmware_downloader.ensure_release_notes = Mock()
+        orch.firmware_downloader.format_release_log_suffix = Mock(return_value="")
+
+        def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_kw):
+            return initial_releases, initial_releases, current_fetch_limit
+
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            side_effect=_collect_non_revoked
+        )
+
+        orch._ensure_firmware_releases = Mock(return_value=releases)
+
+        return orch
+
+    def test_repo_prerelease_uses_latest_by_version_not_latest_non_prerelease(
+        self, tmp_path
+    ):
+        """Test A: download_repo_prerelease_firmware must receive the latest
+        version (v2.7.22.96dd647), NOT the latest non-prerelease
+        (v2.7.15.567b8ea)."""
+        orch = self._setup_orchestrator(tmp_path)
+
+        orch._process_firmware_downloads()
+
+        orch.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
+            "v2.7.22.96dd647", force_refresh=False
+        )
+        orch.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
+            "v2.7.22.96dd647"
+        )
+
+    def test_repo_prerelease_does_not_use_latest_non_prerelease(self, tmp_path):
+        """Test A (negative): baseline must NOT be the latest non-prerelease tag."""
+        orch = self._setup_orchestrator(tmp_path)
+
+        orch._process_firmware_downloads()
+
+        download_tag = (
+            orch.firmware_downloader.download_repo_prerelease_firmware.call_args[0][0]
+        )
+        cleanup_tag = orch.firmware_downloader.cleanup_superseded_prereleases.call_args[
+            0
+        ][0]
+
+        assert download_tag != "v2.7.15.567b8ea"
+        assert cleanup_tag != "v2.7.15.567b8ea"
+
+    def test_cross_path_consistency_download_and_cleanup_share_tag(self, tmp_path):
+        """Test C: repo-prerelease download and cleanup must agree on the same tag."""
+        orch = self._setup_orchestrator(tmp_path)
+
+        orch._process_firmware_downloads()
+
+        download_tag = (
+            orch.firmware_downloader.download_repo_prerelease_firmware.call_args[0][0]
+        )
+        cleanup_tag = orch.firmware_downloader.cleanup_superseded_prereleases.call_args[
+            0
+        ][0]
+
+        assert download_tag == cleanup_tag == "v2.7.22.96dd647"
+
+
+class TestFirmwareSummaryUsesSelectedReleases:
+    """Tests that firmware summary uses the actual selected release set.
+
+    Verifies that when KEEP_LAST_BETA is enabled, the final firmware summary
+    reflects the actual retained set (including the beta) rather than
+    reconstructing from the full release list.
+    """
+
+    @pytest.fixture
+    def mock_config(self):
+        """Provide a mock configuration dictionary."""
+        return {
+            "DOWNLOAD_DIR": "/tmp/test",
+            "SAVE_APKS": True,
+            "SAVE_FIRMWARE": True,
+            "SAVE_DESKTOP_APP": True,
+            "CHECK_APK_PRERELEASES": True,
+            "CHECK_FIRMWARE_PRERELEASES": True,
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": ["*debug*"],
+            "GITHUB_TOKEN": "test_token",
+        }
+
+    @pytest.fixture
+    def orchestrator(self, mock_config):
+        """Create a DownloadOrchestrator for tests with mocked dependencies."""
+        from unittest.mock import Mock
+
+        orch = DownloadOrchestrator(mock_config)
+        # Mock the dependencies
+        orch.cache_manager = Mock()
+        orch.version_manager = Mock()
+        orch.prerelease_manager = Mock()
+        orch.android_downloader = Mock()
+        orch.android_downloader.download_dir = "/tmp/test"
+        orch.firmware_downloader = Mock()
+        orch.firmware_downloader.download_dir = "/tmp/test"
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.desktop_downloader = Mock()
+        orch.desktop_downloader.download_dir = "/tmp/test"
+
+        def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
+            return initial_releases, initial_releases, current_fetch_limit
+
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            side_effect=_collect_non_revoked
+        )
+        return orch
+
+    def test_summary_uses_actual_selected_set_with_keep_last_beta(self, orchestrator):
+        """Summary should use firmware_releases_selected including beta."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 2
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
+        # Create releases where beta is outside the normal keep window
+        stable_newer = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        stable_older = Release(tag_name="v2.7.19", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.18-beta.1", prerelease=True, assets=[])
+
+        # The releases_to_process that would be built in _process_firmware_downloads:
+        # - First 2 non-revoked: [stable_newer, stable_older]
+        # - Then beta appended: [stable_newer, stable_older, beta]
+        selected_releases = [stable_newer, stable_older, beta]
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [stable_newer, stable_older, beta]
+        orchestrator.firmware_releases_selected = list(selected_releases)
+
+        # Verify it's stored as a copy (immutable snapshot)
+        assert orchestrator.firmware_releases_selected is not selected_releases
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = selected_releases
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Verify log_release_channel_summary was called with the selected releases
+        # including the beta (3 releases, not 2)
+        manager.log_release_channel_summary.assert_called_once()
+        call_args = manager.log_release_channel_summary.call_args
+        passed_releases = call_args[0][0]
+        passed_keep_limit = call_args[1].get(
+            "keep_limit", call_args[0][2] if len(call_args[0]) > 2 else 0
+        )
+
+        # The releases passed should be the selected set (including beta)
+        assert len(passed_releases) == 3
+        assert beta in passed_releases
+        assert stable_newer in passed_releases
+        assert stable_older in passed_releases
+
+        # Keep limit should match actual count (3, not the original 2)
+        assert passed_keep_limit == 3
+
+    def test_summary_uses_actual_selected_set_excluding_revoked(self, orchestrator):
+        """Summary should filter revoked from firmware_releases_selected."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 2
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = True
+
+        stable = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.18-beta.1", prerelease=True, assets=[])
+        selected_releases = [stable, beta]
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [stable, beta]
+        orchestrator.firmware_releases_selected = selected_releases
+
+        # Mark beta as revoked
+        def is_revoked(release):
+            return release.tag_name == "v2.7.18-beta.1"
+
+        orchestrator.firmware_downloader.is_release_revoked.side_effect = is_revoked
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = [stable]
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Verify revoked beta was filtered from the summary
+        manager.log_release_channel_summary.assert_called_once()
+        passed_releases = manager.log_release_channel_summary.call_args[0][0]
+
+        # Beta should be filtered out due to revoked status
+        assert len(passed_releases) == 1
+        assert beta not in passed_releases
+        assert stable in passed_releases
+
+    def test_summary_fallback_when_selected_not_set(self, orchestrator):
+        """Summary should fall back to legacy behavior when selected not available."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 2
+        orchestrator.config["KEEP_LAST_BETA"] = False
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
+        stable_newer = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        stable_older = Release(tag_name="v2.7.19", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.18-beta.1", prerelease=True, assets=[])
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [stable_newer, stable_older, beta]
+        # firmware_releases_selected is None (not set)
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = [
+            stable_newer,
+            stable_older,
+            beta,
+        ]
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Should use fallback logic (firmware_releases, not firmware_releases_selected)
+        manager.log_release_channel_summary.assert_called_once()
+        passed_releases = manager.log_release_channel_summary.call_args[0][0]
+
+        # Should be using all releases (firmware_releases)
+        assert len(passed_releases) == 3
+
+    def test_beta_outside_keep_window_included_in_summary(self, orchestrator):
+        """Beta outside normal keep window should appear in summary when KEEP_LAST_BETA."""
+        orchestrator.config["FIRMWARE_VERSIONS_TO_KEEP"] = 1  # Very small window
+        orchestrator.config["KEEP_LAST_BETA"] = True
+        orchestrator.config["FILTER_REVOKED_RELEASES"] = False
+
+        # Setup: 3 stable releases and 1 beta
+        # Keep limit is 1, so only v2.7.22 would be in normal window
+        # Beta v2.7.20-beta.1 is outside but should be kept with KEEP_LAST_BETA
+        v2_7_22 = Release(tag_name="v2.7.22", prerelease=False, assets=[])
+        v2_7_21 = Release(tag_name="v2.7.21", prerelease=False, assets=[])
+        v2_7_20 = Release(tag_name="v2.7.20", prerelease=False, assets=[])
+        beta = Release(tag_name="v2.7.20-beta.1", prerelease=True, assets=[])
+
+        # Simulating what _process_firmware_downloads does:
+        # releases_for_processing[:keep_limit] = [v2_7_22]
+        # Then beta appended: [v2_7_22, beta]
+        selected_releases = [v2_7_22, beta]
+
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [v2_7_22, v2_7_21, v2_7_20, beta]
+        orchestrator.firmware_releases_selected = selected_releases
+
+        manager = Mock()
+        manager.get_releases_for_summary.return_value = selected_releases
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        # Verify the summary includes both v2.7.22 and the beta
+        manager.log_release_channel_summary.assert_called_once()
+        passed_releases = manager.log_release_channel_summary.call_args[0][0]
+        passed_keep_limit = manager.log_release_channel_summary.call_args[1].get(
+            "keep_limit", 0
+        )
+
+        # Should have 2 releases (the one in window + the beta)
+        assert len(passed_releases) == 2
+        assert v2_7_22 in passed_releases
+        assert beta in passed_releases
+        assert v2_7_21 not in passed_releases
+        assert v2_7_20 not in passed_releases
+
+        # Keep limit should reflect actual count
+        assert passed_keep_limit == 2
