@@ -2909,12 +2909,9 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
         orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
 
-        def _cmp_ver(v1, v2):
-            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
-            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
-            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+        from fetchtastic.download.version import VersionManager
 
-        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_desktop_downloads = Mock()
@@ -2952,12 +2949,9 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
         orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
 
-        def _cmp_ver(v1, v2):
-            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
-            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
-            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+        from fetchtastic.download.version import VersionManager
 
-        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_desktop_downloads = Mock()
@@ -3000,9 +2994,10 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.get_releases.return_value = apk_releases
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = None
         orchestrator.android_downloader.get_latest_release_tag.return_value = None
-        orchestrator.version_manager.compare_versions.side_effect = lambda v1, v2: (
-            1 if v1 > v2 else (-1 if v1 < v2 else 0)
-        )
+
+        from fetchtastic.download.version import VersionManager
+
+        orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_desktop_downloads = Mock()
@@ -3054,12 +3049,9 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
         orchestrator.android_downloader.get_releases.return_value = []
 
-        def _cmp_ver(v1, v2):
-            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
-            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
-            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+        from fetchtastic.download.version import VersionManager
 
-        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_desktop_downloads = Mock()
@@ -3104,12 +3096,9 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.18"
         orchestrator.android_downloader.get_releases.return_value = []
 
-        def _cmp_ver(v1, v2):
-            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
-            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
-            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+        from fetchtastic.download.version import VersionManager
 
-        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_desktop_downloads = Mock()
@@ -3148,12 +3137,9 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
         orchestrator.firmware_downloader.get_releases.return_value = []
 
-        def _cmp_ver(v1, v2):
-            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
-            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
-            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+        from fetchtastic.download.version import VersionManager
 
-        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_desktop_downloads = Mock()
@@ -3188,12 +3174,9 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.get_releases.return_value = apk_releases
         orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
 
-        def _cmp_ver(v1, v2):
-            t1 = tuple(int(x) for x in v1.lstrip("v").split("."))
-            t2 = tuple(int(x) for x in v2.lstrip("v").split("."))
-            return 1 if t1 > t2 else (-1 if t1 < t2 else 0)
+        from fetchtastic.download.version import VersionManager
 
-        orchestrator.version_manager.compare_versions.side_effect = _cmp_ver
+        orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_desktop_downloads = Mock()
@@ -3570,7 +3553,11 @@ class TestFirmwareSummaryUsesSelectedReleases:
         # firmware_releases_selected is None (not set)
 
         manager = Mock()
-        manager.get_releases_for_summary.return_value = [stable_newer, stable_older]
+        manager.get_releases_for_summary.return_value = [
+            stable_newer,
+            stable_older,
+            beta,
+        ]
         orchestrator.firmware_downloader.release_history_manager = manager
 
         orchestrator.log_firmware_release_history_summary()

@@ -2997,6 +2997,8 @@ class TestFirmwareUncoveredBranches:
 # Backwards compatibility - ensure existing test class still works
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 class TestFirmwarePrereleaseBaselineDerivation:
     """Tests that firmware prerelease baseline derivation produces correct version families."""
 
@@ -3052,7 +3054,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
                 return_value=([], [], False),
             ),
         ):
-            results, failed, latest, summary = (
+            _results, _failed, _latest, summary = (
                 downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
             )
 

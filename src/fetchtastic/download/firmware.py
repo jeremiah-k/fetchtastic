@@ -2182,8 +2182,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         Remove prerelease firmware directories whose semantic version is less than or equal to the given release tag.
 
+        Uses the latest release by version (stable) as the baseline for determining which prerelease
+        directories are superseded, regardless of prerelease flag.
+
         Parameters:
-            latest_release_tag (str): Release tag used for comparison; may include a leading "v".
+            latest_release_tag (str): Release tag used for comparison. May include:
+                - a leading "v" (e.g., "v2.7.15")
+                - a hash/commit suffix (e.g., "v2.7.15.abc1234")
 
         Returns:
             bool: `True` if any prerelease directories were removed, `False` otherwise.
