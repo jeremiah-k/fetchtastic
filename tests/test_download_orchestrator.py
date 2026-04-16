@@ -3491,7 +3491,10 @@ class TestFirmwareSummaryUsesSelectedReleases:
 
         orchestrator.firmware_release_history = {"entries": {}}
         orchestrator.firmware_releases = [stable_newer, stable_older, beta]
-        orchestrator.firmware_releases_selected = selected_releases
+        orchestrator.firmware_releases_selected = list(selected_releases)
+
+        # Verify it's stored as a copy (immutable snapshot)
+        assert orchestrator.firmware_releases_selected is not selected_releases
 
         manager = Mock()
         manager.get_releases_for_summary.return_value = selected_releases

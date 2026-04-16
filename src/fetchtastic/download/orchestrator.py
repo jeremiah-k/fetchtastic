@@ -166,9 +166,9 @@ class DownloadOrchestrator:
         self._desktop_releases_fetch_limit: Optional[int] = None
         self.desktop_releases: Optional[List[Release]] = None
         self.firmware_release_history: Optional[Dict[str, Any]] = None
-        # Single-run only: cleared by log_firmware_release_history_summary()
+        # Single-run only: cleared after _log_prerelease_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
-        # Actual selected/kept releases for summary (including KEEP_LAST_BETA)
+        # Run-scoped selected set: reset at start of _process_firmware_downloads()
         self.firmware_releases_selected: Optional[List[Release]] = None
         self.wifi_skipped: bool = False
         self.available_new_firmware_versions: List[str] = []
@@ -899,7 +899,7 @@ class DownloadOrchestrator:
                             )
 
             # Store the actual selected releases for accurate summary reporting
-            self.firmware_releases_selected = releases_to_process
+            self.firmware_releases_selected = list(releases_to_process)
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
