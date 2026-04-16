@@ -3016,8 +3016,8 @@ class TestFirmwarePrereleaseBaselineDerivation:
         expected = vm.calculate_expected_prerelease_version(clean)
         assert expected == "2.7.17"
 
-    def test_baseline_derivation_consistent_with_official_release(self):
-        """When v2.7.22 is the official release, derived prerelease must be 2.7.23 not 2.7.17."""
+    def test_baseline_derivation_consistent_with_latest_release(self):
+        """When v2.7.22 is the latest release, derived prerelease must be 2.7.23 not 2.7.17."""
         vm = VersionManager()
         official_clean = vm.extract_clean_version("v2.7.22")
         official_expected = vm.calculate_expected_prerelease_version(official_clean)

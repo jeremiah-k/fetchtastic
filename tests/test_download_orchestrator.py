@@ -2858,18 +2858,21 @@ class TestDownloadOrchestrator:
             mock_result, "firmware_prerelease_repo"
         )
 
-    def test_process_firmware_uses_stable_baseline_for_repo_prerelease(
+    def test_process_firmware_repo_prerelease_uses_latest_by_version(
         self, orchestrator
     ):
-        """Repo prerelease download and cleanup should use the latest stable release tag."""
+        """Repo prerelease download and cleanup must use the latest release by version, even if hash-suffixed."""
+        from fetchtastic.download.version import VersionManager
+
         orchestrator.config["SAVE_FIRMWARE"] = True
-        orchestrator.version_manager.is_prerelease_version.return_value = False
-        stable = Release(tag_name="v2.7.15", prerelease=False, assets=[])
-        gh_prerelease = Release(tag_name="v2.7.16.a597230", prerelease=True, assets=[])
+        orchestrator.version_manager = VersionManager()
+
+        hash_latest = Release(tag_name="v2.7.22.96dd647", prerelease=True, assets=[])
+        older_stable = Release(tag_name="v2.7.15", prerelease=False, assets=[])
 
         orchestrator.firmware_downloader.get_releases.return_value = [
-            gh_prerelease,
-            stable,
+            hash_latest,
+            older_stable,
         ]
         orchestrator.firmware_downloader.is_release_complete.return_value = True
         orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
@@ -2879,27 +2882,13 @@ class TestDownloadOrchestrator:
             None,
         )
 
-        call_count = 0
-
-        def select_side_effect(releases):
-            nonlocal call_count
-            call_count += 1
-            non_prerelease = [r for r in releases if not r.prerelease]
-            if non_prerelease:
-                return non_prerelease[0]
-            return releases[0] if releases else None
-
-        orchestrator._select_latest_release_by_version = Mock(
-            side_effect=select_side_effect
-        )
-
         orchestrator._process_firmware_downloads()
 
         orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
-            "v2.7.15", force_refresh=False
+            "v2.7.22.96dd647", force_refresh=False
         )
         orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
-            "v2.7.15"
+            "v2.7.22.96dd647"
         )
 
     def test_discover_available_versions_populates_lists_when_wifi_skipped(
@@ -3225,20 +3214,21 @@ class TestDownloadOrchestrator:
         assert orchestrator.available_new_firmware_versions == []
         assert "v2.7.10" in orchestrator.available_new_apk_versions
 
-    def test_process_firmware_excludes_hash_suffixed_from_baseline(self, orchestrator):
-        """Hash-suffixed releases must be excluded from the stable baseline selection."""
+    def test_process_firmware_hash_suffixed_is_valid_baseline_when_latest(
+        self, orchestrator
+    ):
+        """A hash-suffixed tag that is latest by version must be used as baseline."""
         from fetchtastic.download.version import VersionManager
 
         orchestrator.config["SAVE_FIRMWARE"] = True
-        official_stable = Release(tag_name="v2.7.22", prerelease=False, assets=[])
-        hash_suffixed = Release(tag_name="v2.7.16.9058cce", prerelease=False, assets=[])
+        orchestrator.version_manager = VersionManager()
 
-        real_vm = VersionManager()
-        orchestrator.version_manager = real_vm
+        hash_newer = Release(tag_name="v2.7.22.96dd647", prerelease=True, assets=[])
+        stable_older = Release(tag_name="v2.7.20", prerelease=False, assets=[])
 
         orchestrator.firmware_downloader.get_releases.return_value = [
-            hash_suffixed,
-            official_stable,
+            hash_newer,
+            stable_older,
         ]
         orchestrator.firmware_downloader.is_release_complete.return_value = True
         orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
@@ -3251,21 +3241,14 @@ class TestDownloadOrchestrator:
         orchestrator._process_firmware_downloads()
 
         orchestrator.firmware_downloader.download_repo_prerelease_firmware.assert_called_once_with(
-            "v2.7.22", force_refresh=False
+            "v2.7.22.96dd647", force_refresh=False
         )
         orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
-            "v2.7.22"
+            "v2.7.22.96dd647"
         )
-        call_tag = orchestrator.firmware_downloader.download_repo_prerelease_firmware.call_args[
-            0
-        ][
-            0
-        ]
-        assert call_tag == "v2.7.22"
-        assert call_tag != "v2.7.16.9058cce"
 
-    def test_no_official_stable_firmware_skips_repo_prerelease(self, orchestrator):
-        """With 0.10.4 behavior, the latest release by version (even hash-suffixed) is used as baseline."""
+    def test_hash_suffixed_only_releases_still_provide_baseline(self, orchestrator):
+        """When all releases are hash-suffixed, the latest by version is still used as baseline."""
         from fetchtastic.download.version import VersionManager
 
         orchestrator.config["SAVE_FIRMWARE"] = True
@@ -3293,7 +3276,7 @@ class TestDownloadOrchestrator:
             "v2.7.16.9058cce"
         )
 
-    def test_process_firmware_uses_official_baseline_with_mixed_releases(
+    def test_process_firmware_uses_latest_by_version_with_mixed_releases(
         self, orchestrator
     ):
         """Latest release by version is used as baseline regardless of hash suffix or prerelease flag."""
