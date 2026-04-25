@@ -18,6 +18,7 @@ coverage.xml
 htmlcov/
 junit.xml
 build/
+.opencode/
 
 
 #Ignore vscode AI rules
