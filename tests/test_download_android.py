@@ -11,7 +11,6 @@ import pytest
 import requests
 
 from fetchtastic.constants import (
-    ANDROID_DIR_NAME,
     APK_PRERELEASES_DIR_NAME,
     APP_DIR_NAME,
     FILE_TYPE_ANDROID_PRERELEASE,
@@ -248,7 +247,6 @@ class TestMeshtasticAndroidAppDownloader:
         assert str(notes_file).endswith(
             os.path.join(
                 APP_DIR_NAME,
-                ANDROID_DIR_NAME,
                 "v2.7.10",
                 "release_notes-v2.7.10.md",
             )
@@ -272,7 +270,6 @@ class TestMeshtasticAndroidAppDownloader:
         assert notes_file.exists()
         expected_suffix = os.path.join(
             APP_DIR_NAME,
-            ANDROID_DIR_NAME,
             APK_PRERELEASES_DIR_NAME,
             "v2.7.10-open.1",
             "release_notes-v2.7.10-open.1.md",
@@ -292,7 +289,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         expected = os.path.join(
             str(tmp_path / "downloads"),
-            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
+            APP_DIR_NAME,
             "v1.0.0",
             "meshtastic.apk",
         )
@@ -306,7 +303,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         expected = os.path.join(
             str(tmp_path / "downloads"),
-            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
+            APP_DIR_NAME,
             APK_PRERELEASES_DIR_NAME,
             "v2.7.10-open.1",
             "meshtastic.apk",
@@ -322,9 +319,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
 
-        preferred_dir = (
-            tmp_path / "downloads" / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-        ) / "v1.0.0"
+        preferred_dir = (tmp_path / "downloads" / APP_DIR_NAME) / "v1.0.0"
         assert path == str(preferred_dir / "meshtastic.apk")
         assert preferred_dir.exists()
         assert not legacy_dir.exists()
@@ -354,9 +349,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         assert downloader.is_release_complete(release) is True
-        preferred_dir = (
-            tmp_path / "downloads" / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-        ) / "v1.0.0"
+        preferred_dir = (tmp_path / "downloads" / APP_DIR_NAME) / "v1.0.0"
         assert preferred_dir.exists()
 
     def test_is_release_complete_returns_false_on_unsafe_resolve(self, downloader):
@@ -627,7 +620,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         expected = os.path.join(
             downloader.download_dir,
-            os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME),
+            APP_DIR_NAME,
             APK_PRERELEASES_DIR_NAME,
             release.tag_name,
             asset.name,
@@ -757,19 +750,14 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         prerelease_tag = "v2.7.10-open.1"
-        misplaced = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / prerelease_tag
-        )
+        misplaced = tmp_path / APP_DIR_NAME / prerelease_tag
         misplaced.mkdir(parents=True)
         expected_dir = (
-            tmp_path
-            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-            / APK_PRERELEASES_DIR_NAME
-            / prerelease_tag
+            tmp_path / APP_DIR_NAME / APK_PRERELEASES_DIR_NAME / prerelease_tag
         )
         expected_dir.mkdir(parents=True)
 
-        stable_dir = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.9"
+        stable_dir = tmp_path / APP_DIR_NAME / "v2.7.9"
         stable_dir.mkdir(parents=True)
 
         releases = [
@@ -795,7 +783,7 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        android_dir = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+        android_dir = tmp_path / APP_DIR_NAME
         android_dir.mkdir(parents=True)
         mismatched_dir = android_dir / "v1.0.0-alpha"
         mismatched_dir.mkdir()
@@ -828,7 +816,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         # Ensure the base APK directory exists so cleanup logic proceeds.
-        (tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)).mkdir(parents=True)
+        (tmp_path / APP_DIR_NAME).mkdir(parents=True)
 
         # Provide only prerelease entries so the stable list is empty.
         releases = [
@@ -859,32 +847,17 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        root_prerelease = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10-open.1"
-        )
+        root_prerelease = tmp_path / APP_DIR_NAME / "v2.7.10-open.1"
         root_prerelease.mkdir(parents=True)
         prerelease_dir = (
-            tmp_path
-            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-            / APK_PRERELEASES_DIR_NAME
-            / "v2.7.10-open.2"
+            tmp_path / APP_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.2"
         )
         prerelease_dir.mkdir(parents=True)
-        misplaced_stable = (
-            tmp_path
-            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-            / APK_PRERELEASES_DIR_NAME
-            / "v2.7.9"
-        )
+        misplaced_stable = tmp_path / APP_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.9"
         misplaced_stable.mkdir(parents=True)
-        user_dir = (
-            tmp_path
-            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-            / APK_PRERELEASES_DIR_NAME
-            / "notes"
-        )
+        user_dir = tmp_path / APP_DIR_NAME / APK_PRERELEASES_DIR_NAME / "notes"
         user_dir.mkdir(parents=True)
-        stable_dir = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
+        stable_dir = tmp_path / APP_DIR_NAME / "v2.7.10"
         stable_dir.mkdir(parents=True)
 
         releases = [
@@ -912,11 +885,11 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        v27_9 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.9"
+        v27_9 = tmp_path / APP_DIR_NAME / "v2.7.9"
         v27_9.mkdir(parents=True)
-        v27_10 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
+        v27_10 = tmp_path / APP_DIR_NAME / "v2.7.10"
         v27_10.mkdir(parents=True)
-        v28_0 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.8.0"
+        v28_0 = tmp_path / APP_DIR_NAME / "v2.8.0"
         v28_0.mkdir(parents=True)
 
         releases = [
@@ -944,14 +917,12 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        v27_9 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.9"
+        v27_9 = tmp_path / APP_DIR_NAME / "v2.7.9"
         v27_9.mkdir(parents=True)
-        v28_0 = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.8.0"
+        v28_0 = tmp_path / APP_DIR_NAME / "v2.8.0"
         v28_0.mkdir(parents=True)
         future_tag = "release-2026.04"
-        future_dir = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / future_tag
-        )
+        future_dir = tmp_path / APP_DIR_NAME / future_tag
         future_dir.mkdir(parents=True)
 
         releases = [
@@ -992,9 +963,7 @@ class TestMeshtasticAndroidAppDownloader:
     ):
         """Test cleanup returns when APK directory is missing."""
         releases = [Release(tag_name="v1.0.0", prerelease=False)]
-        android_dir = os.path.join(
-            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-        )
+        android_dir = os.path.join(downloader.download_dir, APP_DIR_NAME, "")
         legacy_android_dir = os.path.join(downloader.download_dir, "apks")
 
         with (
@@ -1021,9 +990,7 @@ class TestMeshtasticAndroidAppDownloader:
             return_value=[Release(tag_name="..", prerelease=True)]
         )
 
-        android_dir = os.path.join(
-            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-        )
+        android_dir = os.path.join(downloader.download_dir, APP_DIR_NAME, "")
 
         def _isdir(path):
             """
@@ -1071,9 +1038,7 @@ class TestMeshtasticAndroidAppDownloader:
             return_value=[Release(tag_name="v1.0.1-open.1", prerelease=True)]
         )
 
-        android_dir = os.path.join(
-            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-        )
+        android_dir = os.path.join(downloader.download_dir, APP_DIR_NAME, "")
         prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
 
         entry_symlink = Mock()
@@ -1137,9 +1102,7 @@ class TestMeshtasticAndroidAppDownloader:
     ):
         """Test cleanup returns when prerelease directory is missing."""
         releases = [Release(tag_name="v1.0.0", prerelease=False)]
-        android_dir = os.path.join(
-            downloader.download_dir, os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-        )
+        android_dir = os.path.join(downloader.download_dir, APP_DIR_NAME, "")
 
         def _isdir(path):
             """
@@ -1163,7 +1126,6 @@ class TestMeshtasticAndroidAppDownloader:
         ):
             downloader.cleanup_prerelease_directories(cached_releases=releases)
 
-        # Scandir is called twice: once for pre-loop union scan, once for main loop
         assert mock_scandir.call_count == 2
         assert all(call.args[0] == android_dir for call in mock_scandir.call_args_list)
 
@@ -1417,7 +1379,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         downloader.migrate_legacy_layout()
 
-        preferred_root = tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
+        preferred_root = tmp_path / APP_DIR_NAME
         assert (preferred_root / "v2.7.10" / "meshtastic.apk").exists()
         assert (
             preferred_root
@@ -1435,9 +1397,7 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
         legacy_stable = tmp_path / "apks" / "v2.7.10"
-        preferred_stable = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
-        )
+        preferred_stable = tmp_path / APP_DIR_NAME / "v2.7.10"
         legacy_stable.mkdir(parents=True)
         preferred_stable.mkdir(parents=True)
         (legacy_stable / "legacy.apk").write_bytes(b"legacy")
@@ -1455,9 +1415,7 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        preferred_dir = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
-        )
+        preferred_dir = tmp_path / APP_DIR_NAME / "v2.7.10"
         preferred_dir.mkdir(parents=True)
 
         result = downloader._resolve_release_dir(
@@ -1466,77 +1424,218 @@ class TestMeshtasticAndroidAppDownloader:
 
         assert result == str(preferred_dir)
 
-    def test_resolve_release_dir_migrates_legacy_path_when_preferred_missing(
-        self, tmp_path
-    ):
-        """Test _resolve_release_dir migrates legacy path into preferred layout."""
+    def test_get_split_android_base_dir(self, tmp_path):
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = MeshtasticAndroidAppDownloader(
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        legacy_dir = tmp_path / "apks" / "v2.7.10"
+        result = downloader._get_split_android_base_dir()
+
+        assert result == os.path.join(str(tmp_path), APP_DIR_NAME, "android")
+
+    def test_get_split_android_prerelease_base_dir(self, tmp_path):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        result = downloader._get_split_android_prerelease_base_dir()
+
+        assert result == os.path.join(
+            str(tmp_path), APP_DIR_NAME, "android", APK_PRERELEASES_DIR_NAME
+        )
+
+    def test_migrate_legacy_layout_moves_split_android_dirs(self, tmp_path):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        split_dir = tmp_path / APP_DIR_NAME / "android" / "v2.7.10"
+        split_dir.mkdir(parents=True)
+        (split_dir / "meshtastic.apk").write_bytes(b"apk")
+
+        downloader.migrate_legacy_layout()
+
+        moved = tmp_path / APP_DIR_NAME / "v2.7.10" / "meshtastic.apk"
+        assert moved.exists()
+        assert not split_dir.exists()
+
+    def test_migrate_legacy_layout_moves_split_prerelease_dirs(self, tmp_path):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        split_pre = (
+            tmp_path
+            / APP_DIR_NAME
+            / "android"
+            / APK_PRERELEASES_DIR_NAME
+            / "v2.7.10-open.1"
+        )
+        split_pre.mkdir(parents=True)
+        (split_pre / "meshtastic.apk").write_bytes(b"pre")
+
+        downloader.migrate_legacy_layout()
+
+        moved = (
+            tmp_path
+            / APP_DIR_NAME
+            / APK_PRERELEASES_DIR_NAME
+            / "v2.7.10-open.1"
+            / "meshtastic.apk"
+        )
+        assert moved.exists()
+        assert not split_pre.exists()
+
+    def test_migrate_legacy_layout_skips_symlinked_preferred_dir(
+        self, tmp_path, mocker
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        real_dir = tmp_path / "real-target"
+        real_dir.mkdir(parents=True)
+        app_link = tmp_path / APP_DIR_NAME
+        try:
+            app_link.symlink_to(real_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        mock_logger = mocker.patch("fetchtastic.download.android.logger")
+
+        downloader.migrate_legacy_layout()
+
+        assert any(
+            "symlinked" in str(call.args[0]).lower()
+            for call in mock_logger.warning.call_args_list
+            if call.args
+        )
+
+    def test_migrate_legacy_layout_handles_oserror_scanning_source(
+        self, tmp_path, mocker
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        legacy_dir = tmp_path / "apks"
         legacy_dir.mkdir(parents=True)
+
+        original_scandir = os.scandir
+
+        def _scandir(path):
+            if str(path) == str(legacy_dir):
+                raise OSError("boom")
+            return original_scandir(path)
+
+        mocker.patch("fetchtastic.download.android.os.scandir", side_effect=_scandir)
+
+        downloader.migrate_legacy_layout()
+
+    def test_migrate_legacy_layout_skips_symlink_entries(self, tmp_path):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        legacy_dir = tmp_path / "apks"
+        legacy_dir.mkdir(parents=True)
+        real_target = tmp_path / "real-target"
+        real_target.mkdir(parents=True)
+        (real_target / "file.apk").write_bytes(b"real")
+        try:
+            (legacy_dir / "link").symlink_to(real_target, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlinks are not supported in this test environment")
+        normal_dir = legacy_dir / "v2.7.10"
+        normal_dir.mkdir()
+        (normal_dir / "meshtastic.apk").write_bytes(b"apk")
+
+        downloader.migrate_legacy_layout()
+
+        moved = tmp_path / APP_DIR_NAME / "v2.7.10" / "meshtastic.apk"
+        assert moved.exists()
+        assert real_target.exists()
+        assert (legacy_dir / "link").exists()
+
+    def test_resolve_release_dir_finds_split_android_layout(self, tmp_path):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        split_dir = tmp_path / APP_DIR_NAME / "android" / "v2.7.10"
+        split_dir.mkdir(parents=True)
+        (split_dir / "meshtastic.apk").write_bytes(b"apk")
 
         result = downloader._resolve_release_dir(
             "v2.7.10", is_prerelease=False, create_if_missing=False
         )
 
-        preferred_dir = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
-        )
-        assert result == str(preferred_dir)
-        assert preferred_dir.exists()
-        assert not legacy_dir.exists()
+        assert result == str(tmp_path / APP_DIR_NAME / "v2.7.10")
 
-    def test_move_legacy_path_skips_symlink_source(self, tmp_path):
-        """_move_legacy_path should refuse to move symlinked sources."""
+    def test_resolve_release_dir_finds_split_prerelease_layout(self, tmp_path):
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = MeshtasticAndroidAppDownloader(
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        real_source = tmp_path / "real-source" / "v2.7.10"
-        real_source.mkdir(parents=True)
-        source_link = tmp_path / "apks" / "v2.7.10"
-        source_link.parent.mkdir(parents=True)
-        try:
-            source_link.symlink_to(real_source, target_is_directory=True)
-        except OSError:
-            pytest.skip("Symlinks are not supported in this test environment")
+        split_pre = (
+            tmp_path
+            / APP_DIR_NAME
+            / "android"
+            / APK_PRERELEASES_DIR_NAME
+            / "v2.7.10-open.1"
+        )
+        split_pre.mkdir(parents=True)
+        (split_pre / "meshtastic.apk").write_bytes(b"pre")
 
-        destination = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
+        result = downloader._resolve_release_dir(
+            "v2.7.10-open.1", is_prerelease=True, create_if_missing=False
         )
 
-        moved = downloader._move_legacy_path(str(source_link), str(destination))
+        assert result == str(
+            tmp_path / APP_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.1"
+        )
 
-        assert moved is False
-        assert source_link.exists()
-        assert real_source.exists()
-        assert not destination.exists()
-
-    def test_resolve_release_dir_skips_legacy_move_when_preferred_base_symlinked(
-        self, tmp_path
-    ):
-        """Legacy migration should be skipped when preferred Android base is symlinked."""
+    def test_resolve_release_dir_refuses_symlinked_preferred_release(self, tmp_path):
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = MeshtasticAndroidAppDownloader(
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
-
-        legacy_dir = tmp_path / "apks" / "v2.7.10"
-        legacy_dir.mkdir(parents=True)
 
         app_dir = tmp_path / APP_DIR_NAME
         app_dir.mkdir(parents=True)
-        redirected_android_base = tmp_path / "redirected-android-base"
-        redirected_android_base.mkdir(parents=True)
-        android_symlink = app_dir / ANDROID_DIR_NAME
+        real_dir = tmp_path / "real-dest"
+        real_dir.mkdir(parents=True)
         try:
-            android_symlink.symlink_to(
-                redirected_android_base, target_is_directory=True
+            (app_dir / "v2.7.10").symlink_to(real_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        with pytest.raises(ValueError, match="symlinked"):
+            downloader._resolve_release_dir(
+                "v2.7.10", is_prerelease=False, create_if_missing=False
             )
+
+    def test_resolve_release_dir_ignores_symlinked_legacy_release(self, tmp_path):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        apks_dir = tmp_path / "apks"
+        apks_dir.mkdir(parents=True)
+        real_dir = tmp_path / "real"
+        real_dir.mkdir(parents=True)
+        try:
+            (apks_dir / "v2.7.10").symlink_to(real_dir, target_is_directory=True)
         except OSError:
             pytest.skip("Symlinks are not supported in this test environment")
 
@@ -1544,8 +1643,109 @@ class TestMeshtasticAndroidAppDownloader:
             "v2.7.10", is_prerelease=False, create_if_missing=False
         )
 
-        assert result == str(legacy_dir)
-        assert legacy_dir.exists()
+        assert result == str(tmp_path / APP_DIR_NAME / "v2.7.10")
+
+    def test_resolve_release_dir_create_if_missing_refuses_symlinked_base(
+        self, tmp_path
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        real_dir = tmp_path / "real-base"
+        real_dir.mkdir(parents=True)
+        app_link = tmp_path / APP_DIR_NAME
+        try:
+            app_link.symlink_to(real_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        with pytest.raises(ValueError):
+            downloader._resolve_release_dir(
+                "v2.7.10", is_prerelease=False, create_if_missing=True
+            )
+
+    def test_resolve_release_dir_create_if_missing_refuses_unsafe_path(
+        self, tmp_path, mocker
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        mocker.patch.object(downloader, "_is_within_download_tree", return_value=False)
+
+        with pytest.raises(ValueError, match="outside download tree"):
+            downloader._resolve_release_dir(
+                "v2.7.10", is_prerelease=False, create_if_missing=True
+            )
+
+    def test_resolve_release_dir_refuses_unsafe_existing_dir(self, tmp_path):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        app_dir = tmp_path / APP_DIR_NAME
+        app_dir.mkdir(parents=True)
+        real_dir = tmp_path / "real-dest"
+        real_dir.mkdir(parents=True)
+        try:
+            (app_dir / "v2.7.10").symlink_to(real_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        with pytest.raises(ValueError, match="symlinked"):
+            downloader._resolve_release_dir(
+                "v2.7.10", is_prerelease=False, create_if_missing=False
+            )
+
+    def test_cleanup_skips_non_android_dir_in_app_tree(self, tmp_path):
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        stable_dir = tmp_path / APP_DIR_NAME / "v2.7.20"
+        stable_dir.mkdir(parents=True)
+        (stable_dir / "meshtastic.apk").write_bytes(b"apk")
+
+        desktop_dir = tmp_path / APP_DIR_NAME / "desktop-files"
+        desktop_dir.mkdir(parents=True)
+        (desktop_dir / "readme.txt").write_text("info")
+
+        releases = [Release(tag_name="v2.7.20", prerelease=False)]
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        assert stable_dir.exists()
+        assert desktop_dir.exists()
+
+    def test_migrate_legacy_layout_handles_oserror_scanning_prerelease(
+        self, tmp_path, mocker
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        pre_dir = tmp_path / "apks" / APK_PRERELEASES_DIR_NAME
+        pre_dir.mkdir(parents=True)
+
+        original_scandir = os.scandir
+
+        def _scandir(path):
+            if str(path) == str(pre_dir):
+                raise OSError("boom")
+            return original_scandir(path)
+
+        mocker.patch("fetchtastic.download.android.os.scandir", side_effect=_scandir)
+
+        downloader.migrate_legacy_layout()
 
     def test_resolve_release_dir_creates_preferred_when_create_if_missing_true(
         self, tmp_path
@@ -1556,9 +1756,7 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        preferred_dir = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
-        )
+        preferred_dir = tmp_path / APP_DIR_NAME / "v2.7.10"
         assert not preferred_dir.exists()
 
         result = downloader._resolve_release_dir(
@@ -1577,9 +1775,7 @@ class TestMeshtasticAndroidAppDownloader:
             config, CacheManager(cache_dir=str(tmp_path / "cache"))
         )
 
-        preferred_dir = (
-            tmp_path / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME) / "v2.7.10"
-        )
+        preferred_dir = tmp_path / APP_DIR_NAME / "v2.7.10"
         assert not preferred_dir.exists()
 
         result = downloader._resolve_release_dir(
@@ -1599,10 +1795,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         preferred_dir = (
-            tmp_path
-            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-            / APK_PRERELEASES_DIR_NAME
-            / "v2.7.10-open.1"
+            tmp_path / APP_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.1"
         )
         preferred_dir.mkdir(parents=True)
 
@@ -1629,10 +1822,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         preferred_dir = (
-            tmp_path
-            / os.path.join(APP_DIR_NAME, ANDROID_DIR_NAME)
-            / APK_PRERELEASES_DIR_NAME
-            / "v2.7.10-open.1"
+            tmp_path / APP_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.1"
         )
         assert result == str(preferred_dir)
         assert preferred_dir.exists()
@@ -1658,3 +1848,117 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         assert result == str(legacy_dir)
+
+    def test_migrate_legacy_layout_skips_outside_download_tree(self, tmp_path, mocker):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+        mocker.patch.object(
+            downloader,
+            "_is_within_download_tree",
+            side_effect=lambda p: False if APP_DIR_NAME in p else True,
+        )
+        mock_logger = mocker.patch("fetchtastic.download.android.logger")
+        downloader.migrate_legacy_layout()
+        assert any(
+            "outside download tree" in str(call.args[0])
+            for call in mock_logger.warning.call_args_list
+            if call.args
+        )
+
+    def test_migrate_legacy_layout_skips_prerelease_symlink_entries(
+        self, tmp_path, mocker
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+        legacy_pre_dir = tmp_path / "apks" / APK_PRERELEASES_DIR_NAME
+        legacy_pre_dir.mkdir(parents=True)
+        (legacy_pre_dir / "v2.7.10-open.1").mkdir()
+
+        real_target = tmp_path / "real-target"
+        real_target.mkdir()
+        symlink_entry = legacy_pre_dir / "link-entry"
+        try:
+            symlink_entry.symlink_to(real_target, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlinks not supported")
+
+        mock_logger = mocker.patch("fetchtastic.download.android.logger")
+        downloader.migrate_legacy_layout()
+        assert any(
+            "symlink during Android prerelease migration" in str(call.args[0])
+            for call in mock_logger.warning.call_args_list
+            if call.args
+        )
+
+    def test_resolve_release_dir_skips_migration_when_preferred_base_symlinked(
+        self, tmp_path
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+        legacy_dir = tmp_path / "apks" / "v2.7.10"
+        legacy_dir.mkdir(parents=True)
+
+        app_dir = tmp_path / APP_DIR_NAME
+        real_target = tmp_path / "real-target"
+        real_target.mkdir()
+        app_dir.mkdir(parents=True)
+        base_link = app_dir
+        with patch("os.path.islink", side_effect=lambda p: p == str(base_link)):
+            result = downloader._resolve_release_dir(
+                "v2.7.10", is_prerelease=False, create_if_missing=False
+            )
+        assert result == str(legacy_dir)
+
+    def test_resolve_release_dir_returns_legacy_when_destination_not_safe(
+        self, tmp_path, mocker
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+        legacy_dir = tmp_path / "apks" / "v2.7.10"
+        legacy_dir.mkdir(parents=True)
+
+        def _within(p):
+            if APP_DIR_NAME in p and APK_PRERELEASES_DIR_NAME not in p:
+                if "v2.7.10" in p:
+                    return False
+            return True
+
+        mocker.patch.object(downloader, "_is_within_download_tree", side_effect=_within)
+        mock_logger = mocker.patch("fetchtastic.download.android.logger")
+        result = downloader._resolve_release_dir(
+            "v2.7.10", is_prerelease=False, create_if_missing=False
+        )
+        assert result == str(legacy_dir)
+        assert any(
+            "destination is not safe" in str(call.args[0])
+            for call in mock_logger.warning.call_args_list
+            if call.args
+        )
+
+    def test_resolve_release_dir_refuses_unsafe_existing_no_create(
+        self, tmp_path, mocker
+    ):
+        config = {"DOWNLOAD_DIR": str(tmp_path)}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+        unsafe_dir = tmp_path / APP_DIR_NAME / "v2.7.10"
+        unsafe_dir.mkdir(parents=True)
+
+        mocker.patch.object(
+            downloader,
+            "_is_safe_managed_dir",
+            side_effect=lambda p: False if "v2.7.10" in p else True,
+        )
+        with pytest.raises(ValueError, match="Refusing unsafe"):
+            downloader._resolve_release_dir(
+                "v2.7.10", is_prerelease=False, create_if_missing=False
+            )
