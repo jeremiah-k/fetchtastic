@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -24,7 +25,6 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     APP_DIR_NAME,
     DEFAULT_DESKTOP_VERSIONS_TO_KEEP,
-    DESKTOP_DIR_NAME,
     DESKTOP_PRERELEASES_DIR_NAME,
     DESKTOP_RELEASE_HISTORY_JSON_FILE,
     ERROR_TYPE_FILESYSTEM,
@@ -100,6 +100,126 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         )
         self._wip_2714_prerelease_mismatch_tags: set[str] = set()
         self._logged_known_2714_mismatch_info = False
+
+    def _get_split_desktop_base_dir(self) -> str:
+        """
+        Return the short-lived split Desktop base directory (`<download_dir>/app/desktop`).
+        """
+        return os.path.join(self.download_dir, APP_DIR_NAME, "desktop")
+
+    def _get_split_desktop_prerelease_base_dir(self) -> str:
+        """
+        Return the split Desktop prerelease base directory (`<download_dir>/app/desktop/prerelease`).
+        """
+        return os.path.join(
+            self._get_split_desktop_base_dir(), DESKTOP_PRERELEASES_DIR_NAME
+        )
+
+    def _move_split_path(self, source_path: str, destination_path: str) -> bool:
+        """
+        Move a split-layout Desktop path into the unified app tree when safe.
+        """
+        if not os.path.exists(source_path) or os.path.islink(source_path):
+            return False
+        if os.path.exists(destination_path):
+            logger.debug(
+                "Skipping Desktop split-layout migration because destination exists: %s",
+                destination_path,
+            )
+            return False
+        try:
+            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+            shutil.move(source_path, destination_path)
+            logger.info(
+                "Migrated Desktop split-layout path %s -> %s",
+                source_path,
+                destination_path,
+            )
+            return True
+        except OSError as exc:
+            logger.warning(
+                "Failed to migrate Desktop split-layout path %s -> %s: %s",
+                source_path,
+                destination_path,
+                exc,
+            )
+            return False
+
+    def migrate_split_layout(self) -> None:
+        """
+        Migrate the short-lived `app/desktop` layout into the unified `app` tree.
+        """
+        preferred_desktop_dir = os.path.join(self.download_dir, APP_DIR_NAME)
+        preferred_prerelease_dir = os.path.join(
+            preferred_desktop_dir, DESKTOP_PRERELEASES_DIR_NAME
+        )
+        split_desktop_dir = self._get_split_desktop_base_dir()
+        if not self._is_safe_managed_dir(split_desktop_dir):
+            return
+        if os.path.islink(preferred_desktop_dir):
+            logger.warning(
+                "Skipping Desktop split-layout migration because app root is symlinked: %s",
+                preferred_desktop_dir,
+            )
+            return
+        os.makedirs(preferred_desktop_dir, exist_ok=True)
+
+        try:
+            with os.scandir(split_desktop_dir) as it:
+                split_entries = list(it)
+        except OSError as exc:
+            logger.warning(
+                "Unable to scan Desktop split-layout directory %s: %s",
+                split_desktop_dir,
+                exc,
+            )
+            return
+
+        for entry in split_entries:
+            if entry.is_symlink():
+                logger.warning(
+                    "Skipping symlink during Desktop split-layout migration: %s",
+                    entry.path,
+                )
+                continue
+            if entry.name == DESKTOP_PRERELEASES_DIR_NAME:
+                continue
+            self._move_split_path(
+                entry.path,
+                os.path.join(preferred_desktop_dir, entry.name),
+            )
+
+        split_prerelease_dir = self._get_split_desktop_prerelease_base_dir()
+        if self._is_safe_managed_dir(split_prerelease_dir):
+            os.makedirs(preferred_prerelease_dir, exist_ok=True)
+            try:
+                with os.scandir(split_prerelease_dir) as it:
+                    prerelease_entries = list(it)
+            except OSError as exc:
+                logger.warning(
+                    "Unable to scan Desktop split-layout prerelease directory %s: %s",
+                    split_prerelease_dir,
+                    exc,
+                )
+                prerelease_entries = []
+
+            for entry in prerelease_entries:
+                if entry.is_symlink():
+                    logger.warning(
+                        "Skipping symlink during Desktop prerelease migration: %s",
+                        entry.path,
+                    )
+                    continue
+                self._move_split_path(
+                    entry.path,
+                    os.path.join(preferred_prerelease_dir, entry.name),
+                )
+
+        for directory in (split_prerelease_dir, split_desktop_dir):
+            try:
+                os.rmdir(directory)
+            except OSError:
+                continue
 
     def has_known_2714_prerelease_version_mismatch(self) -> bool:
         """
@@ -200,7 +320,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         Returns:
             str: Validated Desktop base directory path.
         """
-        base_dir = os.path.join(self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME)
+        base_dir = os.path.join(self.download_dir, APP_DIR_NAME)
         if is_prerelease:
             base_dir = os.path.join(base_dir, DESKTOP_PRERELEASES_DIR_NAME)
 
@@ -232,11 +352,6 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         """
         download_root = os.path.abspath(self.download_dir)
         candidate = os.path.abspath(path)
-        try:
-            if os.path.commonpath([download_root, candidate]) != download_root:
-                return None
-        except ValueError:
-            return None
 
         current = candidate
         while True:
@@ -259,17 +374,29 @@ class MeshtasticDesktopDownloader(BaseDownloader):
         """
         Resolve and validate a Desktop release directory under the managed tree.
         """
+        split_base_dir = (
+            self._get_split_desktop_prerelease_base_dir()
+            if is_prerelease
+            else self._get_split_desktop_base_dir()
+        )
         base_dir = self._resolve_desktop_base_dir(
             is_prerelease=is_prerelease,
             create_if_missing=create_if_missing,
         )
         release_dir = os.path.join(base_dir, safe_release)
+        split_release_dir = os.path.join(split_base_dir, safe_release)
 
         symlink_path = self._find_symlinked_ancestor(release_dir)
         if symlink_path:
             message = f"Refusing symlinked Desktop release directory: {symlink_path}"
             logger.warning(message)
             raise ValueError(message)
+        if self._is_safe_managed_dir(release_dir):
+            return release_dir
+        if self._is_safe_managed_dir(split_release_dir):
+            if self._move_split_path(split_release_dir, release_dir):
+                return release_dir
+            return split_release_dir
         if not self._is_within_download_tree(release_dir):
             message = f"Desktop release directory is outside safe tree: {release_dir}"
             logger.warning(message)
@@ -836,9 +963,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
 
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.exception("Error downloading Desktop file %s: %s", asset.name, exc)
-            safe_path = target_path or os.path.join(
-                self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME
-            )
+            safe_path = target_path or os.path.join(self.download_dir, APP_DIR_NAME)
             if isinstance(exc, requests.RequestException):
                 error_type = ERROR_TYPE_NETWORK
                 is_retryable = True
@@ -953,9 +1078,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             if not cached_releases:
                 return
 
-            desktop_dir = os.path.join(
-                self.download_dir, APP_DIR_NAME, DESKTOP_DIR_NAME
-            )
+            desktop_dir = os.path.join(self.download_dir, APP_DIR_NAME)
             if not os.path.exists(desktop_dir):
                 return
             if not self._is_safe_managed_dir(desktop_dir):
@@ -1086,6 +1209,35 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         continue
                     if entry.name in allowed:
                         continue
+                    if base_dir == desktop_dir and entry.is_dir():
+                        try:
+                            entry_names = os.listdir(entry.path)
+                        except OSError:
+                            entry_names = []
+                        if (
+                            entry_names
+                            and not any(
+                                is_desktop_asset_name(name) for name in entry_names
+                            )
+                            and not entry.name.lower().startswith("v")
+                        ):
+                            logger.debug(
+                                "Skipping non-Desktop app entry during Desktop cleanup: %s",
+                                entry.name,
+                            )
+                            continue
+                        if (
+                            entry_names
+                            and not any(
+                                is_desktop_asset_name(name) for name in entry_names
+                            )
+                            and not self.version_manager.get_release_tuple(entry.name)
+                        ):
+                            logger.debug(
+                                "Skipping non-Desktop app entry during Desktop cleanup: %s",
+                                entry.name,
+                            )
+                            continue
                     logger.info("Removing unexpected Desktop entry: %s", entry.name)
                     _safe_rmtree(entry.path, base_dir, entry.name)
 

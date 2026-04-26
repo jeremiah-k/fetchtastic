@@ -449,6 +449,7 @@ class DownloadOrchestrator:
                 logger.info("Desktop app downloads are disabled in configuration")
                 return
 
+            self.desktop_downloader.migrate_split_layout()
             logger.info("Scanning Desktop app releases")
             desktop_releases = self._ensure_desktop_releases()
             if not desktop_releases:

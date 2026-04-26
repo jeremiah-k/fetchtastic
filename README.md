@@ -91,9 +91,12 @@ Downloads are organized in a clean structure:
 
 ```text
 ~/Downloads/Meshtastic/
-├── apks/
-│   ├── v2.3.2/
-│   └── v2.3.1/
+├── app/
+│   ├── v2.7.14/
+│   │   ├── app-fdroid-universal-release.apk
+│   │   ├── Meshtastic-2.7.14.dmg
+│   │   └── release_notes-v2.7.14.md
+│   └── prerelease/   # Pre-release client app builds (optional)
 ├── firmware/
 │   ├── v2.3.2/
 │   ├── v2.3.1/

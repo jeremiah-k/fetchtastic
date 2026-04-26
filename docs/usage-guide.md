@@ -153,11 +153,13 @@ Fetchtastic organizes downloads in a structured way:
 
 ```text
 ~/Downloads/Meshtastic/
-├── apks/
-│   ├── v2.3.2/
-│   │   ├── app-release.apk
-│   │   └── release_notes.md
-│   └── v2.3.1/
+├── app/
+│   ├── v2.7.14/
+│   │   ├── app-fdroid-universal-release.apk
+│   │   ├── Meshtastic-2.7.14.dmg
+│   │   └── release_notes-v2.7.14.md
+│   └── prerelease/ (if enabled)
+│       └── v2.7.14-closed.17/
 ├── firmware/
 │   ├── v2.3.2/
 │   │   ├── firmware-heltec-v3-2.3.2.xxxxxxxx.bin
