@@ -545,6 +545,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             release_tag=release.tag_name,
             body=release.body,
             base_dir=base_dir,
+            notes_prefix="android",
         )
 
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
@@ -830,9 +831,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.exception("Error downloading APK %s: %s", asset.name, exc)
-            safe_path = target_path or os.path.join(
-                self.download_dir, APP_DIR_NAME, ANDROID_DIR_NAME
-            )
+            safe_path = target_path or os.path.join(self.download_dir, APP_DIR_NAME)
             if isinstance(exc, requests.RequestException):
                 error_type = ERROR_TYPE_NETWORK
                 is_retryable = True

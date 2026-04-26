@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests  # type: ignore[import-untyped]
 
 from fetchtastic.client_release_discovery import (
+    is_android_asset_name,
     is_desktop_asset_name,
     is_desktop_prerelease_tag,
     is_release_at_or_above_minimum,
@@ -540,6 +541,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
             release_tag=release.tag_name,
             body=release.body,
             base_dir=base_dir,
+            notes_prefix="desktop",
         )
 
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
@@ -1209,35 +1211,36 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         continue
                     if entry.name in allowed:
                         continue
-                    if base_dir == desktop_dir and entry.is_dir():
+                    if entry.is_dir():
                         try:
                             entry_names = os.listdir(entry.path)
                         except OSError:
                             entry_names = []
-                        if (
-                            entry_names
-                            and not any(
-                                is_desktop_asset_name(name) for name in entry_names
-                            )
-                            and not entry.name.lower().startswith("v")
-                        ):
-                            logger.debug(
-                                "Skipping non-Desktop app entry during Desktop cleanup: %s",
-                                entry.name,
-                            )
-                            continue
-                        if (
-                            entry_names
-                            and not any(
-                                is_desktop_asset_name(name) for name in entry_names
-                            )
-                            and not self.version_manager.get_release_tuple(entry.name)
-                        ):
-                            logger.debug(
-                                "Skipping non-Desktop app entry during Desktop cleanup: %s",
-                                entry.name,
-                            )
-                            continue
+                        has_desktop = any(
+                            is_desktop_asset_name(name) for name in entry_names
+                        )
+                        has_android = any(
+                            is_android_asset_name(name) for name in entry_names
+                        )
+                        if entry_names and not has_desktop:
+                            if has_android:
+                                logger.debug(
+                                    "Skipping Android-only entry during Desktop cleanup: %s",
+                                    entry.name,
+                                )
+                                continue
+                            if not entry.name.lower().startswith("v"):
+                                logger.debug(
+                                    "Skipping non-Desktop app entry during Desktop cleanup: %s",
+                                    entry.name,
+                                )
+                                continue
+                            if not self.version_manager.get_release_tuple(entry.name):
+                                logger.debug(
+                                    "Skipping non-Desktop app entry during Desktop cleanup: %s",
+                                    entry.name,
+                                )
+                                continue
                     logger.info("Removing unexpected Desktop entry: %s", entry.name)
                     _safe_rmtree(entry.path, base_dir, entry.name)
 

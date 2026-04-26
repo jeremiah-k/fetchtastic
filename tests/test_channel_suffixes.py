@@ -205,10 +205,8 @@ class TestChannelSuffixes:
         notes_path = downloader.ensure_release_notes(release)
         assert notes_path is not None
         notes_file = Path(notes_path)
-        expected_dir = (
-            Path(config["DOWNLOAD_DIR"]) / APP_DIR_NAME / ANDROID_DIR_NAME / "v1.0.0"
-        )
-        expected_file = expected_dir / "release_notes-v1.0.0.md"
+        expected_dir = Path(config["DOWNLOAD_DIR"]) / APP_DIR_NAME / "v1.0.0"
+        expected_file = expected_dir / "release_notes-android-v1.0.0.md"
         assert notes_file == expected_file
         assert notes_file.parent == expected_dir
         assert notes_file.exists()

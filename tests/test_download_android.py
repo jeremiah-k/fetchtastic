@@ -248,7 +248,7 @@ class TestMeshtasticAndroidAppDownloader:
             os.path.join(
                 APP_DIR_NAME,
                 "v2.7.10",
-                "release_notes-v2.7.10.md",
+                "release_notes-android-v2.7.10.md",
             )
         )
 
@@ -272,7 +272,7 @@ class TestMeshtasticAndroidAppDownloader:
             APP_DIR_NAME,
             APK_PRERELEASES_DIR_NAME,
             "v2.7.10-open.1",
-            "release_notes-v2.7.10-open.1.md",
+            "release_notes-android-v2.7.10-open.1.md",
         )
         assert str(notes_file).endswith(expected_suffix)
 
@@ -726,6 +726,24 @@ class TestMeshtasticAndroidAppDownloader:
         assert result.success is False
         assert result.error_type == "network_error"
         assert result.is_retryable is True
+
+    def test_download_apk_exception_returns_result(self, downloader):
+        """Exception before target_path assignment should return a result, not NameError."""
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+        release.prerelease = False
+
+        asset = Mock(spec=Asset)
+        asset.name = "meshtastic.apk"
+        asset.download_url = "https://example.com/meshtastic.apk"
+        asset.size = 1000000
+
+        downloader.get_target_path_for_release = Mock(side_effect=OSError("disk full"))
+
+        result = downloader.download_apk(release, asset)
+
+        assert result.success is False
+        assert result.error_type == "filesystem_error"
 
     def test_cleanup_old_versions_delegates_to_prerelease_cleanup(self, downloader):
         """Test cleanup_old_versions delegates to prerelease-aware cleanup."""

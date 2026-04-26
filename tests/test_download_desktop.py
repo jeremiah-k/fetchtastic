@@ -2782,3 +2782,101 @@ def test_cleanup_warns_unsafe_prerelease_dir(downloader, tmp_path):
             for call in mock_logger.warning.call_args_list
             if call.args
         )
+
+
+def test_cleanup_preserves_android_only_stable_dir(downloader, tmp_path):
+    """Android-only version dirs in app/ must not be deleted by Desktop cleanup."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    desktop_dir = app_dir / "v2.7.20"
+    desktop_dir.mkdir()
+    (desktop_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+
+    android_dir = app_dir / "v2.7.14"
+    android_dir.mkdir()
+    (android_dir / "meshtastic-2.7.14.apk").write_bytes(b"apk")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert desktop_dir.exists()
+    assert android_dir.exists()
+
+
+def test_cleanup_preserves_android_only_prerelease_dir(downloader, tmp_path):
+    """Android-only prerelease dirs in app/prerelease/ must survive Desktop cleanup."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    desktop_stable = app_dir / "v2.7.20"
+    desktop_stable.mkdir()
+    (desktop_stable / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+
+    prerelease_dir = app_dir / DESKTOP_PRERELEASES_DIR_NAME
+    prerelease_dir.mkdir()
+
+    android_pre = prerelease_dir / "v2.7.20-open.1"
+    android_pre.mkdir()
+    (android_pre / "meshtastic-2.7.20-open.1.apk").write_bytes(b"apk")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert desktop_stable.exists()
+    assert android_pre.exists()
+
+
+def test_cleanup_preserves_unified_dir_with_both_assets(downloader, tmp_path):
+    """A version dir with both APK and Desktop files must survive Desktop cleanup."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    unified_dir = app_dir / "v2.7.20"
+    unified_dir.mkdir()
+    (unified_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+    (unified_dir / "meshtastic-2.7.20.apk").write_bytes(b"apk")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert unified_dir.exists()
+    assert (unified_dir / "Meshtastic-2.7.20.dmg").exists()
+    assert (unified_dir / "meshtastic-2.7.20.apk").exists()
+
+
+def test_release_notes_android_desktop_distinct_files(tmp_path):
+    """Android and Desktop release notes for the same tag must produce separate files."""
+    from fetchtastic.download.android import MeshtasticAndroidAppDownloader
+
+    android_config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+    android_cache = CacheManager(cache_dir=str(tmp_path / "android-cache"))
+    android_dl = MeshtasticAndroidAppDownloader(android_config, android_cache)
+
+    desktop_config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+    desktop_cache = CacheManager(cache_dir=str(tmp_path / "desktop-cache"))
+    desktop_dl = MeshtasticDesktopDownloader(desktop_config, desktop_cache)
+
+    release = Release(
+        tag_name="v2.7.20",
+        prerelease=False,
+        body="Release notes for v2.7.20",
+    )
+
+    android_notes = android_dl.ensure_release_notes(release)
+    desktop_notes = desktop_dl.ensure_release_notes(release)
+
+    assert android_notes is not None
+    assert desktop_notes is not None
+    assert android_notes != desktop_notes
+    assert "release_notes-android-v2.7.20.md" in android_notes
+    assert "release_notes-desktop-v2.7.20.md" in desktop_notes
