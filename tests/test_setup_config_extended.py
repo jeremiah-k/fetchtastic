@@ -302,9 +302,9 @@ def test_setup_downloads_no_selection(mocker, capsys):
     """Test _setup_downloads when user selects nothing."""
     config = {}
 
-    # Mock input to select APK but then menu returns None
-    mocker.patch("builtins.input", side_effect=["a"])  # Choose APK only
-    mocker.patch("fetchtastic.menu_apk.run_menu", return_value=None)
+    # Mock input to select client app but then menu returns None
+    mocker.patch("builtins.input", side_effect=["a"])  # Choose client app only
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=None)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
         config, is_partial_run=False, wants=lambda _: True
@@ -316,7 +316,7 @@ def test_setup_downloads_no_selection(mocker, capsys):
     assert result_config["SAVE_FIRMWARE"] is False
 
     captured = capsys.readouterr()
-    assert "No APK assets selected" in captured.out
+    assert "No client app assets selected" in captured.out
 
 
 @pytest.mark.configuration
@@ -352,19 +352,19 @@ def test_setup_downloads_firmware_empty_selection(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_apk_empty_selection(mocker):
-    """Empty APK selections should disable APK downloads."""
+    """Empty client app selections should disable client app downloads."""
     config = {}
 
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "a",  # Choose APK only
-            "y",  # Check APK prereleases
+            "a",  # Choose client app only
+            "y",  # Check client app prereleases
             "n",  # Add channel suffixes
         ],
     )
     mocker.patch(
-        "fetchtastic.menu_apk.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": []},
     )
 
@@ -393,15 +393,15 @@ def test_setup_downloads_partial_run(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",
-            "n",
-            "y",
-            "n",
+            "y",  # Keep downloading client app releases
+            "n",  # Skip re-running menu (existing selection kept)
+            "y",  # Enable prereleases
+            "n",  # No channel suffixes
         ],
     )
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=True, wants=lambda section: section == "android"
+        config, is_partial_run=True, wants=lambda section: section == "app"
     )
 
     assert save_apks is True
@@ -414,7 +414,7 @@ def test_setup_downloads_partial_run(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
-    """Partial Android run should skip the menu when user keeps existing selection."""
+    """Partial app run should skip the menu when user keeps existing selection."""
     config = {
         "SAVE_APKS": True,
         "SAVE_FIRMWARE": False,
@@ -425,17 +425,17 @@ def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",
-            "n",
-            "n",
-            "n",
+            "y",  # Keep downloading client app releases
+            "n",  # Skip re-running menu (existing selection kept)
+            "n",  # Disable prereleases
+            "n",  # No channel suffixes
         ],
     )
 
-    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+    mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=True, wants=lambda section: section == "android"
+        config, is_partial_run=True, wants=lambda section: section == "app"
     )
 
     assert save_apks is True

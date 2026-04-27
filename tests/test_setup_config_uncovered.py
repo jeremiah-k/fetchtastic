@@ -89,7 +89,7 @@ def test_parse_non_negative_int_rejects_negative():
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_full_run_desktop_only(mocker):
-    """Test full run with desktop-only choice (lines 775-777)."""
+    """Test full run with desktop-only choice uses unified app menu."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {}
@@ -99,10 +99,10 @@ def test_setup_downloads_full_run_desktop_only(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["d", "n"],  # desktop only, no prerelease
+        side_effect=["d", "n"],  # desktop choice, no prerelease
     )
     mock_menu = mocker.patch(
-        "fetchtastic.menu_desktop.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic.dmg"]},
     )
 
@@ -110,10 +110,10 @@ def test_setup_downloads_full_run_desktop_only(mocker):
         config, is_partial_run=False, wants=wants
     )
 
-    assert save_apks is False
+    assert save_apks is True  # Desktop assets count as client apps
     assert save_firmware is False
     assert updated["SAVE_DESKTOP_APP"] is True
-    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
+    assert "meshtastic.dmg" in updated["SELECTED_DESKTOP_ASSETS"]
     mock_menu.assert_called_once()
 
 
@@ -134,10 +134,10 @@ def test_setup_downloads_full_run_reprompts_invalid_choice(mocker, capsys):
             "invalid-choice",
             "d",
             "n",
-        ],  # invalid, desktop only, no prerelease
+        ],  # invalid, desktop choice, no prerelease
     )
     mocker.patch(
-        "fetchtastic.menu_desktop.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic.dmg"]},
     )
 
@@ -147,7 +147,7 @@ def test_setup_downloads_full_run_reprompts_invalid_choice(mocker, capsys):
 
     captured = capsys.readouterr()
     assert "Invalid choice. Please enter a, f, d, m, b, or n." in captured.out
-    assert save_apks is False
+    assert save_apks is True  # Desktop assets count as client apps
     assert save_firmware is False
     assert updated["SAVE_DESKTOP_APP"] is True
 
@@ -284,7 +284,7 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
-    """Test partial run with desktop section but no existing selection (lines 953-959)."""
+    """Test partial run with app section but no existing selection."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {
@@ -295,14 +295,14 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
     }
 
     def wants(section: str) -> bool:
-        return section == "desktop"
+        return section == "app"
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n"],  # Keep desktop enabled, no prerelease
+        side_effect=["y", "n"],  # Keep client apps enabled, no prerelease
     )
     mocker.patch(
-        "fetchtastic.menu_desktop.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value=None,
     )
 
@@ -315,7 +315,7 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_desktop_no_selection(mocker):
-    """Test desktop selection when user selects no assets (lines 944-960)."""
+    """Test client app selection when user selects no assets."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {}
@@ -326,12 +326,12 @@ def test_setup_downloads_desktop_no_selection(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "d",  # desktop only
-            "n",  # no desktop prerelease
+            "d",  # desktop choice (uses unified menu)
+            "n",  # no prerelease
         ],
     )
     mocker.patch(
-        "fetchtastic.menu_desktop.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value=None,  # No selection made
     )
 
@@ -344,7 +344,7 @@ def test_setup_downloads_desktop_no_selection(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_save_desktop_false_clears_config(mocker):
-    """Test that when save_desktop is False, desktop prerelease config is cleared (lines 844-846)."""
+    """Test that when only APK assets are selected, desktop config is cleared."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {
@@ -359,13 +359,13 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "a",  # APK only
-            "n",  # no APK prerelease
+            "a",  # APK/client app choice
+            "n",  # no prerelease
             "n",  # no channel suffix
         ],
     )
     mocker.patch(
-        "fetchtastic.menu_apk.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic.apk"]},
     )
 
@@ -1212,7 +1212,7 @@ def test_safe_input_keyboard_interrupt(mocker):
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
 @patch("fetchtastic.setup_config.winshell", MagicMock(), create=True)
@@ -1224,7 +1224,7 @@ def test_run_setup_windows_cmd_environment(
     mock_create_config_shortcut,
     mock_create_windows_menu_shortcuts,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1245,21 +1245,21 @@ def test_run_setup_windows_cmd_environment(
             user_inputs = [
                 "",  # Use default base directory
                 "n",  # Don't create menu shortcuts
-                "b",  # Both APKs and firmware
+                "b",  # Both client apps and firmware
                 "n",  # No firmware prereleases
-                "n",  # No APK prereleases
+                "n",  # No client app prereleases
                 "n",  # No channel suffixes
                 "2",  # Keep 2 versions
                 "2",  # Keep 2 versions
                 "n",  # No auto-extract
-                "n",  # No startup shortcut
+                "n",  # No Startup shortcut
                 "n",  # No NTFY
                 "n",  # No GitHub token
                 "",  # Press Enter to close (simulating the pause at end)
             ]
             mock_input.side_effect = user_inputs
 
-            mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+            mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
             mock_menu_firmware.return_value = {
                 "selected_assets": ["meshtastic-firmware"]
             }
@@ -1488,9 +1488,8 @@ def test_run_setup_desktop_invalid_version_input(
     mock_setup_cron_job,
     mock_check_any_cron_jobs_exist,
     mock_check_cron_job_exists,
-    mock_menu_desktop,
+    mock_menu_app,
     mock_menu_firmware,
-    mock_menu_apk,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1500,7 +1499,7 @@ def test_run_setup_desktop_invalid_version_input(
     mock_input,
     tmp_path,
 ):
-    """Test run_setup desktop with invalid version input (lines 2133-2139)."""
+    """Test run_setup with client app choice and invalid version input."""
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
@@ -1509,8 +1508,8 @@ def test_run_setup_desktop_invalid_version_input(
     try:
         user_inputs = [
             "",  # Use default base directory
-            "d",  # Desktop only
-            "n",  # No desktop prereleases
+            "d",  # Desktop/client app choice
+            "n",  # No prereleases
             "invalid",  # Invalid version input
             "y",  # Wi-Fi only
             "n",  # No cron
@@ -1521,7 +1520,7 @@ def test_run_setup_desktop_invalid_version_input(
         ]
         mock_input.side_effect = user_inputs
 
-        mock_menu_desktop.return_value = {"selected_assets": ["meshtastic.dmg"]}
+        mock_menu_app.return_value = {"selected_assets": ["meshtastic.dmg"]}
 
         with patch("builtins.open", mock_open()):
             with patch("sys.stdin.isatty", return_value=False):
@@ -1530,10 +1529,10 @@ def test_run_setup_desktop_invalid_version_input(
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
 
-        # Invalid input should fall back to the desktop retention default.
+        # Invalid input should fall back to the app retention default.
         assert (
-            saved_config["DESKTOP_VERSIONS_TO_KEEP"]
-            == setup_config.DEFAULT_DESKTOP_VERSIONS_TO_KEEP
+            saved_config["APP_VERSIONS_TO_KEEP"]
+            == setup_config.DEFAULT_APP_VERSIONS_TO_KEEP
         )
     finally:
         # Restore original values
@@ -1553,7 +1552,7 @@ def test_run_setup_desktop_invalid_version_input(
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
@@ -1569,7 +1568,7 @@ def test_run_setup_version_package_not_found(
     mock_check_any_cron_jobs_exist,
     mock_check_cron_job_exists,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1580,7 +1579,7 @@ def test_run_setup_version_package_not_found(
     mocker,
     tmp_path,
 ):
-    """Test run_setup when version() raises PackageNotFoundError (lines 2167-2169)."""
+    """Test run_setup when version() raises PackageNotFoundError."""
     from importlib.metadata import PackageNotFoundError
 
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
@@ -1591,11 +1590,11 @@ def test_run_setup_version_package_not_found(
     try:
         user_inputs = [
             "",  # Use default base directory
-            "b",  # Both APKs and firmware
+            "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
-            "n",  # No APK prereleases
+            "n",  # No client app prereleases
             "n",  # No channel suffixes
-            "2",  # Keep 2 versions Android
+            "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware
             "n",  # No auto-extract
             "n",  # No cron
@@ -1606,7 +1605,7 @@ def test_run_setup_version_package_not_found(
         ]
         mock_input.side_effect = user_inputs
 
-        mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+        mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
         mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
         mocker.patch(
@@ -1639,7 +1638,7 @@ def test_run_setup_version_package_not_found(
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
@@ -1655,7 +1654,7 @@ def test_run_setup_version_other_error(
     mock_check_any_cron_jobs_exist,
     mock_check_cron_job_exists,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1666,7 +1665,7 @@ def test_run_setup_version_other_error(
     mocker,
     tmp_path,
 ):
-    """Test run_setup when version() raises other exception (lines 2172-2175)."""
+    """Test run_setup when version() raises other exception."""
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
@@ -1675,11 +1674,11 @@ def test_run_setup_version_other_error(
     try:
         user_inputs = [
             "",  # Use default base directory
-            "b",  # Both APKs and firmware
+            "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
-            "n",  # No APK prereleases
+            "n",  # No client app prereleases
             "n",  # No channel suffixes
-            "2",  # Keep 2 versions Android
+            "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware
             "n",  # No auto-extract
             "n",  # No cron
@@ -1690,7 +1689,7 @@ def test_run_setup_version_other_error(
         ]
         mock_input.side_effect = user_inputs
 
-        mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+        mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
         mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
         mocker.patch(
@@ -1711,7 +1710,7 @@ def test_run_setup_version_other_error(
         setup_config.CONFIG_FILE = original_config_file
 
 
-# Tests for config directory creation error (lines 2182-2183)
+# Tests for config directory creation error
 
 
 @pytest.mark.configuration
@@ -1723,7 +1722,7 @@ def test_run_setup_version_other_error(
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
@@ -1739,7 +1738,7 @@ def test_run_setup_config_dir_creation_error(
     mock_check_any_cron_jobs_exist,
     mock_check_cron_job_exists,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1751,7 +1750,7 @@ def test_run_setup_config_dir_creation_error(
     capsys,
     tmp_path,
 ):
-    """Test run_setup when config directory creation fails (lines 2182-2183)."""
+    """Test run_setup when config directory creation fails."""
     # Save original values and patch CONFIG_DIR/CONFIG_FILE
     original_config_dir = setup_config.CONFIG_DIR
     original_config_file = setup_config.CONFIG_FILE
@@ -1760,11 +1759,11 @@ def test_run_setup_config_dir_creation_error(
     try:
         user_inputs = [
             "",  # Use default base directory
-            "b",  # Both APKs and firmware
+            "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
-            "n",  # No APK prereleases
+            "n",  # No client app prereleases
             "n",  # No channel suffixes
-            "2",  # Keep 2 versions Android
+            "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware
             "n",  # No auto-extract
             "n",  # No cron
@@ -1775,7 +1774,7 @@ def test_run_setup_config_dir_creation_error(
         ]
         mock_input.side_effect = user_inputs
 
-        mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+        mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
         mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
         # Make makedirs raise an error when creating config dir
