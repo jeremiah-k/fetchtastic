@@ -707,12 +707,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return False
         for asset in expected_assets:
             asset_path = os.path.join(version_dir, asset.name)
-            if not os.path.exists(asset_path):
-                return False
             try:
-                if asset.size is not None and os.path.getsize(asset_path) != asset.size:
-                    return False
-                if not self.verify(asset_path):
+                if not self._is_asset_complete_for_target(asset_path, asset):
                     return False
             except OSError:
                 return False

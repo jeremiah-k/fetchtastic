@@ -65,7 +65,7 @@ def test_migrates_legacy_apks_and_split_app_dirs(downloader, tmp_path):
     ).exists()
 
 
-def test_release_notes_use_single_client_app_file(downloader, tmp_path):
+def test_release_notes_use_single_client_app_file(downloader):
     release = Release(tag_name="v2.7.14", prerelease=False, body="notes")
 
     path = downloader.ensure_release_notes(release)

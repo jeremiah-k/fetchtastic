@@ -82,7 +82,10 @@ def test_cleanup_skips_symlinks(tmp_path):
     app_dir.mkdir(parents=True)
     target.mkdir()
     link = app_dir / "v2.7.13"
-    os.symlink(target, link)
+    try:
+        os.symlink(target, link)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
 
     dl.cleanup_prerelease_directories(
         cached_releases=[Release(tag_name="v2.7.15", prerelease=False)]
@@ -129,8 +132,9 @@ def test_mixed_apk_and_desktop_assets_live_together(tmp_path):
         release.tag_name, dmg.name, release=release
     )
 
-    assert "/app/v2.7.14/" in apk_path
-    assert "/app/v2.7.14/" in dmg_path
+    expected_dir = tmp_path / APP_DIR_NAME / "v2.7.14"
+    assert Path(apk_path).parent == expected_dir
+    assert Path(dmg_path).parent == expected_dir
 
 
 def test_legacy_platform_classes_use_client_app_lifecycle(tmp_path):

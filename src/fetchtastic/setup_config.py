@@ -2201,7 +2201,6 @@ def run_setup(
         config = _setup_firmware(config, is_first_run, default_versions_to_keep)
 
     if not save_client_apps:
-        config.setdefault("APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP)
         normalize_client_app_config(config)
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)

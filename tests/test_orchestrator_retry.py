@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 from fetchtastic.download.interfaces import DownloadResult
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 

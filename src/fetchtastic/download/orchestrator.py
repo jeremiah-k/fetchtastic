@@ -1260,7 +1260,24 @@ class DownloadOrchestrator:
             if downloader:
                 ok = downloader.download(url, target_path)
                 if ok and downloader.verify(target_path):
-                    if file_type in (FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE):
+                    if file_type in (
+                        FILE_TYPE_CLIENT_APP,
+                        FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    ):
+                        if (
+                            failed_result.file_size is not None
+                            and os.path.getsize(target_path) != failed_result.file_size
+                        ):
+                            downloader.cleanup_file(target_path)
+                            return self._create_failure_result(
+                                failed_result,
+                                Path(target_path),
+                                url,
+                                file_type,
+                                "Retry attempt failed",
+                                "Downloaded client app asset size did not match expected size",
+                                is_retryable_override=False,
+                            )
                         zip_checker = getattr(downloader, "_is_zip_intact", None)
                         if (
                             str(target_path).lower().endswith(".zip")
@@ -1274,7 +1291,7 @@ class DownloadOrchestrator:
                                 url,
                                 file_type,
                                 "Retry attempt failed",
-                                "Downloaded desktop asset failed post-download validation",
+                                "Downloaded client app ZIP failed post-download validation",
                                 is_retryable_override=False,
                             )
                     if file_type == FILE_TYPE_FIRMWARE_MANIFEST:

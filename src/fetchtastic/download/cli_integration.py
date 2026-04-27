@@ -581,6 +581,7 @@ class DownloadCLIIntegration:
             is_android = file_type in ANDROID_FILE_TYPES
             is_desktop = file_type in DESKTOP_FILE_TYPES
             is_client_app = file_type in CLIENT_APP_FILE_TYPES
+            is_client_app_prerelease = file_type == FILE_TYPE_CLIENT_APP_PRERELEASE
             if is_client_app:
                 file_name = (
                     os.path.basename(str(result.file_path)) if result.file_path else ""
@@ -589,6 +590,12 @@ class DownloadCLIIntegration:
                 is_desktop = is_desktop or is_desktop_asset_name(file_name)
                 if not is_android and not is_desktop:
                     is_android = True
+            is_android_prerelease = file_type == FILE_TYPE_ANDROID_PRERELEASE or (
+                is_client_app_prerelease and is_android
+            )
+            is_desktop_prerelease = file_type == FILE_TYPE_DESKTOP_PRERELEASE or (
+                is_client_app_prerelease and is_desktop
+            )
             was_skipped = getattr(result, "was_skipped", False)
 
             # Legacy parity: only mark new versions when a download actually occurred.
@@ -617,7 +624,7 @@ class DownloadCLIIntegration:
                 )
             if is_android:
                 compare_current = current_android
-                if file_type == FILE_TYPE_ANDROID_PRERELEASE:
+                if is_android_prerelease:
                     compare_current = current_android_prerelease or current_android
                 self._update_new_versions(
                     release_tag,
@@ -627,7 +634,7 @@ class DownloadCLIIntegration:
                 )
             if is_desktop:
                 compare_current = current_desktop
-                if file_type == FILE_TYPE_DESKTOP_PRERELEASE:
+                if is_desktop_prerelease:
                     compare_current = current_desktop_prerelease or current_desktop
                 self._update_new_versions(
                     release_tag,
@@ -649,7 +656,7 @@ class DownloadCLIIntegration:
                         release_tag, downloaded_firmwares, downloaded_firmware_set
                     )
             if is_android:
-                if file_type == FILE_TYPE_ANDROID_PRERELEASE:
+                if is_android_prerelease:
                     if release_tag not in downloaded_apk_prerelease_set:
                         downloaded_apk_prereleases.append(release_tag)
                         downloaded_apk_prerelease_set.add(release_tag)
@@ -658,7 +665,7 @@ class DownloadCLIIntegration:
                         release_tag, downloaded_apks, downloaded_apk_set
                     )
             if is_desktop:
-                if file_type == FILE_TYPE_DESKTOP_PRERELEASE:
+                if is_desktop_prerelease:
                     if release_tag not in downloaded_desktop_prerelease_set:
                         downloaded_desktop_prereleases.append(release_tag)
                         downloaded_desktop_prerelease_set.add(release_tag)

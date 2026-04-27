@@ -153,11 +153,19 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if "CHECK_APP_PRERELEASES" not in config:
-        apk_default = config.get("CHECK_PRERELEASES", False)
-        config["CHECK_APP_PRERELEASES"] = coerce_bool(
-            config.get("CHECK_APK_PRERELEASES", apk_default),
-            default=False,
-        ) or coerce_bool(config.get("CHECK_DESKTOP_PRERELEASES", False), default=False)
+        legacy_default = coerce_bool(
+            config.get("CHECK_PRERELEASES"),
+            default=DEFAULT_CHECK_APP_PRERELEASES,
+        )
+        apk_check = coerce_bool(
+            config.get("CHECK_APK_PRERELEASES", legacy_default),
+            default=legacy_default,
+        )
+        desktop_check = coerce_bool(
+            config.get("CHECK_DESKTOP_PRERELEASES", legacy_default),
+            default=legacy_default,
+        )
+        config["CHECK_APP_PRERELEASES"] = apk_check or desktop_check
     else:
         config["CHECK_APP_PRERELEASES"] = coerce_bool(
             config.get("CHECK_APP_PRERELEASES"),
