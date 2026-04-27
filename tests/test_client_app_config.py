@@ -47,3 +47,18 @@ def test_new_client_app_keys_are_authoritative():
     assert normalized["SELECTED_APP_ASSETS"] == ["meshtastic.msi"]
     assert normalized["APP_VERSIONS_TO_KEEP"] == 4
     assert normalized["CHECK_APP_PRERELEASES"] is False
+
+
+def test_ambiguous_client_app_asset_does_not_use_apk_substring_guess():
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-fdroid-universal-release"],
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["SELECTED_APP_ASSETS"] == ["app-fdroid-universal-release"]
+    assert normalized["SELECTED_APK_ASSETS"] == []
+    assert normalized["SELECTED_DESKTOP_ASSETS"] == []
+    assert normalized["SAVE_APKS"] is True
+    assert normalized["SAVE_DESKTOP_APP"] is True

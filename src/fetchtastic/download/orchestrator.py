@@ -18,6 +18,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import requests  # type: ignore[import-untyped]
 
 from fetchtastic.client_app_config import normalize_client_app_config
+from fetchtastic.client_release_discovery import (
+    is_android_asset_name,
+    is_desktop_asset_name,
+)
 from fetchtastic.constants import (
     APKS_DIR_NAME,
     DEFAULT_APP_VERSIONS_TO_KEEP,
@@ -1738,9 +1742,9 @@ class DownloadOrchestrator:
             "client_app_downloads": self._count_artifact_downloads(
                 FILE_TYPE_CLIENT_APP
             ),
-            "android_downloads": self._count_artifact_downloads(FILE_TYPE_CLIENT_APP),
+            "android_downloads": self._count_artifact_downloads("android"),
             "firmware_downloads": self._count_artifact_downloads(FILE_TYPE_FIRMWARE),
-            "desktop_downloads": self._count_artifact_downloads(FILE_TYPE_CLIENT_APP),
+            "desktop_downloads": self._count_artifact_downloads(FILE_TYPE_DESKTOP),
             # Repository downloads are not part of the automatic download pipeline.
             "repository_downloads": 0,
         }
@@ -1794,12 +1798,35 @@ class DownloadOrchestrator:
                 return file_type in {"android", "android_prerelease"}
             return file_type == artifact_type
 
+        def _result_name(result: DownloadResult) -> str:
+            file_path = getattr(result, "file_path", None)
+            if isinstance(file_path, (str, os.PathLike)):
+                return Path(file_path).name
+            download_url = getattr(result, "download_url", None)
+            if isinstance(download_url, (str, os.PathLike)):
+                return Path(download_url).name
+            return ""
+
         count = 0
         for result in self.download_results:
             if not result.success or getattr(result, "was_skipped", False) is True:
                 continue
 
             file_type = getattr(result, "file_type", None)
+            if artifact_type == "android":
+                if file_type in {FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE}:
+                    continue
+                name = _result_name(result)
+                if name and is_android_asset_name(name):
+                    count += 1
+                    continue
+            if artifact_type == FILE_TYPE_DESKTOP:
+                if file_type == FILE_TYPE_DESKTOP_PRERELEASE:
+                    continue
+                name = _result_name(result)
+                if name and is_desktop_asset_name(name):
+                    count += 1
+                    continue
             if isinstance(file_type, str) and file_type:
                 if _matches_group(file_type):
                     count += 1

@@ -1071,21 +1071,21 @@ def _setup_downloads(
     return config, save_apks, save_firmware
 
 
-def _setup_android(
+def _setup_client_app(
     config: Dict[str, Any], is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
     Prompt the user for how many client app versions to keep and store that value in the configuration.
 
-    Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["ANDROID_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
+    Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["APP_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
 
     Parameters:
-        config (dict): Configuration mapping to read and update; the function sets "ANDROID_VERSIONS_TO_KEEP" in-place.
+        config (dict): Configuration mapping to read and update; the function sets "APP_VERSIONS_TO_KEEP" in-place.
         is_first_run (bool): If True, use first-run wording in the prompt.
         default_versions (int): Fallback number to use when the config does not already contain a value.
 
     Returns:
-        dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set to an integer.
+        dict: The updated configuration dictionary with client app retention keys normalized.
     """
     current_versions = config.get(
         "APP_VERSIONS_TO_KEEP",
@@ -1108,6 +1108,13 @@ def _setup_android(
             print("Invalid number in current value — using default.")
             config["APP_VERSIONS_TO_KEEP"] = default_versions
     return normalize_client_app_config(config)
+
+
+def _setup_android(
+    config: Dict[str, Any], is_first_run: bool, default_versions: int
+) -> Dict[str, Any]:
+    """Backward-compatible alias for _setup_client_app."""
+    return _setup_client_app(config, is_first_run, default_versions)
 
 
 def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
@@ -2179,7 +2186,7 @@ def run_setup(
 
     # Handle client app configuration
     if save_client_apps and (not is_partial_run or wants("app")):
-        config = _setup_android(config, is_first_run, default_versions_to_keep)
+        config = _setup_client_app(config, is_first_run, default_versions_to_keep)
     # Handle firmware configuration
     if save_firmware and (not is_partial_run or wants("firmware")):
         config = _setup_firmware(config, is_first_run, default_versions_to_keep)

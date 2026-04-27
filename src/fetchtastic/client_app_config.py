@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List
 
+from fetchtastic.client_release_discovery import (
+    is_android_asset_name,
+    is_desktop_asset_name,
+)
 from fetchtastic.constants import (
     DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
@@ -52,6 +56,54 @@ def _coerce_keep_count(value: Any, default: int = DEFAULT_APP_VERSIONS_TO_KEEP) 
         return max(0, int(value))
     except (TypeError, ValueError):
         return int(default)
+
+
+def _classify_selected_assets(
+    config: Dict[str, Any],
+    selected_assets: List[str],
+) -> tuple[List[str], List[str], bool]:
+    """
+    Return legacy APK/Desktop selections plus whether any primary asset is ambiguous.
+
+    Primary selection remains SELECTED_APP_ASSETS. Legacy lists are preserved when
+    already present; otherwise only concrete asset filenames are classified.
+    """
+    legacy_apk_present = bool(_as_list(config.get("SELECTED_APK_ASSETS")))
+    legacy_desktop_present = bool(
+        _as_list(
+            config.get(
+                "SELECTED_DESKTOP_ASSETS", config.get("SELECTED_DESKTOP_PLATFORMS")
+            )
+        )
+    )
+    apk_assets = (
+        expand_apk_selected_patterns(_as_list(config.get("SELECTED_APK_ASSETS")))
+        if legacy_apk_present
+        else []
+    )
+    desktop_assets = (
+        _as_list(
+            config.get(
+                "SELECTED_DESKTOP_ASSETS", config.get("SELECTED_DESKTOP_PLATFORMS")
+            )
+        )
+        if legacy_desktop_present
+        else []
+    )
+    ambiguous = False
+
+    if not legacy_apk_present or not legacy_desktop_present:
+        for item in selected_assets:
+            if is_android_asset_name(item):
+                if not legacy_apk_present:
+                    apk_assets.append(item)
+            elif is_desktop_asset_name(item):
+                if not legacy_desktop_present:
+                    desktop_assets.append(item)
+            else:
+                ambiguous = True
+
+    return _dedupe(apk_assets), _dedupe(desktop_assets), ambiguous
 
 
 def get_selected_app_assets(config: Dict[str, Any]) -> List[str]:
@@ -112,20 +164,19 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
             default=DEFAULT_CHECK_APP_PRERELEASES,
         )
 
-    # Keep legacy keys synchronized for compatibility during the transition.
-    config["SELECTED_APK_ASSETS"] = [
-        item for item in config["SELECTED_APP_ASSETS"] if "apk" in item.lower()
-    ]
-    config["SELECTED_DESKTOP_ASSETS"] = [
-        item for item in config["SELECTED_APP_ASSETS"] if "apk" not in item.lower()
-    ]
+    # Keep legacy keys readable for compatibility without guessing from substrings.
+    apk_assets, desktop_assets, has_ambiguous_assets = _classify_selected_assets(
+        config, config["SELECTED_APP_ASSETS"]
+    )
+    config["SELECTED_APK_ASSETS"] = apk_assets
+    config["SELECTED_DESKTOP_ASSETS"] = desktop_assets
     client_apps_enabled = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
     if config["SELECTED_APP_ASSETS"]:
-        config["SAVE_APKS"] = client_apps_enabled and bool(
-            config["SELECTED_APK_ASSETS"]
+        config["SAVE_APKS"] = client_apps_enabled and (
+            bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets
         )
-        config["SAVE_DESKTOP_APP"] = client_apps_enabled and bool(
-            config["SELECTED_DESKTOP_ASSETS"]
+        config["SAVE_DESKTOP_APP"] = client_apps_enabled and (
+            bool(config["SELECTED_DESKTOP_ASSETS"]) or has_ambiguous_assets
         )
     else:
         config["SAVE_APKS"] = client_apps_enabled

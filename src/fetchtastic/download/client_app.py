@@ -21,7 +21,9 @@ import requests  # type: ignore[import-untyped]
 from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.client_release_discovery import (
     is_android_asset_name,
+    is_android_prerelease_tag,
     is_desktop_asset_name,
+    is_release_at_or_above_minimum,
     is_release_prerelease,
 )
 from fetchtastic.constants import (
@@ -44,7 +46,6 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import expand_apk_selected_patterns, matches_selected_patterns
 
-from .android import MIN_ANDROID_TRACKED_VERSION, _is_apk_prerelease_by_name
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
 from .files import _safe_rmtree, _sanitize_path_component
@@ -53,6 +54,8 @@ from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
+
+MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
 
 
 def is_client_app_asset_name(asset_name: str) -> bool:
@@ -66,6 +69,20 @@ def is_client_app_prerelease_tag(tag_name: str) -> bool:
         "-open" in (tag_name or "").lower()
         or "-closed" in (tag_name or "").lower()
         or "-internal" in (tag_name or "").lower()
+    )
+
+
+def _is_apk_prerelease_by_name(
+    tag_name: str, version_manager: Optional[VersionManager] = None
+) -> bool:
+    """Return whether an Android tag should be treated as a tracked prerelease."""
+    if not is_android_prerelease_tag(tag_name):
+        return False
+    manager = version_manager or VersionManager()
+    return is_release_at_or_above_minimum(
+        tag_name,
+        minimum_version="2.7.0",
+        version_manager=manager,
     )
 
 
