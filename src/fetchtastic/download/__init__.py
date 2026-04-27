@@ -2,13 +2,13 @@
 Fetchtastic Download Subsystem - Modular Architecture
 
 This package provides a clean, extensible architecture for downloading various
-Meshtastic artifacts (Android APKs, firmware, bootloaders, etc.) with clear
+Meshtastic artifacts (client app assets, firmware, bootloaders, etc.) with clear
 separation of concerns and interface-driven design.
 
 Core Components:
 - interfaces: Base interfaces and protocols
-- android: Meshtastic Android app downloader
-- desktop: Meshtastic Desktop app downloader
+- client_app: Meshtastic client app asset downloader
+- android/desktop: compatibility modules for legacy imports
 - firmware: Firmware release downloader
 - repository: Repository file downloader
 - orchestrator: Download pipeline coordination
@@ -32,6 +32,7 @@ from .async_downloader import (
 from .base import BaseDownloader
 from .cache import CacheManager
 from .cli_integration import DownloadCLIIntegration
+from .client_app import MeshtasticClientAppDownloader
 from .config_utils import get_prerelease_patterns
 from .desktop import MeshtasticDesktopDownloader
 from .files import FileOperations
@@ -68,6 +69,7 @@ __all__ = [
     "download_with_progress",
     # Downloaders
     "MeshtasticAndroidAppDownloader",
+    "MeshtasticClientAppDownloader",
     "MeshtasticDesktopDownloader",
     "FirmwareReleaseDownloader",
     "RepositoryDownloader",

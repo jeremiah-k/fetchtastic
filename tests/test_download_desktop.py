@@ -6,7 +6,6 @@ import pytest
 
 from fetchtastic.constants import (
     APP_DIR_NAME,
-    DESKTOP_DIR_NAME,
     DESKTOP_PRERELEASES_DIR_NAME,
     FILE_TYPE_DESKTOP_PRERELEASE,
     RELEASE_SCAN_COUNT,
@@ -79,7 +78,6 @@ def test_is_release_complete_uses_prerelease_directory(downloader, tmp_path):
         tmp_path
         / "downloads"
         / APP_DIR_NAME
-        / DESKTOP_DIR_NAME
         / DESKTOP_PRERELEASES_DIR_NAME
         / "v2.7.20-open.1"
     )
@@ -110,7 +108,7 @@ def test_is_release_complete_ignores_non_installer_assets(downloader, tmp_path):
         ],
     )
 
-    stable_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    stable_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
     stable_dir.mkdir(parents=True)
     (stable_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg!")
 
@@ -248,10 +246,9 @@ def test_ensure_release_notes_rejects_symlinked_desktop_base(downloader, tmp_pat
     outside_dir = tmp_path / "outside"
     outside_dir.mkdir()
     app_dir = tmp_path / "downloads" / APP_DIR_NAME
-    app_dir.mkdir(parents=True)
-    desktop_dir = app_dir / DESKTOP_DIR_NAME
+    app_dir.parent.mkdir(parents=True)
     try:
-        desktop_dir.symlink_to(outside_dir, target_is_directory=True)
+        app_dir.symlink_to(outside_dir, target_is_directory=True)
     except OSError:
         pytest.skip("Symlinks are not supported in this test environment")
 
@@ -266,7 +263,7 @@ def test_ensure_release_notes_rejects_symlinked_desktop_base(downloader, tmp_pat
 def test_ensure_release_notes_rejects_symlinked_desktop_ancestor(downloader, tmp_path):
     """Stable release notes should not be written through symlinked desktop ancestors."""
     outside_app = tmp_path / "outside-app"
-    (outside_app / DESKTOP_DIR_NAME).mkdir(parents=True)
+    outside_app.mkdir(parents=True)
     downloads_dir = tmp_path / "downloads"
     downloads_dir.mkdir(parents=True)
     app_link = downloads_dir / APP_DIR_NAME
@@ -920,9 +917,7 @@ def test_download_desktop_no_target_path(downloader, tmp_path):
     # Verify create_download_result was called with fallback file_path
     mock_create_result.assert_called_once()
     call_kwargs = mock_create_result.call_args[1]
-    expected_fallback = str(
-        Path(downloader.download_dir) / APP_DIR_NAME / DESKTOP_DIR_NAME
-    )
+    expected_fallback = str(Path(downloader.download_dir) / APP_DIR_NAME)
     assert call_kwargs.get("file_path") == expected_fallback
 
 
@@ -943,10 +938,9 @@ def test_is_release_complete_rejects_symlinked_desktop_base(downloader, tmp_path
     outside_dir = tmp_path / "outside"
     outside_dir.mkdir()
     app_dir = tmp_path / "downloads" / APP_DIR_NAME
-    app_dir.mkdir(parents=True)
-    desktop_dir = app_dir / DESKTOP_DIR_NAME
+    app_dir.parent.mkdir(parents=True)
     try:
-        desktop_dir.symlink_to(outside_dir, target_is_directory=True)
+        app_dir.symlink_to(outside_dir, target_is_directory=True)
     except OSError:
         pytest.skip("Symlinks are not supported in this test environment")
 
@@ -963,7 +957,7 @@ def test_is_release_complete_rejects_symlinked_desktop_base(downloader, tmp_path
 def test_is_release_complete_rejects_symlinked_desktop_ancestor(downloader, tmp_path):
     """Completeness checks should reject releases under symlinked desktop ancestors."""
     outside_app = tmp_path / "outside-app"
-    outside_release_dir = outside_app / DESKTOP_DIR_NAME / "v2.7.20"
+    outside_release_dir = outside_app / "v2.7.20"
     outside_release_dir.mkdir(parents=True)
     (outside_release_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg!")
 
@@ -998,7 +992,7 @@ def test_is_release_complete_no_expected_assets(downloader, tmp_path):
     downloader.should_download_asset = Mock(return_value=False)
 
     release = Release(tag_name="v2.7.20", prerelease=False, assets=[])
-    version_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    version_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
     version_dir.mkdir(parents=True)
 
     result = downloader.is_release_complete(release)
@@ -1015,7 +1009,7 @@ def test_is_release_complete_missing_file(downloader, tmp_path):
         prerelease=False,
         assets=[Asset(name="test.dmg", download_url="http://x", size=100)],
     )
-    version_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    version_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
     version_dir.mkdir(parents=True)
 
     result = downloader.is_release_complete(release)
@@ -1032,7 +1026,7 @@ def test_is_release_complete_size_mismatch(downloader, tmp_path):
         prerelease=False,
         assets=[Asset(name="test.dmg", download_url="http://x", size=1000)],
     )
-    version_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    version_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
     version_dir.mkdir(parents=True)
     (version_dir / "test.dmg").write_bytes(b"tiny")
 
@@ -1050,7 +1044,7 @@ def test_is_release_complete_with_unknown_asset_size(downloader, tmp_path):
         prerelease=False,
         assets=[Asset(name="test.dmg", download_url="http://x", size=None)],
     )
-    version_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    version_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
     version_dir.mkdir(parents=True)
     (version_dir / "test.dmg").write_bytes(b"test")
 
@@ -1068,7 +1062,7 @@ def test_is_release_complete_verify_fails(downloader, tmp_path):
         prerelease=False,
         assets=[Asset(name="test.dmg", download_url="http://x", size=4)],
     )
-    version_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    version_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
     version_dir.mkdir(parents=True)
     (version_dir / "test.dmg").write_bytes(b"test")
 
@@ -1086,7 +1080,7 @@ def test_is_release_complete_oserror(downloader, tmp_path):
         prerelease=False,
         assets=[Asset(name="test.dmg", download_url="http://x", size=4)],
     )
-    version_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME / "v2.7.20"
+    version_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
     version_dir.mkdir(parents=True)
     test_file = version_dir / "test.dmg"
     test_file.write_bytes(b"test")
@@ -1143,7 +1137,7 @@ def test_cleanup_prerelease_directories_missing_desktop_dir(downloader):
 
 def test_cleanup_prerelease_directories_no_stable(downloader, tmp_path):
     """No stable releases should skip cleanup."""
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     downloader.cleanup_prerelease_directories(
@@ -1156,7 +1150,7 @@ def test_cleanup_prerelease_directories_removes_unexpected(downloader, tmp_path)
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     # Create expected version directory
@@ -1184,7 +1178,7 @@ def test_cleanup_prerelease_directories_handles_invalid_keep_limit(
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
@@ -1197,7 +1191,7 @@ def test_cleanup_prerelease_directories_sorts_by_iso_published_at_fallback(
     downloader, tmp_path, monkeypatch
 ):
     """When version tuples are unavailable, ISO published_at should drive sorting."""
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
     newest = desktop_dir / "v2.7.20"
     oldest = desktop_dir / "v2.7.19"
@@ -1238,7 +1232,7 @@ def test_cleanup_prerelease_directories_skips_symlinks(downloader, tmp_path):
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
     link_target = tmp_path / "link_target"
     link_target.mkdir()
@@ -1256,7 +1250,7 @@ def test_cleanup_prerelease_directories_skips_symlinks(downloader, tmp_path):
 
 def test_cleanup_prerelease_directories_exception(downloader, tmp_path):
     """Exception during cleanup should be caught."""
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     downloader.version_manager.get_release_tuple.side_effect = ValueError("test")
@@ -1950,7 +1944,7 @@ def test_cleanup_prerelease_directories_no_expected_stable(
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
     mock_logger = mocker.patch("fetchtastic.download.desktop.logger")
     mocker.patch(
@@ -1975,7 +1969,7 @@ def test_cleanup_prerelease_directories_scandir_filenotfound(
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
@@ -1996,7 +1990,7 @@ def test_cleanup_prerelease_directories_keep_limit_zero(downloader, tmp_path):
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     # Create unexpected version directory
@@ -2016,7 +2010,7 @@ def test_cleanup_prerelease_directories_mismatch_warning(downloader, tmp_path):
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     # Create a version directory that doesn't match expected
@@ -2036,7 +2030,7 @@ def test_cleanup_prerelease_directories_unsafe_tags(downloader, tmp_path):
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     # Create a release that will result in None when sanitized
@@ -2052,7 +2046,7 @@ def test_cleanup_prerelease_directories_remove_unexpected_filenotfound(
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
-    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME / DESKTOP_DIR_NAME
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
     desktop_dir.mkdir(parents=True)
 
     # Create prerelease dir
@@ -2307,5 +2301,584 @@ def test_manage_prerelease_tracking_files_filenotfound(downloader, tmp_path):
     downloader.get_releases = Mock(return_value=[])
     downloader.handle_prereleases = Mock(return_value=[])
 
-    # No tracking file exists - FileNotFoundError should be handled
     downloader.manage_prerelease_tracking_files()
+
+
+def test_move_split_path_returns_false_for_missing_source(downloader):
+    result = downloader._move_split_path("/nonexistent/path", "/some/dest")
+    assert result is False
+
+
+def test_move_split_path_returns_false_for_symlink_source(downloader, tmp_path):
+    target = tmp_path / "real_target"
+    target.mkdir()
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+    dest = tmp_path / "dest"
+    result = downloader._move_split_path(str(link), str(dest))
+    assert result is False
+
+
+def test_move_split_path_returns_false_when_dest_exists(downloader, tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "file.txt").write_text("data")
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    result = downloader._move_split_path(str(source), str(dest))
+    assert result is False
+
+
+def test_move_split_path_success(downloader, tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "file.txt").write_text("data")
+    dest = tmp_path / "dest"
+    result = downloader._move_split_path(str(source), str(dest))
+    assert result is True
+    assert dest.exists()
+    assert (dest / "file.txt").read_text() == "data"
+
+
+def test_move_split_path_handles_oserror(downloader, tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "file.txt").write_text("data")
+    dest = tmp_path / "dest"
+    with patch("fetchtastic.download.desktop.shutil.move", side_effect=OSError("fail")):
+        result = downloader._move_split_path(str(source), str(dest))
+    assert result is False
+
+
+def test_migrate_split_layout_no_split_dir(downloader, tmp_path):
+    downloader.migrate_split_layout()
+
+
+def test_migrate_split_layout_moves_stable_entries(downloader, tmp_path):
+    split_dir = tmp_path / "downloads" / APP_DIR_NAME / "desktop"
+    split_version = split_dir / "v2.7.20"
+    split_version.mkdir(parents=True)
+    (split_version / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg!")
+    downloader.migrate_split_layout()
+    migrated = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
+    assert migrated.exists()
+    assert (migrated / "Meshtastic-2.7.20.dmg").read_bytes() == b"dmg!"
+    assert not split_version.exists()
+
+
+def test_migrate_split_layout_moves_prerelease_entries(downloader, tmp_path):
+    split_prerelease_dir = (
+        tmp_path / "downloads" / APP_DIR_NAME / "desktop" / DESKTOP_PRERELEASES_DIR_NAME
+    )
+    split_version = split_prerelease_dir / "v2.7.20-open.1"
+    split_version.mkdir(parents=True)
+    (split_version / "Meshtastic-2.7.20-open.1.dmg").write_bytes(b"pre!")
+    downloader.migrate_split_layout()
+    migrated = (
+        tmp_path
+        / "downloads"
+        / APP_DIR_NAME
+        / DESKTOP_PRERELEASES_DIR_NAME
+        / "v2.7.20-open.1"
+    )
+    assert migrated.exists()
+    assert (migrated / "Meshtastic-2.7.20-open.1.dmg").read_bytes() == b"pre!"
+    assert not split_version.exists()
+
+
+def test_migrate_split_layout_skips_symlinked_app_root(downloader, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    downloads_dir = tmp_path / "downloads"
+    downloads_dir.mkdir(parents=True)
+    app_dir = downloads_dir / APP_DIR_NAME
+    try:
+        app_dir.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+    with patch.object(downloader, "_is_safe_managed_dir", return_value=True):
+        downloader.migrate_split_layout()
+
+
+def test_migrate_split_layout_skips_symlink_entries(downloader, tmp_path):
+    split_dir = tmp_path / "downloads" / APP_DIR_NAME / "desktop"
+    split_dir.mkdir(parents=True)
+    link_target = tmp_path / "link_target"
+    link_target.mkdir()
+    real_entry = split_dir / "v2.7.20"
+    real_entry.mkdir()
+    (real_entry / "file.txt").write_text("data")
+    link_entry = split_dir / "v2.7.19"
+    try:
+        link_entry.symlink_to(link_target, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+    downloader.migrate_split_layout()
+    assert (tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20").exists()
+    assert link_entry.exists()
+
+
+def test_migrate_split_layout_handles_oserror_scanning(downloader, tmp_path):
+    split_dir = tmp_path / "downloads" / APP_DIR_NAME / "desktop"
+    split_dir.mkdir(parents=True)
+    with patch(
+        "fetchtastic.download.desktop.os.scandir", side_effect=OSError("scan fail")
+    ):
+        downloader.migrate_split_layout()
+
+
+def test_migrate_split_layout_handles_oserror_prerelease_scanning(
+    downloader, tmp_path, mocker
+):
+    split_dir = tmp_path / "downloads" / APP_DIR_NAME / "desktop"
+    split_dir.mkdir(parents=True)
+    (split_dir / "v2.7.20").mkdir()
+    split_prerelease_dir = split_dir / DESKTOP_PRERELEASES_DIR_NAME
+    split_prerelease_dir.mkdir()
+    (split_prerelease_dir / "v2.7.20-open.1").mkdir()
+    real_scandir = os.scandir
+
+    def _scandir(path):
+        if os.fspath(path) == str(split_prerelease_dir):
+            raise OSError("prerelease scan fail")
+        return real_scandir(path)
+
+    mocker.patch("fetchtastic.download.desktop.os.scandir", side_effect=_scandir)
+    downloader.migrate_split_layout()
+    assert (tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20").exists()
+
+
+def test_resolve_release_dir_migrates_split_layout(downloader, tmp_path):
+    split_dir = tmp_path / "downloads" / APP_DIR_NAME / "desktop"
+    split_version = split_dir / "v2.7.20"
+    split_version.mkdir(parents=True)
+    (split_version / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg!")
+    result = downloader._resolve_release_dir(
+        "v2.7.20", is_prerelease=False, create_if_missing=False
+    )
+    expected = str(tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20")
+    assert result == expected
+    assert (Path(result) / "Meshtastic-2.7.20.dmg").exists()
+    assert not split_version.exists()
+
+
+def test_resolve_release_dir_falls_back_to_split_when_move_fails(downloader, tmp_path):
+    split_dir = tmp_path / "downloads" / APP_DIR_NAME / "desktop"
+    split_version = split_dir / "v2.7.20"
+    split_version.mkdir(parents=True)
+    (split_version / "file.txt").write_text("data")
+    with patch.object(downloader, "_move_split_path", return_value=False):
+        result = downloader._resolve_release_dir(
+            "v2.7.20", is_prerelease=False, create_if_missing=False
+        )
+    assert result == str(split_version)
+
+
+def test_resolve_desktop_base_dir_refuses_outside_tree(downloader, tmp_path):
+    with patch.object(downloader, "_is_within_download_tree", return_value=False):
+        with pytest.raises(ValueError):
+            downloader._resolve_desktop_base_dir(
+                is_prerelease=False, create_if_missing=True
+            )
+
+
+def test_resolve_desktop_base_dir_refuses_unsafe_existing(downloader, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.parent.mkdir(parents=True)
+    try:
+        app_dir.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks are not supported in this test environment")
+    with pytest.raises(ValueError):
+        downloader._resolve_desktop_base_dir(
+            is_prerelease=False, create_if_missing=True
+        )
+
+
+def test_is_within_download_tree_returns_false_on_value_error(downloader, tmp_path):
+    with patch(
+        "fetchtastic.download.desktop.os.path.commonpath", side_effect=ValueError
+    ):
+        result = downloader._is_within_download_tree("/some/path")
+    assert result is False
+
+
+def test_is_safe_managed_dir_returns_false_for_nonexistent(downloader):
+    result = downloader._is_safe_managed_dir("/nonexistent/path")
+    assert result is False
+
+
+def test_cleanup_skips_non_desktop_dir_in_app_tree(downloader, tmp_path):
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    version_dir = app_dir / "v2.7.20"
+    version_dir.mkdir()
+    (version_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+
+    android_dir = app_dir / "android-stuff"
+    android_dir.mkdir()
+    (android_dir / "readme.txt").write_text("android")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert version_dir.exists()
+    assert android_dir.exists()
+
+
+def test_cleanup_skips_non_desktop_dir_without_v_prefix_and_invalid_version(
+    downloader,
+    tmp_path,
+):
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    version_dir = app_dir / "v2.7.20"
+    version_dir.mkdir()
+    (version_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+
+    other_dir = app_dir / "some-folder"
+    other_dir.mkdir()
+    (other_dir / "readme.txt").write_text("stuff")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert version_dir.exists()
+    assert other_dir.exists()
+
+
+def test_migrate_split_layout_skips_prerelease_symlinks(downloader, tmp_path):
+    split_dir = tmp_path / "downloads" / "app" / "desktop"
+    split_dir.mkdir(parents=True)
+    split_pre_dir = split_dir / "prerelease"
+    split_pre_dir.mkdir()
+
+    real_target = tmp_path / "real-target"
+    real_target.mkdir()
+    symlink_entry = split_pre_dir / "link-entry"
+    try:
+        symlink_entry.symlink_to(real_target, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    normal_entry = split_pre_dir / "v2.7.20-open.1"
+    normal_entry.mkdir()
+    (normal_entry / "Meshtastic.dmg").write_bytes(b"dmg")
+
+    config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+    dl = MeshtasticDesktopDownloader(
+        config, CacheManager(cache_dir=str(tmp_path / "cache"))
+    )
+    dl.migrate_split_layout()
+
+    assert (tmp_path / "downloads" / "app" / "prerelease" / "v2.7.20-open.1").exists()
+
+
+def test_get_known_2714_prerelease_mismatch_tags_sorts_non_matching():
+    config = {"DOWNLOAD_DIR": "/tmp/test"}
+    dl = MeshtasticDesktopDownloader(config, CacheManager(cache_dir="/tmp/cache"))
+    dl._wip_2714_prerelease_mismatch_tags = {"weird-tag", "v2.7.14-closed.5"}
+    tags = dl.get_known_2714_prerelease_mismatch_tags()
+    assert tags[0] == "v2.7.14-closed.5"
+
+
+def test_resolve_desktop_base_dir_refuses_unsafe_existing_dir(downloader, tmp_path):
+    base_dir = tmp_path / "downloads" / APP_DIR_NAME
+    base_dir.mkdir(parents=True)
+
+    with patch.object(downloader, "_is_safe_managed_dir", return_value=False):
+        with pytest.raises(ValueError, match="unsafe"):
+            downloader._resolve_desktop_base_dir(
+                is_prerelease=False, create_if_missing=False
+            )
+
+
+def test_resolve_release_dir_refuses_symlinked_release(downloader, tmp_path):
+    with patch.object(
+        downloader, "_find_symlinked_ancestor", return_value="/some/symlink"
+    ):
+        with pytest.raises(ValueError, match="symlinked"):
+            downloader._resolve_release_dir(
+                "v2.7.20", is_prerelease=False, create_if_missing=False
+            )
+
+
+def test_resolve_release_dir_refuses_outside_tree(downloader, tmp_path, mocker):
+    mocker.patch.object(downloader, "_is_within_download_tree", return_value=False)
+    with pytest.raises(ValueError, match="outside safe tree"):
+        downloader._resolve_release_dir(
+            "v2.7.20", is_prerelease=False, create_if_missing=False
+        )
+
+
+def test_resolve_release_dir_refuses_unsafe_existing(downloader, tmp_path, mocker):
+    release_dir = tmp_path / "downloads" / APP_DIR_NAME / "v2.7.20"
+    release_dir.mkdir(parents=True)
+    mocker.patch.object(
+        downloader,
+        "_is_safe_managed_dir",
+        side_effect=lambda p: "v2.7.20" not in p,
+    )
+    with pytest.raises(ValueError, match="unsafe"):
+        downloader._resolve_release_dir(
+            "v2.7.20", is_prerelease=False, create_if_missing=False
+        )
+
+
+def test_cleanup_prerelease_directories_skips_unsafe_desktop_dir(downloader, tmp_path):
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+    real_target = tmp_path / "outside"
+    real_target.mkdir()
+    try:
+        (desktop_dir / "link").symlink_to(real_target)
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    with patch.object(downloader, "_is_safe_managed_dir", return_value=False):
+        downloader.cleanup_prerelease_directories(
+            cached_releases=[Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+        )
+
+
+def test_cleanup_prerelease_directories_skips_unsafe_prerelease_dir(
+    downloader, tmp_path
+):
+    desktop_dir = tmp_path / "downloads" / APP_DIR_NAME
+    desktop_dir.mkdir(parents=True)
+    pre_dir = desktop_dir / "prerelease"
+    pre_dir.mkdir()
+    real_target = tmp_path / "outside2"
+    real_target.mkdir()
+    try:
+        (pre_dir / "link").symlink_to(real_target)
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    def _safe(p):
+        if "prerelease" in p:
+            return False
+        return os.path.isdir(p) and not os.path.islink(p)
+
+    with patch.object(downloader, "_is_safe_managed_dir", side_effect=_safe):
+        downloader.cleanup_prerelease_directories(
+            cached_releases=[Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+        )
+
+
+def test_is_within_download_tree_returns_false_on_value_error_os_patch(downloader):
+    with patch("os.path.commonpath", side_effect=ValueError("different drives")):
+        assert downloader._is_within_download_tree("/some/path") is False
+
+
+def test_is_safe_managed_dir_returns_false_for_nonexistent_direct(downloader):
+    assert downloader._is_safe_managed_dir("/nonexistent/path") is False
+
+
+def test_cleanup_skips_non_desktop_dir_with_v_prefix_but_no_release_tuple(
+    downloader, tmp_path, mocker
+):
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    version_dir = app_dir / "v2.7.20"
+    version_dir.mkdir()
+    (version_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+
+    other_dir = app_dir / "v-something-else"
+    other_dir.mkdir()
+    (other_dir / "readme.txt").write_text("stuff")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert version_dir.exists()
+    assert other_dir.exists()
+
+
+def test_resolve_release_dir_refuses_outside_tree_via_side_effect(
+    downloader, tmp_path, mocker
+):
+    base_dir = tmp_path / "downloads" / APP_DIR_NAME
+    base_dir.mkdir(parents=True)
+    mocker.patch.object(
+        downloader,
+        "_is_within_download_tree",
+        side_effect=lambda p: "v2.7.20" not in p,
+    )
+    with pytest.raises(ValueError, match="outside safe tree"):
+        downloader._resolve_release_dir(
+            "v2.7.20", is_prerelease=False, create_if_missing=False
+        )
+
+
+def test_resolve_release_dir_refuses_unsafe_existing_release(
+    downloader, tmp_path, mocker
+):
+    base_dir = tmp_path / "downloads" / APP_DIR_NAME
+    base_dir.mkdir(parents=True)
+    release_dir = base_dir / "v2.7.20"
+    release_dir.mkdir()
+    mocker.patch.object(
+        downloader,
+        "_is_safe_managed_dir",
+        side_effect=lambda p: "v2.7.20" not in p,
+    )
+    with pytest.raises(ValueError, match="unsafe"):
+        downloader._resolve_release_dir(
+            "v2.7.20", is_prerelease=False, create_if_missing=False
+        )
+
+
+def test_cleanup_warns_unsafe_prerelease_dir(downloader, tmp_path):
+    from fetchtastic.download.cache import CacheManager as _CM
+
+    config = {"DOWNLOAD_DIR": str(tmp_path / "dl")}
+    dl = MeshtasticDesktopDownloader(config, _CM(cache_dir=str(tmp_path / "c")))
+    dl.cache_manager = Mock(spec=_CM)
+    dl.cache_manager.cache_dir = str(tmp_path / "c")
+    dl.cache_manager.get_cache_file_path = Mock(
+        return_value=str(tmp_path / "c" / "f.json")
+    )
+
+    real_vm = VersionManager()
+    dl.version_manager = Mock()
+    dl.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+    dl.version_manager.is_prerelease_version.side_effect = real_vm.is_prerelease_version
+
+    app_dir = tmp_path / "dl" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+    pre_dir = app_dir / "prerelease"
+    pre_dir.mkdir()
+
+    real_safe = dl._is_safe_managed_dir
+
+    def _safe(p):
+        if p == str(pre_dir):
+            return False
+        return real_safe(p)
+
+    with patch.object(dl, "_is_safe_managed_dir", side_effect=_safe), patch(
+        "fetchtastic.download.desktop.logger"
+    ) as mock_logger:
+        releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+        dl.cleanup_prerelease_directories(cached_releases=releases)
+        assert any(
+            "prerelease directory is unsafe" in call.args[0]
+            for call in mock_logger.warning.call_args_list
+            if call.args
+        )
+
+
+def test_cleanup_preserves_android_only_stable_dir(downloader, tmp_path):
+    """Android-only version dirs in app/ must not be deleted by Desktop cleanup."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    desktop_dir = app_dir / "v2.7.20"
+    desktop_dir.mkdir()
+    (desktop_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+
+    android_dir = app_dir / "v2.7.14"
+    android_dir.mkdir()
+    (android_dir / "meshtastic-2.7.14.apk").write_bytes(b"apk")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert desktop_dir.exists()
+    assert android_dir.exists()
+
+
+def test_cleanup_preserves_android_only_prerelease_dir(downloader, tmp_path):
+    """Android-only prerelease dirs in app/prerelease/ must survive Desktop cleanup."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    desktop_stable = app_dir / "v2.7.20"
+    desktop_stable.mkdir()
+    (desktop_stable / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+
+    prerelease_dir = app_dir / DESKTOP_PRERELEASES_DIR_NAME
+    prerelease_dir.mkdir()
+
+    android_pre = prerelease_dir / "v2.7.20-open.1"
+    android_pre.mkdir()
+    (android_pre / "meshtastic-2.7.20-open.1.apk").write_bytes(b"apk")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert desktop_stable.exists()
+    assert android_pre.exists()
+
+
+def test_cleanup_prunes_desktop_files_from_unified_dir(downloader, tmp_path):
+    """Desktop cleanup should prune own files from allowed unified dirs but keep the directory."""
+    real_vm = VersionManager()
+    downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
+
+    app_dir = tmp_path / "downloads" / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+
+    unified_dir = app_dir / "v2.7.20"
+    unified_dir.mkdir()
+    (unified_dir / "Meshtastic-2.7.20.dmg").write_bytes(b"dmg")
+    (unified_dir / "meshtastic-2.7.20.apk").write_bytes(b"apk")
+
+    releases = [Release(tag_name="v2.7.20", prerelease=False, assets=[])]
+    downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    assert unified_dir.exists()
+    assert not (unified_dir / "Meshtastic-2.7.20.dmg").exists()
+    assert (unified_dir / "meshtastic-2.7.20.apk").exists()
+
+
+def test_release_notes_android_desktop_distinct_files(tmp_path):
+    """Android and Desktop release notes for the same tag must produce separate files."""
+    from fetchtastic.download.android import MeshtasticAndroidAppDownloader
+
+    android_config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+    android_cache = CacheManager(cache_dir=str(tmp_path / "android-cache"))
+    android_dl = MeshtasticAndroidAppDownloader(android_config, android_cache)
+
+    desktop_config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+    desktop_cache = CacheManager(cache_dir=str(tmp_path / "desktop-cache"))
+    desktop_dl = MeshtasticDesktopDownloader(desktop_config, desktop_cache)
+
+    release = Release(
+        tag_name="v2.7.20",
+        prerelease=False,
+        body="Release notes for v2.7.20",
+    )
+
+    android_notes = android_dl.ensure_release_notes(release)
+    desktop_notes = desktop_dl.ensure_release_notes(release)
+
+    assert android_notes is not None
+    assert desktop_notes is not None
+    assert android_notes != desktop_notes
+    assert "release_notes-android-v2.7.20.md" in android_notes
+    assert "release_notes-desktop-v2.7.20.md" in desktop_notes
