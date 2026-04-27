@@ -6,6 +6,7 @@ import pytest
 
 # Import the package module (matches how users invoke it)
 import fetchtastic.cli as cli
+import fetchtastic.setup_config as setup_config
 
 
 @pytest.fixture
@@ -1316,7 +1317,10 @@ def test_copy_to_clipboard_func_termux_success(mocker):
 
     assert result is True
     mock_run.assert_called_once_with(
-        ["termux-clipboard-set"], input=b"test text", check=True
+        ["termux-clipboard-set"],
+        input=b"test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -1346,7 +1350,13 @@ def test_copy_to_clipboard_func_macos_success(mocker):
     result = cli.copy_to_clipboard_func("test text")
 
     assert result is True
-    mock_run.assert_called_once_with("pbcopy", text=True, input="test text", check=True)
+    mock_run.assert_called_once_with(
+        "pbcopy",
+        text=True,
+        input="test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
+    )
 
 
 def test_copy_to_clipboard_func_linux_xclip_success(mocker):
@@ -1362,7 +1372,10 @@ def test_copy_to_clipboard_func_linux_xclip_success(mocker):
 
     assert result is True
     mock_run.assert_called_once_with(
-        ["xclip", "-selection", "clipboard"], input=b"test text", check=True
+        ["xclip", "-selection", "clipboard"],
+        input=b"test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -1379,7 +1392,10 @@ def test_copy_to_clipboard_func_linux_xsel_success(mocker):
 
     assert result is True
     mock_run.assert_called_once_with(
-        ["xsel", "--clipboard", "--input"], input=b"test text", check=True
+        ["xsel", "--clipboard", "--input"],
+        input=b"test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 

@@ -1984,6 +1984,7 @@ def test_setup_cron_job_termux_path(mocker):
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("shutil.which", return_value="/usr/bin/crontab")
 
     mock_subprocess = mocker.patch("subprocess.run")
     mock_subprocess.return_value = MagicMock(returncode=0, stdout="")
@@ -2008,6 +2009,7 @@ def test_remove_cron_job_windows(mocker, capsys):
     """Test remove_cron_job on Windows (lines 3077-3078)."""
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("shutil.which", return_value="/usr/bin/crontab")
 
     setup_config.remove_cron_job()
     captured = capsys.readouterr()
@@ -2024,6 +2026,7 @@ def test_remove_reboot_cron_job_windows(mocker, capsys):
     """Test remove_reboot_cron_job on Windows (lines 3248-3249)."""
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("shutil.which", return_value="/usr/bin/crontab")
 
     setup_config.remove_reboot_cron_job()
     captured = capsys.readouterr()
@@ -2040,6 +2043,7 @@ def test_setup_reboot_cron_job_windows(mocker, capsys):
     """Test setup_reboot_cron_job on Windows (lines 3177-3179)."""
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("shutil.which", return_value="/usr/bin/crontab")
 
     setup_config.setup_reboot_cron_job()
     captured = capsys.readouterr()
@@ -2293,6 +2297,7 @@ def test_migrate_config_dir_creation_error(mocker, capsys):
 def test_check_any_cron_jobs_exists_exception(mocker):
     """Test check_any_cron_jobs_exist with exception (lines 3323-3325)."""
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("shutil.which", return_value="/usr/bin/crontab")
     mocker.patch(
         "subprocess.run",
         side_effect=subprocess.SubprocessError("crontab error"),

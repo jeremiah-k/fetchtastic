@@ -1065,7 +1065,11 @@ def test_setup_storage_function(mocker):
 
     # Function doesn't return anything, just runs
     assert result is None
-    mock_subprocess.assert_called_once_with(["termux-setup-storage"], check=True)
+    mock_subprocess.assert_called_once_with(
+        ["termux-setup-storage"],
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
+    )
 
 
 @pytest.mark.configuration

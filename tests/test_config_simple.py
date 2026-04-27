@@ -20,7 +20,10 @@ def test_copy_to_clipboard_termux_success(mocker):
 
     assert result is True
     mock_subprocess.assert_called_once_with(
-        ["termux-clipboard-set"], input="test text".encode("utf-8"), check=True
+        ["termux-clipboard-set"],
+        input="test text".encode("utf-8"),
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -60,7 +63,11 @@ def test_copy_to_clipboard_macos_success(mocker):
 
     assert result is True
     mock_subprocess.assert_called_once_with(
-        "pbcopy", text=True, input="test text", check=True
+        "pbcopy",
+        text=True,
+        input="test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -82,6 +89,7 @@ def test_copy_to_clipboard_linux_xclip_success(mocker):
         ["xclip", "-selection", "clipboard"],
         input="test text".encode("utf-8"),
         check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 

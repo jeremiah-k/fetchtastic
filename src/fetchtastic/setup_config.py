@@ -360,7 +360,11 @@ def is_fetchtastic_installed_via_pip() -> bool:
     try:
         # Check if fetchtastic is in pip list
         result = subprocess.run(
-            ["pip", "list"], capture_output=True, text=True, check=False
+            ["pip", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
@@ -380,7 +384,11 @@ def is_fetchtastic_installed_via_pipx() -> bool:
     try:
         # Check if fetchtastic is in pipx list
         result = subprocess.run(
-            ["pipx", "list"], capture_output=True, text=True, check=False
+            ["pipx", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
@@ -1933,6 +1941,7 @@ def _setup_base(
                         [pkg_exe, "install", "python-pipx"],
                         check=True,
                         capture_output=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
                     )
                     print("✓ pipx installed")
 
@@ -1942,6 +1951,7 @@ def _setup_base(
                         [pip_exe, "uninstall", "fetchtastic", "-y"],
                         check=True,
                         capture_output=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS,
                     )
                     print("✓ Removed pip installation")
 
@@ -1951,6 +1961,7 @@ def _setup_base(
                         [pipx_exe, "install", "fetchtastic"],
                         check=True,
                         capture_output=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
                     )
                     print("✓ Installed with pipx")
 
@@ -2874,7 +2885,10 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
         # Termux environment
         try:
             subprocess.run(
-                ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
+                ["termux-clipboard-set"],
+                input=text.encode("utf-8"),
+                check=True,
+                timeout=CRON_COMMAND_TIMEOUT_SECONDS,
             )
             return True
         except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
@@ -2912,7 +2926,13 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
         try:
             if system == "Darwin":
                 # macOS
-                subprocess.run("pbcopy", text=True, input=text, check=True)
+                subprocess.run(
+                    "pbcopy",
+                    text=True,
+                    input=text,
+                    check=True,
+                    timeout=CRON_COMMAND_TIMEOUT_SECONDS,
+                )
                 return True
             elif system == "Linux":
                 # Linux
@@ -2922,6 +2942,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                         ["xclip", "-selection", "clipboard"],
                         input=encoded_text,
                         check=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS,
                     )
                     return True
                 elif shutil.which("xsel"):
@@ -2929,6 +2950,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                         ["xsel", "--clipboard", "--input"],
                         input=encoded_text,
                         check=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS,
                     )
                     return True
                 else:
@@ -2965,7 +2987,11 @@ def install_termux_packages() -> None:
         packages_to_install.append("cronie")
     if packages_to_install:
         print("Installing required Termux packages...")
-        subprocess.run(["pkg", "install"] + packages_to_install + ["-y"], check=True)
+        subprocess.run(
+            ["pkg", "install"] + packages_to_install + ["-y"],
+            check=True,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
+        )
         print("Required Termux packages installed.")
     else:
         print("All required Termux packages are already installed.")
@@ -2982,8 +3008,10 @@ def setup_storage() -> None:
     # Run termux-setup-storage
     print("Setting up Termux storage access...")
     try:
-        subprocess.run(["termux-setup-storage"], check=True)
-    except subprocess.CalledProcessError:
+        subprocess.run(
+            ["termux-setup-storage"], check=True, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         print("An error occurred while setting up Termux storage.")
         print("Please grant storage permissions when prompted.")
 
@@ -3000,12 +3028,18 @@ def install_crond() -> None:
             if crond_path is None:
                 print("Installing cronie...")
                 # Install cronie
-                subprocess.run(["pkg", "install", "cronie", "-y"], check=True)
+                subprocess.run(
+                    ["pkg", "install", "cronie", "-y"],
+                    check=True,
+                    timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
+                )
                 print("cronie installed.")
             else:
                 print("cronie is already installed.")
             # Enable crond service
-            subprocess.run(["sv-enable", "crond"], check=True)
+            subprocess.run(
+                ["sv-enable", "crond"], check=True, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+            )
             print("crond service enabled.")
         except Exception as e:  # noqa: BLE001
             print(f"An error occurred while installing or enabling crond: {e}")
