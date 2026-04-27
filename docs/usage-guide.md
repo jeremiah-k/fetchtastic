@@ -157,7 +157,8 @@ Fetchtastic organizes downloads in a structured way:
 │   ├── v2.7.14/
 │   │   ├── app-fdroid-universal-release.apk
 │   │   ├── Meshtastic-2.7.14.dmg
-│   │   └── release_notes-v2.7.14.md
+│   │   ├── release_notes-android-v2.7.14.md
+│   │   └── release_notes-desktop-v2.7.14.md
 │   └── prerelease/ (if enabled)
 │       └── v2.7.14-closed.17/
 ├── firmware/

@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests  # type: ignore[import-untyped]
 
 from fetchtastic.client_release_discovery import (
-    is_android_asset_name,
     is_desktop_asset_name,
     is_desktop_prerelease_tag,
     is_release_at_or_above_minimum,
@@ -1179,6 +1178,33 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                 )
                 return
 
+            def _is_desktop_owned_file(name: str) -> bool:
+                """Return True when the file is owned by the Desktop platform."""
+                return is_desktop_asset_name(name) or name.lower().startswith(
+                    "release_notes-desktop-"
+                )
+
+            def _prune_desktop_files(dir_path: str) -> None:
+                """Remove only Desktop-owned files from the given directory."""
+                try:
+                    for name in os.listdir(dir_path):
+                        if _is_desktop_owned_file(name):
+                            file_path = os.path.join(dir_path, name)
+                            if os.path.isfile(file_path) and not os.path.islink(
+                                file_path
+                            ):
+                                try:
+                                    os.remove(file_path)
+                                    logger.debug("Removed Desktop-owned file: %s", name)
+                                except OSError as exc:
+                                    logger.warning(
+                                        "Failed to remove Desktop file %s: %s",
+                                        name,
+                                        exc,
+                                    )
+                except OSError as exc:
+                    logger.debug("Error listing directory for Desktop pruning: %s", exc)
+
             def _remove_unexpected_entries(
                 base_dir: str,
                 allowed: set[str],
@@ -1187,7 +1213,18 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                 """
                 Remove filesystem entries in base_dir whose names are not in `allowed`.
 
-                If `entries` is provided, it will be used instead of scanning `base_dir`. Symlinks are skipped. If `base_dir` does not exist the function returns quietly.
+                For unexpected directories whose names parse as version strings,
+                performs file-level pruning: removes only Desktop-owned files
+                (installers and Desktop release notes) and deletes the directory
+                only if it becomes truly empty afterward. This prevents cross-platform
+                data loss in the unified app/<version>/ storage layout.
+
+                For non-version directories, preserves existing behavior: skips
+                directories that contain no Desktop assets.
+
+                If `entries` is provided, it will be used instead of scanning `base_dir`.
+                Symlinks are always skipped. If `base_dir` does not exist the function
+                returns quietly.
 
                 Parameters:
                     base_dir (str): Path of the directory to inspect and prune.
@@ -1212,37 +1249,57 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                     if entry.name in allowed:
                         continue
                     if entry.is_dir():
-                        try:
-                            entry_names = os.listdir(entry.path)
-                        except OSError:
-                            entry_names = []
-                        has_desktop = any(
-                            is_desktop_asset_name(name) for name in entry_names
+                        is_version_dir = (
+                            self.version_manager.get_release_tuple(entry.name)
+                            is not None
                         )
-                        has_android = any(
-                            is_android_asset_name(name) for name in entry_names
-                        )
-                        if entry_names and not has_desktop:
-                            if has_android:
-                                logger.debug(
-                                    "Skipping Android-only entry during Desktop cleanup: %s",
+                        if is_version_dir:
+                            _prune_desktop_files(entry.path)
+                            try:
+                                remaining = os.listdir(entry.path)
+                            except OSError:
+                                remaining = []
+                            if not remaining:
+                                logger.info(
+                                    "Removing empty Desktop-stale version dir: %s",
                                     entry.name,
                                 )
-                                continue
-                            if not entry.name.lower().startswith("v"):
+                                _safe_rmtree(entry.path, base_dir, entry.name)
+                            else:
                                 logger.debug(
-                                    "Skipping non-Desktop app entry during Desktop cleanup: %s",
+                                    "Keeping mixed-content version dir during Desktop cleanup: %s",
                                     entry.name,
                                 )
-                                continue
-                            if not self.version_manager.get_release_tuple(entry.name):
-                                logger.debug(
-                                    "Skipping non-Desktop app entry during Desktop cleanup: %s",
-                                    entry.name,
-                                )
-                                continue
-                    logger.info("Removing unexpected Desktop entry: %s", entry.name)
-                    _safe_rmtree(entry.path, base_dir, entry.name)
+                        else:
+                            try:
+                                entry_names = os.listdir(entry.path)
+                            except OSError:
+                                entry_names = []
+                            has_desktop = any(
+                                is_desktop_asset_name(name) for name in entry_names
+                            )
+                            if entry_names and not has_desktop:
+                                if not entry.name.lower().startswith("v"):
+                                    logger.debug(
+                                        "Skipping non-Desktop app entry during Desktop cleanup: %s",
+                                        entry.name,
+                                    )
+                                    continue
+                                if not self.version_manager.get_release_tuple(
+                                    entry.name
+                                ):
+                                    logger.debug(
+                                        "Skipping non-Desktop app entry during Desktop cleanup: %s",
+                                        entry.name,
+                                    )
+                                    continue
+                            logger.info(
+                                "Removing unexpected Desktop entry: %s", entry.name
+                            )
+                            _safe_rmtree(entry.path, base_dir, entry.name)
+                    else:
+                        logger.info("Removing unexpected Desktop entry: %s", entry.name)
+                        _safe_rmtree(entry.path, base_dir, entry.name)
 
             try:
                 with os.scandir(desktop_dir) as it:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fetchtastic.constants import ANDROID_DIR_NAME, APP_DIR_NAME
+from fetchtastic.constants import APP_DIR_NAME
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader

@@ -1030,6 +1030,33 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 )
                 return
 
+            def _is_android_owned_file(name: str) -> bool:
+                """Return True when the file is owned by the Android platform."""
+                return is_android_asset_name(name) or name.lower().startswith(
+                    "release_notes-android-"
+                )
+
+            def _prune_android_files(dir_path: str) -> None:
+                """Remove only Android-owned files from the given directory."""
+                try:
+                    for name in os.listdir(dir_path):
+                        if _is_android_owned_file(name):
+                            file_path = os.path.join(dir_path, name)
+                            if os.path.isfile(file_path) and not os.path.islink(
+                                file_path
+                            ):
+                                try:
+                                    os.remove(file_path)
+                                    logger.debug("Removed Android-owned file: %s", name)
+                                except OSError as exc:
+                                    logger.warning(
+                                        "Failed to remove Android file %s: %s",
+                                        name,
+                                        exc,
+                                    )
+                except OSError as exc:
+                    logger.debug("Error listing directory for Android pruning: %s", exc)
+
             def _remove_unexpected_entries(
                 base_dir: str,
                 allowed: set[str],
@@ -1038,7 +1065,18 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 """
                 Remove filesystem entries in base_dir whose names are not in `allowed`.
 
-                If `entries` is provided, it will be used instead of scanning `base_dir`. Symlinks are skipped. If `base_dir` does not exist the function returns quietly.
+                For unexpected directories whose names parse as version strings,
+                performs file-level pruning: removes only Android-owned files
+                (APKs and Android release notes) and deletes the directory only
+                if it becomes truly empty afterward. This prevents cross-platform
+                data loss in the unified app/<version>/ storage layout.
+
+                For non-version directories, preserves existing behavior: skips
+                directories that contain no Android assets.
+
+                If `entries` is provided, it will be used instead of scanning `base_dir`.
+                Symlinks are always skipped. If `base_dir` does not exist the function
+                returns quietly.
 
                 Parameters:
                     base_dir (str): Path of the directory to inspect and prune.
@@ -1062,21 +1100,46 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         continue
                     if entry.name in allowed:
                         continue
-                    if base_dir == preferred_android_dir and entry.is_dir():
-                        try:
-                            entry_names = os.listdir(entry.path)
-                        except OSError:
-                            entry_names = []
-                        if entry_names and not any(
-                            is_android_asset_name(name) for name in entry_names
-                        ):
-                            logger.debug(
-                                "Skipping non-Android app entry during APK cleanup: %s",
-                                entry.name,
-                            )
-                            continue
-                    logger.info("Removing unexpected APK entry: %s", entry.name)
-                    _safe_rmtree(entry.path, base_dir, entry.name)
+                    if entry.is_dir():
+                        is_version_dir = (
+                            self.version_manager.get_release_tuple(entry.name)
+                            is not None
+                        )
+                        if is_version_dir:
+                            _prune_android_files(entry.path)
+                            try:
+                                remaining = os.listdir(entry.path)
+                            except OSError:
+                                remaining = []
+                            if not remaining:
+                                logger.info(
+                                    "Removing empty Android-stale version dir: %s",
+                                    entry.name,
+                                )
+                                _safe_rmtree(entry.path, base_dir, entry.name)
+                            else:
+                                logger.debug(
+                                    "Keeping mixed-content version dir during APK cleanup: %s",
+                                    entry.name,
+                                )
+                        else:
+                            try:
+                                entry_names = os.listdir(entry.path)
+                            except OSError:
+                                entry_names = []
+                            if entry_names and not any(
+                                is_android_asset_name(name) for name in entry_names
+                            ):
+                                logger.debug(
+                                    "Skipping non-Android app entry during APK cleanup: %s",
+                                    entry.name,
+                                )
+                                continue
+                            logger.info("Removing unexpected APK entry: %s", entry.name)
+                            _safe_rmtree(entry.path, base_dir, entry.name)
+                    else:
+                        logger.info("Removing unexpected APK entry: %s", entry.name)
+                        _safe_rmtree(entry.path, base_dir, entry.name)
 
             # Compute union of existing entries across all android roots BEFORE the loop.
             # This ensures the disjoint check considers the combined state of all roots,

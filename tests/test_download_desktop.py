@@ -2679,12 +2679,12 @@ def test_cleanup_prerelease_directories_skips_unsafe_prerelease_dir(
         )
 
 
-def test_is_within_download_tree_returns_false_on_value_error(downloader):
+def test_is_within_download_tree_returns_false_on_value_error_os_patch(downloader):
     with patch("os.path.commonpath", side_effect=ValueError("different drives")):
         assert downloader._is_within_download_tree("/some/path") is False
 
 
-def test_is_safe_managed_dir_returns_false_for_nonexistent(downloader):
+def test_is_safe_managed_dir_returns_false_for_nonexistent_direct(downloader):
     assert downloader._is_safe_managed_dir("/nonexistent/path") is False
 
 
@@ -2712,7 +2712,9 @@ def test_cleanup_skips_non_desktop_dir_with_v_prefix_but_no_release_tuple(
     assert other_dir.exists()
 
 
-def test_resolve_release_dir_refuses_outside_tree(downloader, tmp_path, mocker):
+def test_resolve_release_dir_refuses_outside_tree_via_side_effect(
+    downloader, tmp_path, mocker
+):
     base_dir = tmp_path / "downloads" / APP_DIR_NAME
     base_dir.mkdir(parents=True)
     mocker.patch.object(

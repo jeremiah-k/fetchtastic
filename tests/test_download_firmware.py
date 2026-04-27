@@ -15,13 +15,12 @@ import requests
 from fetchtastic import log_utils
 from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_MANIFEST,
-    FILE_TYPE_FIRMWARE_PRERELEASE,
     FIRMWARE_DIR_NAME,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-from fetchtastic.download.interfaces import Asset, FirmwareManifest, Release
+from fetchtastic.download.interfaces import Asset, Release
 from fetchtastic.download.version import VersionManager
 
 
