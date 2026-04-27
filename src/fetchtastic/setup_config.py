@@ -969,6 +969,8 @@ def _setup_downloads(
                 if isinstance(app_selection, dict)
                 else None
             )
+            if selected_assets is None and app_selection is not None:
+                selected_assets = ["*"]
             if not selected_assets:
                 print(
                     "No client app assets selected. Client app releases will not be downloaded."
@@ -1019,7 +1021,7 @@ def _setup_downloads(
 
     # --- Desktop Client Selection ---
     normalize_client_app_config(config)
-    save_apks = _coerce_bool(config.get("SAVE_APKS", save_client_apps))
+    save_apks = save_client_apps
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", save_client_apps))
 
     # --- Channel Suffix Configuration ---
