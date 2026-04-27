@@ -151,7 +151,7 @@ class TestMeshtasticAndroidAppDownloader:
 
         assert result.success is True
         assert result.release_tag == "v2.7.14"
-        assert result.file_type == "android"
+        assert result.file_type == "client_app"
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
     @patch(
@@ -173,7 +173,7 @@ class TestMeshtasticAndroidAppDownloader:
         mock_download.return_value = True
         result = android_downloader.download_apk(release, asset)
         assert hasattr(result, "success")
-        assert result.file_type == "android"
+        assert result.file_type == "client_app"
 
     def test_cleanup_old_versions(self, android_downloader, tmp_path):
         """Test cleanup of old Android versions."""

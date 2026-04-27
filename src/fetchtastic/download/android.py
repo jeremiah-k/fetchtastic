@@ -20,7 +20,7 @@ from fetchtastic.client_release_discovery import (
 from .client_app import MeshtasticClientAppDownloader
 from .version import VersionManager
 
-MIN_ANDROID_TRACKED_VERSION = "2.7.0"
+MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
 
 
 class MeshtasticAndroidAppDownloader(MeshtasticClientAppDownloader):

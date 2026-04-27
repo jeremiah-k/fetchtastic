@@ -996,6 +996,8 @@ def _setup_downloads(
                 save_desktop = False
             else:
                 config["SELECTED_APP_ASSETS"] = selected_assets
+                config.pop("SELECTED_APK_ASSETS", None)
+                _clear_desktop_assets(config)
                 normalize_client_app_config(config)
         elif not config.get("SELECTED_APP_ASSETS"):
             print(
