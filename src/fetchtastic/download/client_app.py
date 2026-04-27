@@ -157,29 +157,83 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 source_path,
             )
             return False
-        if os.path.exists(destination_path):
-            logger.debug(
-                "Skipping client app migration because destination exists: %s",
-                destination_path,
-            )
+
+        if os.path.isfile(source_path):
+            if os.path.exists(destination_path):
+                logger.debug(
+                    "Skipping client app migration because destination file exists: %s",
+                    destination_path,
+                )
+                return False
+            try:
+                os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+                shutil.move(source_path, destination_path)
+                logger.info(
+                    "Migrated client app path %s -> %s",
+                    source_path,
+                    destination_path,
+                )
+                return True
+            except OSError as exc:
+                logger.warning(
+                    "Failed to migrate client app path %s -> %s: %s",
+                    source_path,
+                    destination_path,
+                    exc,
+                )
+                return False
+
+        if not os.path.isdir(source_path):
             return False
+
+        os.makedirs(destination_path, exist_ok=True)
+        moved_any = False
         try:
-            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-            shutil.move(source_path, destination_path)
-            logger.info(
-                "Migrated client app path %s -> %s",
-                source_path,
-                destination_path,
-            )
-            return True
+            for entry in os.listdir(source_path):
+                src_entry = os.path.join(source_path, entry)
+                dst_entry = os.path.join(destination_path, entry)
+                if os.path.islink(src_entry):
+                    logger.warning(
+                        "Skipping symlink during client app migration merge: %s",
+                        src_entry,
+                    )
+                    continue
+                if os.path.exists(dst_entry):
+                    logger.debug(
+                        "Skipping client app migration file because destination exists: %s",
+                        dst_entry,
+                    )
+                    continue
+                shutil.move(src_entry, dst_entry)
+                logger.info(
+                    "Migrated client app file %s -> %s",
+                    src_entry,
+                    dst_entry,
+                )
+                moved_any = True
         except OSError as exc:
             logger.warning(
-                "Failed to migrate client app path %s -> %s: %s",
+                "Failed to merge client app directory %s -> %s: %s",
                 source_path,
                 destination_path,
                 exc,
             )
-            return False
+
+        if moved_any:
+            try:
+                remaining = os.listdir(source_path)
+                if not remaining:
+                    os.rmdir(source_path)
+                else:
+                    logger.debug(
+                        "Keeping source directory after partial merge: %s (%d entries remain)",
+                        source_path,
+                        len(remaining),
+                    )
+            except OSError:
+                pass
+
+        return moved_any
 
     def migrate_legacy_layout(self) -> None:
         """
@@ -725,7 +779,17 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 continue
             if entry.name in allowed:
                 continue
-            logger.info("Removing stale client app entry: %s", entry.name)
+            is_recognized_version = (
+                entry.is_dir()
+                and self.version_manager.get_release_tuple(entry.name) is not None
+            )
+            if not is_recognized_version:
+                logger.debug(
+                    "Skipping non-version entry in client app cleanup: %s",
+                    entry.name,
+                )
+                continue
+            logger.info("Removing stale client app version dir: %s", entry.name)
             _safe_rmtree(entry.path, base_dir, entry.name)
 
     def get_latest_release_tag(self) -> Optional[str]:

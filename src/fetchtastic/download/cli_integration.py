@@ -13,11 +13,18 @@ if TYPE_CHECKING:
 
 import requests  # type: ignore[import-untyped]
 
+from fetchtastic.client_release_discovery import (
+    is_android_asset_name,
+    is_desktop_asset_name,
+)
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
+    CLIENT_APP_FILE_TYPES,
     DESKTOP_FILE_TYPES,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_CLIENT_APP,
+    FILE_TYPE_CLIENT_APP_PRERELEASE,
     FILE_TYPE_DESKTOP,
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
@@ -601,6 +608,15 @@ class DownloadCLIIntegration:
             is_firmware = file_type in FIRMWARE_FILE_TYPES and not is_firmware_manifest
             is_android = file_type in ANDROID_FILE_TYPES
             is_desktop = file_type in DESKTOP_FILE_TYPES
+            is_client_app = file_type in CLIENT_APP_FILE_TYPES
+            if is_client_app:
+                file_name = (
+                    os.path.basename(str(result.file_path)) if result.file_path else ""
+                )
+                is_android = is_android or is_android_asset_name(file_name)
+                is_desktop = is_desktop or is_desktop_asset_name(file_name)
+                if not is_android and not is_desktop:
+                    is_android = True
             was_skipped = getattr(result, "was_skipped", False)
 
             # Legacy parity: only mark new versions when a download actually occurred.
@@ -816,6 +832,8 @@ class DownloadCLIIntegration:
             FILE_TYPE_ANDROID_PRERELEASE: "Android APK Prerelease",
             FILE_TYPE_DESKTOP: "Desktop",
             FILE_TYPE_DESKTOP_PRERELEASE: "Desktop Prerelease",
+            FILE_TYPE_CLIENT_APP: "Client App",
+            FILE_TYPE_CLIENT_APP_PRERELEASE: "Client App Prerelease",
         }
 
         for result in self.orchestrator.failed_downloads:
@@ -999,6 +1017,8 @@ class DownloadCLIIntegration:
             "android_prerelease": "",
             "desktop": "",
             "desktop_prerelease": "",
+            "client_app": "",
+            "client_app_prerelease": "",
         }
         if self.orchestrator:
             versions.update(self.orchestrator.get_latest_versions())

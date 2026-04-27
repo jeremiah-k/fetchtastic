@@ -95,7 +95,9 @@ def test_orchestrator_refreshes_commits_before_processing(monkeypatch):
         orch._recent_commits = [{"sha": "abc1234"}]
 
     monkeypatch.setattr(orch, "_refresh_commit_history_cache", fake_refresh)
-    monkeypatch.setattr(orch, "_process_android_downloads", lambda: calls.append("apk"))
+    monkeypatch.setattr(
+        orch, "_process_client_app_downloads", lambda: calls.append("apk")
+    )
     monkeypatch.setattr(
         orch, "_process_firmware_downloads", lambda: calls.append("firmware")
     )

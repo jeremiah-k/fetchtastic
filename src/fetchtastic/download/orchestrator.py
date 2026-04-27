@@ -209,11 +209,7 @@ class DownloadOrchestrator:
         # Process firmware downloads
         self._process_firmware_downloads()
 
-        # Process client app downloads through the legacy Android entry point so
-        # existing extension/test seams still observe the app lifecycle.
-        self._process_android_downloads()
-        if self.desktop_downloader is not self.android_downloader:
-            self._process_desktop_downloads()
+        self._process_client_app_downloads()
 
         # Legacy parity: Repository downloads are handled separately through the interactive
         # "repo browse" command and are not part of the automatic download pipeline.
@@ -481,29 +477,18 @@ class DownloadOrchestrator:
             logger.error(f"Error processing client app downloads: {e}", exc_info=True)
 
     def _process_android_downloads(self) -> None:
-        """Compatibility wrapper for the unified client app downloader."""
-        if not self.config.get("SAVE_APKS", self.config.get("SAVE_CLIENT_APPS", False)):
-            logger.info("Android app downloads are disabled in configuration")
-            return
-        self._with_client_app_downloader(self.android_downloader)
-        self._client_app_download_release = self._download_android_release
-        self._client_app_download_asset = self.android_downloader.download_apk
-        self._client_app_prerelease_type = "android_prerelease"
+        """Compatibility wrapper: delegates to the unified client app pipeline."""
+        logger.debug(
+            "_process_android_downloads() is a compatibility shim; delegating to _process_client_app_downloads()"
+        )
         self._process_client_app_downloads()
 
     def _process_desktop_downloads(self) -> None:
-        """Compatibility wrapper for the unified client app downloader."""
-        if not self.config.get("SAVE_DESKTOP_APP", False):
-            logger.info("Desktop app downloads are disabled in configuration")
-            return
-        self._with_client_app_downloader(self.desktop_downloader)
-        self._client_app_download_release = self._download_desktop_release
-        self._client_app_download_asset = self.desktop_downloader.download_desktop
-        self._client_app_prerelease_type = "desktop_prerelease"
+        """Compatibility wrapper: delegates to the unified client app pipeline."""
+        logger.debug(
+            "_process_desktop_downloads() is a compatibility shim; delegating to _process_client_app_downloads()"
+        )
         self._process_client_app_downloads()
-
-    def _with_client_app_downloader(self, downloader: Any) -> None:
-        self.client_app_downloader = downloader
 
     def _get_tracked_prerelease_tag(self, downloader: Any) -> Optional[str]:
         """
@@ -903,23 +888,6 @@ class DownloadOrchestrator:
         else:
             return any_downloaded
 
-    def _download_android_release(self, release: Release) -> bool:
-        """Download selected app assets through the Android-compatible seam."""
-        any_downloaded = False
-        try:
-            for asset in self.android_downloader.get_assets(release):
-                if not self.android_downloader.should_download_asset(asset.name):
-                    continue
-                result = self.android_downloader.download_apk(release, asset)
-                if result.success and not result.was_skipped:
-                    any_downloaded = True
-                self._handle_download_result(result, "android")
-        except (requests.RequestException, OSError, ValueError, TypeError) as e:
-            logger.error(f"Error downloading Android release {release.tag_name}: {e}")
-            return False
-        else:
-            return any_downloaded
-
     def _download_firmware_release(self, release: Release) -> bool:
         """
         Download firmware assets from a release and optionally extract them based on configuration.
@@ -1013,23 +981,6 @@ class DownloadOrchestrator:
             and asset_name_lower.endswith(".json")
             and not asset_name_lower.endswith(FIRMWARE_MANIFEST_EXTENSION)
         )
-
-    def _download_desktop_release(self, release: Release) -> bool:
-        """Download selected app assets through the Desktop-compatible seam."""
-        any_downloaded = False
-        try:
-            for asset in self.desktop_downloader.get_assets(release):
-                if not self.desktop_downloader.should_download_asset(asset.name):
-                    continue
-                result = self.desktop_downloader.download_desktop(release, asset)
-                if result.success and not result.was_skipped:
-                    any_downloaded = True
-                self._handle_download_result(result, "desktop")
-        except (requests.RequestException, OSError, ValueError, TypeError) as e:
-            logger.error(f"Error downloading Desktop release {release.tag_name}: {e}")
-            return False
-        else:
-            return any_downloaded
 
     def _get_extraction_patterns(self) -> List[str]:
         """

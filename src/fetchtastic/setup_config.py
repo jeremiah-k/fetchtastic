@@ -843,7 +843,7 @@ def _setup_downloads(
         if save_choice in ("a", "app", "c", "client", "d", "desktop"):
             save_client_apps = True
             save_firmware = False
-            app_menu_kind = "desktop" if save_choice in ("d", "desktop") else "android"
+            app_menu_kind = "desktop" if save_choice in ("d", "desktop") else "app"
             include_desktop_assets = app_menu_kind == "desktop"
         elif save_choice == "f":
             save_client_apps = False
@@ -874,7 +874,7 @@ def _setup_downloads(
         else:
             save_client_apps = True
             save_firmware = True
-            app_menu_kind = "android"
+            app_menu_kind = "app"
     else:
         save_client_apps = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
         save_firmware = _coerce_bool(config.get("SAVE_FIRMWARE", False))
@@ -974,29 +974,12 @@ def _setup_downloads(
                     rerun_menu = False
         if rerun_menu:
             try:
-                if app_menu_kind == "app" and include_desktop_assets:
-                    apk_selection = menu_apk.run_menu()
-                    desktop_selection = menu_desktop.run_menu()
-                    app_selection = {
-                        "selected_assets": [
-                            *(
-                                apk_selection.get("selected_assets", [])
-                                if isinstance(apk_selection, dict)
-                                else []
-                            ),
-                            *(
-                                desktop_selection.get("selected_assets", [])
-                                if isinstance(desktop_selection, dict)
-                                else []
-                            ),
-                        ]
-                    }
+                if app_menu_kind == "app":
+                    app_selection = menu_app.run_menu()
                 elif app_menu_kind == "desktop":
                     app_selection = menu_desktop.run_menu()
-                elif app_menu_kind == "android":
-                    app_selection = menu_apk.run_menu()
                 else:
-                    app_selection = menu_app.run_menu()
+                    app_selection = menu_apk.run_menu()
             except RuntimeError:
                 app_selection = (
                     menu_desktop.run_menu()
@@ -1033,11 +1016,6 @@ def _setup_downloads(
                     selected_assets = config["SELECTED_APK_ASSETS"]
                 config["SELECTED_APP_ASSETS"] = selected_assets
                 normalize_client_app_config(config)
-                if app_menu_kind == "android":
-                    config["SAVE_APKS"] = True
-                    config["SAVE_DESKTOP_APP"] = False
-                    config["SELECTED_APK_ASSETS"] = selected_assets
-                    config["SELECTED_DESKTOP_ASSETS"] = []
         elif not config.get("SELECTED_APP_ASSETS"):
             print(
                 "No existing client app asset selection found. Client app releases will not be downloaded."
@@ -1069,11 +1047,6 @@ def _setup_downloads(
 
     # --- Desktop Client Selection ---
     normalize_client_app_config(config)
-    if app_menu_kind == "android" and config.get("SAVE_CLIENT_APPS"):
-        config["SAVE_APKS"] = True
-        config["SAVE_DESKTOP_APP"] = False
-        config["SELECTED_APK_ASSETS"] = config.get("SELECTED_APP_ASSETS", [])
-        config["SELECTED_DESKTOP_ASSETS"] = []
     save_apks = _coerce_bool(config.get("SAVE_APKS", save_client_apps))
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", save_client_apps))
 

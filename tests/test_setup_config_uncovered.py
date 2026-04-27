@@ -166,14 +166,14 @@ def test_setup_downloads_full_run_multiple_selection(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "m",  # multiple
-            "y",  # APKs yes
-            "y",  # firmware yes
-            "y",  # desktop yes
-            "n",  # no firmware prerelease
-            "n",  # no APK prerelease
-            "n",  # no desktop prerelease
-            "n",  # no channel suffixes
+            "m",
+            "y",
+            "y",
+            "y",
+            "n",
+            "n",
+            "n",
+            "n",
         ],
     )
     mocker.patch(
@@ -181,8 +181,8 @@ def test_setup_downloads_full_run_multiple_selection(mocker):
         return_value={"selected_assets": ["rak4631"]},
     )
     mocker.patch(
-        "fetchtastic.menu_apk.run_menu",
-        return_value={"selected_assets": ["meshtastic.apk"]},
+        "fetchtastic.menu_app.run_menu",
+        return_value={"selected_assets": ["meshtastic.apk", "meshtastic.dmg"]},
     )
     mocker.patch(
         "fetchtastic.menu_desktop.run_menu",

@@ -82,11 +82,10 @@ class TestDownloadOrchestrator:
 
     def test_run_download_pipeline(self, orchestrator):
         """Test running the complete download pipeline."""
-        # Mock the actual download methods to avoid network calls
         with (
             patch.object(
-                orchestrator, "_process_android_downloads"
-            ) as mock_android_process,
+                orchestrator, "_process_client_app_downloads"
+            ) as mock_client_app_process,
             patch.object(
                 orchestrator, "_process_firmware_downloads"
             ) as mock_firmware_process,
@@ -95,7 +94,7 @@ class TestDownloadOrchestrator:
             result = orchestrator.run_download_pipeline()
             assert isinstance(result, tuple)
             assert len(result) == 2
-            mock_android_process.assert_called_once()
+            mock_client_app_process.assert_called_once()
             mock_firmware_process.assert_called_once()
             mock_summary.assert_called_once()
 
@@ -672,23 +671,19 @@ class TestDownloadOrchestrator:
 
     def test_download_android_release(self, orchestrator):
         """
-        Verify that an Android release containing an APK asset causes the orchestrator to attempt a download.
-
-        Creates a Release with one APK Asset, patches the orchestrator's Android downloader to simulate a successful download, calls _download_android_release, and asserts a download was invoked.
+        Verify that a client app release containing an APK asset causes the orchestrator to attempt a download.
         """
         release = Release(tag_name="v2.7.14", prerelease=False)
-        # Add an asset to the release
         asset = Asset(
             name="meshtastic.apk", download_url="https://example.com/app.apk", size=1000
         )
         release.assets.append(asset)
 
-        # Mock the actual download
         with patch.object(
-            orchestrator.android_downloader, "download_apk"
+            orchestrator.client_app_downloader, "download_app"
         ) as mock_download:
             mock_download.return_value = Mock(success=True)
-            orchestrator._download_android_release(release)
+            orchestrator._download_client_app_release(release)
             mock_download.assert_called()
 
     def test_download_firmware_release(self, orchestrator):

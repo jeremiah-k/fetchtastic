@@ -50,8 +50,6 @@ class TestDownloadOrchestrator:
         """
         Create a DownloadOrchestrator for tests with core managers and downloaders replaced by mocks.
 
-        The returned orchestrator has its cache_manager, version_manager, and prerelease_manager replaced with Mock objects, and its android_downloader and firmware_downloader replaced with Mock objects whose download_dir is set to "/tmp/test". The firmware_downloader mock is configured so `is_release_revoked()` returns False and `collect_non_revoked_releases(...)` returns a tuple of (initial_releases, initial_releases, current_fetch_limit) to preserve initial inputs.
-
         Parameters:
             mock_config (dict): Configuration dictionary passed to the DownloadOrchestrator constructor.
 
@@ -59,25 +57,18 @@ class TestDownloadOrchestrator:
             DownloadOrchestrator: Test instance with mocked managers and downloaders and deterministic firmware helper behavior.
         """
         orch = DownloadOrchestrator(mock_config)
-        # Mock the dependencies that are set in __init__
         orch.cache_manager = Mock()
         orch.version_manager = Mock()
         orch.prerelease_manager = Mock()
-        # Mock the downloaders that are created in __init__
-        orch.android_downloader = Mock()
-        orch.android_downloader.download_dir = "/tmp/test"
-        orch.android_downloader.should_download_prerelease.return_value = True
-        orch.android_downloader.update_prerelease_tracking.return_value = True
+        orch.client_app_downloader = Mock()
+        orch.client_app_downloader.download_dir = "/tmp/test"
+        orch.client_app_downloader.should_download_prerelease.return_value = True
+        orch.client_app_downloader.update_prerelease_tracking.return_value = True
+        orch.android_downloader = orch.client_app_downloader
+        orch.desktop_downloader = orch.client_app_downloader
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
-        orch.desktop_downloader = Mock()
-        orch.desktop_downloader.download_dir = "/tmp/test"
-        orch.desktop_downloader.get_releases.return_value = []
-        orch.desktop_downloader.handle_prereleases.return_value = []
-        orch.desktop_downloader.should_download_prerelease.return_value = True
-        orch.desktop_downloader.update_prerelease_tracking.return_value = True
-        orch.desktop_downloader.update_release_history.return_value = {}
 
         def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
             return initial_releases, initial_releases, current_fetch_limit
@@ -104,14 +95,13 @@ class TestDownloadOrchestrator:
             mock_prerelease.assert_called_once()
 
     def test_process_android_downloads_no_releases(self, orchestrator):
-        """Android processing should stop when no releases are found."""
-        orchestrator.android_downloader.get_releases.return_value = []
-        orchestrator.config["SAVE_APKS"] = True
+        """Client app processing should stop when no releases are found."""
+        orchestrator.client_app_downloader.get_releases.return_value = []
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.migrate_legacy_layout.assert_called_once()
-        orchestrator.android_downloader.get_releases.assert_called_once()
+        orchestrator.client_app_downloader.migrate_legacy_layout.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
 
     def test_get_release_check_workers_invalid_value(self, orchestrator):
         """Invalid worker config should fall back to default."""
@@ -149,25 +139,27 @@ class TestDownloadOrchestrator:
         self, orchestrator
     ):
         """Completed releases and skipped prerelease assets should be handled cleanly."""
-        orchestrator.config["SAVE_APKS"] = True
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
         )
         prerelease.assets[0].name = "app.apk"
 
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = True
-        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.android_downloader.should_download_asset.return_value = False
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_asset.return_value = False
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.is_release_complete.assert_called_once()
-        orchestrator.android_downloader.download_apk.assert_not_called()
+        orchestrator.client_app_downloader.is_release_complete.assert_called_once()
+        orchestrator.client_app_downloader.download_app.assert_not_called()
 
     def test_process_firmware_downloads_no_releases(self, orchestrator):
         """Firmware processing should stop when no releases are found."""
@@ -304,7 +296,6 @@ class TestDownloadOrchestrator:
         orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
             return_value=None
         )
-        orchestrator.desktop_downloader = Mock()
         orchestrator.desktop_downloader.get_latest_prerelease_tag.return_value = (
             "v2.7.12-open.1"
         )
@@ -369,9 +360,7 @@ class TestDownloadOrchestrator:
         """Test successful download pipeline execution."""
         mock_time.return_value = 1000.0
 
-        # Mock the processing methods
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
@@ -380,23 +369,19 @@ class TestDownloadOrchestrator:
         orchestrator.run_download_pipeline()
 
         orchestrator._process_firmware_downloads.assert_called_once()
-        orchestrator._process_android_downloads.assert_called_once()
-        orchestrator._process_desktop_downloads.assert_called_once()
+        orchestrator._process_client_app_downloads.assert_called_once()
         orchestrator._enhance_download_results_with_metadata.assert_called_once()
         orchestrator._retry_failed_downloads.assert_called_once()
         orchestrator._log_download_summary.assert_called_once_with(1000.0)
 
     def test_run_download_pipeline_disabled_components(self, orchestrator):
         """Test pipeline execution skips disabled components."""
-        # Mock the processing methods
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
 
-        # Disable all components (download methods handle config internally)
         orchestrator.config = {
             "DOWNLOAD_ANDROID": False,
             "DOWNLOAD_FIRMWARE": False,
@@ -404,34 +389,30 @@ class TestDownloadOrchestrator:
 
         orchestrator.run_download_pipeline()
 
-        # Should still call retry and metadata enhancement
         orchestrator._retry_failed_downloads.assert_called_once()
         orchestrator._enhance_download_results_with_metadata.assert_called_once()
         orchestrator._log_download_summary.assert_called_once()
 
-        # Processing methods should still be called (they check internally)
-        orchestrator._process_android_downloads.assert_called_once()
-        orchestrator._process_desktop_downloads.assert_called_once()
+        orchestrator._process_client_app_downloads.assert_called_once()
         orchestrator._process_firmware_downloads.assert_called_once()
 
     def test_process_android_downloads(self, orchestrator):
-        """Test Android download processing."""
-        # Mock releases
+        """Test client app download processing."""
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v1.0.0"
         mock_release.prerelease = False
-        orchestrator.android_downloader.get_releases.return_value = [mock_release]
-        orchestrator.android_downloader.is_release_complete.return_value = False
-        orchestrator.android_downloader.handle_prereleases.return_value = []
-        orchestrator._download_android_release = Mock()
+        orchestrator.client_app_downloader.get_releases.return_value = [mock_release]
+        orchestrator.client_app_downloader.is_release_complete.return_value = False
+        orchestrator.client_app_downloader.handle_prereleases.return_value = []
+        orchestrator._download_client_app_release = Mock()
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.get_releases.assert_called_once()
-        orchestrator.android_downloader.is_release_complete.assert_called_once_with(
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
+        orchestrator.client_app_downloader.is_release_complete.assert_called_once_with(
             mock_release
         )
-        orchestrator._download_android_release.assert_called_once_with(mock_release)
+        orchestrator._download_client_app_release.assert_called_once_with(mock_release)
 
     def test_process_firmware_downloads(self, orchestrator):
         """Test firmware download processing."""
@@ -459,7 +440,7 @@ class TestDownloadOrchestrator:
         orchestrator._download_firmware_release.assert_called_once_with(mock_release)
 
     def test_download_android_release_success(self, orchestrator):
-        """Test successful Android release download."""
+        """Test successful client app release download."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
         asset = Mock()
@@ -468,19 +449,19 @@ class TestDownloadOrchestrator:
 
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
-        orchestrator.android_downloader.download_apk.return_value = mock_result
-        orchestrator.android_downloader.get_assets.return_value = [asset]
-        orchestrator.android_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
+        orchestrator.client_app_downloader.get_assets.return_value = [asset]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
         orchestrator._handle_download_result = Mock()
 
         orchestrator.config["FILTER_REVOKED_RELEASES"] = False
 
-        orchestrator._download_android_release(release)
+        orchestrator._download_client_app_release(release)
 
-        orchestrator.android_downloader.get_assets.assert_called_once_with(release)
-        orchestrator.android_downloader.download_apk.assert_called_once()
+        orchestrator.client_app_downloader.get_assets.assert_called_once_with(release)
+        orchestrator.client_app_downloader.download_app.assert_called_once()
         orchestrator._handle_download_result.assert_called_once_with(
-            mock_result, "android"
+            mock_result, "client_app"
         )
 
     def test_download_firmware_release_success(self, orchestrator):
@@ -858,139 +839,139 @@ class TestDownloadOrchestrator:
             mock_logger.warning.assert_called()
 
     def test_process_desktop_downloads_disabled(self, orchestrator):
-        """Desktop processing should skip when disabled in config."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = False
+        """Client app processing should skip when disabled in config."""
+        orchestrator.config["SAVE_CLIENT_APPS"] = False
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.get_releases.assert_not_called()
+        orchestrator.client_app_downloader.migrate_legacy_layout.assert_not_called()
+        orchestrator.client_app_downloader.get_releases.assert_not_called()
 
     def test_process_desktop_downloads_no_releases(self, orchestrator):
-        """Desktop processing should stop when no releases are found."""
-        orchestrator.desktop_downloader.get_releases.return_value = []
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Client app processing should stop when no releases are found."""
+        orchestrator.client_app_downloader.get_releases.return_value = []
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.get_releases.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
 
     def test_process_desktop_downloads_complete_release(self, orchestrator):
-        """Desktop processing should skip complete releases."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Client app processing should skip complete releases."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.is_release_complete.return_value = True
-        orchestrator.desktop_downloader.handle_prereleases.return_value = []
-        orchestrator._download_desktop_release = Mock()
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = []
+        orchestrator._download_client_app_release = Mock()
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator._download_desktop_release.assert_not_called()
+        orchestrator._download_client_app_release.assert_not_called()
 
     def test_process_desktop_downloads_with_prerelease(self, orchestrator):
-        """Desktop processing should handle prerelease assets."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
-        orchestrator.config["CHECK_DESKTOP_PRERELEASES"] = True
+        """Client app processing should handle prerelease assets."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.dmg")]
         )
         prerelease.assets[0].name = "app.dmg"
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.is_release_complete.return_value = False
-        orchestrator.desktop_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.desktop_downloader.should_download_asset.return_value = True
-        orchestrator.desktop_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.is_release_complete.return_value = False
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
-        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
-        orchestrator._download_desktop_release = Mock(return_value=True)
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
+        orchestrator._download_client_app_release = Mock(return_value=True)
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.download_desktop.assert_called_once()
+        orchestrator.client_app_downloader.download_app.assert_called_once()
 
     @patch("fetchtastic.download.orchestrator.logger")
     def test_process_desktop_downloads_error_handling(self, mock_logger, orchestrator):
-        """Desktop processing should handle exceptions gracefully."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
-        orchestrator.desktop_downloader.get_releases.side_effect = OSError("test error")
+        """Client app processing should handle exceptions gracefully."""
+        orchestrator.client_app_downloader.get_releases.side_effect = OSError(
+            "test error"
+        )
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        # Verify the mocked method was called
-        orchestrator.desktop_downloader.get_releases.assert_called_once()
-        # Verify error was logged
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
         mock_logger.error.assert_called()
 
     def test_download_desktop_release_success(self, orchestrator):
-        """Test successful desktop release download."""
+        """Test successful client app release download."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
         asset = Mock()
         asset.name = "app.dmg"
-        orchestrator.desktop_downloader.get_assets.return_value = [asset]
-        orchestrator.desktop_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = [asset]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
-        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
 
-        result = orchestrator._download_desktop_release(release)
+        result = orchestrator._download_client_app_release(release)
 
         assert result is True
-        orchestrator.desktop_downloader.download_desktop.assert_called_once()
+        orchestrator.client_app_downloader.download_app.assert_called_once()
 
     def test_download_desktop_release_skipped(self, orchestrator):
-        """Test desktop release download when skipped."""
+        """Test client app release download when skipped."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
         asset = Mock()
         asset.name = "app.dmg"
-        orchestrator.desktop_downloader.get_assets.return_value = [asset]
-        orchestrator.desktop_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = [asset]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = True
-        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
 
-        result = orchestrator._download_desktop_release(release)
+        result = orchestrator._download_client_app_release(release)
 
         assert result is False
 
     def test_download_desktop_release_error(self, orchestrator):
-        """Test desktop release download with error."""
+        """Test client app release download with error."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
         asset = Mock()
         asset.name = "app.dmg"
-        orchestrator.desktop_downloader.get_assets.return_value = [asset]
-        orchestrator.desktop_downloader.should_download_asset.return_value = True
-        orchestrator.desktop_downloader.download_desktop.side_effect = OSError(
+        orchestrator.client_app_downloader.get_assets.return_value = [asset]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.download_app.side_effect = OSError(
             "test error"
         )
 
-        result = orchestrator._download_desktop_release(release)
+        result = orchestrator._download_client_app_release(release)
 
         assert result is False
 
     def test_download_android_release_error(self, orchestrator):
-        """Test Android release download with error."""
+        """Test client app release download with error."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
         asset = Mock()
         asset.name = "app.apk"
         release.assets = [asset]
-        orchestrator.android_downloader.get_assets.return_value = [asset]
-        orchestrator.android_downloader.should_download_asset.return_value = True
-        orchestrator.android_downloader.download_apk.side_effect = OSError("test error")
+        orchestrator.client_app_downloader.get_assets.return_value = [asset]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.download_app.side_effect = OSError(
+            "test error"
+        )
 
-        result = orchestrator._download_android_release(release)
+        result = orchestrator._download_client_app_release(release)
 
         assert result is False
 
@@ -1871,8 +1852,7 @@ class TestDownloadOrchestrator:
         """Stale wifi_skipped=True must be cleared at the start of a subsequent run."""
         orchestrator.wifi_skipped = True
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -1885,9 +1865,8 @@ class TestDownloadOrchestrator:
     def test_run_download_pipeline_wifi_only_not_connected(self, orchestrator):
         """Pipeline should skip when WIFI_ONLY and not connected."""
         orchestrator.config["WIFI_ONLY"] = True
-        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -1902,7 +1881,7 @@ class TestDownloadOrchestrator:
             result = orchestrator.run_download_pipeline()
 
         assert result == ([], [])
-        orchestrator._process_android_downloads.assert_not_called()
+        orchestrator._process_client_app_downloads.assert_not_called()
 
     def test_get_firmware_keep_limit_invalid(self, orchestrator):
         """_get_firmware_keep_limit should handle invalid values."""
@@ -1919,74 +1898,77 @@ class TestDownloadOrchestrator:
     # =========================================================================
 
     def test_process_android_downloads_any_downloaded_true(self, orchestrator):
-        """Test Android processing when _download_android_release returns True."""
-        orchestrator.config["SAVE_APKS"] = True
+        """Test client app processing when _download_client_app_release returns True."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = False
-        orchestrator.android_downloader.handle_prereleases.return_value = []
-        orchestrator._download_android_release = Mock(return_value=True)
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = False
+        orchestrator.client_app_downloader.handle_prereleases.return_value = []
+        orchestrator._download_client_app_release = Mock(return_value=True)
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator._download_android_release.assert_called_once_with(release)
+        orchestrator._download_client_app_release.assert_called_once_with(release)
 
     def test_process_android_downloads_prerelease_with_download(self, orchestrator):
-        """Test Android prerelease handling when asset is downloaded."""
-        orchestrator.config["SAVE_APKS"] = True
+        """Test client app prerelease handling when asset is downloaded."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
         )
         prerelease.assets[0].name = "app.apk"
 
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = True
-        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.android_downloader.should_download_asset.return_value = True
-        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
-        orchestrator.android_downloader.download_apk.return_value = mock_result
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.download_apk.assert_called_once()
+        orchestrator.client_app_downloader.download_app.assert_called_once()
         orchestrator._handle_download_result.assert_called_with(
-            mock_result, "android_prerelease"
+            mock_result, "client_app_prerelease"
         )
-        orchestrator.android_downloader.update_prerelease_tracking.assert_called_once_with(
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
             "v1.0.1-beta"
         )
 
     def test_process_android_downloads_skips_prerelease_not_newer(self, orchestrator):
-        """Android prerelease downloads should skip tags rejected by tracking policy."""
-        orchestrator.config["SAVE_APKS"] = True
+        """Client app prerelease downloads should skip tags rejected by tracking policy."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
         )
         prerelease.assets[0].name = "app.apk"
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = True
-        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.android_downloader.should_download_prerelease.return_value = False
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
+            False
+        )
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.download_apk.assert_not_called()
-        orchestrator.android_downloader.update_prerelease_tracking.assert_not_called()
+        orchestrator.client_app_downloader.download_app.assert_not_called()
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_not_called()
 
     def test_process_android_downloads_backfills_tracked_prerelease_when_incomplete(
         self, orchestrator
@@ -1997,70 +1979,76 @@ class TestDownloadOrchestrator:
         This protects naming transitions (for example legacy -> split APK assets)
         without redownloading older prerelease tags.
         """
-        orchestrator.config["SAVE_APKS"] = True
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
         )
         prerelease.assets[0].name = "app.apk"
 
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.android_downloader.should_download_prerelease.return_value = False
-        orchestrator.android_downloader.get_current_tracked_prerelease_tag.return_value = (
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
+            False
+        )
+        orchestrator.client_app_downloader.get_current_tracked_prerelease_tag.return_value = (
             "v1.0.1-beta"
         )
-        orchestrator.android_downloader.is_release_complete.side_effect = lambda rel: (
-            not rel.prerelease
+        orchestrator.client_app_downloader.is_release_complete.side_effect = (
+            lambda rel: (not rel.prerelease)
         )
-        orchestrator.android_downloader.should_download_asset.return_value = True
-        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
 
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
-        orchestrator.android_downloader.download_apk.return_value = mock_result
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.download_apk.assert_called_once_with(
+        orchestrator.client_app_downloader.download_app.assert_called_once_with(
             prerelease, prerelease.assets[0]
         )
-        orchestrator.android_downloader.update_prerelease_tracking.assert_called_once_with(
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
             "v1.0.1-beta"
         )
 
     def test_process_android_downloads_prerelease_skipped_updates_tracking(
         self, orchestrator
     ):
-        """Skipped-but-complete Android prerelease should still update tracking."""
-        orchestrator.config["SAVE_APKS"] = True
+        """Skipped-but-complete client app prerelease should still update tracking."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
         )
         prerelease.assets[0].name = "app.apk"
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = True
-        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.android_downloader.should_download_prerelease.return_value = True
-        orchestrator.android_downloader.should_download_asset.return_value = True
-        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
+            True
+        )
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = True
-        orchestrator.android_downloader.download_apk.return_value = mock_result
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.update_prerelease_tracking.assert_called_once_with(
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
             "v1.0.1-beta"
         )
 
@@ -2068,7 +2056,6 @@ class TestDownloadOrchestrator:
         self, orchestrator
     ):
         """When a newer prerelease is accepted, older prereleases should be skipped."""
-        orchestrator.config["SAVE_APKS"] = True
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         newer = Release(
             tag_name="v1.0.2-beta", prerelease=True, assets=[Mock(name="app.apk")]
@@ -2078,218 +2065,224 @@ class TestDownloadOrchestrator:
         )
         newer.assets[0].name = "app.apk"
         older.assets[0].name = "app.apk"
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = True
-        orchestrator.android_downloader.handle_prereleases.return_value = [newer, older]
-        orchestrator.android_downloader.should_download_prerelease.side_effect = [
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            newer,
+            older,
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.side_effect = [
             True,
             False,
         ]
-        orchestrator.android_downloader.should_download_asset.return_value = True
-        orchestrator.android_downloader.get_assets.side_effect = lambda rel: rel.assets
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.side_effect = (
+            lambda rel: rel.assets
+        )
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
-        orchestrator.android_downloader.download_apk.return_value = mock_result
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.download_apk.assert_called_once_with(
+        orchestrator.client_app_downloader.download_app.assert_called_once_with(
             newer, newer.assets[0]
         )
-        orchestrator.android_downloader.update_prerelease_tracking.assert_called_once_with(
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
             "v1.0.2-beta"
         )
 
     def test_process_android_downloads_no_prereleases_log(self, orchestrator):
-        """Test Android processing logs 'No pre-release APKs available'."""
-        orchestrator.config["SAVE_APKS"] = True
-        orchestrator.config["CHECK_APK_PRERELEASES"] = True
+        """Test client app processing logs 'No client app prereleases available'."""
+        orchestrator.config["CHECK_APP_PRERELEASES"] = True
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
 
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = True
-        orchestrator.android_downloader.handle_prereleases.return_value = []
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = []
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        # Verify the method runs without errors and logs the message
-        orchestrator.android_downloader.handle_prereleases.assert_called_once()
+        orchestrator.client_app_downloader.handle_prereleases.assert_called_once()
 
     def test_process_desktop_downloads_downloader_returns_none(self, orchestrator):
-        """Test desktop processing when get_releases returns None."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
-        orchestrator.desktop_downloader.get_releases.return_value = None
+        """Test client app processing when get_releases returns None."""
+        orchestrator.client_app_downloader.get_releases.return_value = None
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.get_releases.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
 
     def test_process_desktop_downloads_download_returns_true(self, orchestrator):
-        """Test desktop processing when _download_desktop_release returns True."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Test client app processing when _download_client_app_release returns True."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.ensure_release_notes.return_value = None
-        orchestrator.desktop_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.desktop_downloader.is_release_complete.return_value = False
-        orchestrator.desktop_downloader.handle_prereleases.return_value = []
-        orchestrator._download_desktop_release = Mock(return_value=True)
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = False
+        orchestrator.client_app_downloader.handle_prereleases.return_value = []
+        orchestrator._download_client_app_release = Mock(return_value=True)
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator._download_desktop_release.assert_called_once_with(release)
+        orchestrator._download_client_app_release.assert_called_once_with(release)
 
     def test_process_desktop_downloads_prerelease_skipped_asset(self, orchestrator):
-        """Test desktop prerelease when should_download_asset returns False."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Test client app prerelease when should_download_asset returns False."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.dmg")]
         )
         prerelease.assets[0].name = "app.dmg"
 
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.ensure_release_notes.return_value = None
-        orchestrator.desktop_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.desktop_downloader.is_release_complete.return_value = True
-        orchestrator.desktop_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.desktop_downloader.should_download_asset.return_value = False
-        orchestrator.desktop_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_asset.return_value = False
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.should_download_asset.assert_called_with(
+        orchestrator.client_app_downloader.should_download_asset.assert_called_with(
             "app.dmg"
         )
-        orchestrator.desktop_downloader.download_desktop.assert_not_called()
+        orchestrator.client_app_downloader.download_app.assert_not_called()
 
     def test_process_desktop_downloads_prerelease_not_downloaded(self, orchestrator):
-        """Skipped-but-complete desktop prerelease should still update tracking."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Skipped-but-complete client app prerelease should still update tracking."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.dmg")]
         )
         prerelease.assets[0].name = "app.dmg"
 
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.ensure_release_notes.return_value = None
-        orchestrator.desktop_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.desktop_downloader.is_release_complete.return_value = True
-        orchestrator.desktop_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.desktop_downloader.should_download_asset.return_value = True
-        orchestrator.desktop_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
-        mock_result.was_skipped = True  # Not actually downloaded
-        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
+        mock_result.was_skipped = True
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
         orchestrator._handle_download_result.assert_called_with(
-            mock_result, "desktop_prerelease"
+            mock_result, "client_app_prerelease"
         )
-        orchestrator.desktop_downloader.update_prerelease_tracking.assert_called_once_with(
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
             "v1.0.1-beta"
         )
 
     def test_process_desktop_downloads_prerelease_updates_tracking(self, orchestrator):
-        """Desktop prerelease downloads should update tracking after successful asset download."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Client app prerelease downloads should update tracking after successful asset download."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.dmg")]
         )
         prerelease.assets[0].name = "app.dmg"
 
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.ensure_release_notes.return_value = None
-        orchestrator.desktop_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.desktop_downloader.is_release_complete.return_value = True
-        orchestrator.desktop_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.desktop_downloader.should_download_prerelease.return_value = True
-        orchestrator.desktop_downloader.should_download_asset.return_value = True
-        orchestrator.desktop_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
+            True
+        )
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
         mock_result.was_skipped = False
-        orchestrator.desktop_downloader.download_desktop.return_value = mock_result
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.update_prerelease_tracking.assert_called_once_with(
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
             "v1.0.1-beta"
         )
 
     def test_process_desktop_downloads_skips_prerelease_not_newer(self, orchestrator):
-        """Desktop prerelease downloads should skip tags rejected by tracking policy."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Client app prerelease downloads should skip tags rejected by tracking policy."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.dmg")]
         )
         prerelease.assets[0].name = "app.dmg"
 
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.ensure_release_notes.return_value = None
-        orchestrator.desktop_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.desktop_downloader.is_release_complete.return_value = True
-        orchestrator.desktop_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.desktop_downloader.should_download_prerelease.return_value = False
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
+            False
+        )
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.download_desktop.assert_not_called()
-        orchestrator.desktop_downloader.update_prerelease_tracking.assert_not_called()
+        orchestrator.client_app_downloader.download_app.assert_not_called()
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_not_called()
 
     def test_process_desktop_downloads_no_prereleases_log(self, orchestrator):
-        """Test desktop processing logs 'No pre-release Desktop app builds available'."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
-        orchestrator.config["CHECK_DESKTOP_PRERELEASES"] = True
+        """Test client app processing logs 'No client app prereleases available'."""
+        orchestrator.config["CHECK_APP_PRERELEASES"] = True
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
 
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.ensure_release_notes.return_value = None
-        orchestrator.desktop_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.desktop_downloader.is_release_complete.return_value = True
-        orchestrator.desktop_downloader.handle_prereleases.return_value = []
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = []
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.desktop_downloader.handle_prereleases.assert_called_once()
+        orchestrator.client_app_downloader.handle_prereleases.assert_called_once()
 
     def test_process_desktop_downloads_up_to_date(self, orchestrator):
-        """Test desktop processing when all assets are up to date."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
+        """Test client app processing when all assets are up to date."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
 
-        orchestrator.desktop_downloader.get_releases.return_value = [release]
-        orchestrator.desktop_downloader.update_release_history.return_value = {}
-        orchestrator.desktop_downloader.ensure_release_notes.return_value = None
-        orchestrator.desktop_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.desktop_downloader.is_release_complete.return_value = True
-        orchestrator.desktop_downloader.handle_prereleases.return_value = []
-        orchestrator._download_desktop_release = Mock(return_value=False)
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = []
+        orchestrator._download_client_app_release = Mock(return_value=False)
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        # Should log "All Desktop app assets are up to date."
-        orchestrator._download_desktop_release.assert_not_called()
+        orchestrator._download_client_app_release.assert_not_called()
 
     def test_process_firmware_downloads_disabled(self, orchestrator):
         """Test firmware processing when disabled."""
@@ -2435,18 +2428,18 @@ class TestDownloadOrchestrator:
         assert any(call[0][0] == mock_result for call in calls)
 
     def test_download_desktop_release_exception(self, orchestrator):
-        """Test desktop release download when exception occurs."""
+        """Test client app release download when exception occurs."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
         asset = Mock()
         asset.name = "app.dmg"
-        orchestrator.desktop_downloader.get_assets.return_value = [asset]
-        orchestrator.desktop_downloader.should_download_asset.return_value = True
-        orchestrator.desktop_downloader.download_desktop.side_effect = (
+        orchestrator.client_app_downloader.get_assets.return_value = [asset]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.download_app.side_effect = (
             requests.RequestException("network error")
         )
 
-        result = orchestrator._download_desktop_release(release)
+        result = orchestrator._download_client_app_release(release)
 
         assert result is False
 
@@ -2625,9 +2618,8 @@ class TestDownloadOrchestrator:
     def test_run_download_pipeline_non_termux_wifi_only(self, orchestrator):
         """Test pipeline runs normally on non-Termux even with WIFI_ONLY."""
         orchestrator.config["WIFI_ONLY"] = True
-        orchestrator._process_android_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -2635,32 +2627,27 @@ class TestDownloadOrchestrator:
         with patch("fetchtastic.download.orchestrator.is_termux", return_value=False):
             orchestrator.run_download_pipeline()
 
-        # Should proceed with downloads since is_termux returns False
-        orchestrator._process_android_downloads.assert_called_once()
+        orchestrator._process_client_app_downloads.assert_called_once()
 
     def test_process_android_downloads_error_handling(self, orchestrator):
-        """Test Android processing error handling."""
-        orchestrator.config["SAVE_APKS"] = True
-        orchestrator.android_downloader.get_releases.side_effect = (
+        """Test client app processing error handling."""
+        orchestrator.client_app_downloader.get_releases.side_effect = (
             requests.RequestException("API error")
         )
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        # Should handle exception gracefully
-        orchestrator.android_downloader.get_releases.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
 
     def test_process_desktop_downloads_error_handling_valueerror(self, orchestrator):
-        """Test Desktop processing error handling with ValueError."""
-        orchestrator.config["SAVE_DESKTOP_APP"] = True
-        orchestrator.desktop_downloader.get_releases.side_effect = ValueError(
+        """Test client app processing error handling with ValueError."""
+        orchestrator.client_app_downloader.get_releases.side_effect = ValueError(
             "test error"
         )
 
-        orchestrator._process_desktop_downloads()
+        orchestrator._process_client_app_downloads()
 
-        # Should handle exception gracefully
-        orchestrator.desktop_downloader.get_releases.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
 
     def test_enhance_metadata_with_msi_extension(self, orchestrator):
         """Test enhancing metadata detects .msi as desktop file type."""
@@ -2695,32 +2682,32 @@ class TestDownloadOrchestrator:
         assert result.file_type == FILE_TYPE_DESKTOP
 
     def test_process_android_prerelease_asset_downloaded(self, orchestrator):
-        """Test Android prerelease when asset is successfully downloaded (lines 728, 731)."""
-        orchestrator.config["SAVE_APKS"] = True
+        """Test client app prerelease when asset is successfully downloaded."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
             tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
         )
         prerelease.assets[0].name = "app.apk"
 
-        orchestrator.android_downloader.get_releases.return_value = [release]
-        orchestrator.android_downloader.update_release_history.return_value = {}
-        orchestrator.android_downloader.ensure_release_notes.return_value = None
-        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.android_downloader.is_release_complete.return_value = True
-        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
-        orchestrator.android_downloader.should_download_asset.return_value = True
-        orchestrator.android_downloader.get_assets.return_value = prerelease.assets
+        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        orchestrator.client_app_downloader.get_assets.return_value = prerelease.assets
         mock_result = Mock(spec=DownloadResult)
         mock_result.success = True
-        mock_result.was_skipped = False  # Actually downloaded, not skipped
-        orchestrator.android_downloader.download_apk.return_value = mock_result
+        mock_result.was_skipped = False
+        orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        # The key assertion: any_android_downloaded should be True
-        orchestrator.android_downloader.download_apk.assert_called_once()
+        orchestrator.client_app_downloader.download_app.assert_called_once()
 
     def test_select_latest_release_all_unparseable_with_revoked(self, orchestrator):
         """Test selecting latest when all versions unparsable but some revoked."""
@@ -2750,13 +2737,13 @@ class TestDownloadOrchestrator:
         assert result in orchestrator.failed_downloads
 
     def test_process_android_downloads_disabled(self, orchestrator):
-        """Test Android processing when disabled (line 227-228)."""
-        orchestrator.config["SAVE_APKS"] = False
+        """Test client app processing when disabled."""
+        orchestrator.config["SAVE_CLIENT_APPS"] = False
 
-        orchestrator._process_android_downloads()
+        orchestrator._process_client_app_downloads()
 
-        orchestrator.android_downloader.migrate_legacy_layout.assert_not_called()
-        orchestrator.android_downloader.get_releases.assert_not_called()
+        orchestrator.client_app_downloader.migrate_legacy_layout.assert_not_called()
+        orchestrator.client_app_downloader.get_releases.assert_not_called()
 
     def test_process_firmware_with_keep_last_beta(self, orchestrator):
         """Test firmware processing with KEEP_LAST_BETA enabled (lines 576-580)."""
@@ -2913,8 +2900,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -2953,8 +2939,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -2969,7 +2954,7 @@ class TestDownloadOrchestrator:
             orchestrator.run_download_pipeline()
 
         orchestrator.firmware_downloader.download_firmware.assert_not_called()
-        orchestrator.android_downloader.download_apk.assert_not_called()
+        orchestrator.client_app_downloader.download_app.assert_not_called()
         orchestrator.firmware_downloader.update_latest_release_tag.assert_not_called()
         orchestrator.android_downloader.update_latest_release_tag.assert_not_called()
         orchestrator.firmware_downloader.cleanup_old_versions.assert_not_called()
@@ -2999,8 +2984,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -3053,8 +3037,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -3100,8 +3083,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -3141,8 +3123,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
@@ -3178,8 +3159,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.version_manager = VersionManager()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_android_downloads = Mock()
-        orchestrator._process_desktop_downloads = Mock()
+        orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()

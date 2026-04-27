@@ -210,19 +210,17 @@ def test_setup_downloads_apk_only(mocker, capsys):
     """Test _setup_downloads with APK-only selection."""
     config = {}
 
-    # Mock input to select APK only
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "a",  # Choose APK only
-            "y",  # Check APK prereleases
-            "n",  # Add channel suffixes
+            "a",
+            "y",
+            "n",
         ],
     )
 
-    # Mock menu to return some APK assets
-    mock_menu_result = {"selected_assets": ["meshtastic"]}
-    mocker.patch("fetchtastic.menu_apk.run_menu", return_value=mock_menu_result)
+    mock_menu_result = {"selected_assets": ["meshtastic.apk"]}
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_menu_result)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
         config, is_partial_run=False, wants=lambda _: True
@@ -271,21 +269,19 @@ def test_setup_downloads_both_selected(mocker, capsys):
     """Test _setup_downloads with both APK and firmware selected."""
     config = {}
 
-    # Mock input to select both
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "b",  # Choose both
-            "n",  # Check firmware prereleases
-            "y",  # Check APK prereleases
-            "n",  # Add channel suffixes
+            "b",
+            "n",
+            "y",
+            "n",
         ],
     )
 
-    # Mock menus
-    mock_apk_result = {"selected_assets": ["meshtastic"]}
+    mock_app_result = {"selected_assets": ["meshtastic.apk"]}
     mock_firmware_result = {"selected_assets": ["rak4631-"]}
-    mocker.patch("fetchtastic.menu_apk.run_menu", return_value=mock_apk_result)
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_app_result)
     mocker.patch(
         "fetchtastic.menu_firmware.run_menu", return_value=mock_firmware_result
     )
@@ -390,18 +386,17 @@ def test_setup_downloads_partial_run(mocker):
     config = {
         "SAVE_APKS": True,
         "SAVE_FIRMWARE": False,
-        "SELECTED_APK_ASSETS": ["existing"],
+        "SELECTED_APK_ASSETS": ["existing.apk"],
         "CHECK_APK_PRERELEASES": False,
     }
 
-    # Mock input for partial run - only update APK settings
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",  # Download Android APKs
-            "n",  # Don't rerun menu (keep existing selection)
-            "y",  # Enable prereleases
-            "n",  # Add channel suffixes
+            "y",
+            "n",
+            "y",
+            "n",
         ],
     )
 
@@ -410,7 +405,7 @@ def test_setup_downloads_partial_run(mocker):
     )
 
     assert save_apks is True
-    assert save_firmware is False  # Unchanged in partial run
+    assert save_firmware is False
     assert result_config["SAVE_APKS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
     assert result_config["CHECK_APK_PRERELEASES"] is True
@@ -423,17 +418,17 @@ def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
     config = {
         "SAVE_APKS": True,
         "SAVE_FIRMWARE": False,
-        "SELECTED_APK_ASSETS": ["existing"],
+        "SELECTED_APK_ASSETS": ["existing.apk"],
         "CHECK_APK_PRERELEASES": False,
     }
 
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",  # Download Android APKs
-            "n",  # Don't rerun menu
-            "n",  # Disable prereleases
-            "n",  # Add channel suffixes
+            "y",
+            "n",
+            "n",
+            "n",
         ],
     )
 
