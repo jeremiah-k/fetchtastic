@@ -570,23 +570,23 @@ def test_cli_setup_command_with_sections(mocker):
     """Ensure the setup command forwards section filters."""
     mocker.patch(
         "sys.argv",
-        ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
+        ["fetchtastic", "setup", "--section", "firmware", "--section", "app"],
     )
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
-    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+    mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
 def test_cli_setup_command_with_positional_sections(mocker):
     """Positional section arguments should be passed to setup."""
-    mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "android"])
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "app"])
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
-    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+    mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
 def test_cli_setup_command_with_invalid_positional_sections(mocker):
@@ -611,7 +611,7 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
             "--section",
             "firmware",
             "firmware",
-            "android",
+            "app",
             "firmware",
         ],
     )
@@ -620,8 +620,8 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
 
     cli.main()
 
-    # Should deduplicate while preserving order: firmware, android
-    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+    # Should deduplicate while preserving order: firmware, app
+    mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
 def test_cli_setup_command_with_update_available(mocker):
@@ -2011,7 +2011,7 @@ def test_cli_setup_with_multiple_sections(mocker):
     """Test 'setup' command with multiple --section arguments."""
     mocker.patch(
         "sys.argv",
-        ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
+        ["fetchtastic", "setup", "--section", "firmware", "--section", "app"],
     )
     mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch(

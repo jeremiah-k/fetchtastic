@@ -185,7 +185,7 @@ def test_setup_downloads_full_run_multiple_selection(mocker):
         return_value={"selected_assets": ["meshtastic.apk", "meshtastic.dmg"]},
     )
     mocker.patch(
-        "fetchtastic.menu_desktop.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic.dmg"]},
     )
 
@@ -237,14 +237,14 @@ def test_setup_downloads_partial_desktop_section(mocker):
     }
 
     def wants(section: str) -> bool:
-        return section == "desktop"
+        return section == "app"
 
     mocker.patch(
         "builtins.input",
         side_effect=["y", "y", "n"],  # Keep desktop enabled, re-run menu, no prerelease
     )
     mocker.patch(
-        "fetchtastic.menu_desktop.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic.appimage"]},
     )
 
@@ -267,13 +267,13 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
     }
 
     def wants(section: str) -> bool:
-        return section == "desktop"
+        return section == "app"
 
     mocker.patch(
         "builtins.input",
         side_effect=["y", "n", "n"],  # Keep desktop, don't re-run menu, no prerelease
     )
-    mock_menu = mocker.patch("fetchtastic.menu_desktop.run_menu")
+    mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
@@ -393,7 +393,7 @@ def test_setup_downloads_partial_non_desktop_preserves_desktop_state(mocker):
     }
 
     def wants(section: str) -> bool:
-        return section == "android"
+        return section == "app"
 
     mocker.patch("builtins.input", side_effect=["n"])
 
@@ -418,13 +418,13 @@ def test_setup_downloads_backward_compat_old_key(mocker):
     }
 
     def wants(section: str) -> bool:
-        return section == "desktop"
+        return section == "app"
 
     mocker.patch(
         "builtins.input",
         side_effect=["y", "n", "n"],  # Keep desktop, don't re-run menu, no prerelease
     )
-    mock_menu = mocker.patch("fetchtastic.menu_desktop.run_menu")
+    mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
@@ -1463,9 +1463,8 @@ def test_setup_base_windows_no_modules(mocker, capsys):
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
-@patch("fetchtastic.setup_config.menu_desktop.run_menu")
 @patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")

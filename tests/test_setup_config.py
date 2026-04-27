@@ -151,7 +151,7 @@ def test_setup_downloads_partial_mixed_sections_uses_continue_guidance(mocker, c
     updated, save_apks, save_firmware = _setup_downloads(
         config,
         is_partial_run=True,
-        wants=lambda section: section in {"android", "notifications"},
+        wants=lambda section: section in {"app", "notifications"},
     )
     captured = capsys.readouterr()
 
@@ -185,7 +185,7 @@ def test_setup_downloads_desktop_no_selection_avoids_duplicate_message(mocker, c
 
     mocker.patch("builtins.input", side_effect=["d"])
     mocker.patch(
-        "fetchtastic.setup_config.menu_desktop.run_menu",
+        "fetchtastic.setup_config.menu_app.run_menu",
         return_value={"selected_assets": []},
     )
 
@@ -198,12 +198,12 @@ def test_setup_downloads_desktop_no_selection_avoids_duplicate_message(mocker, c
 
     assert (
         captured.out.count(
-            "No desktop assets selected. Desktop clients will not be downloaded."
+            "No client app assets selected. Client app releases will not be downloaded."
         )
         == 1
     )
     assert (
-        "No existing desktop selection found. Desktop clients will not be downloaded."
+        "No existing client app asset selection found. Client app releases will not be downloaded."
         not in captured.out
     )
     assert updated["SAVE_DESKTOP_APP"] is False
@@ -272,19 +272,19 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
         Check whether the requested setup section is the Android section.
 
         Parameters:
-                section (str): Name of the setup section to test (e.g., "android").
+                section (str): Name of the setup section to test (e.g., "app").
 
         Returns:
-                True if section is "android", False otherwise.
+                True if section is "app", False otherwise.
         """
-        return section == "android"
+        return section == "app"
 
     # Answer prompts: keep APKs enabled, skip rerun, decline prereleases, decline suffixes.
     mocker.patch(
         "builtins.input",
         side_effect=["y", "n", "n", "n"],
     )
-    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+    mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
     updated, save_apks, save_firmware = _setup_downloads(
         config, is_partial_run=True, wants=wants
@@ -354,19 +354,19 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
         Check whether the requested setup section is the Android section.
 
         Parameters:
-                section (str): Name of the setup section to test (e.g., "android").
+                section (str): Name of the setup section to test (e.g., "app").
 
         Returns:
-                True if section is "android", False otherwise.
+                True if section is "app", False otherwise.
         """
-        return section == "android"
+        return section == "app"
 
     mocker.patch(
         "builtins.input",
         side_effect=["y", "y", "n", "n"],
     )
     mock_menu = mocker.patch(
-        "fetchtastic.menu_apk.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic-debug.apk"]},
     )
 
@@ -399,10 +399,10 @@ def test_setup_downloads_partial_keeps_existing_apk_patterns_with_fdroid_compat(
         "builtins.input",
         side_effect=["y", "n", "n"],
     )
-    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+    mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
     updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=True, wants=lambda section: section == "android"
+        config, is_partial_run=True, wants=lambda section: section == "app"
     )
 
     assert save_apks is True
@@ -431,12 +431,12 @@ def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker
         side_effect=["y", "y", "n"],
     )
     mocker.patch(
-        "fetchtastic.menu_apk.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["app-fdroid-arm64-v8a-release.apk"]},
     )
 
     updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=True, wants=lambda section: section == "android"
+        config, is_partial_run=True, wants=lambda section: section == "app"
     )
 
     assert save_apks is True
@@ -503,7 +503,7 @@ def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
         return_value={"selected_assets": ["rak4631"]},
     )
     mocker.patch(
-        "fetchtastic.menu_apk.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic.apk"]},
     )
 
@@ -1516,7 +1516,7 @@ def test_windows_shortcut_creation_scandir_fallback(mocker):
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")
@@ -1535,7 +1535,7 @@ def test_run_setup_first_run_linux_simple(
     mock_setup_cron_job,
     mock_check_any_cron_jobs_exist,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1562,7 +1562,7 @@ def test_run_setup_first_run_linux_simple(
     ]
     mock_input.side_effect = user_inputs
 
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_app.return_value = {"selected_assets": ["meshtastic-apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
@@ -1598,7 +1598,7 @@ def test_run_setup_first_run_linux_simple(
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
 @patch("fetchtastic.setup_config.create_config_shortcut")
@@ -1619,7 +1619,7 @@ def test_run_setup_first_run_windows(
     mock_create_config_shortcut,
     mock_create_windows_menu_shortcuts,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1646,7 +1646,7 @@ def test_run_setup_first_run_windows(
     ]
     mock_input.side_effect = user_inputs
 
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_app.return_value = {"selected_assets": ["meshtastic-apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
@@ -1679,7 +1679,7 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.install_termux_packages")
 @patch("fetchtastic.setup_config.check_storage_setup")
@@ -1712,7 +1712,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
     mock_check_storage_setup,
     mock_install_termux_packages,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_dump,
     mock_makedirs,
     mock_os_path_exists,
@@ -1742,7 +1742,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
     ]
     mock_input.side_effect = user_inputs
 
-    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_app.return_value = {"selected_assets": ["meshtastic-apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
@@ -1769,7 +1769,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.yaml.safe_load")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=True)
 @patch("fetchtastic.setup_config.remove_cron_job")
@@ -1792,7 +1792,7 @@ def test_run_setup_existing_config(
     mock_remove_cron_job,
     mock_check_any_cron_jobs_exist,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_safe_load,
     mock_yaml_dump,
     mock_makedirs,
@@ -1879,7 +1879,7 @@ def test_run_setup_existing_config(
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.yaml.safe_load")
-@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=True)
 @patch("fetchtastic.setup_config.remove_cron_job")
@@ -1902,7 +1902,7 @@ def test_run_setup_partial_firmware_section(
     mock_remove_cron_job,
     mock_check_any_cron_jobs_exist,
     mock_menu_firmware,
-    mock_menu_apk,
+    mock_menu_app,
     mock_yaml_safe_load,
     mock_yaml_dump,
     mock_makedirs,
@@ -1933,7 +1933,7 @@ def test_run_setup_partial_firmware_section(
     mock_setup_cron_job.reset_mock()
     mock_setup_reboot_cron_job.reset_mock()
     mock_menu_firmware.reset_mock()
-    mock_menu_apk.reset_mock()
+    mock_menu_app.reset_mock()
 
     mock_input.side_effect = [
         "y",  # Download firmware releases
@@ -1950,7 +1950,7 @@ def test_run_setup_partial_firmware_section(
             setup_config.run_setup(sections=["firmware"])
 
     mock_menu_firmware.assert_called_once()
-    mock_menu_apk.assert_not_called()
+    mock_menu_app.assert_not_called()
 
     saved_configs = [
         copy.deepcopy(args[0][0]) for args in mock_yaml_dump.call_args_list

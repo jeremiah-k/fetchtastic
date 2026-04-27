@@ -190,4 +190,4 @@ class TestAutomationConfiguration:
         mocker.patch("builtins.input", return_value="a,f")
 
         result = setup_config._prompt_for_setup_sections()
-        assert result == {"android", "firmware"}
+        assert result == {"app", "firmware"}
