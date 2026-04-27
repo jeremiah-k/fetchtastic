@@ -46,12 +46,12 @@ FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
-# Android APKs and Desktop installers are Meshtastic client app artifacts from
-# the same upstream release. Keep platform-specific constants as empty path
-# components for compatibility with older call sites while storing both under
-# the unified app tree.
-ANDROID_DIR_NAME = ""
-DESKTOP_DIR_NAME = ""
+# Compatibility-only: retained so older call sites that reference these names
+# continue to work. They are NOT used to drive new storage logic. The primary
+# client-app storage layout is app/<version>/ and app/prerelease/<version>/
+# with no platform subdirectories.
+ANDROID_DIR_NAME = ""  # compatibility-only -- do not use for new storage paths
+DESKTOP_DIR_NAME = ""  # compatibility-only -- do not use for new storage paths
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
 LATEST_ANDROID_PRERELEASE_JSON_FILE = "latest_android_prerelease.json"
 LATEST_FIRMWARE_PRERELEASE_JSON_FILE = "latest_firmware_prerelease.json"

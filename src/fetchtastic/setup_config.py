@@ -285,9 +285,8 @@ WINDOWS_START_MENU_FOLDER = os.path.join(
 # Supported setup sections for partial reconfiguration
 SETUP_SECTION_CHOICES: Set[str] = {
     "base",  # Base directory and environment-specific options
-    "android",  # Android APK download preferences
+    "app",  # Client app asset download preferences (APKs + Desktop installers)
     "firmware",  # Firmware download preferences (including prereleases/extraction)
-    "desktop",  # Desktop client download preferences
     "notifications",  # NTFY configuration
     "automation",  # Cron/startup automation choices
     "github",  # GitHub API token configuration
@@ -295,9 +294,8 @@ SETUP_SECTION_CHOICES: Set[str] = {
 
 SECTION_SHORTCUTS = {
     "b": "base",
-    "a": "android",
+    "a": "app",
     "f": "firmware",
-    "d": "desktop",
     "n": "notifications",
     "m": "automation",
     "g": "github",
@@ -708,9 +706,10 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
         "Press ENTER to run the full setup, or choose one or more sections (comma separated):"
     )
     print("  [b] base           — base directory and general settings")
-    print("  [a] android        — client app asset download preferences")
+    print(
+        "  [a] app            — client app asset download preferences (APKs + Desktop)"
+    )
     print("  [f] firmware       — firmware download preferences")
-    print("  [d] desktop        — client app asset preferences")
     print("  [n] notifications  — NTFY server/topic settings")
     print("  [m] automation     — scheduled/automatic execution options")
     print("  [g] github         — GitHub API token (rate-limit boost)")
@@ -806,8 +805,6 @@ def _setup_downloads(
     """
     config = normalize_client_app_config(config)
     save_client_apps_was_enabled = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
-    app_menu_kind = "app"
-    include_desktop_assets = False
 
     # Prompt to save client app assets, firmware, or both.
     if not is_partial_run:
@@ -843,13 +840,10 @@ def _setup_downloads(
         if save_choice in ("a", "app", "c", "client", "d", "desktop"):
             save_client_apps = True
             save_firmware = False
-            app_menu_kind = "desktop" if save_choice in ("d", "desktop") else "app"
-            include_desktop_assets = app_menu_kind == "desktop"
         elif save_choice == "f":
             save_client_apps = False
             save_firmware = True
         elif save_choice in ("m", "multiple"):
-            app_menu_kind = "app"
             save_client_apps = _coerce_bool(
                 _safe_input(
                     "Download client app releases? [y/n] (default: yes): ",
@@ -861,29 +855,16 @@ def _setup_downloads(
                 _safe_input("Download firmware? [y/n] (default: yes): ", default="y"),
                 default=True,
             )
-            include_desktop_assets = _coerce_bool(
-                _safe_input(
-                    "Download desktop client assets? [y/n] (default: yes): ",
-                    default="y",
-                ),
-                default=True,
-            )
         elif save_choice in ("n", "none"):
             save_client_apps = False
             save_firmware = False
         else:
             save_client_apps = True
             save_firmware = True
-            app_menu_kind = "app"
     else:
         save_client_apps = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
         save_firmware = _coerce_bool(config.get("SAVE_FIRMWARE", False))
-        if wants("desktop") and not wants("android") and not wants("app"):
-            app_menu_kind = "desktop"
-            include_desktop_assets = True
-        elif wants("android") and not wants("desktop") and not wants("app"):
-            app_menu_kind = "android"
-        if wants("android") or wants("desktop") or wants("app"):
+        if wants("app"):
             current_app_default = "y" if save_client_apps else "n"
             choice = (
                 _safe_input(
@@ -958,9 +939,7 @@ def _setup_downloads(
         )
         config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
 
-    app_section_requested = (
-        not is_partial_run or wants("android") or wants("desktop") or wants("app")
-    )
+    app_section_requested = not is_partial_run or wants("app")
 
     if save_client_apps and app_section_requested:
         rerun_menu = True
@@ -974,30 +953,18 @@ def _setup_downloads(
                     rerun_menu = False
         if rerun_menu:
             try:
-                if app_menu_kind == "app":
-                    app_selection = menu_app.run_menu()
-                elif app_menu_kind == "desktop":
-                    app_selection = menu_desktop.run_menu()
-                else:
-                    app_selection = menu_apk.run_menu()
+                app_selection = menu_app.run_menu()
             except RuntimeError:
-                app_selection = (
-                    menu_desktop.run_menu()
-                    if app_menu_kind == "desktop"
-                    else menu_apk.run_menu()
-                )
+                app_selection = menu_app.run_menu()
             selected_assets = (
                 app_selection.get("selected_assets")
                 if isinstance(app_selection, dict)
                 else None
             )
             if not selected_assets:
-                if app_menu_kind == "desktop":
-                    print(
-                        "No desktop assets selected. Desktop clients will not be downloaded."
-                    )
-                else:
-                    print("No APK assets selected. APKs will not be downloaded.")
+                print(
+                    "No client app assets selected. Client app releases will not be downloaded."
+                )
                 config["SAVE_CLIENT_APPS"] = False
                 config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False
@@ -1011,9 +978,6 @@ def _setup_downloads(
                 save_apks = False
                 save_desktop = False
             else:
-                if app_menu_kind == "android":
-                    _set_apk_assets(config, selected_assets)
-                    selected_assets = config["SELECTED_APK_ASSETS"]
                 config["SELECTED_APP_ASSETS"] = selected_assets
                 normalize_client_app_config(config)
         elif not config.get("SELECTED_APP_ASSETS"):
@@ -1070,11 +1034,7 @@ def _setup_downloads(
     # If client app and firmware downloads are both disabled, inform the user and exit setup.
     # During partial runs that only update non-download sections (e.g. automation),
     # allow setup to proceed even when downloads are disabled.
-    wants_downloads = (
-        (wants("android") or wants("app") or wants("firmware") or wants("desktop"))
-        if is_partial_run
-        else True
-    )
+    wants_downloads = (wants("app") or wants("firmware")) if is_partial_run else True
     if (
         not save_client_apps
         and not save_firmware
@@ -2186,7 +2146,7 @@ def run_setup(
     # If all download types are disabled, only short-circuit when this run is either
     # full setup or a partial run that requested download sections only.
     requested_download_sections = is_partial_run and any(
-        wants(section) for section in ("android", "app", "firmware", "desktop")
+        wants(section) for section in ("app", "firmware")
     )
     requested_non_download_sections = is_partial_run and any(
         wants(section) for section in ("base", "notifications", "automation", "github")
@@ -2204,10 +2164,8 @@ def run_setup(
     # Determine default number of versions to keep based on platform
     default_versions_to_keep = 2 if is_termux() else 3
 
-    # Handle Android configuration
-    if save_client_apps and (
-        not is_partial_run or wants("android") or wants("desktop") or wants("app")
-    ):
+    # Handle client app configuration
+    if save_client_apps and (not is_partial_run or wants("app")):
         config = _setup_android(config, is_first_run, default_versions_to_keep)
     # Handle firmware configuration
     if save_firmware and (not is_partial_run or wants("firmware")):
