@@ -158,7 +158,10 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
             default=DEFAULT_CHECK_APP_PRERELEASES,
         )
         apk_check = coerce_bool(
-            config.get("CHECK_APK_PRERELEASES", legacy_default),
+            config.get(
+                "CHECK_APK_PRERELEASES",
+                config.get("CHECK_ANDROID_PRERELEASES", legacy_default),
+            ),
             default=legacy_default,
         )
         desktop_check = coerce_bool(

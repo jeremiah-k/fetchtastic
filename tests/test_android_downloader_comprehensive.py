@@ -207,7 +207,7 @@ class TestMeshtasticAndroidAppDownloader:
 
     def test_should_download_prerelease_disabled(self, android_downloader):
         """Test prerelease download check when prereleases are disabled."""
-        android_downloader.config["CHECK_ANDROID_PRERELEASES"] = False
+        android_downloader.config["CHECK_APP_PRERELEASES"] = False
 
         result = android_downloader.should_download_prerelease("v2.7.15-rc1")
 
@@ -215,7 +215,7 @@ class TestMeshtasticAndroidAppDownloader:
 
     def test_should_download_prerelease_enabled(self, android_downloader):
         """Test prerelease download check when prereleases are enabled."""
-        android_downloader.config["CHECK_ANDROID_PRERELEASES"] = True
+        android_downloader.config["CHECK_APP_PRERELEASES"] = True
 
         result = android_downloader.should_download_prerelease("v2.7.15-rc1")
 

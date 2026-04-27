@@ -1263,6 +1263,8 @@ class DownloadOrchestrator:
                     if file_type in (
                         FILE_TYPE_CLIENT_APP,
                         FILE_TYPE_CLIENT_APP_PRERELEASE,
+                        FILE_TYPE_DESKTOP,
+                        FILE_TYPE_DESKTOP_PRERELEASE,
                     ):
                         if (
                             failed_result.file_size is not None

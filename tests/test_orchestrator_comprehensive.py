@@ -210,7 +210,7 @@ class TestDownloadOrchestrator:
         assert result.error_type == "retry_failure"
         assert (
             result.error_message
-            == "Downloaded desktop asset failed post-download validation"
+            == "Downloaded client app ZIP failed post-download validation"
         )
         mock_zip_intact.assert_called_once_with(str(target_path))
         mock_cleanup.assert_called_once_with(str(target_path))
