@@ -25,9 +25,8 @@ def cache_manager(tmp_path):
         return str(path / file_name)
 
     cache.get_cache_file_path.side_effect = _cache_path
-    cache.atomic_write_json.side_effect = (
-        lambda path, data: Path(path).write_text(json.dumps(data), encoding="utf-8")
-        is not None
+    cache.atomic_write_json.side_effect = lambda path, data: (
+        Path(path).write_text(json.dumps(data), encoding="utf-8")
     )
     return cache
 

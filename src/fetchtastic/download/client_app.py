@@ -583,16 +583,24 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def should_download_asset(self, asset_name: str) -> bool:
         normalize_client_app_config(self.config)
-        selected = expand_apk_selected_patterns(
-            self.config.get("SELECTED_APP_ASSETS") or []
-        )
+        raw_selected = self.config.get("SELECTED_APP_ASSETS")
+        if raw_selected is None:
+            return False
+        if raw_selected == ["*"]:
+            exclude = self._get_exclude_patterns()
+            if exclude and any(
+                fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude
+            ):
+                return False
+            return True
+        selected = expand_apk_selected_patterns(raw_selected)
+        if not selected:
+            return False
         exclude = self._get_exclude_patterns()
         if exclude and any(
             fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude
         ):
             return False
-        if not selected:
-            return True
         return matches_selected_patterns(asset_name, selected)
 
     def download_app(self, release: Release, asset: Asset) -> DownloadResult:
@@ -988,6 +996,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def validate_extraction_patterns(
         self, patterns: List[str], exclude_patterns: List[str]
     ) -> bool:
+        """No-op: client app assets are downloaded as standalone files and do not support extraction."""
         del patterns, exclude_patterns
         return False
 
@@ -998,6 +1007,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         patterns: List[str],
         exclude_patterns: List[str],
     ) -> bool:
+        """No-op: client app assets are downloaded as standalone files and do not support extraction."""
         del file_path, extract_dir, patterns, exclude_patterns
         return False
 

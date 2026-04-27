@@ -1847,6 +1847,8 @@ class DownloadOrchestrator:
                 if name and is_android_asset_name(name):
                     count += 1
                     continue
+                if name and is_desktop_asset_name(name):
+                    continue
                 if file_type in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,

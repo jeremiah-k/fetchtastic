@@ -12,7 +12,7 @@ upstream Meshtastic-Android release feed. The primary config keys are:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List
+from typing import Any, Iterable
 
 from fetchtastic.client_release_discovery import (
     is_android_asset_name,
@@ -25,7 +25,7 @@ from fetchtastic.constants import (
 from fetchtastic.utils import coerce_bool, expand_apk_selected_patterns
 
 
-def _as_list(value: Any) -> List[str]:
+def _as_list(value: Any) -> list[str]:
     """Return string list values from a config value."""
     if isinstance(value, list):
         return [item for item in value if isinstance(item, str) and item.strip()]
@@ -34,9 +34,9 @@ def _as_list(value: Any) -> List[str]:
     return []
 
 
-def _dedupe(values: Iterable[str]) -> List[str]:
-    """Preserve order while removing case-insensitive duplicates."""
-    result: List[str] = []
+def _dedupe(values: Iterable[str]) -> list[str]:
+
+    result: list[str] = []
     seen: set[str] = set()
     for value in values:
         item = value.strip()
@@ -59,9 +59,9 @@ def _coerce_keep_count(value: Any, default: int = DEFAULT_APP_VERSIONS_TO_KEEP) 
 
 
 def _classify_selected_assets(
-    config: Dict[str, Any],
-    selected_assets: List[str],
-) -> tuple[List[str], List[str], bool]:
+    config: dict[str, Any],
+    selected_assets: list[str],
+) -> tuple[list[str], list[str], bool]:
     """
     Return legacy APK/Desktop selections plus whether any primary asset is ambiguous.
 
@@ -106,7 +106,7 @@ def _classify_selected_assets(
     return _dedupe(apk_assets), _dedupe(desktop_assets), ambiguous
 
 
-def get_selected_app_assets(config: Dict[str, Any]) -> List[str]:
+def get_selected_app_assets(config: dict[str, Any]) -> list[str]:
     """
     Return normalized selected client app asset patterns.
 
@@ -125,7 +125,7 @@ def get_selected_app_assets(config: Dict[str, Any]) -> List[str]:
     return _dedupe([*apk_assets, *desktop_assets])
 
 
-def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     """
     Populate primary client app config keys from legacy Android/Desktop keys.
 
@@ -200,7 +200,7 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
-def client_app_downloads_enabled(config: Dict[str, Any]) -> bool:
+def client_app_downloads_enabled(config: dict[str, Any]) -> bool:
     """Return whether client app downloads are enabled without mutating config."""
     normalized = normalize_client_app_config(dict(config))
     return coerce_bool(normalized.get("SAVE_CLIENT_APPS"), default=False)

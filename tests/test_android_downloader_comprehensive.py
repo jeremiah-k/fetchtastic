@@ -119,15 +119,42 @@ class TestMeshtasticAndroidAppDownloader:
         assert download_url == "https://example.com/meshtastic.apk"
 
     def test_should_download_asset_matching_patterns(self, android_downloader):
-        """Test asset selection based on patterns."""
-        # Test APK asset (should be True since no APK selection patterns configured - uses SELECTED_APK_ASSETS)
+        """Test asset selection with specific patterns configured."""
+        android_downloader.config["SELECTED_APP_ASSETS"] = ["meshtastic.apk"]
         assert android_downloader.should_download_asset("meshtastic.apk") is True
 
-        # Test excluded asset
         assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
 
-        # Test non-APK asset (should be True since no APK selection patterns configured - uses SELECTED_APK_ASSETS)
+        assert android_downloader.should_download_asset("Meshtastic.dmg") is False
+
+    def test_should_download_asset_empty_selected_downloads_nothing(
+        self, android_downloader
+    ):
+        """Empty SELECTED_APP_ASSETS means download no client app assets."""
+        android_downloader.config["SELECTED_APP_ASSETS"] = []
+        assert android_downloader.should_download_asset("meshtastic.apk") is False
+        assert android_downloader.should_download_asset("Meshtastic.dmg") is False
+
+    def test_should_download_asset_missing_selected_downloads_nothing(
+        self, android_downloader
+    ):
+        """Missing SELECTED_APP_ASSETS and no legacy keys downloads nothing."""
+        android_downloader.config.pop("SELECTED_APP_ASSETS", None)
+        android_downloader.config.pop("SELECTED_APK_ASSETS", None)
+        android_downloader.config.pop("SELECTED_DESKTOP_ASSETS", None)
+        assert android_downloader.should_download_asset("meshtastic.apk") is False
+
+    def test_should_download_asset_wildcard_downloads_all(self, android_downloader):
+        """SELECTED_APP_ASSETS = ['*'] downloads all client app assets."""
+        android_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
+        assert android_downloader.should_download_asset("meshtastic.apk") is True
+        assert android_downloader.should_download_asset("Meshtastic.dmg") is True
         assert android_downloader.should_download_asset("readme.txt") is True
+
+    def test_should_download_asset_wildcard_respects_excludes(self, android_downloader):
+        """Wildcard selection still respects exclude patterns."""
+        android_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
+        assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
     @patch(

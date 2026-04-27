@@ -14,6 +14,7 @@ from fetchtastic.constants import (
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_CLIENT_APP,
     FILE_TYPE_DESKTOP,
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
@@ -449,6 +450,47 @@ class TestDownloadOrchestrator:
         assert desktop_count == 1
         assert desktop_prerelease_count == 1
 
+    def test_count_artifact_downloads_client_app_classification(
+        self, orchestrator, tmp_path
+    ):
+        """Client-app assets are classified correctly for legacy stats."""
+        orchestrator.download_results = [
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "meshtastic.apk"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "Meshtastic.dmg"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "Meshtastic.msi"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "Meshtastic.exe"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                download_url="https://example.com/Meshtastic-unknown.bin",
+            ),
+        ]
+
+        android_count = orchestrator._count_artifact_downloads("android")
+        assert android_count == 2
+
+        desktop_count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
+        assert desktop_count == 3
+
+        client_app_count = orchestrator._count_artifact_downloads(FILE_TYPE_CLIENT_APP)
+        assert client_app_count == 5
+
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
         # Method should exist and be callable without raising; exact cleanup depends on filesystem contents
@@ -673,6 +715,7 @@ class TestDownloadOrchestrator:
         """
         Verify that a client app release containing an APK asset causes the orchestrator to attempt a download.
         """
+        orchestrator.config["SELECTED_APP_ASSETS"] = ["*"]
         release = Release(tag_name="v2.7.14", prerelease=False)
         asset = Asset(
             name="meshtastic.apk", download_url="https://example.com/app.apk", size=1000

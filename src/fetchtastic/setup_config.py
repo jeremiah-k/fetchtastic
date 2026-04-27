@@ -799,17 +799,17 @@ def _setup_downloads(
     config: Dict[str, Any], is_partial_run: bool, wants: Callable[[str], bool]
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """
-    Configure which asset types (Android APKs and firmware) should be downloaded and update the provided configuration accordingly.
+    Configure which asset types (client app assets and firmware) should be downloaded and update the provided configuration accordingly.
 
-    Updates the config in place with keys such as "SAVE_APKS", "SAVE_FIRMWARE", and, when asset selection menus run, "SELECTED_APK_ASSETS", "SELECTED_FIRMWARE_ASSETS", "CHECK_PRERELEASES", "CHECK_APK_PRERELEASES", and "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES". Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
+    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
 
     Parameters:
         config (dict): Mutable configuration dictionary to update.
         is_partial_run (bool): When True, only prompt sections for which wants(section) is True and prefer existing config defaults.
-        wants (Callable[[str], bool]): Callable that accepts a section name (for example "android" or "firmware") and returns True when that section should be processed in this run.
+        wants (Callable[[str], bool]): Callable that accepts a section name (for example ``"app"`` or ``"firmware"``) and returns True when that section should be processed in this run.
 
     Returns:
-        tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where `save_apks` and `save_firmware` indicate whether APKs and firmware, respectively, will be downloaded.
+        tuple[dict, bool, bool]: (updated_config, save_client_apps, save_firmware) where ``save_client_apps`` and ``save_firmware`` indicate whether client app assets and firmware, respectively, will be downloaded.
     """
     config = normalize_client_app_config(config)
     save_client_apps_was_enabled = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
@@ -962,8 +962,21 @@ def _setup_downloads(
         if rerun_menu:
             try:
                 app_selection = menu_app.run_menu()
-            except RuntimeError:
-                app_selection = menu_app.run_menu()
+            except RuntimeError as exc:
+                logger.warning(
+                    "Client app asset menu failed (%s); disabling client app downloads for this setup pass.",
+                    exc,
+                )
+                config["SAVE_CLIENT_APPS"] = False
+                config["SAVE_APKS"] = False
+                config["SAVE_DESKTOP_APP"] = False
+                config["SELECTED_APP_ASSETS"] = []
+                config["SELECTED_APK_ASSETS"] = []
+                _clear_desktop_assets(config)
+                save_client_apps = False
+                save_apks = False
+                save_desktop = False
+                app_selection = {"selected_assets": []}
             selected_assets = (
                 app_selection.get("selected_assets")
                 if isinstance(app_selection, dict)
