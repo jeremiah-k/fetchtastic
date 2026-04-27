@@ -1168,21 +1168,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 except FileNotFoundError:
                     pass
 
-            existing_version_entries = {
-                name
-                for name in all_existing_entries
-                if self.version_manager.get_release_tuple(name) is not None
-            }
-            if (
-                keep_limit > 0
-                and existing_version_entries
-                and expected_stable.isdisjoint(existing_version_entries)
-            ):
-                logger.warning(
-                    "Skipping APK cleanup: keep set does not match existing directories."
-                )
-                return
-
             for android_dir in android_dirs:
                 prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
 

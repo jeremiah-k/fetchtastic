@@ -1249,17 +1249,7 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         continue
                     if entry.name in allowed:
                         if entry.is_dir():
-                            try:
-                                dir_contents = os.listdir(entry.path)
-                            except OSError:
-                                dir_contents = []
-                            has_android = any(
-                                is_android_asset_name(name)
-                                or name.lower().startswith("release_notes-android-")
-                                for name in dir_contents
-                            )
-                            if not has_android:
-                                _prune_desktop_files(entry.path)
+                            _prune_desktop_files(entry.path)
                         continue
                     if entry.is_dir():
                         is_version_dir = (

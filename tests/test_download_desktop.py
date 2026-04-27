@@ -2835,8 +2835,8 @@ def test_cleanup_preserves_android_only_prerelease_dir(downloader, tmp_path):
     assert android_pre.exists()
 
 
-def test_cleanup_preserves_unified_dir_with_both_assets(downloader, tmp_path):
-    """A version dir with both APK and Desktop files must survive Desktop cleanup."""
+def test_cleanup_prunes_desktop_files_from_unified_dir(downloader, tmp_path):
+    """Desktop cleanup should prune own files from allowed unified dirs but keep the directory."""
     real_vm = VersionManager()
     downloader.version_manager.get_release_tuple.side_effect = real_vm.get_release_tuple
 
@@ -2852,7 +2852,7 @@ def test_cleanup_preserves_unified_dir_with_both_assets(downloader, tmp_path):
     downloader.cleanup_prerelease_directories(cached_releases=releases)
 
     assert unified_dir.exists()
-    assert (unified_dir / "Meshtastic-2.7.20.dmg").exists()
+    assert not (unified_dir / "Meshtastic-2.7.20.dmg").exists()
     assert (unified_dir / "meshtastic-2.7.20.apk").exists()
 
 
