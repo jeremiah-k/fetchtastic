@@ -10,6 +10,9 @@ GITHUB_API_BASE = "https://api.github.com/repos"
 MESHTASTIC_ANDROID_RELEASES_URL = (
     f"{GITHUB_API_BASE}/meshtastic/Meshtastic-Android/releases"
 )
+# Client app assets (Android APKs and Desktop installers) are published in the
+# Meshtastic-Android release feed.
+MESHTASTIC_CLIENT_APP_RELEASES_URL = MESHTASTIC_ANDROID_RELEASES_URL
 MESHTASTIC_FIRMWARE_RELEASES_URL = f"{GITHUB_API_BASE}/meshtastic/firmware/releases"
 # Desktop assets are currently published in the Android releases feed.
 MESHTASTIC_DESKTOP_RELEASES_URL = MESHTASTIC_ANDROID_RELEASES_URL
@@ -55,8 +58,11 @@ LATEST_FIRMWARE_PRERELEASE_JSON_FILE = "latest_firmware_prerelease.json"
 LATEST_FIRMWARE_RELEASE_JSON_FILE = "latest_firmware_release.json"
 LATEST_DESKTOP_RELEASE_JSON_FILE = "latest_desktop_release.json"
 LATEST_DESKTOP_PRERELEASE_JSON_FILE = "latest_desktop_prerelease.json"
+LATEST_CLIENT_APP_RELEASE_JSON_FILE = "latest_client_app_release.json"
+LATEST_CLIENT_APP_PRERELEASE_JSON_FILE = "latest_client_app_prerelease.json"
 DESKTOP_RELEASE_HISTORY_JSON_FILE = "desktop_release_history.json"
 ANDROID_RELEASE_HISTORY_JSON_FILE = "android_release_history.json"
+CLIENT_APP_RELEASE_HISTORY_JSON_FILE = "client_app_release_history.json"
 FIRMWARE_RELEASE_HISTORY_JSON_FILE = "firmware_release_history.json"
 PRERELEASE_TRACKING_JSON_FILE = "prerelease_tracking.json"
 PRERELEASE_COMMITS_CACHE_FILE = "prerelease_commits_cache.json"
@@ -77,9 +83,11 @@ DEFAULT_PRERELEASE_STATUS = "unknown"
 DEFAULT_PRERELEASE_COMMITS_TO_FETCH = 40
 DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
 DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
+DEFAULT_APP_VERSIONS_TO_KEEP = 2
 DEFAULT_KEEP_LAST_BETA = False
 DEFAULT_CHECK_APK_PRERELEASES = True
 DEFAULT_CHECK_DESKTOP_PRERELEASES = True
+DEFAULT_CHECK_APP_PRERELEASES = True
 DEFAULT_DESKTOP_VERSIONS_TO_KEEP = 2
 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES = True
 DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS = True
@@ -221,6 +229,8 @@ FILE_TYPE_PREFIXES = {
 # Standard file type identifiers used across download results
 FILE_TYPE_ANDROID = "android"
 FILE_TYPE_ANDROID_PRERELEASE = "android_prerelease"
+FILE_TYPE_CLIENT_APP = "client_app"
+FILE_TYPE_CLIENT_APP_PRERELEASE = "client_app_prerelease"
 FILE_TYPE_FIRMWARE = "firmware"
 FILE_TYPE_FIRMWARE_PRERELEASE = "firmware_prerelease"
 FILE_TYPE_FIRMWARE_PRERELEASE_REPO = "firmware_prerelease_repo"
@@ -248,6 +258,10 @@ FIRMWARE_FILE_TYPES = {
 ANDROID_FILE_TYPES = {
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+}
+CLIENT_APP_FILE_TYPES = {
+    FILE_TYPE_CLIENT_APP,
+    FILE_TYPE_CLIENT_APP_PRERELEASE,
 }
 DESKTOP_FILE_TYPES = {
     FILE_TYPE_DESKTOP,

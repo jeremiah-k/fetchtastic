@@ -1,18 +1,18 @@
 # Fetchtastic
 
-**A simple, cross-platform utility for downloading and managing Meshtastic firmware and Android app releases.**
+**A simple, cross-platform utility for downloading and managing Meshtastic firmware and client app releases.**
 
-Fetchtastic automatically downloads the latest Meshtastic firmware and Android APK releases from GitHub, with support for notifications, scheduling, and repository browsing.
+Fetchtastic automatically downloads the latest Meshtastic firmware and selected client app assets from GitHub, with support for notifications, scheduling, and repository browsing.
 
 ## ✨ Features
 
-- 🔄 **Automatic Downloads**: Latest firmware and Android APK releases
+- 🔄 **Automatic Downloads**: Latest firmware and Meshtastic client app assets
 - ⚡ **Async Download Engine**: `aiohttp`-based downloads with connection pooling and retry/backoff
 - 📱 **Cross-Platform**: Linux, macOS, Windows, and Android (Termux)
 - 🗂️ **Repository Browser**: Browse and download files from meshtastic.github.io
 - 🔔 **Notifications**: Push notifications via NTFY
 - ⏰ **Scheduling**: Automatic downloads via cron/startup scripts
-- 🎯 **Smart Selection**: Choose specific devices and APK variants
+- 🎯 **Smart Selection**: Choose specific devices, APKs, and desktop installers
 - 📦 **Auto-extraction**: Extract firmware files from zip archives
 - ✅ **Stronger Integrity Checks**: Hash-based verification and ZIP integrity validation
 - 🚦 **GitHub API Resilience**: Centralized release fetching, defensive parsing, caching, and rate-limit-aware behavior
@@ -69,7 +69,7 @@ fetchtastic repo browse
 
 ```bash
 fetchtastic setup         # Run the setup process
-fetchtastic download      # Download firmware and APKs
+fetchtastic download      # Download firmware and client app assets
 fetchtastic cache clear   # Clear cached API data
 fetchtastic repo browse   # Browse repository files
 fetchtastic repo clean    # Clean repository downloads
@@ -95,8 +95,7 @@ Downloads are organized in a clean structure:
 │   ├── v2.7.14/
 │   │   ├── app-fdroid-universal-release.apk
 │   │   ├── Meshtastic-2.7.14.dmg
-│   │   ├── release_notes-android-v2.7.14.md
-│   │   └── release_notes-desktop-v2.7.14.md
+│   │   └── release_notes-v2.7.14.md
 │   └── prerelease/   # Pre-release client app builds (optional)
 ├── firmware/
 │   ├── v2.3.2/
