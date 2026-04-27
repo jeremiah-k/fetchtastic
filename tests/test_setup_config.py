@@ -1984,15 +1984,14 @@ def test_section_shortcuts_mapping():
 
     # Test specific mappings
     assert SECTION_SHORTCUTS["b"] == "base"
-    assert SECTION_SHORTCUTS["a"] == "android"
+    assert SECTION_SHORTCUTS["a"] == "app"
     assert SECTION_SHORTCUTS["f"] == "firmware"
-    assert SECTION_SHORTCUTS["d"] == "desktop"
     assert SECTION_SHORTCUTS["n"] == "notifications"
     assert SECTION_SHORTCUTS["m"] == "automation"
     assert SECTION_SHORTCUTS["g"] == "github"
 
     # Test that all expected shortcuts exist
-    expected_shortcuts = {"b", "a", "f", "d", "n", "m", "g"}
+    expected_shortcuts = {"b", "a", "f", "n", "m", "g"}
     assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
 
 
@@ -2004,9 +2003,8 @@ def test_setup_section_choices():
 
     expected_sections = {
         "base",
-        "android",
+        "app",
         "firmware",
-        "desktop",
         "notifications",
         "automation",
         "github",
@@ -2035,19 +2033,19 @@ def test_prompt_for_setup_sections_shortcuts(mock_input):
 
     mock_input.return_value = "f, a"
     result = _prompt_for_setup_sections()
-    assert result == {"firmware", "android"}
+    assert result == {"firmware", "app"}
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
 @patch("builtins.input")
 def test_prompt_for_setup_sections_desktop_shortcut(mock_input):
-    """Test _prompt_for_setup_sections accepts desktop shortcut."""
+    """Test _prompt_for_setup_sections rejects unknown shortcuts."""
     from fetchtastic.setup_config import _prompt_for_setup_sections
 
-    mock_input.return_value = "d"
+    mock_input.side_effect = ["d", "b"]
     result = _prompt_for_setup_sections()
-    assert result == {"desktop"}
+    assert result == {"base"}
 
 
 @pytest.mark.configuration
@@ -2069,9 +2067,9 @@ def test_prompt_for_setup_sections_mixed_input(mock_input):
     """Test _prompt_for_setup_sections handles mixed shortcuts and full names."""
     from fetchtastic.setup_config import _prompt_for_setup_sections
 
-    mock_input.return_value = "f, android, n"
+    mock_input.return_value = "f, app, n"
     result = _prompt_for_setup_sections()
-    assert result == {"firmware", "android", "notifications"}
+    assert result == {"firmware", "app", "notifications"}
 
 
 @pytest.mark.configuration
@@ -2116,7 +2114,7 @@ def test_prompt_for_setup_sections_semicolon_separator(mock_input):
 
     mock_input.return_value = "f; a; n"
     result = _prompt_for_setup_sections()
-    assert result == {"firmware", "android", "notifications"}
+    assert result == {"firmware", "app", "notifications"}
 
 
 @pytest.mark.configuration
