@@ -94,7 +94,7 @@ class TestDownloadOrchestrator:
             mock_version.assert_called_once()
             mock_prerelease.assert_called_once()
 
-    def test_process_android_downloads_no_releases(self, orchestrator):
+    def test_process_client_app_downloads_no_releases(self, orchestrator):
         """Client app processing should stop when no releases are found."""
         orchestrator.client_app_downloader.get_releases.return_value = []
 
@@ -439,7 +439,7 @@ class TestDownloadOrchestrator:
         )
         orchestrator._download_firmware_release.assert_called_once_with(mock_release)
 
-    def test_download_android_release_success(self, orchestrator):
+    def test_download_client_app_release_success(self, orchestrator):
         """Test successful client app release download."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
@@ -838,7 +838,7 @@ class TestDownloadOrchestrator:
             assert is_connected_to_wifi() is False
             mock_logger.warning.assert_called()
 
-    def test_process_desktop_downloads_disabled(self, orchestrator):
+    def test_process_client_app_downloads_disabled(self, orchestrator):
         """Client app processing should skip when disabled in config."""
         orchestrator.config["SAVE_CLIENT_APPS"] = False
 
@@ -958,7 +958,7 @@ class TestDownloadOrchestrator:
 
         assert result is False
 
-    def test_download_android_release_error(self, orchestrator):
+    def test_download_client_app_release_error(self, orchestrator):
         """Test client app release download with error."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"

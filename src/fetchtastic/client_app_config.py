@@ -134,8 +134,8 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     if "SAVE_CLIENT_APPS" not in config:
         config["SAVE_CLIENT_APPS"] = coerce_bool(
-            config.get("SAVE_APKS", False)
-        ) or coerce_bool(config.get("SAVE_DESKTOP_APP", False))
+            config.get("SAVE_APKS", False), default=False
+        ) or coerce_bool(config.get("SAVE_DESKTOP_APP", False), default=False)
 
     config["SELECTED_APP_ASSETS"] = get_selected_app_assets(config)
 
@@ -153,11 +153,11 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     if "CHECK_APP_PRERELEASES" not in config:
-        apk_default = config.get("CHECK_PRERELEASES", DEFAULT_CHECK_APP_PRERELEASES)
+        apk_default = config.get("CHECK_PRERELEASES", False)
         config["CHECK_APP_PRERELEASES"] = coerce_bool(
             config.get("CHECK_APK_PRERELEASES", apk_default),
-            default=DEFAULT_CHECK_APP_PRERELEASES,
-        ) or coerce_bool(config.get("CHECK_DESKTOP_PRERELEASES", False))
+            default=False,
+        ) or coerce_bool(config.get("CHECK_DESKTOP_PRERELEASES", False), default=False)
     else:
         config["CHECK_APP_PRERELEASES"] = coerce_bool(
             config.get("CHECK_APP_PRERELEASES"),
@@ -190,5 +190,6 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def client_app_downloads_enabled(config: Dict[str, Any]) -> bool:
-    """Return whether client app downloads are enabled after normalization."""
-    return coerce_bool(normalize_client_app_config(config).get("SAVE_CLIENT_APPS"))
+    """Return whether client app downloads are enabled without mutating config."""
+    normalized = normalize_client_app_config(dict(config))
+    return coerce_bool(normalized.get("SAVE_CLIENT_APPS"), default=False)

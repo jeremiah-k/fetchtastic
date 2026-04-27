@@ -30,7 +30,7 @@ fetchtastic --help
 Available commands:
 
 - `setup` - Run the setup process
-- `download` - Download firmware and APKs from GitHub releases
+- `download` - Download firmware and client app assets from GitHub releases
 - `cache` - Clear cached API data without downloading
 - `topic` - Display the current NTFY topic
 - `clean` - Remove Fetchtastic configuration, downloads, and cron jobs
@@ -66,10 +66,10 @@ fetchtastic setup
 **Asset Types**: Choose what to download:
 
 - Firmware
-- Android APKs
-- Both firmware and APKs
+- Client app assets, including APKs and Desktop installers
+- Both firmware and client app releases
 
-**Asset Selection**: Choose specific firmware devices or APK variants
+**Asset Selection**: Choose specific firmware devices, APK variants, or Desktop installers
 
 **Version Management**: How many versions to keep (default: 2)
 
@@ -94,7 +94,7 @@ fetchtastic download
 
 This command:
 
-1. Checks for new firmware and APK releases on GitHub
+1. Checks for new firmware and client app releases on GitHub
 2. Downloads missing or updated files
 3. Extracts firmware files (if configured)
 4. Cleans up old versions
@@ -109,10 +109,10 @@ This command:
 - Installation scripts
 - Release notes
 
-**Android APKs**: Latest releases from [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)
+**Client app assets**: Latest app assets from [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)
 
-- Main APK files
-- Debug variants (if selected)
+- Android APK files
+- Desktop installers
 - Release notes
 
 ## Repository Browser
@@ -122,6 +122,8 @@ Browse and download files from the [meshtastic.github.io](https://meshtastic.git
 ```bash
 fetchtastic repo browse
 ```
+
+APKs and Desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
 
 ### How to Use
 

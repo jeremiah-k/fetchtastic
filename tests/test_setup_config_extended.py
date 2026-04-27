@@ -207,7 +207,7 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_apk_only(mocker, capsys):
-    """Test _setup_downloads with APK-only selection."""
+    """Test _setup_downloads with client app APK selection."""
     config = {}
 
     mocker.patch(

@@ -669,7 +669,7 @@ class TestDownloadOrchestrator:
         assert isinstance(keep_limit, int)
         assert keep_limit == int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
 
-    def test_download_android_release(self, orchestrator):
+    def test_download_client_app_release(self, orchestrator):
         """
         Verify that a client app release containing an APK asset causes the orchestrator to attempt a download.
         """

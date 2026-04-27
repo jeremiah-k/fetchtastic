@@ -5,6 +5,7 @@ from typing import Any, Dict, Sequence, Union
 from pick import pick
 
 from fetchtastic import menu_apk, menu_desktop
+from fetchtastic.log_utils import logger
 from fetchtastic.utils import extract_base_name
 
 
@@ -28,9 +29,21 @@ def _normalize_assets(
             entries.append((f"Android APK: {name}", name))
     for name in desktop_assets:
         if name:
-            platform = menu_desktop._get_platform_label(name) or "Desktop"
+            platform = get_desktop_platform_label(name) or "Desktop"
             entries.append((f"{platform}: {name}", name))
     return entries
+
+
+def get_desktop_platform_label(asset_name: str) -> str | None:
+    """Return a user-facing Desktop platform label for a client app asset."""
+    lower = asset_name.lower()
+    if lower.endswith(".dmg"):
+        return "macOS"
+    if lower.endswith((".exe", ".msi")):
+        return "Windows"
+    if lower.endswith((".deb", ".rpm", ".appimage")):
+        return "Linux"
+    return None
 
 
 def select_assets(
@@ -64,7 +77,7 @@ Options include Android APKs and Desktop installers from the same upstream relea
     patterns = []
     for name in selected_names:
         pattern = extract_base_name(name)
-        if menu_desktop._get_platform_label(name):
+        if get_desktop_platform_label(name):
             pattern = pattern.lower()
         patterns.append(pattern)
     return {"selected_assets": patterns}
@@ -72,8 +85,16 @@ Options include Android APKs and Desktop installers from the same upstream relea
 
 def run_menu() -> dict[str, list[str]] | None:
     """Show one asset selector for Android APKs and Desktop installers."""
-    apk_assets = menu_apk.fetch_apk_assets()
-    desktop_assets = menu_desktop.fetch_desktop_assets()
-    if desktop_assets is None:
+    try:
+        apk_assets = menu_apk.fetch_apk_assets()
+    except Exception as exc:
+        logger.warning("Unable to fetch Android APK assets: %s", exc)
+        print(f"Warning: unable to fetch Android APK assets: {exc}")
+        apk_assets = []
+    try:
+        desktop_assets = menu_desktop.fetch_desktop_assets()
+    except Exception as exc:
+        logger.warning("Unable to fetch Desktop installer assets: %s", exc)
+        print(f"Warning: unable to fetch Desktop installer assets: {exc}")
         desktop_assets = []
     return select_assets(apk_assets or [], desktop_assets)

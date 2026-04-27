@@ -1,6 +1,7 @@
 # Tests for unified app/<version>/ client-app storage cleanup safety.
 
 import os
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -104,8 +105,7 @@ def test_release_notes_use_single_upstream_release_filename(tmp_path):
 
     assert notes_path is not None
     assert notes_path.endswith("release_notes-v2.7.14.md")
-    assert "release_notes-android" not in notes_path
-    assert "release_notes-desktop" not in notes_path
+    assert Path(notes_path).name == "release_notes-v2.7.14.md"
 
 
 def test_mixed_apk_and_desktop_assets_live_together(tmp_path):

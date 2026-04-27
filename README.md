@@ -80,7 +80,7 @@ fetchtastic clean         # Remove all configuration
 
 ## 🏗️ Architecture Highlights
 
-- **Shared GitHub release source**: Release parsing and validation are centralized for consistency across firmware and Android paths.
+- **Shared GitHub release source**: Release parsing and validation are centralized for consistency across firmware and client app assets.
 - **Async + sync compatibility**: Async download paths are first-class, with sync fallbacks when async libraries are unavailable.
 - **Defensive verification flow**: Size checks, hash baselines, and ZIP integrity checks are combined to reduce false positives.
 - **Better retry semantics**: Retryable vs non-retryable errors are preserved to improve behavior and diagnostics.
@@ -103,6 +103,8 @@ Downloads are organized in a clean structure:
 │   ├── repo-dls/      # Repository browser downloads
 │   └── prerelease/    # Pre-release firmware (optional)
 ```
+
+APKs and Desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
 
 ## 🔔 Notifications
 

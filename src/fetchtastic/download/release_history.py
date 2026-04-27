@@ -356,6 +356,8 @@ class ReleaseHistoryManager:
         )
         if suffix == release.tag_name:
             return ""
+        if not suffix.startswith(release.tag_name):
+            return ""
         return suffix[len(release.tag_name) :]
 
     def update_release_history(self, releases: List[Release]) -> Dict[str, Any]:

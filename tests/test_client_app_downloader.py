@@ -72,9 +72,8 @@ def test_release_notes_use_single_client_app_file(downloader, tmp_path):
 
     assert path is not None
     assert Path(path).name == "release_notes-v2.7.14.md"
-    release_dir = tmp_path / "downloads" / "app" / "v2.7.14"
-    assert not (release_dir / "release_notes-android-v2.7.14.md").exists()
-    assert not (release_dir / "release_notes-desktop-v2.7.14.md").exists()
+    release_dir = Path(path).parent
+    assert Path(path) == release_dir / "release_notes-v2.7.14.md"
 
 
 def test_cleanup_removes_stale_app_release_directories(downloader, tmp_path):

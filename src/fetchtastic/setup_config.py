@@ -725,7 +725,7 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
 
     while True:
         response = _safe_input(
-            "Selection (examples: f, android; default: full setup, q to quit): ",
+            "Selection (examples: f, app; default: full setup, q to quit): ",
             default="",
         ).strip()
         if not response:
@@ -969,8 +969,15 @@ def _setup_downloads(
                 if isinstance(app_selection, dict)
                 else None
             )
-            if selected_assets is None and app_selection is not None:
-                selected_assets = ["*"]
+            if selected_assets is None and isinstance(app_selection, dict):
+                existing_assets = config.get("SELECTED_APP_ASSETS")
+                if existing_assets:
+                    selected_assets = existing_assets
+                else:
+                    print(
+                        "No client app asset selection was returned. Client app releases will not be downloaded."
+                    )
+                    selected_assets = []
             if not selected_assets:
                 print(
                     "No client app assets selected. Client app releases will not be downloaded."

@@ -176,6 +176,7 @@ class DownloadOrchestrator:
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
         # Run-scoped selected set: reset at start of _process_firmware_downloads()
         self.firmware_releases_selected: Optional[List[Release]] = None
+        self._client_app_downloads_processed = False
         self.wifi_skipped: bool = False
         self.available_new_firmware_versions: List[str] = []
         self.available_new_apk_versions: List[str] = []
@@ -193,6 +194,7 @@ class DownloadOrchestrator:
         self.wifi_skipped = False
         self.available_new_firmware_versions = []
         self.available_new_apk_versions = []
+        self._client_app_downloads_processed = False
         logger.info("Starting download pipeline...")
         logger.debug(
             "Execution context: cwd=%s, python=%s, fetchtastic=%s",
@@ -328,6 +330,12 @@ class DownloadOrchestrator:
 
     def _process_client_app_downloads(self) -> None:
         """Coordinate discovery and retrieval of selected client app assets."""
+        if self._client_app_downloads_processed:
+            logger.debug(
+                "Client app downloads already processed for this run; skipping"
+            )
+            return
+        self._client_app_downloads_processed = True
         try:
             if not self.config.get("SAVE_CLIENT_APPS", False):
                 logger.info("Client app downloads are disabled in configuration")
@@ -1818,6 +1826,16 @@ class DownloadOrchestrator:
                     continue
                 name = _result_name(result)
                 if name and is_android_asset_name(name):
+                    count += 1
+                    continue
+                if file_type in {
+                    FILE_TYPE_CLIENT_APP,
+                    FILE_TYPE_CLIENT_APP_PRERELEASE,
+                }:
+                    logger.debug(
+                        "Client app asset could not be classified by filename; defaulting to legacy Android bucket: %s",
+                        name or "unknown",
+                    )
                     count += 1
                     continue
             if artifact_type == FILE_TYPE_DESKTOP:

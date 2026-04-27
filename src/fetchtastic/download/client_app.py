@@ -119,12 +119,25 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def _get_app_base_dir(self) -> str:
         return os.path.join(self.download_dir, APP_DIR_NAME)
 
-    def _get_prerelease_base_dir(self) -> str:
+    def _ensure_prerelease_base_dir(self) -> str:
+        """Return the client app prerelease directory, creating it when needed."""
         prerelease_dir = os.path.join(
             self.download_dir, APP_DIR_NAME, APK_PRERELEASES_DIR_NAME
         )
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
+
+    def _get_prerelease_base_dir(self) -> str:
+        """Compatibility alias for older callers."""
+        return self._ensure_prerelease_base_dir()
+
+    def has_known_2714_prerelease_version_mismatch(self) -> bool:
+        """Compatibility no-op for removed Desktop-specific mismatch tracking."""
+        return False
+
+    def get_known_2714_prerelease_mismatch_tags(self) -> list[str]:
+        """Compatibility no-op for removed Desktop-specific mismatch tracking."""
+        return []
 
     def _get_legacy_android_base_dir(self) -> str:
         return os.path.join(self.download_dir, APKS_DIR_NAME)
@@ -440,6 +453,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         label = self.release_history_manager.format_release_label(
             release, include_channel=False, include_status=True
         )
+        if not label.startswith(release.tag_name):
+            return ""
         return label[len(release.tag_name) :]
 
     def ensure_release_notes(self, release: Release) -> Optional[str]:

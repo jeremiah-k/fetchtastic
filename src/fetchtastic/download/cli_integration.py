@@ -42,7 +42,6 @@ from fetchtastic.notifications import (
     send_up_to_date_notification,
 )
 from fetchtastic.utils import (
-    coerce_bool,
     format_api_summary,
     get_api_request_summary,
     get_effective_github_token,
@@ -459,33 +458,6 @@ class DownloadCLIIntegration:
             )
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
-
-        desktop_enabled = coerce_bool(
-            (self.config or {}).get("SAVE_DESKTOP_APP", False)
-        )
-        has_known_mismatch = (
-            desktop_enabled
-            and self.desktop_downloader is not None
-            and self.desktop_downloader.has_known_2714_prerelease_version_mismatch()
-        )
-        if has_known_mismatch:
-            mismatch_tags = (
-                self.desktop_downloader.get_known_2714_prerelease_mismatch_tags()
-            )
-            newest_mismatch_tag = mismatch_tags[0] if mismatch_tags else "v2.7.14"
-            latest_is_2714_prerelease = isinstance(
-                latest_desktop_prerelease, str
-            ) and latest_desktop_prerelease.startswith("v2.7.14")
-            if latest_is_2714_prerelease:
-                log.info(
-                    "Desktop prerelease note: installer version labels do not match release tag versions for %s. This is a known 2.7.14 prerelease packaging discrepancy while Desktop CI/build requirements are still being finalized upstream.",
-                    newest_mismatch_tag,
-                )
-            else:
-                log.debug(
-                    "Known 2.7.14 desktop installer-label mismatch observed only in scanned historical prereleases; suppressing end-of-run note (latest desktop prerelease: %s).",
-                    latest_desktop_prerelease or "none",
-                )
 
         new_versions_available = bool(
             (new_firmware_versions or [])

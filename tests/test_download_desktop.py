@@ -59,7 +59,7 @@ def downloader(tmp_path, mock_cache_manager):
 
 
 def test_is_release_complete_uses_prerelease_directory(downloader, tmp_path):
-    """Prerelease completeness checks should read from app/desktop/prereleases/<tag>."""
+    """Prerelease completeness checks should read from app/prerelease/<tag>."""
     downloader.verify = Mock(return_value=True)
 
     release = Release(
@@ -469,8 +469,10 @@ def test_get_releases_marks_semver_prerelease_from_tag(downloader):
     assert result[0].prerelease is True
 
 
-def test_get_releases_tracks_known_2714_prerelease_version_mismatch(downloader):
-    """2.7.14 prerelease installer filename mismatches should be tracked and logged once."""
+def test_get_releases_does_not_track_known_2714_prerelease_version_mismatch(
+    downloader,
+):
+    """Old Desktop-specific mismatch tracking is removed from the client app wrapper."""
     downloader.github_source.fetch_raw_releases_data = Mock(
         return_value=[
             {
@@ -487,21 +489,15 @@ def test_get_releases_tracks_known_2714_prerelease_version_mismatch(downloader):
         ]
     )
 
-    with patch("fetchtastic.download.desktop.logger") as mock_logger:
-        result = downloader.get_releases(limit=10)
+    result = downloader.get_releases(limit=10)
 
     assert len(result) == 1
-    assert downloader.has_known_2714_prerelease_version_mismatch() is True
-    assert downloader.get_known_2714_prerelease_mismatch_tags() == ["v2.7.14-closed.10"]
-    assert mock_logger.warning.call_count == 0
-    assert any(
-        "known transitional packaging names" in call.args[0]
-        for call in mock_logger.info.call_args_list
-    )
+    assert downloader.has_known_2714_prerelease_version_mismatch() is False
+    assert downloader.get_known_2714_prerelease_mismatch_tags() == []
 
 
-def test_get_releases_logs_known_2714_info_only_once_per_scan(downloader):
-    """Known 2.7.14 transitional mismatch info should log once per scan."""
+def test_get_releases_ignores_old_known_2714_mismatch_state(downloader):
+    """Known 2.7.14 transitional mismatch state is no longer tracked separately."""
     downloader.github_source.fetch_raw_releases_data = Mock(
         return_value=[
             {
@@ -529,25 +525,11 @@ def test_get_releases_logs_known_2714_info_only_once_per_scan(downloader):
         ]
     )
 
-    with patch("fetchtastic.download.desktop.logger") as mock_logger:
-        result = downloader.get_releases(limit=10)
+    result = downloader.get_releases(limit=10)
 
     assert len(result) == 2
-    assert downloader.get_known_2714_prerelease_mismatch_tags() == [
-        "v2.7.14-closed.10",
-        "v2.7.14-closed.1",
-    ]
-    known_info_calls = [
-        call
-        for call in mock_logger.info.call_args_list
-        if "known transitional packaging names" in call.args[0]
-    ]
-    assert len(known_info_calls) == 1
-    assert any(
-        "also matches the known 2.7.14 transitional packaging discrepancy"
-        in call.args[0]
-        for call in mock_logger.debug.call_args_list
-    )
+    assert downloader.get_known_2714_prerelease_mismatch_tags() == []
+    assert downloader.has_known_2714_prerelease_version_mismatch() is False
 
 
 def test_get_releases_does_not_track_2714_mismatch_when_versions_align(downloader):
@@ -2879,6 +2861,6 @@ def test_release_notes_android_desktop_distinct_files(tmp_path):
 
     assert android_notes is not None
     assert desktop_notes is not None
-    assert android_notes != desktop_notes
-    assert "release_notes-android-v2.7.20.md" in android_notes
-    assert "release_notes-desktop-v2.7.20.md" in desktop_notes
+    assert android_notes == desktop_notes
+    assert "release_notes-v2.7.20.md" in android_notes
+    assert "release_notes-v2.7.20.md" in desktop_notes

@@ -248,7 +248,7 @@ class TestMeshtasticAndroidAppDownloader:
             os.path.join(
                 APP_DIR_NAME,
                 "v2.7.10",
-                "release_notes-android-v2.7.10.md",
+                "release_notes-v2.7.10.md",
             )
         )
 
@@ -272,7 +272,7 @@ class TestMeshtasticAndroidAppDownloader:
             APP_DIR_NAME,
             APK_PRERELEASES_DIR_NAME,
             "v2.7.10-open.1",
-            "release_notes-android-v2.7.10-open.1.md",
+            "release_notes-v2.7.10-open.1.md",
         )
         assert str(notes_file).endswith(expected_suffix)
 
@@ -313,7 +313,7 @@ class TestMeshtasticAndroidAppDownloader:
     def test_get_target_path_for_release_prefers_existing_legacy_dir(
         self, downloader, tmp_path
     ):
-        """Existing legacy `apks/<tag>` directories should be migrated to app/android."""
+        """Existing legacy `apks/<tag>` directories should be migrated to app/."""
         legacy_dir = tmp_path / "downloads" / "apks" / "v1.0.0"
         legacy_dir.mkdir(parents=True)
 
@@ -1375,7 +1375,7 @@ class TestMeshtasticAndroidAppDownloader:
         assert result == expected
 
     def test_migrate_legacy_layout_moves_stable_and_prerelease_dirs(self, tmp_path):
-        """Legacy Android directories should migrate into app/android."""
+        """Legacy Android directories should migrate into app/."""
         config = {"DOWNLOAD_DIR": str(tmp_path)}
         downloader = MeshtasticAndroidAppDownloader(
             config, CacheManager(cache_dir=str(tmp_path / "cache"))

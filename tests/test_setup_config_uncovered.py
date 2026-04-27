@@ -184,10 +184,6 @@ def test_setup_downloads_full_run_multiple_selection(mocker):
         "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": ["meshtastic.apk", "meshtastic.dmg"]},
     )
-    mocker.patch(
-        "fetchtastic.menu_app.run_menu",
-        return_value={"selected_assets": ["meshtastic.dmg"]},
-    )
 
     updated, save_apks, save_firmware = _setup_downloads(
         config, is_partial_run=False, wants=wants
@@ -1520,6 +1516,7 @@ def test_run_setup_desktop_invalid_version_input(
         mock_input.side_effect = user_inputs
 
         mock_menu_app.return_value = {"selected_assets": ["meshtastic.dmg"]}
+        mock_menu_firmware.return_value = {"selected_assets": ["meshtastic.dmg"]}
 
         with patch("builtins.open", mock_open()):
             with patch("sys.stdin.isatty", return_value=False):
