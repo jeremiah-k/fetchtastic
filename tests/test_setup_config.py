@@ -651,7 +651,7 @@ def test_load_config_new_location(tmp_path, mocker):
     mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
     mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
-    config_data = {"SAVE_APKS": True}
+    config_data = {"SAVE_CLIENT_APPS": True, "SELECTED_APP_ASSETS": ["*"]}
     with open(new_config_path, "w") as f:
         yaml.safe_dump(config_data, f)
 

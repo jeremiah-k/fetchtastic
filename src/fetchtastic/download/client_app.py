@@ -587,6 +587,10 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         if raw_selected is None:
             return False
         if raw_selected == ["*"]:
+            if not (
+                is_android_asset_name(asset_name) or is_desktop_asset_name(asset_name)
+            ):
+                return False
             exclude = self._get_exclude_patterns()
             if exclude and any(
                 fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude

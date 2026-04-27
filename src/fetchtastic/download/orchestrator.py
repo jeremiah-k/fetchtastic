@@ -1743,9 +1743,10 @@ class DownloadOrchestrator:
                 - "skipped_downloads": number of downloads marked as skipped.
                 - "failed_downloads": number of failed downloads.
                 - "success_rate": overall success percentage as a float (0-100).
-                - "android_downloads": count of successful Android artifact downloads.
+                - "client_app_downloads": count of successful client app artifact downloads.
                 - "firmware_downloads": count of successful firmware artifact downloads.
-                - "desktop_downloads": count of successful Desktop artifact downloads.
+                - "android_downloads": legacy compat — count of client app downloads with Android-compatible filenames.
+                - "desktop_downloads": legacy compat — count of client app downloads with Desktop-compatible filenames.
                 - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
         """
         downloaded = [

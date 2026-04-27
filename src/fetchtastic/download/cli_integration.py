@@ -956,18 +956,20 @@ class DownloadCLIIntegration:
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """
-        Return aggregated download statistics for reporting.
+        Summarizes download attempts and outcomes for the current run.
 
         Returns:
-            dict: Aggregated download statistics with keys:
-                - total_downloads (int): Number of attempted downloads (excludes skipped results).
-                - successful_downloads (int): Number of completed, non-skipped downloads.
-                - skipped_downloads (int): Number of downloads marked as skipped.
-                - failed_downloads (int): Number of downloads that failed.
-                - success_rate (float): Overall success percentage as a float (0-100).
-                - android_downloads (int): Number of successful Android artifact downloads.
-                - firmware_downloads (int): Number of successful firmware artifact downloads.
-                - repository_downloads (int): Number of repository downloads (always 0 for automatic pipeline).
+            dict: Mapping with the following keys:
+                - "total_downloads": number of attempted downloads (excludes skipped results).
+                - "successful_downloads": number of completed, non-skipped downloads.
+                - "skipped_downloads": number of downloads marked as skipped.
+                - "failed_downloads": number of failed downloads.
+                - "success_rate": overall success percentage as a float (0-100).
+                - "client_app_downloads": count of successful client app artifact downloads.
+                - "firmware_downloads": count of successful firmware artifact downloads.
+                - "android_downloads": legacy compat — count of client app downloads with Android-compatible filenames.
+                - "desktop_downloads": legacy compat — count of client app downloads with Desktop-compatible filenames.
+                - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
         """
         if self.orchestrator:
             return self.orchestrator.get_download_statistics()
@@ -977,8 +979,10 @@ class DownloadCLIIntegration:
             "skipped_downloads": 0,
             "failed_downloads": 0,
             "success_rate": 0.0,
-            "android_downloads": 0,
+            "client_app_downloads": 0,
             "firmware_downloads": 0,
+            "android_downloads": 0,
+            "desktop_downloads": 0,
             "repository_downloads": 0,
         }
 

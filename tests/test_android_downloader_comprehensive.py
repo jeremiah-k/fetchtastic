@@ -59,7 +59,7 @@ def android_downloader(test_config):
     return MeshtasticAndroidAppDownloader(test_config, cache_manager)
 
 
-class TestMeshtasticAndroidAppDownloader:
+class TestMeshtasticClientAppDownloader:
     """Test suite for AndroidReleaseDownloader functionality."""
 
     def test_initialization(self, test_config):
@@ -149,7 +149,7 @@ class TestMeshtasticAndroidAppDownloader:
         android_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
         assert android_downloader.should_download_asset("meshtastic.apk") is True
         assert android_downloader.should_download_asset("Meshtastic.dmg") is True
-        assert android_downloader.should_download_asset("readme.txt") is True
+        assert android_downloader.should_download_asset("readme.txt") is False
 
     def test_should_download_asset_wildcard_respects_excludes(self, android_downloader):
         """Wildcard selection still respects exclude patterns."""
