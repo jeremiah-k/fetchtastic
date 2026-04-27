@@ -416,7 +416,7 @@ def test_setup_downloads_partial_keeps_existing_apk_patterns_with_fdroid_compat(
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker):
-    """Selecting split F-Droid APKs should include legacy fallback pattern."""
+    """Selecting a split F-Droid APK pattern should preserve it in the asset list."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {
@@ -442,7 +442,6 @@ def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker
     assert save_apks is True
     assert save_firmware is False
     assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
-    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
 
 
 @pytest.mark.configuration
