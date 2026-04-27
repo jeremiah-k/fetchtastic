@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests  # type: ignore[import-untyped]
 
 from fetchtastic.client_release_discovery import (
+    is_android_asset_name,
     is_desktop_asset_name,
     is_desktop_prerelease_tag,
     is_release_at_or_above_minimum,
@@ -1247,6 +1248,8 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                         )
                         continue
                     if entry.name in allowed:
+                        if entry.is_dir():
+                            _prune_desktop_files(entry.path)
                         continue
                     if entry.is_dir():
                         is_version_dir = (
@@ -1262,6 +1265,16 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                             if not remaining:
                                 logger.info(
                                     "Removing empty Desktop-stale version dir: %s",
+                                    entry.name,
+                                )
+                                _safe_rmtree(entry.path, base_dir, entry.name)
+                            elif not any(
+                                is_android_asset_name(name)
+                                or name.lower().startswith("release_notes-android-")
+                                for name in remaining
+                            ):
+                                logger.info(
+                                    "Removing Desktop-stale version dir without other app assets: %s",
                                     entry.name,
                                 )
                                 _safe_rmtree(entry.path, base_dir, entry.name)
@@ -1305,20 +1318,6 @@ class MeshtasticDesktopDownloader(BaseDownloader):
                 with os.scandir(desktop_dir) as it:
                     desktop_entries = list(it)
             except FileNotFoundError:
-                return
-
-            existing_entries = {
-                entry.name for entry in desktop_entries if not entry.is_symlink()
-            }
-            if (
-                keep_limit > 0
-                and expected_stable
-                and existing_entries
-                and expected_stable.isdisjoint(existing_entries)
-            ):
-                logger.warning(
-                    "Skipping Desktop cleanup: keep set does not match existing directories."
-                )
                 return
 
             _remove_unexpected_entries(

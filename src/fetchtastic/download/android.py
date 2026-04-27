@@ -17,6 +17,7 @@ import requests  # type: ignore[import-untyped]
 from fetchtastic.client_release_discovery import (
     is_android_asset_name,
     is_android_prerelease_tag,
+    is_desktop_asset_name,
     is_release_at_or_above_minimum,
     is_release_prerelease,
 )
@@ -1099,6 +1100,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         )
                         continue
                     if entry.name in allowed:
+                        if entry.is_dir():
+                            _prune_android_files(entry.path)
                         continue
                     if entry.is_dir():
                         is_version_dir = (
@@ -1114,6 +1117,16 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                             if not remaining:
                                 logger.info(
                                     "Removing empty Android-stale version dir: %s",
+                                    entry.name,
+                                )
+                                _safe_rmtree(entry.path, base_dir, entry.name)
+                            elif not any(
+                                is_desktop_asset_name(name)
+                                or name.lower().startswith("release_notes-desktop-")
+                                for name in remaining
+                            ):
+                                logger.info(
+                                    "Removing Android-stale version dir without other app assets: %s",
                                     entry.name,
                                 )
                                 _safe_rmtree(entry.path, base_dir, entry.name)
@@ -1154,17 +1167,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                                 all_existing_entries.add(entry.name)
                 except FileNotFoundError:
                     pass
-
-            if (
-                keep_limit > 0
-                and expected_stable
-                and all_existing_entries
-                and expected_stable.isdisjoint(all_existing_entries)
-            ):
-                logger.warning(
-                    "Skipping APK cleanup: keep set does not match existing directories in any android root."
-                )
-                return
 
             for android_dir in android_dirs:
                 prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)

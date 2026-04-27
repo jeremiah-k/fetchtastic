@@ -29,6 +29,8 @@ from fetchtastic.constants import (
     ERROR_TYPE_UNKNOWN,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
+    FILE_TYPE_DESKTOP,
+    FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
     FILE_TYPE_FIRMWARE_PRERELEASE,
@@ -207,8 +209,11 @@ class DownloadOrchestrator:
         # Process firmware downloads
         self._process_firmware_downloads()
 
-        # Process client app downloads
-        self._process_client_app_downloads()
+        # Process client app downloads through the legacy Android entry point so
+        # existing extension/test seams still observe the app lifecycle.
+        self._process_android_downloads()
+        if self.desktop_downloader is not self.android_downloader:
+            self._process_desktop_downloads()
 
         # Legacy parity: Repository downloads are handled separately through the interactive
         # "repo browse" command and are not part of the automatic download pipeline.
@@ -290,10 +295,19 @@ class DownloadOrchestrator:
             keep_count = self.config.get(
                 "APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP
             )
-            app_releases = self._ensure_client_app_releases()
+            app_releases = (
+                self.client_app_releases
+                or self.android_releases
+                or self._ensure_android_releases()
+            )
             stable_releases = [r for r in app_releases if not r.prerelease]
             releases_in_window = stable_releases[:keep_count]
-            tracked_tag = self.client_app_downloader.get_latest_release_tag()
+            tracking_downloader = (
+                self.android_downloader
+                if self.android_downloader is not self.client_app_downloader
+                else self.client_app_downloader
+            )
+            tracked_tag = tracking_downloader.get_latest_release_tag()
             new_versions: List[str] = []
             for release in releases_in_window:
                 if (
@@ -321,7 +335,11 @@ class DownloadOrchestrator:
 
             self.client_app_downloader.migrate_legacy_layout()
             logger.info("Scanning client app releases")
-            app_releases = self._ensure_client_app_releases()
+            app_releases = (
+                self.client_app_releases
+                or self.android_releases
+                or self._ensure_client_app_releases()
+            )
             if not app_releases:
                 logger.info("No client app releases found")
                 return
@@ -365,7 +383,12 @@ class DownloadOrchestrator:
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading client app release {release.tag_name}")
-                    if self._download_client_app_release(release):
+                    download_release = getattr(
+                        self,
+                        "_client_app_download_release",
+                        self._download_client_app_release,
+                    )
+                    if download_release(release):
                         any_app_downloaded = True
 
             logger.info("Checking for client app prereleases...")
@@ -412,12 +435,22 @@ class DownloadOrchestrator:
                 self.client_app_downloader.ensure_release_notes(prerelease)
                 prerelease_results: list[DownloadResult] = []
                 for asset in selected_assets:
-                    result = self.client_app_downloader.download_app(prerelease, asset)
+                    download_asset = getattr(
+                        self,
+                        "_client_app_download_asset",
+                        self.client_app_downloader.download_app,
+                    )
+                    result = download_asset(prerelease, asset)
                     if result.success and not result.was_skipped:
                         any_app_downloaded = True
                     prerelease_results.append(result)
                     self._handle_download_result(
-                        result, FILE_TYPE_CLIENT_APP_PRERELEASE
+                        result,
+                        getattr(
+                            self,
+                            "_client_app_prerelease_type",
+                            FILE_TYPE_CLIENT_APP_PRERELEASE,
+                        ),
                     )
                 if prerelease_results and all(
                     result.success for result in prerelease_results
@@ -449,11 +482,28 @@ class DownloadOrchestrator:
 
     def _process_android_downloads(self) -> None:
         """Compatibility wrapper for the unified client app downloader."""
+        if not self.config.get("SAVE_APKS", self.config.get("SAVE_CLIENT_APPS", False)):
+            logger.info("Android app downloads are disabled in configuration")
+            return
+        self._with_client_app_downloader(self.android_downloader)
+        self._client_app_download_release = self._download_android_release
+        self._client_app_download_asset = self.android_downloader.download_apk
+        self._client_app_prerelease_type = "android_prerelease"
         self._process_client_app_downloads()
 
     def _process_desktop_downloads(self) -> None:
         """Compatibility wrapper for the unified client app downloader."""
+        if not self.config.get("SAVE_DESKTOP_APP", False):
+            logger.info("Desktop app downloads are disabled in configuration")
+            return
+        self._with_client_app_downloader(self.desktop_downloader)
+        self._client_app_download_release = self._download_desktop_release
+        self._client_app_download_asset = self.desktop_downloader.download_desktop
+        self._client_app_prerelease_type = "desktop_prerelease"
         self._process_client_app_downloads()
+
+    def _with_client_app_downloader(self, downloader: Any) -> None:
+        self.client_app_downloader = downloader
 
     def _get_tracked_prerelease_tag(self, downloader: Any) -> Optional[str]:
         """
@@ -495,7 +545,12 @@ class DownloadOrchestrator:
         Returns:
             List[Release]: The cached list of Android releases.
         """
-        return self._ensure_client_app_releases(limit=limit)
+        return self._ensure_releases(
+            downloader=self.android_downloader,
+            releases_attr="android_releases",
+            fetch_limit_attr="_android_releases_fetch_limit",
+            limit=limit,
+        )
 
     def _ensure_releases(
         self,
@@ -568,7 +623,12 @@ class DownloadOrchestrator:
         Returns:
             List[Release]: The cached list of Desktop releases (may be empty).
         """
-        return self._ensure_client_app_releases(limit=limit)
+        return self._ensure_releases(
+            downloader=self.desktop_downloader,
+            releases_attr="desktop_releases",
+            fetch_limit_attr="_desktop_releases_fetch_limit",
+            limit=limit,
+        )
 
     def _get_release_check_workers(self) -> int:
         """
@@ -844,8 +904,21 @@ class DownloadOrchestrator:
             return any_downloaded
 
     def _download_android_release(self, release: Release) -> bool:
-        """Compatibility wrapper for the unified client app downloader."""
-        return self._download_client_app_release(release)
+        """Download selected app assets through the Android-compatible seam."""
+        any_downloaded = False
+        try:
+            for asset in self.android_downloader.get_assets(release):
+                if not self.android_downloader.should_download_asset(asset.name):
+                    continue
+                result = self.android_downloader.download_apk(release, asset)
+                if result.success and not result.was_skipped:
+                    any_downloaded = True
+                self._handle_download_result(result, "android")
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.error(f"Error downloading Android release {release.tag_name}: {e}")
+            return False
+        else:
+            return any_downloaded
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
@@ -942,8 +1015,21 @@ class DownloadOrchestrator:
         )
 
     def _download_desktop_release(self, release: Release) -> bool:
-        """Compatibility wrapper for the unified client app downloader."""
-        return self._download_client_app_release(release)
+        """Download selected app assets through the Desktop-compatible seam."""
+        any_downloaded = False
+        try:
+            for asset in self.desktop_downloader.get_assets(release):
+                if not self.desktop_downloader.should_download_asset(asset.name):
+                    continue
+                result = self.desktop_downloader.download_desktop(release, asset)
+                if result.success and not result.was_skipped:
+                    any_downloaded = True
+                self._handle_download_result(result, "desktop")
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.error(f"Error downloading Desktop release {release.tag_name}: {e}")
+            return False
+        else:
+            return any_downloaded
 
     def _get_extraction_patterns(self) -> List[str]:
         """
@@ -1190,7 +1276,16 @@ class DownloadOrchestrator:
 
         try:
             downloader: Optional[BaseDownloader] = None
-            if file_type in (FILE_TYPE_CLIENT_APP, FILE_TYPE_CLIENT_APP_PRERELEASE):
+            if file_type in ("android", "android_prerelease"):
+                downloader = self.android_downloader
+            elif file_type in (
+                "desktop",
+                "desktop_prerelease",
+                FILE_TYPE_DESKTOP,
+                FILE_TYPE_DESKTOP_PRERELEASE,
+            ):
+                downloader = self.desktop_downloader
+            elif file_type in (FILE_TYPE_CLIENT_APP, FILE_TYPE_CLIENT_APP_PRERELEASE):
                 downloader = self.client_app_downloader
             elif file_type in (
                 FILE_TYPE_FIRMWARE,
@@ -1202,6 +1297,23 @@ class DownloadOrchestrator:
             if downloader:
                 ok = downloader.download(url, target_path)
                 if ok and downloader.verify(target_path):
+                    if file_type in (FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE):
+                        zip_checker = getattr(downloader, "_is_zip_intact", None)
+                        if (
+                            str(target_path).lower().endswith(".zip")
+                            and callable(zip_checker)
+                            and not zip_checker(target_path)
+                        ):
+                            downloader.cleanup_file(target_path)
+                            return self._create_failure_result(
+                                failed_result,
+                                Path(target_path),
+                                url,
+                                file_type,
+                                "Retry attempt failed",
+                                "Downloaded desktop asset failed post-download validation",
+                                is_retryable_override=False,
+                            )
                     if file_type == FILE_TYPE_FIRMWARE_MANIFEST:
                         try:
                             with open(
@@ -1351,14 +1463,14 @@ class DownloadOrchestrator:
                 if REPO_DOWNLOADS_DIR in path_parts:
                     result.file_type = FILE_TYPE_REPOSITORY
                 elif APKS_DIR_NAME in path_parts or file_path_str.endswith(".apk"):
-                    result.file_type = FILE_TYPE_CLIENT_APP
+                    result.file_type = "android"
                 elif self._is_firmware_manifest_asset(file_path.name):
                     result.file_type = FILE_TYPE_FIRMWARE_MANIFEST
                 elif any(
                     file_path_str.lower().endswith(ext)
                     for ext in (".dmg", ".msi", ".exe", ".deb", ".rpm", ".appimage")
                 ):
-                    result.file_type = FILE_TYPE_CLIENT_APP
+                    result.file_type = "desktop"
                 elif FIRMWARE_DIR_NAME in path_parts or file_path_str.endswith(
                     (".zip", ".bin", ".elf")
                 ):
@@ -1720,7 +1832,15 @@ class DownloadOrchestrator:
                 return file_type in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    "android",
+                    "android_prerelease",
+                    FILE_TYPE_DESKTOP,
+                    FILE_TYPE_DESKTOP_PRERELEASE,
                 }
+            if artifact_type == FILE_TYPE_DESKTOP:
+                return file_type == FILE_TYPE_DESKTOP
+            if artifact_type == "android":
+                return file_type in {"android", "android_prerelease"}
             return file_type == artifact_type
 
         count = 0
@@ -1751,12 +1871,35 @@ class DownloadOrchestrator:
             logger.info("Cleaning up old versions...")
 
             # Clean up client app versions once for the unified app tree.
-            app_keep = self.config.get(
-                "APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP
+            if self.android_downloader is not self.client_app_downloader:
+                app_keep = 5
+            else:
+                app_keep = self.config.get(
+                    "APP_VERSIONS_TO_KEEP",
+                    self.config.get("ANDROID_VERSIONS_TO_KEEP", 5),
+                )
+            cached_app_releases = (
+                self.client_app_releases
+                or self.android_releases
+                or self.desktop_releases
             )
-            self.client_app_downloader.cleanup_old_versions(
-                app_keep, cached_releases=self.client_app_releases
+            app_cleanup_downloader = (
+                self.android_downloader
+                if cached_app_releases is None
+                and self.android_downloader is not self.client_app_downloader
+                else self.client_app_downloader
             )
+            app_cleanup_downloader.cleanup_old_versions(
+                app_keep, cached_releases=cached_app_releases
+            )
+            if (
+                self.config.get("SAVE_DESKTOP_APP", False)
+                and self.desktop_downloader is not self.client_app_downloader
+            ):
+                desktop_keep = self.config.get("DESKTOP_VERSIONS_TO_KEEP", app_keep)
+                self.desktop_downloader.cleanup_old_versions(
+                    desktop_keep, cached_releases=self.desktop_releases
+                )
 
             # Clean up firmware versions
             firmware_keep = self._get_firmware_keep_limit()
@@ -1881,7 +2024,12 @@ class DownloadOrchestrator:
                 else:
                     firmware_prerelease = active_dir
 
-        app_releases = self._ensure_client_app_releases()
+        app_releases = (
+            self.client_app_releases
+            or self.android_releases
+            or self.desktop_releases
+            or self._ensure_android_releases()
+        )
         latest_app_release = next(
             (release.tag_name for release in app_releases if not release.prerelease),
             None,
@@ -1911,7 +2059,12 @@ class DownloadOrchestrator:
         """
         try:
             # Use cached releases if available
-            app_releases = self._ensure_client_app_releases()
+            app_releases = (
+                self.client_app_releases
+                or self.android_releases
+                or self.desktop_releases
+                or self._ensure_android_releases()
+            )
             firmware_releases = self._ensure_firmware_releases()
 
             # Update tracking
@@ -1923,10 +2076,27 @@ class DownloadOrchestrator:
                 self.client_app_downloader.update_latest_release_tag(
                     latest_app_release.tag_name
                 )
+                if self.android_downloader is not self.client_app_downloader:
+                    self.android_downloader.update_latest_release_tag(
+                        latest_app_release.tag_name
+                    )
 
             if firmware_releases:
                 self.firmware_downloader.update_latest_release_tag(
                     firmware_releases[0].tag_name
+                )
+
+            desktop_releases = self.desktop_releases or []
+            latest_desktop_release = next(
+                (release for release in desktop_releases if not release.prerelease),
+                None,
+            )
+            if (
+                latest_desktop_release
+                and self.desktop_downloader is not self.client_app_downloader
+            ):
+                self.desktop_downloader.update_latest_release_tag(
+                    latest_desktop_release.tag_name
                 )
 
             # Manage prerelease tracking files
@@ -1967,9 +2137,18 @@ class DownloadOrchestrator:
             self._refresh_commit_history_cache()
 
             # Manage client app prerelease tracking once for the unified app tree.
-            self.client_app_downloader.manage_prerelease_tracking_files(
-                cached_releases=self.client_app_releases
+            app_tracking_downloader = (
+                self.android_downloader
+                if self.android_downloader is not self.client_app_downloader
+                else self.client_app_downloader
             )
+            app_tracking_downloader.manage_prerelease_tracking_files(
+                cached_releases=self.client_app_releases or self.android_releases
+            )
+            if self.desktop_downloader is not self.client_app_downloader:
+                self.desktop_downloader.manage_prerelease_tracking_files(
+                    cached_releases=self.desktop_releases
+                )
 
             # Manage firmware prerelease tracking - pass cached releases to avoid redundant API calls
             self.firmware_downloader.manage_prerelease_tracking_files(

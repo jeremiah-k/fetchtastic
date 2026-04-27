@@ -113,14 +113,24 @@ def normalize_client_app_config(config: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     # Keep legacy keys synchronized for compatibility during the transition.
-    config["SAVE_APKS"] = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
-    config["SAVE_DESKTOP_APP"] = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
     config["SELECTED_APK_ASSETS"] = [
         item for item in config["SELECTED_APP_ASSETS"] if "apk" in item.lower()
     ]
     config["SELECTED_DESKTOP_ASSETS"] = [
         item for item in config["SELECTED_APP_ASSETS"] if "apk" not in item.lower()
     ]
+    client_apps_enabled = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
+    if config["SELECTED_APP_ASSETS"]:
+        config["SAVE_APKS"] = client_apps_enabled and bool(
+            config["SELECTED_APK_ASSETS"]
+        )
+        config["SAVE_DESKTOP_APP"] = client_apps_enabled and bool(
+            config["SELECTED_DESKTOP_ASSETS"]
+        )
+    else:
+        config["SAVE_APKS"] = client_apps_enabled
+        config["SAVE_DESKTOP_APP"] = client_apps_enabled
+    config.pop("SELECTED_DESKTOP_PLATFORMS", None)
     config["ANDROID_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
     config["DESKTOP_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
     config["CHECK_APK_PRERELEASES"] = config["CHECK_APP_PRERELEASES"]
