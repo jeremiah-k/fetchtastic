@@ -1076,6 +1076,7 @@ def test_setup_storage_function(mocker):
 @pytest.mark.unit
 def test_migration_functions_simple(mocker):
     """Test migration-related functions with simpler mocking."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     # Test install_crond function returns None by default
     result = setup_config.install_crond()
     assert result is None
@@ -2158,9 +2159,7 @@ def test_run_setup_valid_sections():
         with patch(
             "fetchtastic.setup_config.config_exists", return_value=(False, None)
         ):
-            with patch(
-                "builtins.input", side_effect=["", "n", "n", "n", "n", "n", "n"]
-            ):
+            with patch("fetchtastic.setup_config._safe_input", return_value="n"):
                 with patch("builtins.open", mock_open()):
                     with patch("fetchtastic.setup_config.yaml.safe_dump"):
                         with patch("os.makedirs"):
@@ -2183,7 +2182,7 @@ def test_run_setup_prompts_for_sections_when_config_exists(
     mock_config_exists.return_value = (True, "/path/to/config")
     mock_prompt.return_value = {"firmware"}
 
-    with patch("builtins.input", side_effect=["", "n", "n", "n"]):
+    with patch("fetchtastic.setup_config._safe_input", return_value="n"):
         with patch("builtins.open", mock_open()):
             with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
@@ -2206,7 +2205,7 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
 
     mock_config_exists.return_value = (True, "/path/to/config")
 
-    with patch("builtins.input", side_effect=["", "n", "n", "n"]):
+    with patch("fetchtastic.setup_config._safe_input", return_value="n"):
         with patch("builtins.open", mock_open()):
             with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
