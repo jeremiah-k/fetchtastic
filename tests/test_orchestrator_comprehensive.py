@@ -442,12 +442,11 @@ class TestDownloadOrchestrator:
         android_count = orchestrator._count_artifact_downloads(FILE_TYPE_ANDROID)
         assert android_count == 1
 
-        # Desktop prereleases must not be double-counted as stable desktop downloads.
         desktop_count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
         desktop_prerelease_count = orchestrator._count_artifact_downloads(
             FILE_TYPE_DESKTOP_PRERELEASE
         )
-        assert desktop_count == 1
+        assert desktop_count == 2
         assert desktop_prerelease_count == 1
 
     def test_count_artifact_downloads_client_app_classification(

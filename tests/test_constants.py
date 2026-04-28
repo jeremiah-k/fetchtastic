@@ -55,7 +55,7 @@ TEST_APK_FILES = [
 TEST_FIRMWARE_DIR = "firmware"
 TEST_PRERELEASE_DIR = "prerelease"
 TEST_REPO_DIR = "repo-dls"
-TEST_APKS_DIR = "app"  # Client app artifacts share one app directory
+TEST_APP_DIR = "app"  # Client app artifacts share one app directory
 
 # Test file sizes (in bytes)
 TEST_SMALL_FILE_SIZE = 1024  # 1KB

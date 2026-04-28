@@ -1821,7 +1821,7 @@ class DownloadOrchestrator:
                     FILE_TYPE_DESKTOP_PRERELEASE,
                 }
             if artifact_type == FILE_TYPE_DESKTOP:
-                return file_type == FILE_TYPE_DESKTOP
+                return file_type in {FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE}
             if artifact_type == "android":
                 return file_type in {"android", "android_prerelease"}
             return file_type == artifact_type
@@ -1861,10 +1861,11 @@ class DownloadOrchestrator:
                     count += 1
                     continue
             if artifact_type == FILE_TYPE_DESKTOP:
-                if file_type == FILE_TYPE_DESKTOP_PRERELEASE:
-                    continue
                 name = _result_name(result)
                 if name and is_desktop_asset_name(name):
+                    count += 1
+                    continue
+                if file_type in {FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE}:
                     count += 1
                     continue
             if isinstance(file_type, str) and file_type:

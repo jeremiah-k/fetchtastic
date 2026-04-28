@@ -86,14 +86,14 @@ Options include Android APKs and Desktop installers from the same upstream relea
 def run_menu() -> dict[str, list[str]] | None:
     """Show one asset selector for Android APKs and Desktop installers."""
     try:
-        apk_assets = menu_apk.fetch_apk_assets()
-    except Exception as exc:
+        apk_assets = menu_apk.fetch_apk_assets() or []
+    except (OSError, ValueError, TypeError, RuntimeError) as exc:
         logger.warning("Unable to fetch Android APK assets: %s", exc)
         print(f"Warning: unable to fetch Android APK assets: {exc}")
         apk_assets = []
     try:
-        desktop_assets = menu_desktop.fetch_desktop_assets()
-    except Exception as exc:
+        desktop_assets = menu_desktop.fetch_desktop_assets() or []
+    except (OSError, ValueError, TypeError, RuntimeError) as exc:
         logger.warning("Unable to fetch Desktop installer assets: %s", exc)
         print(f"Warning: unable to fetch Desktop installer assets: {exc}")
         desktop_assets = []

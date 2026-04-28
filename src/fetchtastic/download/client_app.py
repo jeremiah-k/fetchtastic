@@ -188,27 +188,66 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             )
             return False
 
+        abs_destination = os.path.abspath(destination_path)
+        if os.path.islink(abs_destination):
+            logger.debug(
+                "Skipping client app migration because destination is symlinked: %s",
+                abs_destination,
+            )
+            return False
+        if not self._is_within_download_tree(abs_destination):
+            logger.warning(
+                "Skipping client app migration because destination is outside download tree: %s",
+                abs_destination,
+            )
+            return False
+        try:
+            dest_parent = os.path.dirname(abs_destination)
+            check_dir = self.download_dir
+            while True:
+                rel = os.path.relpath(dest_parent, check_dir)
+                if rel == "." or rel.startswith(".."):
+                    break
+                parts = rel.split(os.sep)
+                for part in parts:
+                    check_dir = os.path.join(check_dir, part)
+                    if os.path.islink(check_dir):
+                        logger.warning(
+                            "Skipping client app migration because ancestor is symlinked: %s",
+                            check_dir,
+                        )
+                        return False
+                if os.path.normpath(check_dir) == os.path.normpath(dest_parent):
+                    break
+                break
+        except (OSError, ValueError):
+            logger.warning(
+                "Skipping client app migration because destination ancestor check failed: %s",
+                abs_destination,
+            )
+            return False
+
         if os.path.isfile(source_path):
-            if os.path.exists(destination_path):
+            if os.path.exists(abs_destination):
                 logger.debug(
                     "Skipping client app migration because destination file exists: %s",
-                    destination_path,
+                    abs_destination,
                 )
                 return False
             try:
-                os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-                shutil.move(source_path, destination_path)
+                os.makedirs(os.path.dirname(abs_destination), exist_ok=True)
+                shutil.move(source_path, abs_destination)
                 logger.info(
                     "Migrated client app path %s -> %s",
                     source_path,
-                    destination_path,
+                    abs_destination,
                 )
                 return True
             except OSError as exc:
                 logger.warning(
                     "Failed to migrate client app path %s -> %s: %s",
                     source_path,
-                    destination_path,
+                    abs_destination,
                     exc,
                 )
                 return False
@@ -216,12 +255,12 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         if not os.path.isdir(source_path):
             return False
 
-        os.makedirs(destination_path, exist_ok=True)
+        os.makedirs(abs_destination, exist_ok=True)
         moved_any = False
         try:
             for entry in os.listdir(source_path):
                 src_entry = os.path.join(source_path, entry)
-                dst_entry = os.path.join(destination_path, entry)
+                dst_entry = os.path.join(abs_destination, entry)
                 if os.path.islink(src_entry):
                     logger.warning(
                         "Skipping symlink during client app migration merge: %s",
@@ -245,7 +284,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             logger.warning(
                 "Failed to merge client app directory %s -> %s: %s",
                 source_path,
-                destination_path,
+                abs_destination,
                 exc,
             )
 
@@ -404,6 +443,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 continue
             if self._is_safe_managed_dir(legacy_release_dir):
                 if self._move_legacy_path(legacy_release_dir, preferred_release_dir):
+                    return preferred_release_dir
+                if self._is_safe_managed_dir(preferred_release_dir):
                     return preferred_release_dir
                 return legacy_release_dir
         if create_if_missing:

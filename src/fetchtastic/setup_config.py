@@ -969,6 +969,9 @@ def _setup_downloads(
                 config["SAVE_CLIENT_APPS"] = False
                 config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False
+                config["CHECK_APP_PRERELEASES"] = False
+                config["CHECK_APK_PRERELEASES"] = False
+                config["CHECK_DESKTOP_PRERELEASES"] = False
                 config["SELECTED_APP_ASSETS"] = []
                 config["SELECTED_APK_ASSETS"] = []
                 _clear_desktop_assets(config)
@@ -1018,6 +1021,12 @@ def _setup_downloads(
             config["SAVE_CLIENT_APPS"] = False
             config["SAVE_APKS"] = False
             config["SAVE_DESKTOP_APP"] = False
+            config["CHECK_APP_PRERELEASES"] = False
+            config["CHECK_APK_PRERELEASES"] = False
+            config["CHECK_DESKTOP_PRERELEASES"] = False
+            config["SELECTED_APP_ASSETS"] = []
+            config["SELECTED_APK_ASSETS"] = []
+            _clear_desktop_assets(config)
             save_client_apps = False
             save_apks = False
             save_desktop = False
@@ -1119,14 +1128,16 @@ def _setup_client_app(
     raw = _safe_input(prompt_text, default=str(current_versions)).strip() or str(
         current_versions
     )
-    try:
-        config["APP_VERSIONS_TO_KEEP"] = int(raw)
-    except ValueError:
+    parsed = _parse_non_negative_int(raw)
+    if parsed is not None:
+        config["APP_VERSIONS_TO_KEEP"] = parsed
+    else:
         print("Invalid number — keeping current value.")
-        try:
-            config["APP_VERSIONS_TO_KEEP"] = int(current_versions)
-        except (ValueError, TypeError):
-            print("Invalid number in current value — using default.")
+        fallback = _parse_non_negative_int(current_versions)
+        if fallback is not None:
+            config["APP_VERSIONS_TO_KEEP"] = fallback
+        else:
+            print("Invalid current value — using default.")
             config["APP_VERSIONS_TO_KEEP"] = default_versions
     return normalize_client_app_config(config)
 
@@ -2182,7 +2193,7 @@ def run_setup(
         config["SAVE_CLIENT_APPS"] = True
     config = normalize_client_app_config(config)
     save_client_apps = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
-    save_desktop = save_client_apps
+    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
     # If all download types are disabled, only short-circuit when this run is either
     # full setup or a partial run that requested download sections only.

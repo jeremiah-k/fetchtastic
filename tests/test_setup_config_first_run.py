@@ -27,7 +27,13 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
     mocker.patch(
         "fetchtastic.setup_config._setup_downloads",
         side_effect=lambda config, *_args, **_kwargs: (
-            {**config, "SAVE_DESKTOP_APP": True},
+            {
+                **config,
+                "SAVE_CLIENT_APPS": True,
+                "SAVE_DESKTOP_APP": True,
+                "SELECTED_APP_ASSETS": ["Meshtastic.dmg"],
+                "SELECTED_DESKTOP_ASSETS": ["Meshtastic.dmg"],
+            },
             True,
             True,
         ),

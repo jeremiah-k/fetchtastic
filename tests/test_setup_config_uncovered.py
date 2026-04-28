@@ -516,7 +516,7 @@ def test_setup_android_invalid_number_current_value(mocker, capsys):
     captured = capsys.readouterr()
 
     assert result["ANDROID_VERSIONS_TO_KEEP"] == 3  # Falls back to default
-    assert "Invalid number in current value" in captured.out
+    assert "Invalid current value — using default." in captured.out
 
 
 @pytest.mark.configuration
