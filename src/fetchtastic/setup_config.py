@@ -903,9 +903,11 @@ def _setup_downloads(
         config["CHECK_APP_PRERELEASES"] = False
         config["CHECK_APK_PRERELEASES"] = False
         config["CHECK_DESKTOP_PRERELEASES"] = False
+        config["SAVE_DESKTOP_APP"] = False
         config["SELECTED_APP_ASSETS"] = []
         config["SELECTED_APK_ASSETS"] = []
         _clear_desktop_assets(config)
+        save_desktop = False
 
     if save_firmware and (not is_partial_run or wants("firmware")):
         rerun_menu = True
@@ -992,10 +994,13 @@ def _setup_downloads(
                         "No client app asset selection was returned. Client app releases will not be downloaded."
                     )
                     selected_assets = []
+            elif app_selection is None:
+                selected_assets = []
             if not selected_assets:
-                print(
-                    "No client app assets selected. Client app releases will not be downloaded."
-                )
+                if isinstance(app_selection, dict):
+                    print(
+                        "No client app assets selected. Client app releases will not be downloaded."
+                    )
                 config["SAVE_CLIENT_APPS"] = False
                 config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False

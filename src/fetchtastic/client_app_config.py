@@ -81,7 +81,7 @@ def _classify_selected_assets(
         else:
             ambiguous = True
 
-    return _dedupe(apk_assets), _dedupe(desktop_assets), ambiguous
+    return expand_apk_selected_patterns(apk_assets), _dedupe(desktop_assets), ambiguous
 
 
 def get_selected_app_assets(config: dict[str, Any]) -> list[str]:
@@ -130,24 +130,23 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
             config.get("APP_VERSIONS_TO_KEEP"), DEFAULT_APP_VERSIONS_TO_KEEP
         )
 
-    if "CHECK_APP_PRERELEASES" not in config:
+    app_prereleases_explicit = "CHECK_APP_PRERELEASES" in config
+    apk_key = (
+        "CHECK_APK_PRERELEASES"
+        if "CHECK_APK_PRERELEASES" in config
+        else (
+            "CHECK_ANDROID_PRERELEASES"
+            if "CHECK_ANDROID_PRERELEASES" in config
+            else None
+        )
+    )
+    desktop_key = (
+        "CHECK_DESKTOP_PRERELEASES" if "CHECK_DESKTOP_PRERELEASES" in config else None
+    )
+    if not app_prereleases_explicit:
         legacy_default = coerce_bool(
             config.get("CHECK_PRERELEASES"),
             default=DEFAULT_CHECK_APP_PRERELEASES,
-        )
-        apk_key = (
-            "CHECK_APK_PRERELEASES"
-            if "CHECK_APK_PRERELEASES" in config
-            else (
-                "CHECK_ANDROID_PRERELEASES"
-                if "CHECK_ANDROID_PRERELEASES" in config
-                else None
-            )
-        )
-        desktop_key = (
-            "CHECK_DESKTOP_PRERELEASES"
-            if "CHECK_DESKTOP_PRERELEASES" in config
-            else None
         )
         if apk_key is None and desktop_key is None:
             apk_default = legacy_default
@@ -168,6 +167,22 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
         config["CHECK_APP_PRERELEASES"] = coerce_bool(
             config.get("CHECK_APP_PRERELEASES"),
             default=DEFAULT_CHECK_APP_PRERELEASES,
+        )
+        apk_check = coerce_bool(
+            (
+                config.get(apk_key)
+                if apk_key is not None
+                else config["CHECK_APP_PRERELEASES"]
+            ),
+            default=config["CHECK_APP_PRERELEASES"],
+        )
+        desktop_check = coerce_bool(
+            (
+                config.get(desktop_key)
+                if desktop_key is not None
+                else config["CHECK_APP_PRERELEASES"]
+            ),
+            default=config["CHECK_APP_PRERELEASES"],
         )
 
     # Keep legacy keys readable for compatibility without guessing from substrings.
@@ -190,8 +205,8 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     config.pop("SELECTED_DESKTOP_PLATFORMS", None)
     config["ANDROID_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
     config["DESKTOP_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
-    config["CHECK_APK_PRERELEASES"] = config["CHECK_APP_PRERELEASES"]
-    config["CHECK_DESKTOP_PRERELEASES"] = config["CHECK_APP_PRERELEASES"]
+    config["CHECK_APK_PRERELEASES"] = apk_check
+    config["CHECK_DESKTOP_PRERELEASES"] = desktop_check
     return config
 
 

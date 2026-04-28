@@ -9,12 +9,18 @@ lifecycle.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from fetchtastic.client_release_discovery import (
     is_desktop_asset_name,
     is_desktop_prerelease_tag,
     is_release_at_or_above_minimum,
+)
+from fetchtastic.constants import (
+    FILE_TYPE_CLIENT_APP,
+    FILE_TYPE_CLIENT_APP_PRERELEASE,
+    FILE_TYPE_DESKTOP,
+    FILE_TYPE_DESKTOP_PRERELEASE,
 )
 
 from .client_app import MeshtasticClientAppDownloader
@@ -43,7 +49,12 @@ class MeshtasticDesktopDownloader(MeshtasticClientAppDownloader):
 
     def download_desktop(self, release: Release, asset: Asset) -> DownloadResult:
         """Compatibility alias for the unified client app download method."""
-        return self.download_app(release, asset)
+        result = self.download_app(release, asset)
+        if result.file_type == FILE_TYPE_CLIENT_APP:
+            result.file_type = FILE_TYPE_DESKTOP
+        elif result.file_type == FILE_TYPE_CLIENT_APP_PRERELEASE:
+            result.file_type = FILE_TYPE_DESKTOP_PRERELEASE
+        return result
 
 
 def _is_desktop_prerelease_by_name(
@@ -60,7 +71,7 @@ def _is_desktop_prerelease_by_name(
     )
 
 
-def _is_desktop_prerelease(release: Dict[str, Any]) -> bool:
+def _is_desktop_prerelease(release: dict[str, Any]) -> bool:
     """Return whether a release payload is a Desktop prerelease."""
     tag_name = (release or {}).get("tag_name", "")
     return isinstance(tag_name, str) and _is_desktop_prerelease_by_name(tag_name)

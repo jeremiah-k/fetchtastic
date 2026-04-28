@@ -59,6 +59,8 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
     skipped_android = DownloadResult(
         success=True,
         release_tag="v2.0.0",
+        # ANDROID_DIR_NAME is intentionally empty compatibility surface; this
+        # path must still resolve under app/<version>, not downloads/<version>.
         file_path=Path(
             tmp_path / APP_DIR_NAME / ANDROID_DIR_NAME / "v2.0.0" / "app.apk"
         ),

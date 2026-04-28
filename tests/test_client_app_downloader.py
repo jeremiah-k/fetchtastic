@@ -68,6 +68,73 @@ def test_migrates_legacy_apks_and_split_app_dirs(downloader, tmp_path):
     ).exists()
 
 
+def test_move_legacy_path_rejects_symlinked_destination_ancestor(downloader, tmp_path):
+    downloads = tmp_path / "downloads"
+    source = downloads / "apks" / "v2.7.13"
+    source.mkdir(parents=True)
+    (source / "asset.txt").write_text("x", encoding="utf-8")
+    real_target = tmp_path / "outside"
+    real_target.mkdir()
+    app_dir = downloads / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+    symlink = app_dir / "linked"
+    symlink.symlink_to(real_target, target_is_directory=True)
+
+    moved = downloader._move_legacy_path(
+        str(source), str(symlink / "v2.7.13" / "asset.txt")
+    )
+
+    assert moved is False
+    assert (source / "asset.txt").exists()
+    assert not (real_target / "v2.7.13" / "asset.txt").exists()
+
+
+def test_ensure_prerelease_base_dir_rejects_symlinked_app_dir(downloader, tmp_path):
+    downloads = tmp_path / "downloads"
+    outside = tmp_path / "outside-app"
+    outside.mkdir()
+    (downloads).mkdir(parents=True, exist_ok=True)
+    (downloads / APP_DIR_NAME).symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlinked client app dir"):
+        downloader._ensure_prerelease_base_dir()
+
+
+def test_ensure_prerelease_base_dir_rejects_symlinked_prerelease_dir(
+    downloader, tmp_path
+):
+    downloads = tmp_path / "downloads"
+    outside = tmp_path / "outside-prerelease"
+    outside.mkdir()
+    prerelease = downloads / APP_DIR_NAME / "prerelease"
+    prerelease.parent.mkdir(parents=True, exist_ok=True)
+    prerelease.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlinked client app prerelease dir"):
+        downloader._ensure_prerelease_base_dir()
+
+
+def test_ensure_prerelease_base_dir_rejects_realpath_outside_download_dir(
+    downloader, tmp_path, mocker
+):
+    outside = tmp_path / "outside-realpath"
+    outside.mkdir()
+    import os
+
+    original_realpath = os.path.realpath
+
+    def _fake_realpath(path):
+        path_obj = Path(path)
+        if path_obj.name == "prerelease":
+            return str(outside)
+        return original_realpath(path)
+
+    mocker.patch("os.path.realpath", side_effect=_fake_realpath)
+
+    with pytest.raises(ValueError, match="unsafe client app prerelease dir"):
+        downloader._ensure_prerelease_base_dir()
+
+
 def test_release_notes_use_single_client_app_file(downloader):
     release = Release(tag_name="v2.7.14", prerelease=False, body="notes")
 

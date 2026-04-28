@@ -414,11 +414,14 @@ class DownloadCLIIntegration:
 
         latest_versions = self.get_latest_versions()
         latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
+        # Prefer the unified client-app key; fall back to legacy APK/Desktop
+        # values while older result summaries and config files are transitioning.
         latest_client_app = (
             latest_versions.get("client_app")
             or latest_apk_version
             or latest_desktop_version
         )
+        # Same compatibility fallback for the unified prerelease line.
         latest_client_app_prerelease = (
             latest_versions.get("client_app_prerelease")
             or latest_versions.get("android_prerelease")
@@ -433,10 +436,11 @@ class DownloadCLIIntegration:
             log.info("Latest firmware prerelease: none")
 
         if latest_client_app:
-            log.info(f"Latest Meshtastic Client release: {latest_client_app}")
+            log.info("Latest Meshtastic Client release: %s", latest_client_app)
         if latest_client_app_prerelease:
             log.info(
-                f"Latest Meshtastic Client prerelease: {latest_client_app_prerelease}"
+                "Latest Meshtastic Client prerelease: %s",
+                latest_client_app_prerelease,
             )
         else:
             log.info("Latest Meshtastic Client prerelease: none")

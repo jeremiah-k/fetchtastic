@@ -10,7 +10,7 @@ from fetchtastic.download.desktop import (
     _is_desktop_prerelease,
     _is_desktop_prerelease_by_name,
 )
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
@@ -63,15 +63,22 @@ def test_download_desktop_returns_client_app_file_type(downloader, mocker):
         download_url="https://example.invalid/Meshtastic-2.7.14.dmg",
         size=1,
     )
-    mocker.patch.object(
-        downloader, "_is_asset_complete_for_target", side_effect=[False, True]
+    mock_download_app = mocker.patch.object(
+        downloader,
+        "download_app",
+        return_value=DownloadResult(
+            success=True,
+            release_tag="v2.7.14",
+            file_type="client_app",
+        ),
     )
-    mocker.patch.object(downloader, "download", return_value=True)
 
     result = downloader.download_desktop(release, asset)
 
+    mock_download_app.assert_called_once_with(release, asset)
+    assert result is mock_download_app.return_value
     assert result.success is True
-    assert result.file_type == "client_app"
+    assert result.file_type == "desktop"
 
 
 def test_desktop_release_notes_use_single_client_app_file(downloader):

@@ -15,7 +15,7 @@ from fetchtastic.download.version import VersionManager
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
-def _make_downloader(tmp_path):
+def _make_downloader(tmp_path) -> MeshtasticClientAppDownloader:
     config = {
         "DOWNLOAD_DIR": str(tmp_path),
         "SAVE_CLIENT_APPS": True,

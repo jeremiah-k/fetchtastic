@@ -15,7 +15,7 @@ import requests
 from fetchtastic.constants import APP_DIR_NAME
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
@@ -150,6 +150,7 @@ class TestMeshtasticClientAppDownloader:
         android_downloader.config.pop("SELECTED_APP_ASSETS", None)
         android_downloader.config.pop("SELECTED_APK_ASSETS", None)
         android_downloader.config.pop("SELECTED_DESKTOP_ASSETS", None)
+        android_downloader.config.pop("SELECTED_PATTERNS", None)
         assert android_downloader.should_download_asset("meshtastic.apk") is False
 
     def test_should_download_asset_wildcard_downloads_all(self, android_downloader):
@@ -166,16 +167,14 @@ class TestMeshtasticClientAppDownloader:
         android_downloader.config.pop("SELECTED_PATTERNS", None)
         assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
 
-    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
-    @patch(
-        "fetchtastic.download.android.MeshtasticAndroidAppDownloader._is_asset_complete_for_target"
-    )
-    def test_download_apk_success(
-        self, mock_is_complete, mock_download, android_downloader
-    ):
+    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download_app")
+    def test_download_apk_success(self, mock_download_app, android_downloader):
         """Test successful APK download."""
-        mock_is_complete.side_effect = [False, True]
-        mock_download.return_value = True
+        mock_download_app.return_value = DownloadResult(
+            success=True,
+            release_tag="v2.7.14",
+            file_type="client_app",
+        )
 
         release = Release(tag_name="v2.7.14", prerelease=False)
         asset = Asset(
@@ -186,18 +185,20 @@ class TestMeshtasticClientAppDownloader:
 
         result = android_downloader.download_apk(release, asset)
 
+        mock_download_app.assert_called_once_with(release, asset)
+        assert result is mock_download_app.return_value
         assert result.success is True
         assert result.release_tag == "v2.7.14"
-        assert result.file_type == "client_app"
+        assert result.file_type == "android"
 
-    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
-    @patch(
-        "fetchtastic.download.android.MeshtasticAndroidAppDownloader._is_asset_complete_for_target"
-    )
-    def test_download_apk_method_exists(
-        self, mock_is_complete, mock_download, android_downloader
-    ):
+    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download_app")
+    def test_download_apk_method_exists(self, mock_download_app, android_downloader):
         """Test that download_apk method exists and can be called."""
+        mock_download_app.return_value = DownloadResult(
+            success=True,
+            release_tag="v2.7.14",
+            file_type="client_app_prerelease",
+        )
         release = Release(tag_name="v2.7.14", prerelease=False)
         asset = Asset(
             name="meshtastic.apk",
@@ -205,12 +206,10 @@ class TestMeshtasticClientAppDownloader:
             size=1024000,
         )
 
-        # Method should exist and return a result
-        mock_is_complete.side_effect = [False, True]
-        mock_download.return_value = True
         result = android_downloader.download_apk(release, asset)
+        assert result is mock_download_app.return_value
         assert hasattr(result, "success")
-        assert result.file_type == "client_app"
+        assert result.file_type == "android_prerelease"
 
     def test_cleanup_old_versions(self, android_downloader, tmp_path):
         """Test cleanup of old Android versions."""

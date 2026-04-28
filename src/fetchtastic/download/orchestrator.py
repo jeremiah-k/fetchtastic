@@ -409,12 +409,7 @@ class DownloadOrchestrator:
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading client app release {release.tag_name}")
-                    download_release = getattr(
-                        self,
-                        "_client_app_download_release",
-                        self._download_client_app_release,
-                    )
-                    if download_release(release):
+                    if self._download_client_app_release(release):
                         any_app_downloaded = True
 
             logger.info("Checking for client app prereleases...")
@@ -1800,7 +1795,7 @@ class DownloadOrchestrator:
             "repository_downloads": 0,
         }
 
-    def _get_unique_failures(self) -> list[DownloadResult]:
+    def _get_unique_failures(self) -> List[DownloadResult]:
         """Return failed, non-skipped results without double-counting retry state."""
         failed = [
             result
@@ -1940,7 +1935,7 @@ class DownloadOrchestrator:
         """
         Prune locally stored client app and firmware artifacts according to configured retention settings and remove prerelease directories marked as deleted.
 
-        This routine reads retention settings (e.g., `ANDROID_VERSIONS_TO_KEEP`, `FIRMWARE_VERSIONS_TO_KEEP`) and instructs the client app and firmware downloaders to remove older releases. When firmware retention is applied, the `KEEP_LAST_BETA` setting is honored if present. After pruning releases, it removes any prerelease directories that have been recorded as deleted. On filesystem or configuration-related errors (`OSError`, `ValueError`, `TypeError`) it logs an error.
+        This routine reads retention settings (e.g., `APP_VERSIONS_TO_KEEP`, `FIRMWARE_VERSIONS_TO_KEEP`) and instructs the client app and firmware downloaders to remove older releases. Legacy Android/Desktop retention aliases are still accepted for compatibility. When firmware retention is applied, the `KEEP_LAST_BETA` setting is honored if present. After pruning releases, it removes any prerelease directories that have been recorded as deleted. On filesystem or configuration-related errors (`OSError`, `ValueError`, `TypeError`) it logs an error.
         """
         try:
             logger.info("Cleaning up old versions...")

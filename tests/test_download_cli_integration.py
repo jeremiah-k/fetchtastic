@@ -897,7 +897,8 @@ def test_log_download_results_summary_logging_order(mocker):
 
     latest_version_calls = []
     for call_args in mock_logger.info.call_args_list:
-        call_str = str(call_args)
+        args = call_args.args
+        call_str = args[0] % args[1:] if len(args) > 1 else str(call_args)
         if (
             "Latest firmware:" in call_str
             or "Latest Meshtastic Client release:" in call_str

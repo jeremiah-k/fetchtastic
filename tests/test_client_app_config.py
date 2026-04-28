@@ -24,6 +24,8 @@ def test_normalize_client_app_config_unions_legacy_asset_selection():
     assert "meshtastic.dmg" in normalized["SELECTED_APP_ASSETS"]
     assert normalized["APP_VERSIONS_TO_KEEP"] == 3
     assert normalized["CHECK_APP_PRERELEASES"] is True
+    assert normalized["CHECK_APK_PRERELEASES"] is False
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is True
 
 
 def test_new_client_app_keys_are_authoritative():
@@ -51,6 +53,31 @@ def test_new_client_app_keys_are_authoritative():
     assert normalized["SAVE_DESKTOP_APP"] is False
     assert normalized["APP_VERSIONS_TO_KEEP"] == 4
     assert normalized["CHECK_APP_PRERELEASES"] is False
+    assert normalized["CHECK_APK_PRERELEASES"] is True
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is True
+
+
+def test_explicit_platform_prerelease_opt_out_survives_legacy_union():
+    config = {
+        "CHECK_APK_PRERELEASES": True,
+        "CHECK_DESKTOP_PRERELEASES": False,
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["CHECK_APP_PRERELEASES"] is True
+    assert normalized["CHECK_APK_PRERELEASES"] is True
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is False
+
+
+def test_explicit_primary_prerelease_sets_missing_platform_mirrors():
+    config = {"CHECK_APP_PRERELEASES": True}
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["CHECK_APP_PRERELEASES"] is True
+    assert normalized["CHECK_APK_PRERELEASES"] is True
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is True
 
 
 def test_empty_primary_client_app_assets_disable_legacy_save_flags():

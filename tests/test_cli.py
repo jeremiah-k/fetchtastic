@@ -6,7 +6,7 @@ import pytest
 
 # Import the package module (matches how users invoke it)
 import fetchtastic.cli as cli
-import fetchtastic.setup_config as setup_config
+from fetchtastic import setup_config
 
 
 @pytest.fixture

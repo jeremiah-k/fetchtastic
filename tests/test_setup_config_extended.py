@@ -230,6 +230,7 @@ def test_setup_downloads_apk_only(mocker, capsys):
     assert save_firmware is False
     assert result_config["SAVE_APKS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
+    assert result_config["CHECK_APP_PRERELEASES"] is True
     assert result_config["CHECK_APK_PRERELEASES"] is True
 
 
@@ -304,7 +305,14 @@ def test_setup_downloads_no_selection(mocker, capsys):
 
     # Mock input to select client app but then menu returns None
     mocker.patch("builtins.input", side_effect=["a"])  # Choose client app only
-    mocker.patch("fetchtastic.menu_app.run_menu", return_value=None)
+
+    def _menu_returns_none():
+        print(
+            "No client app assets selected. Client app releases will not be downloaded."
+        )
+        return None
+
+    mocker.patch("fetchtastic.menu_app.run_menu", side_effect=_menu_returns_none)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
         config, is_partial_run=False, wants=lambda _: True
@@ -408,7 +416,8 @@ def test_setup_downloads_partial_run(mocker):
     assert save_firmware is False
     assert result_config["SAVE_APKS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
-    assert result_config["CHECK_APK_PRERELEASES"] is True
+    assert result_config["CHECK_APP_PRERELEASES"] is True
+    assert result_config["CHECK_APK_PRERELEASES"] is False
 
 
 @pytest.mark.configuration

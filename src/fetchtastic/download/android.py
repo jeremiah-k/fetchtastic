@@ -14,6 +14,12 @@ from typing import Any, Dict, Optional
 from fetchtastic.client_release_discovery import (
     is_android_asset_name,
 )
+from fetchtastic.constants import (
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_CLIENT_APP,
+    FILE_TYPE_CLIENT_APP_PRERELEASE,
+)
 
 from .client_app import (
     MeshtasticClientAppDownloader,
@@ -44,7 +50,12 @@ class MeshtasticAndroidAppDownloader(MeshtasticClientAppDownloader):
 
     def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
         """Compatibility alias for the unified client app download method."""
-        return self.download_app(release, asset)
+        result = self.download_app(release, asset)
+        if result.file_type == FILE_TYPE_CLIENT_APP:
+            result.file_type = FILE_TYPE_ANDROID
+        elif result.file_type == FILE_TYPE_CLIENT_APP_PRERELEASE:
+            result.file_type = FILE_TYPE_ANDROID_PRERELEASE
+        return result
 
 
 def _is_apk_prerelease_by_name(

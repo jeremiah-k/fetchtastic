@@ -219,23 +219,20 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return False
         try:
             dest_parent = os.path.dirname(abs_destination)
+            rel = os.path.relpath(dest_parent, self.download_dir)
+            if rel.startswith(".."):
+                raise ValueError("destination parent escapes download tree")
             check_dir = self.download_dir
-            while True:
-                rel = os.path.relpath(dest_parent, check_dir)
-                if rel == "." or rel.startswith(".."):
-                    break
-                parts = rel.split(os.sep)
-                for part in parts:
-                    check_dir = os.path.join(check_dir, part)
-                    if os.path.islink(check_dir):
-                        logger.warning(
-                            "Skipping client app migration because ancestor is symlinked: %s",
-                            check_dir,
-                        )
-                        return False
-                if os.path.normpath(check_dir) == os.path.normpath(dest_parent):
-                    break
-                break
+            for part in rel.split(os.sep):
+                if part == ".":
+                    continue
+                check_dir = os.path.join(check_dir, part)
+                if os.path.islink(check_dir):
+                    logger.warning(
+                        "Skipping client app migration because ancestor is symlinked: %s",
+                        check_dir,
+                    )
+                    return False
         except (OSError, ValueError):
             logger.warning(
                 "Skipping client app migration because destination ancestor check failed: %s",

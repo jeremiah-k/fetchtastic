@@ -10,7 +10,7 @@ from fetchtastic.download.android import (
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.client_app import MeshtasticClientAppDownloader
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
@@ -60,10 +60,17 @@ def test_download_apk_returns_client_app_file_type(downloader, mocker):
         size=1,
     )
     mock_download_app = mocker.patch.object(downloader, "download_app")
+    mock_download_app.return_value = DownloadResult(
+        success=True,
+        release_tag="v2.7.14",
+        file_type="client_app",
+    )
 
-    downloader.download_apk(release, asset)
+    result = downloader.download_apk(release, asset)
 
     mock_download_app.assert_called_once_with(release, asset)
+    assert result is mock_download_app.return_value
+    assert result.file_type == "android"
 
 
 def test_android_release_notes_use_single_client_app_file(downloader):

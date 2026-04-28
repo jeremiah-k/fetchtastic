@@ -441,6 +441,7 @@ def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker
 
     assert save_apks is True
     assert save_firmware is False
+    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
     assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
 
 
