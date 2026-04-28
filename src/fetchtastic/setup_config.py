@@ -1051,7 +1051,7 @@ def _setup_downloads(
 
     # --- Client App Compatibility Normalization ---
     normalize_client_app_config(config)
-    save_apks = _coerce_bool(config.get("SAVE_APKS", False))
+    save_apks = save_client_apps
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
     # --- Channel Suffix Configuration ---
