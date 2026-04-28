@@ -59,15 +59,11 @@ def test_download_apk_returns_client_app_file_type(downloader, mocker):
         download_url="https://example.invalid/meshtastic.apk",
         size=1,
     )
-    mocker.patch.object(
-        downloader, "_is_asset_complete_for_target", side_effect=[False, True]
-    )
-    mocker.patch.object(downloader, "download", return_value=True)
+    mock_download_app = mocker.patch.object(downloader, "download_app")
 
-    result = downloader.download_apk(release, asset)
+    downloader.download_apk(release, asset)
 
-    assert result.success is True
-    assert result.file_type == "client_app"
+    mock_download_app.assert_called_once_with(release, asset)
 
 
 def test_android_release_notes_use_single_client_app_file(downloader):

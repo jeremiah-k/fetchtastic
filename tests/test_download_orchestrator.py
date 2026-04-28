@@ -382,25 +382,22 @@ class TestDownloadOrchestrator:
 
     def test_run_download_pipeline_disabled_components(self, orchestrator):
         """Test pipeline execution skips disabled components."""
-        orchestrator._process_client_app_downloads = Mock()
-        orchestrator._process_firmware_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
 
-        orchestrator.config = {
-            "DOWNLOAD_ANDROID": False,
-            "DOWNLOAD_FIRMWARE": False,
-        }
+        orchestrator.config["SAVE_CLIENT_APPS"] = False
+        orchestrator.config["SAVE_FIRMWARE"] = False
+        orchestrator.client_app_downloader.get_releases = Mock()
+        orchestrator.firmware_downloader.get_releases = Mock()
 
         orchestrator.run_download_pipeline()
 
         orchestrator._retry_failed_downloads.assert_called_once()
         orchestrator._enhance_download_results_with_metadata.assert_called_once()
         orchestrator._log_download_summary.assert_called_once()
-
-        orchestrator._process_client_app_downloads.assert_called_once()
-        orchestrator._process_firmware_downloads.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_not_called()
+        orchestrator.firmware_downloader.get_releases.assert_not_called()
 
     def test_process_client_app_downloads(self, orchestrator):
         """Test client app download processing."""

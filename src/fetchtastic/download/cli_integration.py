@@ -414,8 +414,16 @@ class DownloadCLIIntegration:
 
         latest_versions = self.get_latest_versions()
         latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
-        latest_apk_prerelease = latest_versions.get("android_prerelease")
-        latest_desktop_prerelease = latest_versions.get("desktop_prerelease")
+        latest_client_app = (
+            latest_versions.get("client_app")
+            or latest_apk_version
+            or latest_desktop_version
+        )
+        latest_client_app_prerelease = (
+            latest_versions.get("client_app_prerelease")
+            or latest_versions.get("android_prerelease")
+            or latest_versions.get("desktop_prerelease")
+        )
 
         if latest_firmware_version:
             log.info(f"Latest firmware: {latest_firmware_version}")
@@ -424,19 +432,14 @@ class DownloadCLIIntegration:
         else:
             log.info("Latest firmware prerelease: none")
 
-        if latest_apk_version:
-            log.info(f"Latest APK: {latest_apk_version}")
-        if latest_apk_prerelease:
-            log.info(f"Latest APK prerelease: {latest_apk_prerelease}")
+        if latest_client_app:
+            log.info(f"Latest Meshtastic Client release: {latest_client_app}")
+        if latest_client_app_prerelease:
+            log.info(
+                f"Latest Meshtastic Client prerelease: {latest_client_app_prerelease}"
+            )
         else:
-            log.info("Latest APK prerelease: none")
-
-        if latest_desktop_version:
-            log.info(f"Latest desktop: {latest_desktop_version}")
-        if latest_desktop_prerelease:
-            log.info(f"Latest desktop prerelease: {latest_desktop_prerelease}")
-        else:
-            log.info("Latest desktop prerelease: none")
+            log.info("Latest Meshtastic Client prerelease: none")
 
         if failed_downloads:
             log.info(f"{len(failed_downloads)} downloads failed:")

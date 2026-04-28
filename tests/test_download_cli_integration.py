@@ -866,7 +866,7 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
 
 
 def test_log_download_results_summary_logging_order(mocker):
-    """log_download_results_summary should log versions in correct order: firmware, firmware prerelease, APK, APK prerelease."""
+    """log_download_results_summary should log firmware then unified client app versions."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
 
@@ -900,9 +900,9 @@ def test_log_download_results_summary_logging_order(mocker):
         call_str = str(call_args)
         if (
             "Latest firmware:" in call_str
-            or "Latest APK:" in call_str
+            or "Latest Meshtastic Client release:" in call_str
             or "firmware prerelease:" in call_str
-            or "APK prerelease:" in call_str
+            or "Meshtastic Client prerelease:" in call_str
         ):
             latest_version_calls.append(call_str)
 
@@ -910,18 +910,20 @@ def test_log_download_results_summary_logging_order(mocker):
 
     assert "Latest firmware: v2.7.18.fb3bf78" in joined_calls
     assert "Latest firmware prerelease: v2.7.19-prerelease" in joined_calls
-    assert "Latest APK: v2.7.11" in joined_calls
-    assert "Latest APK prerelease: none" in joined_calls
+    assert "Latest Meshtastic Client release: v2.7.11" in joined_calls
+    assert "Latest Meshtastic Client prerelease: none" in joined_calls
+    assert "Latest APK:" not in joined_calls
+    assert "Latest desktop:" not in joined_calls
 
     assert joined_calls.index("Latest firmware: v2.7.18.fb3bf78") < joined_calls.index(
         "Latest firmware prerelease: v2.7.19-prerelease"
     )
     assert joined_calls.index(
         "Latest firmware prerelease: v2.7.19-prerelease"
-    ) < joined_calls.index("Latest APK: v2.7.11")
-    assert joined_calls.index("Latest APK: v2.7.11") < joined_calls.index(
-        "Latest APK prerelease: none"
-    )
+    ) < joined_calls.index("Latest Meshtastic Client release: v2.7.11")
+    assert joined_calls.index(
+        "Latest Meshtastic Client release: v2.7.11"
+    ) < joined_calls.index("Latest Meshtastic Client prerelease: none")
 
 
 def test_run_download_orchestrator_none_after_init(mocker):
@@ -1088,7 +1090,7 @@ def test_log_download_results_summary_empty_versions(mocker):
 
 
 def test_log_download_results_summary_with_desktop_prerelease(mocker):
-    """log_download_results_summary should log desktop prerelease (line 342)."""
+    """log_download_results_summary should log unified client app prerelease."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(

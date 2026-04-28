@@ -99,6 +99,13 @@ class TestMeshtasticClientAppDownloader:
             size=1024000,
         )
         release.assets.append(asset)
+        release.assets.append(
+            Asset(
+                name="Meshtastic.dmg",
+                download_url="https://example.com/Meshtastic.dmg",
+                size=1024000,
+            )
+        )
 
         assets = android_downloader.get_assets(release)
 
@@ -120,6 +127,7 @@ class TestMeshtasticClientAppDownloader:
     def test_should_download_asset_matching_patterns(self, android_downloader):
         """Test asset selection with specific patterns configured."""
         android_downloader.config["SELECTED_APP_ASSETS"] = ["meshtastic.apk"]
+        android_downloader.config.pop("SELECTED_PATTERNS", None)
         assert android_downloader.should_download_asset("meshtastic.apk") is True
 
         assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
@@ -131,6 +139,7 @@ class TestMeshtasticClientAppDownloader:
     ):
         """Empty SELECTED_APP_ASSETS means download no client app assets."""
         android_downloader.config["SELECTED_APP_ASSETS"] = []
+        android_downloader.config.pop("SELECTED_PATTERNS", None)
         assert android_downloader.should_download_asset("meshtastic.apk") is False
         assert android_downloader.should_download_asset("Meshtastic.dmg") is False
 
@@ -144,15 +153,17 @@ class TestMeshtasticClientAppDownloader:
         assert android_downloader.should_download_asset("meshtastic.apk") is False
 
     def test_should_download_asset_wildcard_downloads_all(self, android_downloader):
-        """SELECTED_APP_ASSETS = ['*'] downloads all client app assets."""
+        """Android compatibility wrapper scopes wildcard selection to APK assets."""
         android_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
+        android_downloader.config.pop("SELECTED_PATTERNS", None)
         assert android_downloader.should_download_asset("meshtastic.apk") is True
-        assert android_downloader.should_download_asset("Meshtastic.dmg") is True
+        assert android_downloader.should_download_asset("Meshtastic.dmg") is False
         assert android_downloader.should_download_asset("readme.txt") is False
 
     def test_should_download_asset_wildcard_respects_excludes(self, android_downloader):
         """Wildcard selection still respects exclude patterns."""
         android_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
+        android_downloader.config.pop("SELECTED_PATTERNS", None)
         assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
@@ -234,6 +245,7 @@ class TestMeshtasticClientAppDownloader:
     def test_should_download_prerelease_disabled(self, android_downloader):
         """Test prerelease download check when prereleases are disabled."""
         android_downloader.config["CHECK_APP_PRERELEASES"] = False
+        android_downloader.config.pop("CHECK_ANDROID_PRERELEASES", None)
 
         result = android_downloader.should_download_prerelease("v2.7.15-rc1")
 
@@ -242,6 +254,7 @@ class TestMeshtasticClientAppDownloader:
     def test_should_download_prerelease_enabled(self, android_downloader):
         """Test prerelease download check when prereleases are enabled."""
         android_downloader.config["CHECK_APP_PRERELEASES"] = True
+        android_downloader.config.pop("CHECK_ANDROID_PRERELEASES", None)
 
         result = android_downloader.should_download_prerelease("v2.7.15-rc1")
 

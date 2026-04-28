@@ -121,9 +121,25 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def _ensure_prerelease_base_dir(self) -> str:
         """Return the client app prerelease directory, creating it when needed."""
-        prerelease_dir = os.path.join(
-            self.download_dir, APP_DIR_NAME, APK_PRERELEASES_DIR_NAME
-        )
+        app_dir = os.path.join(self.download_dir, APP_DIR_NAME)
+        prerelease_dir = os.path.join(app_dir, APK_PRERELEASES_DIR_NAME)
+        if os.path.islink(app_dir):
+            raise ValueError(f"Refusing symlinked client app dir: {app_dir}")
+        if os.path.islink(prerelease_dir):
+            raise ValueError(
+                f"Refusing symlinked client app prerelease dir: {prerelease_dir}"
+            )
+        download_root = os.path.realpath(self.download_dir)
+        prerelease_real = os.path.realpath(prerelease_dir)
+        try:
+            if os.path.commonpath([download_root, prerelease_real]) != download_root:
+                raise ValueError(
+                    f"Refusing client app prerelease dir outside download tree: {prerelease_dir}"
+                )
+        except ValueError as exc:
+            raise ValueError(
+                f"Refusing unsafe client app prerelease dir: {prerelease_dir}"
+            ) from exc
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
 
@@ -262,7 +278,16 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             )
             return False
 
-        os.makedirs(abs_destination, exist_ok=True)
+        try:
+            os.makedirs(abs_destination, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "Failed to create client app migration destination %s: %s",
+                abs_destination,
+                exc,
+            )
+            return False
+
         moved_any = False
         try:
             for entry in os.listdir(source_path):
@@ -328,7 +353,11 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         if os.path.islink(app_dir) or not self._is_within_download_tree(app_dir):
             logger.warning("Skipping client app migration because app root is unsafe")
             return
-        os.makedirs(app_dir, exist_ok=True)
+        try:
+            os.makedirs(app_dir, exist_ok=True)
+        except OSError as exc:
+            logger.warning("Skipping client app migration: %s", exc)
+            return
 
         stable_sources = (
             self._get_legacy_android_base_dir(),
@@ -343,7 +372,11 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
         for source_dir in stable_sources:
             self._migrate_entries(source_dir, app_dir)
-        os.makedirs(prerelease_dir, exist_ok=True)
+        try:
+            self._ensure_prerelease_base_dir()
+        except ValueError as exc:
+            logger.warning("Skipping client app prerelease migration: %s", exc)
+            return
         for source_dir in prerelease_sources:
             self._migrate_entries(source_dir, prerelease_dir)
 
@@ -398,9 +431,11 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             safe_release = self._get_storage_tag_for_release(release)
             is_prerelease = self._is_client_app_prerelease(release)
         elif is_prerelease is None:
-            is_prerelease = is_client_app_prerelease_tag(
-                release_tag
-            ) or self.version_manager.is_prerelease_version(release_tag)
+            is_prerelease = (
+                is_client_app_prerelease_tag(release_tag)
+                or self.version_manager.is_prerelease_version(release_tag) is True
+                or _is_apk_prerelease_by_name(release_tag, self.version_manager)
+            )
 
         version_dir = self._resolve_release_dir(
             safe_release,
@@ -468,7 +503,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return (
             release.prerelease
             or is_client_app_prerelease_tag(release.tag_name)
-            or self.version_manager.is_prerelease_version(release.tag_name)
+            or self.version_manager.is_prerelease_version(release.tag_name) is True
+            or _is_apk_prerelease_by_name(release.tag_name, self.version_manager)
         )
 
     def _is_android_prerelease(self, release: Release) -> bool:
@@ -547,9 +583,18 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         try:
             max_scan = GITHUB_MAX_PER_PAGE
-            min_stable_releases = int(
-                self.config.get("APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP)
+            raw_keep = self.config.get(
+                "APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP
             )
+            try:
+                min_stable_releases = max(0, int(raw_keep))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Invalid APP_VERSIONS_TO_KEEP value %r, using default %s",
+                    raw_keep,
+                    DEFAULT_APP_VERSIONS_TO_KEEP,
+                )
+                min_stable_releases = int(DEFAULT_APP_VERSIONS_TO_KEEP)
             scan_count = min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
             if limit is not None:
                 if limit <= 0:
@@ -595,7 +640,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                     if not release.assets:
                         continue
                     releases.append(release)
-                    if not release.prerelease:
+                    if not self._is_client_app_prerelease(release):
                         stable_count += 1
                     if limit is not None and len(releases) >= limit:
                         break

@@ -12,8 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from fetchtastic.client_release_discovery import (
-    is_android_prerelease_tag,
-    is_release_prerelease,
+    is_android_asset_name,
 )
 
 from .client_app import (
@@ -22,13 +21,30 @@ from .client_app import (
 from .client_app import (
     _is_apk_prerelease_by_name as _client_app_is_apk_prerelease_by_name,
 )
+from .interfaces import Asset, DownloadResult, Release
 from .version import VersionManager
-
-MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
 
 
 class MeshtasticAndroidAppDownloader(MeshtasticClientAppDownloader):
-    """Backward-compatible name for MeshtasticClientAppDownloader."""
+    """Backward-compatible APK-scoped wrapper for MeshtasticClientAppDownloader."""
+
+    def get_assets(self, release: Release) -> list[Asset]:
+        """Return APK assets only for legacy Android callers."""
+        return [
+            asset
+            for asset in super().get_assets(release)
+            if is_android_asset_name(asset.name)
+        ]
+
+    def should_download_asset(self, asset_name: str) -> bool:
+        """Return whether an APK asset is selected for download."""
+        return is_android_asset_name(asset_name) and super().should_download_asset(
+            asset_name
+        )
+
+    def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
+        """Compatibility alias for the unified client app download method."""
+        return self.download_app(release, asset)
 
 
 def _is_apk_prerelease_by_name(
@@ -40,7 +56,5 @@ def _is_apk_prerelease_by_name(
 
 def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
     """Return whether a release payload is an Android prerelease."""
-    return is_release_prerelease(
-        release or {},
-        tag_prerelease_matcher=is_android_prerelease_tag,
-    )
+    tag_name = (release or {}).get("tag_name", "")
+    return isinstance(tag_name, str) and _is_apk_prerelease_by_name(tag_name)

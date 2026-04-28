@@ -59,14 +59,15 @@ def _coerce_keep_count(value: Any, default: int = DEFAULT_APP_VERSIONS_TO_KEEP) 
 
 
 def _classify_selected_assets(
-    config: dict[str, Any],
     selected_assets: list[str],
 ) -> tuple[list[str], list[str], bool]:
     """
     Return legacy APK/Desktop selections plus whether any primary asset is ambiguous.
 
     Primary selection remains SELECTED_APP_ASSETS. When present, it is
-    authoritative and legacy lists are rebuilt from it.
+    authoritative and legacy lists are rebuilt from it. Ambiguous entries are
+    kept only in SELECTED_APP_ASSETS and enable both legacy save flags so old
+    callers do not accidentally disable client app downloads for broad patterns.
     """
     apk_assets = []
     desktop_assets = []
@@ -171,7 +172,7 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
 
     # Keep legacy keys readable for compatibility without guessing from substrings.
     apk_assets, desktop_assets, has_ambiguous_assets = _classify_selected_assets(
-        config, config["SELECTED_APP_ASSETS"]
+        config["SELECTED_APP_ASSETS"]
     )
     config["SELECTED_APK_ASSETS"] = apk_assets
     config["SELECTED_DESKTOP_ASSETS"] = desktop_assets

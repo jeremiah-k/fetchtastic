@@ -68,7 +68,7 @@ def test_download_desktop_returns_client_app_file_type(downloader, mocker):
     )
     mocker.patch.object(downloader, "download", return_value=True)
 
-    result = downloader.download_app(release, asset)
+    result = downloader.download_desktop(release, asset)
 
     assert result.success is True
     assert result.file_type == "client_app"
@@ -92,4 +92,11 @@ def test_desktop_prerelease_helpers_remain_available():
     assert _is_desktop_prerelease_by_name("v2.7.14-closed.17") is True
     assert _is_desktop_prerelease_by_name("v2.6.0-closed.1") is False
     assert _is_desktop_prerelease({"tag_name": "v2.7.14-closed.17", "prerelease": True})
+    assert not _is_desktop_prerelease(
+        {"tag_name": "v2.6.0-closed.1", "prerelease": True}
+    )
     assert not _is_desktop_prerelease({"tag_name": "v2.7.14", "prerelease": False})
+
+
+def test_desktop_wrapper_does_not_match_apks(downloader):
+    assert downloader.should_download_asset("meshtastic.apk") is False

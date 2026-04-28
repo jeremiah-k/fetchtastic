@@ -1,6 +1,7 @@
 # src/fetchtastic/menu_app.py
 
-from typing import Any, Dict, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 from pick import pick
 
@@ -9,7 +10,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import extract_base_name
 
 
-def _asset_name(asset: Union[str, Dict[str, Any]]) -> str | None:
+def _asset_name(asset: str | dict[str, Any]) -> str | None:
     if isinstance(asset, str):
         return asset or None
     if isinstance(asset, dict):
@@ -19,7 +20,7 @@ def _asset_name(asset: Union[str, Dict[str, Any]]) -> str | None:
 
 
 def _normalize_assets(
-    apk_assets: Sequence[Union[str, Dict[str, Any]]],
+    apk_assets: Sequence[str | dict[str, Any]],
     desktop_assets: Sequence[str],
 ) -> list[tuple[str, str]]:
     entries: list[tuple[str, str]] = []
@@ -47,7 +48,7 @@ def get_desktop_platform_label(asset_name: str) -> str | None:
 
 
 def select_assets(
-    apk_assets: Sequence[Union[str, Dict[str, Any]]],
+    apk_assets: Sequence[str | dict[str, Any]],
     desktop_assets: Sequence[str],
 ) -> dict[str, list[str]] | None:
     """Select client app asset patterns from Android and Desktop artifacts."""

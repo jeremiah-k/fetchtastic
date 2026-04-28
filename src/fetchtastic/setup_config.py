@@ -349,7 +349,7 @@ def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
 
 def is_fetchtastic_installed_via_pip() -> bool:
     """
-    Check whether Fetchtastic appears among the packages reported by the system `pip` command.
+    Check whether Fetchtastic appears among packages reported by this Python's pip.
 
     If the `pip` command is unavailable or the check fails, the function returns `false`.
 
@@ -357,9 +357,8 @@ def is_fetchtastic_installed_via_pip() -> bool:
         `true` if `fetchtastic` appears in the output of `pip list`, `false` otherwise.
     """
     try:
-        # Check if fetchtastic is in pip list
         result = subprocess.run(
-            ["pip", "list"],
+            [sys.executable, "-m", "pip", "list"],
             capture_output=True,
             text=True,
             check=False,

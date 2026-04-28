@@ -677,6 +677,7 @@ class TestFirmwareReleaseDownloader:
 
         # Should not call get_releases or rmtree for negative keep_limit
         downloader.get_releases.assert_not_called()
+        mock_scandir.assert_not_called()
         mock_rmtree.assert_not_called()
 
     @patch("os.path.exists")

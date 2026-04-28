@@ -12,19 +12,38 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from fetchtastic.client_release_discovery import (
+    is_desktop_asset_name,
     is_desktop_prerelease_tag,
     is_release_at_or_above_minimum,
-    is_release_prerelease,
 )
 
 from .client_app import MeshtasticClientAppDownloader
+from .interfaces import Asset, DownloadResult, Release
 from .version import VersionManager
 
 MIN_DESKTOP_TRACKED_VERSION = (2, 7, 14)
 
 
 class MeshtasticDesktopDownloader(MeshtasticClientAppDownloader):
-    """Backward-compatible name for MeshtasticClientAppDownloader."""
+    """Backward-compatible Desktop-scoped wrapper for MeshtasticClientAppDownloader."""
+
+    def get_assets(self, release: Release) -> list[Asset]:
+        """Return Desktop installer assets only for legacy Desktop callers."""
+        return [
+            asset
+            for asset in super().get_assets(release)
+            if is_desktop_asset_name(asset.name)
+        ]
+
+    def should_download_asset(self, asset_name: str) -> bool:
+        """Return whether a Desktop installer asset is selected for download."""
+        return is_desktop_asset_name(asset_name) and super().should_download_asset(
+            asset_name
+        )
+
+    def download_desktop(self, release: Release, asset: Asset) -> DownloadResult:
+        """Compatibility alias for the unified client app download method."""
+        return self.download_app(release, asset)
 
 
 def _is_desktop_prerelease_by_name(
@@ -43,7 +62,5 @@ def _is_desktop_prerelease_by_name(
 
 def _is_desktop_prerelease(release: Dict[str, Any]) -> bool:
     """Return whether a release payload is a Desktop prerelease."""
-    return is_release_prerelease(
-        release or {},
-        tag_prerelease_matcher=is_desktop_prerelease_tag,
-    )
+    tag_name = (release or {}).get("tag_name", "")
+    return isinstance(tag_name, str) and _is_desktop_prerelease_by_name(tag_name)

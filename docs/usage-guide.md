@@ -66,10 +66,10 @@ fetchtastic setup
 **Asset Types**: Choose what to download:
 
 - Firmware
-- Client app assets, including APKs and desktop installers
+- Client app assets, including APKs and Desktop installers
 - Both firmware and client app releases
 
-**Asset Selection**: Choose specific firmware devices, APK variants, or desktop installers
+**Asset Selection**: Choose specific firmware devices, APK variants, or Desktop installers
 
 **Version Management**: How many versions to keep (default: 2)
 

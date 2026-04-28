@@ -566,6 +566,8 @@ def test_cli_setup_command(mocker):
     mock_setup_run.assert_called_once_with(sections=None)
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_sections(mocker):
     """Ensure the setup command forwards section filters."""
     mocker.patch(
@@ -579,6 +581,8 @@ def test_cli_setup_command_with_sections(mocker):
     mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_positional_sections(mocker):
     """Positional section arguments should be passed to setup."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "app"])
@@ -589,6 +593,8 @@ def test_cli_setup_command_with_positional_sections(mocker):
     mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_invalid_positional_sections(mocker):
     """Invalid positional section arguments should cause an error."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "invalid_section", "firmware"])
@@ -601,6 +607,8 @@ def test_cli_setup_command_with_invalid_positional_sections(mocker):
     assert exc_info.value.code == 2
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_duplicate_sections(mocker):
     """Duplicate section arguments should be deduplicated."""
     mocker.patch(

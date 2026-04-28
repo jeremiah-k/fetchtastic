@@ -55,7 +55,11 @@ from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .base import BaseDownloader
 from .cache import CacheManager
-from .client_app import MeshtasticClientAppDownloader
+from .client_app import (
+    MeshtasticClientAppDownloader,
+    _is_apk_prerelease_by_name,
+    is_client_app_prerelease_tag,
+)
 from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
@@ -181,6 +185,16 @@ class DownloadOrchestrator:
         self.available_new_firmware_versions: List[str] = []
         self.available_new_apk_versions: List[str] = []
 
+    def _is_client_app_prerelease_release(self, release: Release) -> bool:
+        """Classify client app prereleases without depending on wrapper mocks."""
+        tag_name = getattr(release, "tag_name", "")
+        return (
+            getattr(release, "prerelease", False) is True
+            or is_client_app_prerelease_tag(tag_name)
+            or self.version_manager.is_prerelease_version(tag_name) is True
+            or _is_apk_prerelease_by_name(tag_name)
+        )
+
     def run_download_pipeline(
         self,
     ) -> Tuple[List[DownloadResult], List[DownloadResult]]:
@@ -302,7 +316,9 @@ class DownloadOrchestrator:
                 or self.android_releases
                 or self._ensure_android_releases()
             )
-            stable_releases = [r for r in app_releases if not r.prerelease]
+            stable_releases = [
+                r for r in app_releases if not self._is_client_app_prerelease_release(r)
+            ]
             releases_in_window = stable_releases[:keep_count]
             tracking_downloader = (
                 self.android_downloader
@@ -365,7 +381,9 @@ class DownloadOrchestrator:
                     DEFAULT_APP_VERSIONS_TO_KEEP,
                 )
                 keep_count = int(DEFAULT_APP_VERSIONS_TO_KEEP)
-            stable_releases = [r for r in app_releases if not r.prerelease]
+            stable_releases = [
+                r for r in app_releases if not self._is_client_app_prerelease_release(r)
+            ]
             releases_to_process = stable_releases[:keep_count]
 
             for release in releases_to_process:
@@ -1754,18 +1772,7 @@ class DownloadOrchestrator:
             for result in self.download_results
             if result.success and getattr(result, "was_skipped", False) is not True
         ]
-        failed = [
-            result
-            for result in self.download_results
-            if not result.success and getattr(result, "was_skipped", False) is not True
-        ]
-        result_ids = {id(result) for result in self.download_results}
-        failed.extend(
-            result
-            for result in self.failed_downloads
-            if id(result) not in result_ids
-            and getattr(result, "was_skipped", False) is not True
-        )
+        failed = self._get_unique_failures()
         skipped = [
             result
             for result in self.download_results
@@ -1782,12 +1789,32 @@ class DownloadOrchestrator:
             "client_app_downloads": self._count_artifact_downloads(
                 FILE_TYPE_CLIENT_APP
             ),
-            "android_downloads": self._count_artifact_downloads("android"),
+            "android_downloads": self._count_artifact_downloads(
+                FILE_TYPE_CLIENT_APP, artifact_type="android"
+            ),
             "firmware_downloads": self._count_artifact_downloads(FILE_TYPE_FIRMWARE),
-            "desktop_downloads": self._count_artifact_downloads(FILE_TYPE_DESKTOP),
+            "desktop_downloads": self._count_artifact_downloads(
+                FILE_TYPE_CLIENT_APP, artifact_type=FILE_TYPE_DESKTOP
+            ),
             # Repository downloads are not part of the automatic download pipeline.
             "repository_downloads": 0,
         }
+
+    def _get_unique_failures(self) -> list[DownloadResult]:
+        """Return failed, non-skipped results without double-counting retry state."""
+        failed = [
+            result
+            for result in self.download_results
+            if not result.success and getattr(result, "was_skipped", False) is not True
+        ]
+        result_ids = {id(result) for result in self.download_results}
+        failed.extend(
+            result
+            for result in self.failed_downloads
+            if id(result) not in result_ids
+            and getattr(result, "was_skipped", False) is not True
+        )
+        return failed
 
     def _calculate_success_rate(self) -> float:
         """
@@ -1801,18 +1828,7 @@ class DownloadOrchestrator:
             for result in self.download_results
             if result.success and getattr(result, "was_skipped", False) is not True
         )
-        failed_count = sum(
-            1
-            for result in self.download_results
-            if not result.success and getattr(result, "was_skipped", False) is not True
-        )
-        result_ids = {id(result) for result in self.download_results}
-        failed_count += sum(
-            1
-            for result in self.failed_downloads
-            if id(result) not in result_ids
-            and getattr(result, "was_skipped", False) is not True
-        )
+        failed_count = len(self._get_unique_failures())
         attempted = downloaded_count + failed_count
         return (downloaded_count / attempted) * 100 if attempted > 0 else 100.0
 
@@ -1830,7 +1846,11 @@ class DownloadOrchestrator:
             int: Number of matching downloads that were not skipped.
         """
 
-        requested_type = artifact_type or file_type_filter
+        requested_type = (
+            artifact_type
+            if file_type_filter == FILE_TYPE_CLIENT_APP and artifact_type
+            else file_type_filter
+        )
 
         def _matches_group(file_type: str) -> bool:
             if requested_type == FILE_TYPE_FIRMWARE:
@@ -2086,7 +2106,11 @@ class DownloadOrchestrator:
             or self._ensure_android_releases()
         )
         latest_app_release = next(
-            (release.tag_name for release in app_releases if not release.prerelease),
+            (
+                release.tag_name
+                for release in app_releases
+                if not self._is_client_app_prerelease_release(release)
+            ),
             None,
         )
         latest_app_prerelease = (
@@ -2124,7 +2148,11 @@ class DownloadOrchestrator:
 
             # Update tracking
             latest_app_release = next(
-                (release for release in app_releases if not release.prerelease),
+                (
+                    release
+                    for release in app_releases
+                    if not self._is_client_app_prerelease_release(release)
+                ),
                 None,
             )
             if latest_app_release:
