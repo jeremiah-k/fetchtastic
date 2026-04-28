@@ -111,6 +111,51 @@ def test_explicit_apk_prerelease_false_does_not_default_desktop_true():
     assert normalized["CHECK_DESKTOP_PRERELEASES"] is False
 
 
+def test_legacy_save_apks_preserved_when_no_selection_keys():
+    config = {"SAVE_APKS": True}
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["SAVE_CLIENT_APPS"] is True
+    assert normalized["SAVE_APKS"] is True
+    assert normalized["SELECTED_APP_ASSETS"] == []
+
+
+def test_legacy_save_desktop_app_preserved_when_no_selection_keys():
+    config = {"SAVE_DESKTOP_APP": True}
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["SAVE_CLIENT_APPS"] is True
+    assert normalized["SAVE_DESKTOP_APP"] is True
+    assert normalized["SELECTED_APP_ASSETS"] == []
+
+
+def test_empty_selected_apk_assets_disables_legacy_save():
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": [],
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["SAVE_APKS"] is False
+    assert normalized["SAVE_DESKTOP_APP"] is False
+
+
+def test_empty_selected_app_assets_disables_legacy_save():
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_DESKTOP_APP": True,
+        "SELECTED_APP_ASSETS": [],
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["SAVE_APKS"] is False
+    assert normalized["SAVE_DESKTOP_APP"] is False
+
+
 def test_ambiguous_client_app_asset_does_not_use_apk_substring_guess():
     config = {
         "SAVE_CLIENT_APPS": True,

@@ -110,6 +110,16 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     Existing primary keys remain authoritative. Legacy keys are left in place so
     older code paths and existing user config remain readable.
     """
+    has_any_selection_key = any(
+        key in config
+        for key in (
+            "SELECTED_APP_ASSETS",
+            "SELECTED_APK_ASSETS",
+            "SELECTED_DESKTOP_ASSETS",
+            "SELECTED_DESKTOP_PLATFORMS",
+        )
+    )
+
     if "SAVE_CLIENT_APPS" not in config:
         config["SAVE_CLIENT_APPS"] = coerce_bool(
             config.get("SAVE_APKS", False), default=False
@@ -192,12 +202,6 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     config["SELECTED_APK_ASSETS"] = apk_assets
     config["SELECTED_DESKTOP_ASSETS"] = desktop_assets
     client_apps_enabled = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
-    has_any_selection_key = (
-        "SELECTED_APP_ASSETS" in config
-        or "SELECTED_APK_ASSETS" in config
-        or "SELECTED_DESKTOP_ASSETS" in config
-        or "SELECTED_DESKTOP_PLATFORMS" in config
-    )
     if config["SELECTED_APP_ASSETS"]:
         config["SAVE_APKS"] = client_apps_enabled and (
             bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets
