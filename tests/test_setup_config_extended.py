@@ -306,11 +306,10 @@ def test_setup_downloads_no_selection(mocker, capsys):
     # Mock input to select client app but then menu returns None
     mocker.patch("builtins.input", side_effect=["a"])  # Choose client app only
 
-    def _menu_returns_none():
+    def _menu_returns_none() -> None:
         print(
             "No client app assets selected. Client app releases will not be downloaded."
         )
-        return None
 
     mocker.patch("fetchtastic.menu_app.run_menu", side_effect=_menu_returns_none)
 

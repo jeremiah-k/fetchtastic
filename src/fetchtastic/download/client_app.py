@@ -14,7 +14,7 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests  # type: ignore[import-untyped]
 
@@ -73,7 +73,7 @@ def is_client_app_prerelease_tag(tag_name: str) -> bool:
 
 
 def _is_apk_prerelease_by_name(
-    tag_name: str, version_manager: Optional[VersionManager] = None
+    tag_name: str, version_manager: VersionManager | None = None
 ) -> bool:
     """Return whether an Android tag should be treated as a tracked prerelease."""
     if not is_android_prerelease_tag(tag_name):
@@ -94,10 +94,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     app/prerelease/<version>/.
     """
 
-    def __init__(self, config: Dict[str, Any], cache_manager: CacheManager):
+    def __init__(self, config: dict[str, Any], cache_manager: CacheManager):
         normalize_client_app_config(config)
-        super().__init__(config)
-        self.cache_manager = cache_manager
+        super().__init__(config, cache_manager)
         self.client_app_releases_url = MESHTASTIC_CLIENT_APP_RELEASES_URL
         self.github_source = GithubReleaseSource(
             releases_url=MESHTASTIC_CLIENT_APP_RELEASES_URL,
@@ -419,8 +418,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         self,
         release_tag: str,
         file_name: str,
-        is_prerelease: Optional[bool] = None,
-        release: Optional[Release] = None,
+        is_prerelease: bool | None = None,
+        release: Release | None = None,
     ) -> str:
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
@@ -516,8 +515,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return self._sanitize_required(release.tag_name, "release tag")
 
     def update_release_history(
-        self, releases: List[Release], *, log_summary: bool = True
-    ) -> Optional[Dict[str, Any]]:
+        self, releases: list[Release], *, log_summary: bool = True
+    ) -> dict[str, Any] | None:
         if not releases:
             return None
         stable_releases = [r for r in releases if not self._is_client_app_prerelease(r)]
@@ -538,7 +537,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return ""
         return label[len(release.tag_name) :]
 
-    def ensure_release_notes(self, release: Release) -> Optional[str]:
+    def ensure_release_notes(self, release: Release) -> str | None:
         safe_release = _sanitize_path_component(release.tag_name)
         if safe_release is None:
             logger.warning(
@@ -577,7 +576,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return False
         return True
 
-    def get_releases(self, limit: Optional[int] = None) -> List[Release]:
+    def get_releases(self, limit: int | None = None) -> list[Release]:
         try:
             max_scan = GITHUB_MAX_PER_PAGE
             raw_keep = self.config.get(
@@ -604,7 +603,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 )
                 if releases_data is None:
                     return []
-                releases: List[Release] = []
+                releases: list[Release] = []
                 stable_count = 0
                 for release_data in releases_data:
                     if not isinstance(release_data, dict):
@@ -661,7 +660,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             logger.exception("Error fetching client app releases: %s", exc)
             return []
 
-    def get_assets(self, release: Release) -> List[Asset]:
+    def get_assets(self, release: Release) -> list[Asset]:
         return [
             asset
             for asset in (release.assets or [])
@@ -698,7 +697,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return matches_selected_patterns(asset_name, selected)
 
     def download_app(self, release: Release, asset: Asset) -> DownloadResult:
-        target_path: Optional[str] = None
+        target_path: str | None = None
         file_type = (
             FILE_TYPE_CLIENT_APP_PRERELEASE
             if self._is_client_app_prerelease(release)
@@ -819,7 +818,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def cleanup_old_versions(
         self,
         keep_limit: int,
-        cached_releases: Optional[List[Release]] = None,
+        cached_releases: list[Release] | None = None,
         keep_last_beta: bool = False,
     ) -> None:
         try:
@@ -835,8 +834,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def cleanup_prerelease_directories(
         self,
-        cached_releases: Optional[List[Release]] = None,
-        keep_limit_override: Optional[int] = None,
+        cached_releases: list[Release] | None = None,
+        keep_limit_override: int | None = None,
     ) -> None:
         if not cached_releases:
             return
@@ -874,7 +873,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return
         prerelease_releases = self.handle_prereleases(cached_releases)
 
-        def _safe_tags(releases: List[Release], label: str) -> set[str]:
+        def _safe_tags(releases: list[Release], label: str) -> set[str]:
             tags: set[str] = set()
             for release in releases:
                 safe = _sanitize_path_component(release.tag_name)
@@ -922,7 +921,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             logger.info("Removing stale client app version dir: %s", entry.name)
             _safe_rmtree(entry.path, base_dir, entry.name)
 
-    def get_latest_release_tag(self) -> Optional[str]:
+    def get_latest_release_tag(self) -> str | None:
         if os.path.exists(self.latest_release_path):
             try:
                 data = self.cache_manager.read_json(self.latest_release_path) or {}
@@ -944,9 +943,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def handle_prereleases(
         self,
-        releases: List[Release],
-        recent_commits: Optional[List[Dict[str, Any]]] = None,
-    ) -> List[Release]:
+        releases: list[Release],
+        recent_commits: list[dict[str, Any]] | None = None,
+    ) -> list[Release]:
         check_prereleases = self.config.get(
             "CHECK_APP_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
         )
@@ -987,8 +986,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return prereleases
 
     def get_latest_prerelease_tag(
-        self, releases: Optional[List[Release]] = None
-    ) -> Optional[str]:
+        self, releases: list[Release] | None = None
+    ) -> str | None:
         available = releases or self.get_releases()
         if not available:
             return None
@@ -1060,7 +1059,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return True
 
     def manage_prerelease_tracking_files(
-        self, cached_releases: Optional[List[Release]] = None
+        self, cached_releases: list[Release] | None = None
     ) -> None:
         if not self.config.get("CHECK_APP_PRERELEASES", False):
             return
@@ -1088,7 +1087,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         )
 
     def validate_extraction_patterns(
-        self, patterns: List[str], exclude_patterns: List[str]
+        self, patterns: list[str], exclude_patterns: list[str]
     ) -> bool:
         """No-op: client app assets are downloaded as standalone files and do not support extraction."""
         del patterns, exclude_patterns
@@ -1098,8 +1097,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         self,
         file_path: str,
         extract_dir: str,
-        patterns: List[str],
-        exclude_patterns: List[str],
+        patterns: list[str],
+        exclude_patterns: list[str],
     ) -> bool:
         """No-op: client app assets are downloaded as standalone files and do not support extraction."""
         del file_path, extract_dir, patterns, exclude_patterns
@@ -1107,7 +1106,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
 
 def _is_supported_client_app_release(
-    tag_name: str, version_manager: Optional[VersionManager] = None
+    tag_name: str, version_manager: VersionManager | None = None
 ) -> bool:
     manager = version_manager or VersionManager()
     version_tuple = manager.get_release_tuple(tag_name)
@@ -1121,7 +1120,7 @@ def _is_supported_client_app_release(
     return padded_version >= padded_minimum
 
 
-def _is_client_app_prerelease_payload(release: Dict[str, Any]) -> bool:
+def _is_client_app_prerelease_payload(release: dict[str, Any]) -> bool:
     tag_name = (release or {}).get("tag_name", "")
     return is_release_prerelease(
         release,

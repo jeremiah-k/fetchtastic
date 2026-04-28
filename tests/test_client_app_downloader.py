@@ -78,7 +78,10 @@ def test_move_legacy_path_rejects_symlinked_destination_ancestor(downloader, tmp
     app_dir = downloads / APP_DIR_NAME
     app_dir.mkdir(parents=True)
     symlink = app_dir / "linked"
-    symlink.symlink_to(real_target, target_is_directory=True)
+    try:
+        symlink.symlink_to(real_target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
 
     moved = downloader._move_legacy_path(
         str(source), str(symlink / "v2.7.13" / "asset.txt")
@@ -94,7 +97,10 @@ def test_ensure_prerelease_base_dir_rejects_symlinked_app_dir(downloader, tmp_pa
     outside = tmp_path / "outside-app"
     outside.mkdir()
     (downloads).mkdir(parents=True, exist_ok=True)
-    (downloads / APP_DIR_NAME).symlink_to(outside, target_is_directory=True)
+    try:
+        (downloads / APP_DIR_NAME).symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
 
     with pytest.raises(ValueError, match="symlinked client app dir"):
         downloader._ensure_prerelease_base_dir()
@@ -108,7 +114,10 @@ def test_ensure_prerelease_base_dir_rejects_symlinked_prerelease_dir(
     outside.mkdir()
     prerelease = downloads / APP_DIR_NAME / "prerelease"
     prerelease.parent.mkdir(parents=True, exist_ok=True)
-    prerelease.symlink_to(outside, target_is_directory=True)
+    try:
+        prerelease.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
 
     with pytest.raises(ValueError, match="symlinked client app prerelease dir"):
         downloader._ensure_prerelease_base_dir()

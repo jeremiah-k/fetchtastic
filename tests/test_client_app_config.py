@@ -77,7 +77,7 @@ def test_explicit_primary_prerelease_sets_missing_platform_mirrors():
 
     assert normalized["CHECK_APP_PRERELEASES"] is True
     assert normalized["CHECK_APK_PRERELEASES"] is True
-    assert normalized["CHECK_DESKTOP_PRERELEASES"] is True
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is False
 
 
 def test_empty_primary_client_app_assets_disable_legacy_save_flags():

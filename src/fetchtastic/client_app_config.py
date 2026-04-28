@@ -192,6 +192,12 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     config["SELECTED_APK_ASSETS"] = apk_assets
     config["SELECTED_DESKTOP_ASSETS"] = desktop_assets
     client_apps_enabled = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
+    has_any_selection_key = (
+        "SELECTED_APP_ASSETS" in config
+        or "SELECTED_APK_ASSETS" in config
+        or "SELECTED_DESKTOP_ASSETS" in config
+        or "SELECTED_DESKTOP_PLATFORMS" in config
+    )
     if config["SELECTED_APP_ASSETS"]:
         config["SAVE_APKS"] = client_apps_enabled and (
             bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets
@@ -199,7 +205,7 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
         config["SAVE_DESKTOP_APP"] = client_apps_enabled and (
             bool(config["SELECTED_DESKTOP_ASSETS"]) or has_ambiguous_assets
         )
-    else:
+    elif has_any_selection_key:
         config["SAVE_APKS"] = False
         config["SAVE_DESKTOP_APP"] = False
     config.pop("SELECTED_DESKTOP_PLATFORMS", None)
@@ -207,6 +213,10 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     config["DESKTOP_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
     config["CHECK_APK_PRERELEASES"] = apk_check
     config["CHECK_DESKTOP_PRERELEASES"] = desktop_check
+    if not coerce_bool(config.get("SAVE_DESKTOP_APP", False)) and not config.get(
+        "SELECTED_DESKTOP_ASSETS"
+    ):
+        config["CHECK_DESKTOP_PRERELEASES"] = False
     return config
 
 

@@ -308,9 +308,13 @@ class DownloadOrchestrator:
             if not self.config.get("SAVE_CLIENT_APPS", False):
                 return
 
-            keep_count = self.config.get(
+            raw_keep = self.config.get(
                 "APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP
             )
+            try:
+                keep_count = max(0, int(raw_keep))
+            except (TypeError, ValueError):
+                keep_count = DEFAULT_APP_VERSIONS_TO_KEEP
             app_releases = (
                 self.client_app_releases
                 or self.android_releases
@@ -319,6 +323,7 @@ class DownloadOrchestrator:
             stable_releases = [
                 r for r in app_releases if not self._is_client_app_prerelease_release(r)
             ]
+            keep_count = min(keep_count, len(stable_releases))
             releases_in_window = stable_releases[:keep_count]
             tracking_downloader = (
                 self.android_downloader

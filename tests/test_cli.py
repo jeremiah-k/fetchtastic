@@ -2028,4 +2028,4 @@ def test_cli_setup_with_multiple_sections(mocker):
 
     cli.main()
 
-    mock_run_setup.assert_called_once()
+    mock_run_setup.assert_called_once_with(sections=["firmware", "app"])

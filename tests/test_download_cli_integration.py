@@ -1115,7 +1115,10 @@ def test_log_download_results_summary_with_desktop_prerelease(mocker):
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
-    assert any("v2.0.0-beta" in msg for msg in logged_messages)
+    assert any(
+        "Latest Meshtastic Client prerelease:" in msg and "v2.0.0-beta" in msg
+        for msg in logged_messages
+    )
 
 
 def test_log_download_results_summary_removes_desktop_wip_note_for_known_2714_mismatch(
