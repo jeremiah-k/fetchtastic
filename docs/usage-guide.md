@@ -112,7 +112,7 @@ This command:
 **Client app assets**: Latest app assets from [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)
 
 - Android APK files
-- desktop installers
+- Desktop installers
 - Release notes
 
 ## Repository Browser

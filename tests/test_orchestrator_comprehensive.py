@@ -336,14 +336,10 @@ class TestDownloadOrchestrator:
         assert set(stats.keys()) >= expected_keys
         assert all(isinstance(v, (int, float)) for v in stats.values())
 
-        # Verify specific values with our test data
-        # total_downloads sums successful_downloads plus the number of currently tracked failures; since failed_downloads is empty it equals the number of successful entries.
-        assert stats["total_downloads"] == 2
+        assert stats["total_downloads"] == 3
         assert stats["successful_downloads"] == 2
-        assert (
-            stats["failed_downloads"] == 0
-        )  # failed_downloads comes from orchestrator.failed_downloads, not download_results
-        assert stats["success_rate"] == 100.0  # 2 successful out of 2 attempted = 100%
+        assert stats["failed_downloads"] == 1
+        assert stats["success_rate"] == pytest.approx(66.6667)
 
     def test_calculate_success_rate(self, orchestrator):
         """Test calculating success rate."""
@@ -362,10 +358,7 @@ class TestDownloadOrchestrator:
         rate = orchestrator._calculate_success_rate()
         assert isinstance(rate, float)
         assert 0.0 <= rate <= 100.0  # Success rate should be percentage
-        # With our test data: 3 successful out of (3 successful + 0 failed) = 100%
-        # Note: failed DownloadResult in download_results doesn't count toward success rate calculation
-        # Only entries in failed_downloads count as failed
-        assert rate == 100.0  # 3 successful out of 3 attempted = 100%
+        assert rate == 75.0  # 3 successful out of 4 attempted
 
     def test_count_artifact_downloads(self, orchestrator, tmp_path):
         """Test counting artifact downloads."""
@@ -481,10 +474,14 @@ class TestDownloadOrchestrator:
             ),
         ]
 
-        android_count = orchestrator._count_artifact_downloads("android")
+        android_count = orchestrator._count_artifact_downloads(
+            FILE_TYPE_CLIENT_APP, artifact_type=FILE_TYPE_ANDROID
+        )
         assert android_count == 2
 
-        desktop_count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
+        desktop_count = orchestrator._count_artifact_downloads(
+            FILE_TYPE_CLIENT_APP, artifact_type=FILE_TYPE_DESKTOP
+        )
         assert desktop_count == 3
 
         client_app_count = orchestrator._count_artifact_downloads(FILE_TYPE_CLIENT_APP)

@@ -84,7 +84,7 @@ def test_cleanup_skips_symlinks(tmp_path):
     link = app_dir / "v2.7.13"
     try:
         os.symlink(target, link)
-    except OSError:
+    except (OSError, NotImplementedError):
         pytest.skip("Symlinks are not supported in this test environment")
 
     dl.cleanup_prerelease_directories(

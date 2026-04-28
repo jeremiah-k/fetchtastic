@@ -64,8 +64,14 @@ class TestDownloadOrchestrator:
         orch.client_app_downloader.download_dir = "/tmp/test"
         orch.client_app_downloader.should_download_prerelease.return_value = True
         orch.client_app_downloader.update_prerelease_tracking.return_value = True
-        orch.android_downloader = orch.client_app_downloader
-        orch.desktop_downloader = orch.client_app_downloader
+        orch.android_downloader = Mock()
+        orch.android_downloader.download_dir = "/tmp/test"
+        orch.android_downloader.should_download_prerelease.return_value = True
+        orch.android_downloader.update_prerelease_tracking.return_value = True
+        orch.desktop_downloader = Mock()
+        orch.desktop_downloader.download_dir = "/tmp/test"
+        orch.desktop_downloader.should_download_prerelease.return_value = True
+        orch.desktop_downloader.update_prerelease_tracking.return_value = True
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
@@ -274,7 +280,7 @@ class TestDownloadOrchestrator:
             Release(tag_name="v2.7.9", prerelease=False, assets=[]),
         ]
         orchestrator.desktop_releases = []
-        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
+        orchestrator.client_app_downloader.get_latest_prerelease_tag = Mock(
             return_value="v2.7.10-open.1"
         )
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
@@ -293,10 +299,10 @@ class TestDownloadOrchestrator:
             Release(tag_name="v2.7.12-open.1", prerelease=True, assets=[]),
             Release(tag_name="v2.7.11", prerelease=False, assets=[]),
         ]
-        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
+        orchestrator.client_app_downloader.get_latest_prerelease_tag = Mock(
             return_value=None
         )
-        orchestrator.desktop_downloader.get_latest_prerelease_tag.return_value = (
+        orchestrator.client_app_downloader.get_latest_prerelease_tag.return_value = (
             "v2.7.12-open.1"
         )
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(

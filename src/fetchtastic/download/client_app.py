@@ -255,6 +255,13 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         if not os.path.isdir(source_path):
             return False
 
+        if os.path.exists(abs_destination) and not os.path.isdir(abs_destination):
+            logger.warning(
+                "Skipping client app migration because destination is not a directory: %s",
+                abs_destination,
+            )
+            return False
+
         os.makedirs(abs_destination, exist_ok=True)
         moved_any = False
         try:

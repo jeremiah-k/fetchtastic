@@ -599,6 +599,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
                 logger.warning(
                     "Skipping unsafe notes_prefix for release notes: %s", notes_prefix
                 )
+                return None
         prefix_part = f"{safe_prefix}-" if safe_prefix else ""
         notes_path = os.path.join(
             release_dir, f"release_notes-{prefix_part}{safe_tag}.md"

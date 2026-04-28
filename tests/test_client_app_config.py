@@ -45,8 +45,43 @@ def test_new_client_app_keys_are_authoritative():
 
     assert normalized["SAVE_CLIENT_APPS"] is False
     assert normalized["SELECTED_APP_ASSETS"] == ["meshtastic.msi"]
+    assert normalized["SELECTED_APK_ASSETS"] == []
+    assert normalized["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.msi"]
+    assert normalized["SAVE_APKS"] is False
+    assert normalized["SAVE_DESKTOP_APP"] is False
     assert normalized["APP_VERSIONS_TO_KEEP"] == 4
     assert normalized["CHECK_APP_PRERELEASES"] is False
+
+
+def test_empty_primary_client_app_assets_disable_legacy_save_flags():
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "SAVE_APKS": True,
+        "SAVE_DESKTOP_APP": True,
+        "SELECTED_APP_ASSETS": [],
+        "SELECTED_APK_ASSETS": ["app.apk"],
+        "SELECTED_DESKTOP_ASSETS": ["Meshtastic.dmg"],
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["SELECTED_APP_ASSETS"] == []
+    assert normalized["SELECTED_APK_ASSETS"] == []
+    assert normalized["SELECTED_DESKTOP_ASSETS"] == []
+    assert normalized["SAVE_APKS"] is False
+    assert normalized["SAVE_DESKTOP_APP"] is False
+
+
+def test_explicit_apk_prerelease_false_does_not_default_desktop_true():
+    config = {
+        "CHECK_APK_PRERELEASES": False,
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["CHECK_APP_PRERELEASES"] is False
+    assert normalized["CHECK_APK_PRERELEASES"] is False
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is False
 
 
 def test_ambiguous_client_app_asset_does_not_use_apk_substring_guess():

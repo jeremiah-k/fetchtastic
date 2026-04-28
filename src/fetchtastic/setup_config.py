@@ -892,7 +892,7 @@ def _setup_downloads(
             )
             save_firmware = _coerce_bool(choice)
     save_apks = save_client_apps
-    save_desktop = save_client_apps
+    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", save_client_apps))
     config["SAVE_CLIENT_APPS"] = save_client_apps
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
@@ -1051,8 +1051,8 @@ def _setup_downloads(
 
     # --- Client App Compatibility Normalization ---
     normalize_client_app_config(config)
-    save_apks = save_client_apps
-    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", save_client_apps))
+    save_apks = _coerce_bool(config.get("SAVE_APKS", False))
+    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
     # --- Channel Suffix Configuration ---
     if save_firmware:

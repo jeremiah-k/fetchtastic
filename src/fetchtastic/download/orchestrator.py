@@ -1754,18 +1754,30 @@ class DownloadOrchestrator:
             for result in self.download_results
             if result.success and getattr(result, "was_skipped", False) is not True
         ]
+        failed = [
+            result
+            for result in self.download_results
+            if not result.success and getattr(result, "was_skipped", False) is not True
+        ]
+        result_ids = {id(result) for result in self.download_results}
+        failed.extend(
+            result
+            for result in self.failed_downloads
+            if id(result) not in result_ids
+            and getattr(result, "was_skipped", False) is not True
+        )
         skipped = [
             result
             for result in self.download_results
             if result.success and getattr(result, "was_skipped", False) is True
         ]
-        attempted = len(downloaded) + len(self.failed_downloads)
+        attempted = len(downloaded) + len(failed)
         return {
             # "Downloads" excludes skipped results for legacy-parity reporting.
             "total_downloads": attempted,
             "successful_downloads": len(downloaded),
             "skipped_downloads": len(skipped),
-            "failed_downloads": len(self.failed_downloads),
+            "failed_downloads": len(failed),
             "success_rate": self._calculate_success_rate(),
             "client_app_downloads": self._count_artifact_downloads(
                 FILE_TYPE_CLIENT_APP
@@ -1789,29 +1801,46 @@ class DownloadOrchestrator:
             for result in self.download_results
             if result.success and getattr(result, "was_skipped", False) is not True
         )
-        attempted = downloaded_count + len(self.failed_downloads)
+        failed_count = sum(
+            1
+            for result in self.download_results
+            if not result.success and getattr(result, "was_skipped", False) is not True
+        )
+        result_ids = {id(result) for result in self.download_results}
+        failed_count += sum(
+            1
+            for result in self.failed_downloads
+            if id(result) not in result_ids
+            and getattr(result, "was_skipped", False) is not True
+        )
+        attempted = downloaded_count + failed_count
         return (downloaded_count / attempted) * 100 if attempted > 0 else 100.0
 
-    def _count_artifact_downloads(self, artifact_type: str) -> int:
+    def _count_artifact_downloads(
+        self, file_type_filter: str, *, artifact_type: Optional[str] = None
+    ) -> int:
         """
         Count successful (non-skipped) downloads that correspond to the given artifact type.
 
         Parameters:
-            artifact_type (str): Artifact identifier to match against a result's `file_type` or as a substring in `file_path` (e.g., "android", "firmware").
+            file_type_filter (str): Artifact identifier to match against a result's `file_type` or as a substring in `file_path` (e.g., "android", "firmware").
+            artifact_type (Optional[str]): Optional client-app subtype to classify when `file_type_filter` is FILE_TYPE_CLIENT_APP.
 
         Returns:
             int: Number of matching downloads that were not skipped.
         """
 
+        requested_type = artifact_type or file_type_filter
+
         def _matches_group(file_type: str) -> bool:
-            if artifact_type == FILE_TYPE_FIRMWARE:
+            if requested_type == FILE_TYPE_FIRMWARE:
                 return file_type in {
                     FILE_TYPE_FIRMWARE,
                     FILE_TYPE_FIRMWARE_MANIFEST,
                     FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                 }
-            if artifact_type == FILE_TYPE_CLIENT_APP:
+            if requested_type == FILE_TYPE_CLIENT_APP:
                 return file_type in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
@@ -1820,11 +1849,11 @@ class DownloadOrchestrator:
                     FILE_TYPE_DESKTOP,
                     FILE_TYPE_DESKTOP_PRERELEASE,
                 }
-            if artifact_type == FILE_TYPE_DESKTOP:
+            if requested_type == FILE_TYPE_DESKTOP:
                 return file_type in {FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE}
-            if artifact_type == "android":
+            if requested_type == "android":
                 return file_type in {"android", "android_prerelease"}
-            return file_type == artifact_type
+            return file_type == requested_type
 
         def _result_name(result: DownloadResult) -> str:
             file_path = getattr(result, "file_path", None)
@@ -1841,7 +1870,14 @@ class DownloadOrchestrator:
                 continue
 
             file_type = getattr(result, "file_type", None)
-            if artifact_type == "android":
+            if file_type_filter == FILE_TYPE_CLIENT_APP and artifact_type:
+                if file_type not in {
+                    FILE_TYPE_CLIENT_APP,
+                    FILE_TYPE_CLIENT_APP_PRERELEASE,
+                }:
+                    continue
+
+            if requested_type == "android":
                 if file_type in {FILE_TYPE_DESKTOP, FILE_TYPE_DESKTOP_PRERELEASE}:
                     continue
                 name = _result_name(result)
@@ -1860,7 +1896,7 @@ class DownloadOrchestrator:
                     )
                     count += 1
                     continue
-            if artifact_type == FILE_TYPE_DESKTOP:
+            if requested_type == FILE_TYPE_DESKTOP:
                 name = _result_name(result)
                 if name and is_desktop_asset_name(name):
                     count += 1
@@ -1875,7 +1911,7 @@ class DownloadOrchestrator:
 
             # Legacy fallback for untyped results.
             file_path = getattr(result, "file_path", None)
-            if file_path and artifact_type in str(file_path):
+            if file_path and requested_type in str(file_path):
                 count += 1
 
         return count

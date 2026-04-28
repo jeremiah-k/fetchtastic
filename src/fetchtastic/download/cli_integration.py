@@ -583,8 +583,12 @@ class DownloadCLIIntegration:
             is_client_app = file_type in CLIENT_APP_FILE_TYPES
             is_client_app_prerelease = file_type == FILE_TYPE_CLIENT_APP_PRERELEASE
             if is_client_app:
+                file_path = getattr(result, "file_path", None)
+                download_url = getattr(result, "download_url", None)
                 file_name = (
-                    os.path.basename(str(result.file_path)) if result.file_path else ""
+                    os.path.basename(str(file_path))
+                    if file_path
+                    else os.path.basename(str(download_url)) if download_url else ""
                 )
                 is_android = is_android or is_android_asset_name(file_name)
                 is_desktop = is_desktop or is_desktop_asset_name(file_name)

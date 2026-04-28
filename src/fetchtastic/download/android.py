@@ -13,11 +13,15 @@ from typing import Any, Dict, Optional
 
 from fetchtastic.client_release_discovery import (
     is_android_prerelease_tag,
-    is_release_at_or_above_minimum,
     is_release_prerelease,
 )
 
-from .client_app import MeshtasticClientAppDownloader
+from .client_app import (
+    MeshtasticClientAppDownloader,
+)
+from .client_app import (
+    _is_apk_prerelease_by_name as _client_app_is_apk_prerelease_by_name,
+)
 from .version import VersionManager
 
 MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
@@ -31,14 +35,7 @@ def _is_apk_prerelease_by_name(
     tag_name: str, version_manager: Optional[VersionManager] = None
 ) -> bool:
     """Return whether an Android tag should be treated as a tracked prerelease."""
-    if not is_android_prerelease_tag(tag_name):
-        return False
-    manager = version_manager or VersionManager()
-    return is_release_at_or_above_minimum(
-        tag_name,
-        minimum_version=MIN_ANDROID_TRACKED_VERSION,
-        version_manager=manager,
-    )
+    return _client_app_is_apk_prerelease_by_name(tag_name, version_manager)
 
 
 def _is_apk_prerelease(release: Dict[str, Any]) -> bool:

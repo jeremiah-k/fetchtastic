@@ -65,43 +65,20 @@ def _classify_selected_assets(
     """
     Return legacy APK/Desktop selections plus whether any primary asset is ambiguous.
 
-    Primary selection remains SELECTED_APP_ASSETS. Legacy lists are preserved when
-    already present; otherwise only concrete asset filenames are classified.
+    Primary selection remains SELECTED_APP_ASSETS. When present, it is
+    authoritative and legacy lists are rebuilt from it.
     """
-    legacy_apk_present = bool(_as_list(config.get("SELECTED_APK_ASSETS")))
-    legacy_desktop_present = bool(
-        _as_list(
-            config.get(
-                "SELECTED_DESKTOP_ASSETS", config.get("SELECTED_DESKTOP_PLATFORMS")
-            )
-        )
-    )
-    apk_assets = (
-        expand_apk_selected_patterns(_as_list(config.get("SELECTED_APK_ASSETS")))
-        if legacy_apk_present
-        else []
-    )
-    desktop_assets = (
-        _as_list(
-            config.get(
-                "SELECTED_DESKTOP_ASSETS", config.get("SELECTED_DESKTOP_PLATFORMS")
-            )
-        )
-        if legacy_desktop_present
-        else []
-    )
+    apk_assets = []
+    desktop_assets = []
     ambiguous = False
 
-    if not legacy_apk_present or not legacy_desktop_present:
-        for item in selected_assets:
-            if is_android_asset_name(item):
-                if not legacy_apk_present:
-                    apk_assets.append(item)
-            elif is_desktop_asset_name(item):
-                if not legacy_desktop_present:
-                    desktop_assets.append(item)
-            else:
-                ambiguous = True
+    for item in selected_assets:
+        if is_android_asset_name(item):
+            apk_assets.append(item)
+        elif is_desktop_asset_name(item):
+            desktop_assets.append(item)
+        else:
+            ambiguous = True
 
     return _dedupe(apk_assets), _dedupe(desktop_assets), ambiguous
 
@@ -157,16 +134,33 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
             config.get("CHECK_PRERELEASES"),
             default=DEFAULT_CHECK_APP_PRERELEASES,
         )
+        apk_key = (
+            "CHECK_APK_PRERELEASES"
+            if "CHECK_APK_PRERELEASES" in config
+            else (
+                "CHECK_ANDROID_PRERELEASES"
+                if "CHECK_ANDROID_PRERELEASES" in config
+                else None
+            )
+        )
+        desktop_key = (
+            "CHECK_DESKTOP_PRERELEASES"
+            if "CHECK_DESKTOP_PRERELEASES" in config
+            else None
+        )
+        if apk_key is None and desktop_key is None:
+            apk_default = legacy_default
+            desktop_default = legacy_default
+        else:
+            apk_default = False
+            desktop_default = False
         apk_check = coerce_bool(
-            config.get(
-                "CHECK_APK_PRERELEASES",
-                config.get("CHECK_ANDROID_PRERELEASES", legacy_default),
-            ),
-            default=legacy_default,
+            config.get(apk_key) if apk_key is not None else apk_default,
+            default=apk_default,
         )
         desktop_check = coerce_bool(
-            config.get("CHECK_DESKTOP_PRERELEASES", legacy_default),
-            default=legacy_default,
+            config.get(desktop_key) if desktop_key is not None else desktop_default,
+            default=desktop_default,
         )
         config["CHECK_APP_PRERELEASES"] = apk_check or desktop_check
     else:
