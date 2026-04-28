@@ -115,7 +115,7 @@ class TestDownloadOrchestrator:
         mock_result = DownloadResult(
             success=True,
             file_path=str(tmp_path / "test" / "file.bin"),
-            file_type="android",
+            file_type=FILE_TYPE_ANDROID,
         )
 
         orchestrator._handle_download_result(mock_result, "test_operation")
@@ -127,7 +127,7 @@ class TestDownloadOrchestrator:
         retry_result = DownloadResult(
             success=False,
             error_type="network_error",
-            file_type="android",
+            file_type=FILE_TYPE_ANDROID,
             download_url="https://example.com/file",
             file_path=str(tmp_path / "test.apk"),
             is_retryable=True,
@@ -139,7 +139,7 @@ class TestDownloadOrchestrator:
             "_retry_single_failure",
             return_value=DownloadResult(
                 success=True,
-                file_type="android",
+                file_type=FILE_TYPE_ANDROID,
                 file_path=str(tmp_path / "test.apk"),
                 download_url="https://example.com/file",
             ),
@@ -157,7 +157,7 @@ class TestDownloadOrchestrator:
             is_retryable=True,
             download_url="https://example.com/file.apk",
             file_path=str(tmp_path / "test.apk"),
-            file_type="android",
+            file_type=FILE_TYPE_ANDROID,
             retry_count=0,
             release_tag="test-tag",
             file_size=1000,
@@ -230,7 +230,7 @@ class TestDownloadOrchestrator:
         non_retryable_failures = [
             DownloadResult(
                 success=False,
-                file_type="android",
+                file_type=FILE_TYPE_ANDROID,
                 error_type="validation_error",
                 retry_count=0,
                 is_retryable=False,
@@ -302,7 +302,7 @@ class TestDownloadOrchestrator:
             ),
             DownloadResult(
                 success=False,
-                file_type="android",
+                file_type=FILE_TYPE_ANDROID,
                 error_type="network_error",
                 download_url="https://example.com/android.apk",
             ),
@@ -320,7 +320,7 @@ class TestDownloadOrchestrator:
         """Test getting download statistics."""
         orchestrator.download_results = [
             DownloadResult(success=True, file_type="firmware", file_size=1000),
-            DownloadResult(success=False, file_type="android", file_size=500),
+            DownloadResult(success=False, file_type=FILE_TYPE_ANDROID, file_size=500),
             DownloadResult(success=True, file_type="firmware", file_size=1500),
         ]
 
@@ -354,7 +354,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.download_results = [
             DownloadResult(success=True, file_type="firmware"),
-            DownloadResult(success=True, file_type="android"),
+            DownloadResult(success=True, file_type=FILE_TYPE_ANDROID),
             DownloadResult(success=False, file_type="firmware"),
             DownloadResult(success=True, file_type="firmware"),
         ]

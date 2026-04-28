@@ -81,7 +81,7 @@ def _is_apk_prerelease_by_name(
     manager = version_manager or VersionManager()
     return is_release_at_or_above_minimum(
         tag_name,
-        minimum_version="2.7.0",
+        minimum_version=MIN_ANDROID_TRACKED_VERSION,
         version_manager=manager,
     )
 
@@ -581,6 +581,12 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def get_download_url(self, asset: Asset) -> str:
         return asset.download_url
 
+    def _is_excluded(self, asset_name: str) -> bool:
+        exclude = self._get_exclude_patterns()
+        if not exclude:
+            return False
+        return any(fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude)
+
     def should_download_asset(self, asset_name: str) -> bool:
         normalize_client_app_config(self.config)
         raw_selected = self.config.get("SELECTED_APP_ASSETS")
@@ -591,19 +597,13 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 is_android_asset_name(asset_name) or is_desktop_asset_name(asset_name)
             ):
                 return False
-            exclude = self._get_exclude_patterns()
-            if exclude and any(
-                fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude
-            ):
+            if self._is_excluded(asset_name):
                 return False
             return True
         selected = expand_apk_selected_patterns(raw_selected)
         if not selected:
             return False
-        exclude = self._get_exclude_patterns()
-        if exclude and any(
-            fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude
-        ):
+        if self._is_excluded(asset_name):
             return False
         return matches_selected_patterns(asset_name, selected)
 

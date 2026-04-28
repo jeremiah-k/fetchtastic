@@ -1041,7 +1041,7 @@ def _setup_downloads(
         )
         normalize_client_app_config(config)
 
-    # --- Desktop Client Selection ---
+    # --- Client App Compatibility Normalization ---
     normalize_client_app_config(config)
     save_apks = save_client_apps
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", save_client_apps))

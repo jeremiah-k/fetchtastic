@@ -124,7 +124,7 @@ class DownloadOrchestrator:
     Orchestrates the download pipeline for multiple artifact types.
 
     This class coordinates:
-    - Multiple downloaders (Android, Firmware, Desktop, etc.)
+    - Multiple downloaders (Client App, Firmware, etc.)
     - Release fetching and filtering
     - Download execution and retry logic
     - Result aggregation and reporting
@@ -135,7 +135,7 @@ class DownloadOrchestrator:
         """
         Create a DownloadOrchestrator configured to run the download pipeline.
 
-        Initializes version, prerelease history, and cache managers; instantiates Android and firmware downloaders with the provided cache manager; and prepares result lists and in-run release caches.
+        Initializes version, prerelease history, and cache managers; instantiates client app and firmware downloaders with the provided cache manager; and prepares result lists and in-run release caches.
 
         Parameters:
             config (Dict[str, Any]): Configuration mapping used by the orchestrator and its downloaders (controls behavior such as keep counts, prerelease handling, retry settings, extraction/exclude patterns, etc.).
@@ -150,7 +150,7 @@ class DownloadOrchestrator:
             MeshtasticClientAppDownloader(self.config, self.cache_manager)
         )
         # Compatibility aliases for older tests/extensions that still reach for
-        # Android or Desktop downloader attributes directly.
+        # Legacy compat — Android/Desktop downloader attributes delegate to client app downloader.
         self.android_downloader = self.client_app_downloader
         self.desktop_downloader = self.client_app_downloader
         self.firmware_downloader: FirmwareReleaseDownloader = FirmwareReleaseDownloader(
@@ -534,13 +534,13 @@ class DownloadOrchestrator:
 
     def _ensure_android_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Return cached Android releases, fetching them once from the downloader if not already cached.
+        Return cached client app releases (Android-classified), fetching them once from the downloader if not already cached.
 
         Parameters:
             limit (Optional[int]): Maximum number of releases to fetch on the initial request; if releases are already cached with a smaller limit and the requested limit is larger or None (unbounded), refetches to ensure a complete result set.
 
         Returns:
-            List[Release]: The cached list of Android releases.
+            List[Release]: The cached list of client app releases.
         """
         return self._ensure_releases(
             downloader=self.android_downloader,
@@ -612,13 +612,13 @@ class DownloadOrchestrator:
 
     def _ensure_desktop_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Ensure Desktop releases are fetched (if needed) and return the cached list.
+        Ensure client app releases (Desktop-classified) are fetched (if needed) and return the cached list.
 
         Parameters:
             limit (Optional[int]): Maximum number of releases to fetch when loading from the downloader; if None or larger than a previously fetched limit, the method may refetch to satisfy the requested amount.
 
         Returns:
-            List[Release]: The cached list of Desktop releases (may be empty).
+            List[Release]: The cached list of client app releases (Desktop-classified, may be empty).
         """
         return self._ensure_releases(
             downloader=self.desktop_downloader,
@@ -1883,7 +1883,7 @@ class DownloadOrchestrator:
         """
         Prune locally stored client app and firmware artifacts according to configured retention settings and remove prerelease directories marked as deleted.
 
-        This routine reads retention settings (e.g., `ANDROID_VERSIONS_TO_KEEP`, `FIRMWARE_VERSIONS_TO_KEEP`) and instructs the Android and firmware downloaders to remove older releases. When firmware retention is applied, the `KEEP_LAST_BETA` setting is honored if present. After pruning releases, it removes any prerelease directories that have been recorded as deleted. On filesystem or configuration-related errors (`OSError`, `ValueError`, `TypeError`) it logs an error.
+        This routine reads retention settings (e.g., `ANDROID_VERSIONS_TO_KEEP`, `FIRMWARE_VERSIONS_TO_KEEP`) and instructs the client app and firmware downloaders to remove older releases. When firmware retention is applied, the `KEEP_LAST_BETA` setting is honored if present. After pruning releases, it removes any prerelease directories that have been recorded as deleted. On filesystem or configuration-related errors (`OSError`, `ValueError`, `TypeError`) it logs an error.
         """
         try:
             logger.info("Cleaning up old versions...")
@@ -2002,16 +2002,16 @@ class DownloadOrchestrator:
 
     def get_latest_versions(self) -> Dict[str, Optional[str]]:
         """
-        Retrieve the latest known version tags for Android, Desktop, and firmware artifacts, including active prerelease identifiers when available.
+        Retrieve the latest known version tags for client app and firmware artifacts, including active prerelease identifiers when available.
 
         Returns:
             Dict[str, Optional[str]]: Mapping with keys:
-                - "android": latest Android release tag or None
+                - "android": latest client app release tag (legacy compat key) or None
                 - "firmware": latest firmware release tag or None
                 - "firmware_prerelease": active firmware prerelease identifier (without "firmware-" prefix when applicable) or None
-                - "android_prerelease": latest Android prerelease tag or None
-                - "desktop": latest Desktop release tag or None
-                - "desktop_prerelease": latest Desktop prerelease tag or None
+                - "android_prerelease": latest client app prerelease tag (legacy compat key) or None
+                - "desktop": latest client app release tag (Desktop-classified, legacy compat key) or None
+                - "desktop_prerelease": latest client app prerelease tag (Desktop-classified, legacy compat key) or None
         """
         firmware_prerelease = None
         latest_firmware_release = self.firmware_downloader.get_latest_release_tag()
@@ -2071,7 +2071,7 @@ class DownloadOrchestrator:
 
     def update_version_tracking(self) -> None:
         """
-        Refresh recorded latest release tags for Android, Desktop, and firmware and update prerelease tracking.
+        Refresh recorded latest release tags for client app and firmware and update prerelease tracking.
 
         If per-run release caches are present, uses them; otherwise fetches the most recent release for each artifact and updates the corresponding downloader's latest release tag. Invokes prerelease tracking refresh and logs an error if the update fails.
         """
@@ -2144,7 +2144,7 @@ class DownloadOrchestrator:
 
     def _manage_prerelease_tracking(self) -> None:
         """
-        Manage prerelease tracking files for Android, Desktop, and firmware.
+        Manage prerelease tracking files for client app and firmware artifacts.
 
         Cleans up superseded prerelease directories and ensures prerelease tracking files remain consistent for each artifact type.
         """

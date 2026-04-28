@@ -25,9 +25,11 @@ def cache_manager(tmp_path):
         return str(path / file_name)
 
     cache.get_cache_file_path.side_effect = _cache_path
-    cache.atomic_write_json.side_effect = lambda path, data: (
+
+    def _write_json(path, data):
         Path(path).write_text(json.dumps(data), encoding="utf-8")
-    )
+
+    cache.atomic_write_json.side_effect = _write_json
     return cache
 
 
@@ -71,8 +73,8 @@ def test_release_notes_use_single_client_app_file(downloader):
 
     assert path is not None
     assert Path(path).name == "release_notes-v2.7.14.md"
-    release_dir = Path(path).parent
-    assert Path(path) == release_dir / "release_notes-v2.7.14.md"
+    assert Path(path).parent.name == "v2.7.14"
+    assert Path(path).parent.parent.name == "app"
 
 
 def test_cleanup_removes_stale_app_release_directories(downloader, tmp_path):

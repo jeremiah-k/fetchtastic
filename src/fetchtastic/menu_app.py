@@ -97,4 +97,4 @@ def run_menu() -> dict[str, list[str]] | None:
         logger.warning("Unable to fetch Desktop installer assets: %s", exc)
         print(f"Warning: unable to fetch Desktop installer assets: {exc}")
         desktop_assets = []
-    return select_assets(apk_assets or [], desktop_assets or [])
+    return select_assets(apk_assets, desktop_assets)

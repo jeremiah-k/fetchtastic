@@ -351,6 +351,8 @@ class ReleaseHistoryManager:
         Returns:
             str: Substring of the formatted label that follows `release.tag_name`, or an empty string if they are equal.
         """
+        if not release.tag_name:
+            return ""
         suffix = self.format_release_label(
             release, include_channel=True, include_status=True
         )
