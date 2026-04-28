@@ -379,7 +379,6 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         for directory in (
             *prerelease_sources,
             *stable_sources,
-            self._get_legacy_android_base_dir(),
         ):
             try:
                 os.rmdir(directory)

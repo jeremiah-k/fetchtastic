@@ -390,6 +390,14 @@ class DownloadOrchestrator:
                 r for r in app_releases if not self._is_client_app_prerelease_release(r)
             ]
             releases_to_process = stable_releases[:keep_count]
+            releases_to_process = [
+                r
+                for r in releases_to_process
+                if any(
+                    self.client_app_downloader.should_download_asset(a.name)
+                    for a in self.client_app_downloader.get_assets(r)
+                )
+            ]
 
             for release in releases_to_process:
                 self.client_app_downloader.ensure_release_notes(release)
