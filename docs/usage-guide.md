@@ -66,10 +66,10 @@ fetchtastic setup
 **Asset Types**: Choose what to download:
 
 - Firmware
-- Client app assets, including APKs and Desktop installers
+- Client app assets, including APKs and desktop installers
 - Both firmware and client app releases
 
-**Asset Selection**: Choose specific firmware devices, APK variants, or Desktop installers
+**Asset Selection**: Choose specific firmware devices, APK variants, or desktop installers
 
 **Version Management**: How many versions to keep (default: 2)
 
@@ -112,7 +112,7 @@ This command:
 **Client app assets**: Latest app assets from [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)
 
 - Android APK files
-- Desktop installers
+- desktop installers
 - Release notes
 
 ## Repository Browser
@@ -122,8 +122,6 @@ Browse and download files from the [meshtastic.github.io](https://meshtastic.git
 ```bash
 fetchtastic repo browse
 ```
-
-APKs and Desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
 
 ### How to Use
 
@@ -173,6 +171,8 @@ Fetchtastic organizes downloads in a structured way:
 │   └── prerelease/ (if enabled)
 │       └── v2.3.3.abcdef/
 ```
+
+APKs and desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
 
 ## Notifications
 

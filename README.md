@@ -104,7 +104,7 @@ Downloads are organized in a clean structure:
 │   └── prerelease/    # Pre-release firmware (optional)
 ```
 
-APKs and Desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
+APKs and desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
 
 ## 🔔 Notifications
 
