@@ -23,7 +23,6 @@ from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
-    DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
 )
 from fetchtastic.constants import (

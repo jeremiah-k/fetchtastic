@@ -9,6 +9,7 @@ import pytest
 import requests
 
 import fetchtastic.setup_config as setup_config
+from fetchtastic.client_app_config import DEFAULT_APP_VERSIONS_TO_KEEP
 
 # Tests for uncovered lines 112, 153-156: cron command decorator edge cases
 
@@ -1526,10 +1527,7 @@ def test_run_setup_desktop_invalid_version_input(
         saved_config = mock_yaml_dump.call_args[0][0]
 
         # Invalid input should fall back to the app retention default.
-        assert (
-            saved_config["APP_VERSIONS_TO_KEEP"]
-            == setup_config.DEFAULT_APP_VERSIONS_TO_KEEP
-        )
+        assert saved_config["APP_VERSIONS_TO_KEEP"] == DEFAULT_APP_VERSIONS_TO_KEEP
     finally:
         # Restore original values
         setup_config.CONFIG_DIR = original_config_dir
