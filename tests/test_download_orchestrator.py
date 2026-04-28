@@ -399,7 +399,8 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.get_releases.assert_not_called()
         orchestrator.firmware_downloader.get_releases.assert_not_called()
 
-    def test_process_client_app_downloads(self, orchestrator):
+    @patch.object(DownloadOrchestrator, "_download_client_app_release")
+    def test_process_client_app_downloads(self, mock_download_release, orchestrator):
         """Test client app download processing."""
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v1.0.0"
@@ -407,7 +408,6 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.get_releases.return_value = [mock_release]
         orchestrator.client_app_downloader.is_release_complete.return_value = False
         orchestrator.client_app_downloader.handle_prereleases.return_value = []
-        orchestrator._download_client_app_release = Mock()
 
         orchestrator._process_client_app_downloads()
 
@@ -415,7 +415,7 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.is_release_complete.assert_called_once_with(
             mock_release
         )
-        orchestrator._download_client_app_release.assert_called_once_with(mock_release)
+        mock_download_release.assert_called_once_with(mock_release)
 
     def test_process_firmware_downloads(self, orchestrator):
         """Test firmware download processing."""
@@ -850,28 +850,27 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.migrate_legacy_layout.assert_not_called()
         orchestrator.client_app_downloader.get_releases.assert_not_called()
 
-    def test_process_client_app_downloads_no_releases_2(self, orchestrator):
-        """Client app processing should stop when no releases are found."""
-        orchestrator.client_app_downloader.get_releases.return_value = []
-
-        orchestrator._process_client_app_downloads()
-
-        orchestrator.client_app_downloader.get_releases.assert_called_once()
-
-    def test_process_client_app_downloads_complete_release(self, orchestrator):
+    @patch.object(DownloadOrchestrator, "_download_client_app_release")
+    def test_process_client_app_downloads_complete_release(
+        self, mock_download_release, orchestrator
+    ):
         """Client app processing should skip complete releases."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         orchestrator.client_app_downloader.get_releases.return_value = [release]
         orchestrator.client_app_downloader.update_release_history.return_value = {}
         orchestrator.client_app_downloader.is_release_complete.return_value = True
         orchestrator.client_app_downloader.handle_prereleases.return_value = []
-        orchestrator._download_client_app_release = Mock()
 
         orchestrator._process_client_app_downloads()
 
-        orchestrator._download_client_app_release.assert_not_called()
+        mock_download_release.assert_not_called()
 
-    def test_process_client_app_downloads_with_prerelease(self, orchestrator):
+    @patch.object(
+        DownloadOrchestrator, "_download_client_app_release", return_value=True
+    )
+    def test_process_client_app_downloads_with_prerelease(
+        self, mock_download_release, orchestrator
+    ):
         """Client app processing should handle prerelease assets."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         prerelease = Release(
@@ -890,43 +889,9 @@ class TestDownloadOrchestrator:
         mock_result.success = True
         mock_result.was_skipped = False
         orchestrator.client_app_downloader.download_app.return_value = mock_result
-        orchestrator._download_client_app_release = Mock(return_value=True)
 
         orchestrator._process_client_app_downloads()
 
-        orchestrator.client_app_downloader.download_app.assert_called_once()
-
-    @patch("fetchtastic.download.orchestrator.logger")
-    def test_process_client_app_downloads_error_handling_2(
-        self, mock_logger, orchestrator
-    ):
-        """Client app processing should handle exceptions gracefully."""
-        orchestrator.client_app_downloader.get_releases.side_effect = OSError(
-            "test error"
-        )
-
-        orchestrator._process_client_app_downloads()
-
-        orchestrator.client_app_downloader.get_releases.assert_called_once()
-        mock_logger.error.assert_called()
-
-    def test_download_client_app_release_success_2(self, orchestrator):
-        """Test successful client app release download."""
-        release = Mock(spec=Release)
-        release.tag_name = "v1.0.0"
-        asset = Mock()
-        asset.name = "app.dmg"
-        orchestrator.client_app_downloader.get_assets.return_value = [asset]
-        orchestrator.client_app_downloader.should_download_asset.return_value = True
-        mock_result = Mock(spec=DownloadResult)
-        mock_result.success = True
-        mock_result.was_skipped = False
-        orchestrator.client_app_downloader.download_app.return_value = mock_result
-        orchestrator._handle_download_result = Mock()
-
-        result = orchestrator._download_client_app_release(release)
-
-        assert result is True
         orchestrator.client_app_downloader.download_app.assert_called_once()
 
     def test_download_client_app_release_skipped(self, orchestrator):
@@ -942,22 +907,6 @@ class TestDownloadOrchestrator:
         mock_result.was_skipped = True
         orchestrator.client_app_downloader.download_app.return_value = mock_result
         orchestrator._handle_download_result = Mock()
-
-        result = orchestrator._download_client_app_release(release)
-
-        assert result is False
-
-    def test_download_client_app_release_error_2(self, orchestrator):
-        """Test client app release download with error."""
-        release = Mock(spec=Release)
-        release.tag_name = "v1.0.0"
-        asset = Mock()
-        asset.name = "app.dmg"
-        orchestrator.client_app_downloader.get_assets.return_value = [asset]
-        orchestrator.client_app_downloader.should_download_asset.return_value = True
-        orchestrator.client_app_downloader.download_app.side_effect = OSError(
-            "test error"
-        )
 
         result = orchestrator._download_client_app_release(release)
 
@@ -1902,7 +1851,12 @@ class TestDownloadOrchestrator:
     # Tests for uncovered desktop-related branches (coverage improvement)
     # =========================================================================
 
-    def test_process_client_app_downloads_any_downloaded_true(self, orchestrator):
+    @patch.object(
+        DownloadOrchestrator, "_download_client_app_release", return_value=True
+    )
+    def test_process_client_app_downloads_any_downloaded_true(
+        self, mock_download_release, orchestrator
+    ):
         """Test client app processing when _download_client_app_release returns True."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         orchestrator.client_app_downloader.get_releases.return_value = [release]
@@ -1911,11 +1865,10 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
         orchestrator.client_app_downloader.is_release_complete.return_value = False
         orchestrator.client_app_downloader.handle_prereleases.return_value = []
-        orchestrator._download_client_app_release = Mock(return_value=True)
 
         orchestrator._process_client_app_downloads()
 
-        orchestrator._download_client_app_release.assert_called_once_with(release)
+        mock_download_release.assert_called_once_with(release)
 
     def test_process_client_app_downloads_prerelease_with_download(self, orchestrator):
         """Test client app prerelease handling when asset is downloaded."""
@@ -2103,22 +2056,6 @@ class TestDownloadOrchestrator:
             "v1.0.2-beta"
         )
 
-    def test_process_client_app_downloads_no_prereleases_log_2(self, orchestrator):
-        """Test client app processing logs 'No client app prereleases available'."""
-        orchestrator.config["CHECK_APP_PRERELEASES"] = True
-        release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
-
-        orchestrator.client_app_downloader.get_releases.return_value = [release]
-        orchestrator.client_app_downloader.update_release_history.return_value = {}
-        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
-        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.client_app_downloader.is_release_complete.return_value = True
-        orchestrator.client_app_downloader.handle_prereleases.return_value = []
-
-        orchestrator._process_client_app_downloads()
-
-        orchestrator.client_app_downloader.handle_prereleases.assert_called_once()
-
     def test_process_client_app_downloads_downloader_returns_none(self, orchestrator):
         """Test client app processing when get_releases returns None."""
         orchestrator.client_app_downloader.get_releases.return_value = None
@@ -2127,7 +2064,12 @@ class TestDownloadOrchestrator:
 
         orchestrator.client_app_downloader.get_releases.assert_called_once()
 
-    def test_process_client_app_downloads_download_returns_true(self, orchestrator):
+    @patch.object(
+        DownloadOrchestrator, "_download_client_app_release", return_value=True
+    )
+    def test_process_client_app_downloads_download_returns_true(
+        self, mock_download_release, orchestrator
+    ):
         """Test client app processing when _download_client_app_release returns True."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
         orchestrator.client_app_downloader.get_releases.return_value = [release]
@@ -2136,11 +2078,10 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
         orchestrator.client_app_downloader.is_release_complete.return_value = False
         orchestrator.client_app_downloader.handle_prereleases.return_value = []
-        orchestrator._download_client_app_release = Mock(return_value=True)
 
         orchestrator._process_client_app_downloads()
 
-        orchestrator._download_client_app_release.assert_called_once_with(release)
+        mock_download_release.assert_called_once_with(release)
 
     def test_process_client_app_downloads_prerelease_skipped_asset(self, orchestrator):
         """Test client app prerelease when should_download_asset returns False."""
@@ -2236,33 +2177,6 @@ class TestDownloadOrchestrator:
             "v1.0.1-beta"
         )
 
-    def test_process_client_app_downloads_skips_prerelease_not_newer_2(
-        self, orchestrator
-    ):
-        """Client app prerelease downloads should skip tags rejected by tracking policy."""
-        release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
-        prerelease = Release(
-            tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.dmg")]
-        )
-        prerelease.assets[0].name = "app.dmg"
-
-        orchestrator.client_app_downloader.get_releases.return_value = [release]
-        orchestrator.client_app_downloader.update_release_history.return_value = {}
-        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
-        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.client_app_downloader.is_release_complete.return_value = True
-        orchestrator.client_app_downloader.handle_prereleases.return_value = [
-            prerelease
-        ]
-        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
-            False
-        )
-
-        orchestrator._process_client_app_downloads()
-
-        orchestrator.client_app_downloader.download_app.assert_not_called()
-        orchestrator.client_app_downloader.update_prerelease_tracking.assert_not_called()
-
     def test_process_client_app_downloads_no_prereleases_log(self, orchestrator):
         """Test client app processing logs 'No client app prereleases available'."""
         orchestrator.config["CHECK_APP_PRERELEASES"] = True
@@ -2279,7 +2193,12 @@ class TestDownloadOrchestrator:
 
         orchestrator.client_app_downloader.handle_prereleases.assert_called_once()
 
-    def test_process_client_app_downloads_up_to_date(self, orchestrator):
+    @patch.object(
+        DownloadOrchestrator, "_download_client_app_release", return_value=False
+    )
+    def test_process_client_app_downloads_up_to_date(
+        self, mock_download_release, orchestrator
+    ):
         """Test client app processing when all assets are up to date."""
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
 
@@ -2289,11 +2208,10 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
         orchestrator.client_app_downloader.is_release_complete.return_value = True
         orchestrator.client_app_downloader.handle_prereleases.return_value = []
-        orchestrator._download_client_app_release = Mock(return_value=False)
 
         orchestrator._process_client_app_downloads()
 
-        orchestrator._download_client_app_release.assert_not_called()
+        mock_download_release.assert_not_called()
 
     def test_process_firmware_downloads_disabled(self, orchestrator):
         """Test firmware processing when disabled."""
@@ -2746,15 +2664,6 @@ class TestDownloadOrchestrator:
         orchestrator._handle_download_result(result, "android")
 
         assert result in orchestrator.failed_downloads
-
-    def test_process_client_app_downloads_disabled_2(self, orchestrator):
-        """Test client app processing when disabled."""
-        orchestrator.config["SAVE_CLIENT_APPS"] = False
-
-        orchestrator._process_client_app_downloads()
-
-        orchestrator.client_app_downloader.migrate_legacy_layout.assert_not_called()
-        orchestrator.client_app_downloader.get_releases.assert_not_called()
 
     def test_process_firmware_with_keep_last_beta(self, orchestrator):
         """Test firmware processing with KEEP_LAST_BETA enabled (lines 576-580)."""

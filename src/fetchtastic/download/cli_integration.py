@@ -600,6 +600,7 @@ class DownloadCLIIntegration:
                 is_android = is_android or is_android_asset_name(file_name)
                 is_desktop = is_desktop or is_desktop_asset_name(file_name)
                 if not is_android and not is_desktop:
+                    log.debug("Unclassified client-app asset, defaulting to Android")
                     is_android = True
             is_android_prerelease = file_type == FILE_TYPE_ANDROID_PRERELEASE or (
                 is_client_app_prerelease and is_android
