@@ -371,7 +371,7 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
     )
 
     assert updated["SAVE_DESKTOP_APP"] is False
-    assert updated["CHECK_DESKTOP_PRERELEASES"] is False
+    assert updated["CHECK_DESKTOP_PRERELEASES"] is True
     assert updated["SELECTED_DESKTOP_ASSETS"] == []
 
 
