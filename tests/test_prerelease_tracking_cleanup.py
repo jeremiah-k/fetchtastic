@@ -44,15 +44,16 @@ def test_manage_prerelease_tracking_files_cleanup_pattern_is_scoped(tmp_path):
     Ensure fnmatch-based cleanup only deletes files for the targeted prerelease_version.
     """
     tracking_dir = tmp_path / "tracking"
-    tracking_dir.mkdir()
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
 
     # Two tracking files for the same prerelease_version (should be deleted).
-    to_delete_1 = tracking_dir / "prerelease_v1.2.3.abc123_v1.2.3.json"
-    to_delete_2 = tracking_dir / "prerelease_v1.2.3.abc123_v1.2.3-extra.json"
+    to_delete_1 = tracking_subdir / "prerelease_v1.2.3.abc123_v1.2.3.json"
+    to_delete_2 = tracking_subdir / "prerelease_v1.2.3.abc123_v1.2.3-extra.json"
 
     # Similar-looking files that must remain (not superseded by current_prereleases).
-    to_keep_1 = tracking_dir / "prerelease_v1.2.4.abc1234_v1.2.4.json"
-    to_keep_2 = tracking_dir / "prerelease_v1.2.4.abc12_v1.2.4.json"
+    to_keep_1 = tracking_subdir / "prerelease_v1.2.4.abc1234_v1.2.4.json"
+    to_keep_2 = tracking_subdir / "prerelease_v1.2.4.abc12_v1.2.4.json"
 
     existing_entry = {
         "prerelease_version": "v1.2.3.abc123",
@@ -102,8 +103,9 @@ def test_manage_prerelease_tracking_files_cleanup_pattern_is_scoped(tmp_path):
 @pytest.mark.core_downloads
 def test_expired_tracking_metadata_cleanup_logs_debug_only(tmp_path):
     tracking_dir = tmp_path / "tracking"
-    tracking_dir.mkdir()
-    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+    tracking_file = tracking_subdir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
     tracking_file.write_text(
         json.dumps(
             {
@@ -149,8 +151,9 @@ def test_expired_tracking_metadata_cleanup_logs_debug_only(tmp_path):
 @pytest.mark.core_downloads
 def test_superseded_tracking_metadata_cleanup_logs_debug(tmp_path):
     tracking_dir = tmp_path / "tracking"
-    tracking_dir.mkdir()
-    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+    tracking_file = tracking_subdir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
     tracking_file.write_text(
         json.dumps(
             {
@@ -199,8 +202,9 @@ def test_current_expired_metadata_not_removed_but_refreshed(tmp_path):
     must not be removed — atomic_write_json refreshes it silently.
     """
     tracking_dir = tmp_path / "tracking"
-    tracking_dir.mkdir()
-    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+    tracking_file = tracking_subdir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
     tracking_file.write_text(
         json.dumps(
             {
@@ -258,8 +262,9 @@ def test_expired_noncurrent_metadata_still_removed(tmp_path):
     is still removed with DEBUG metadata wording.
     """
     tracking_dir = tmp_path / "tracking"
-    tracking_dir.mkdir()
-    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.9_v2.7.14.json"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+    tracking_file = tracking_subdir / "prerelease_v2.7.14-closed.9_v2.7.14.json"
     tracking_file.write_text(
         json.dumps(
             {
