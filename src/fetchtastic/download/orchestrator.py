@@ -427,24 +427,17 @@ class DownloadOrchestrator:
 
             logger.info("Checking for client app prereleases...")
             prereleases = self.client_app_downloader.handle_prereleases(app_releases)
-            tracked_prerelease_tag = self._get_tracked_prerelease_tag(
-                self.client_app_downloader
-            )
             for prerelease in prereleases:
                 is_newer = self.client_app_downloader.should_download_prerelease(
                     prerelease.tag_name
                 )
                 if not is_newer:
-                    should_backfill_tracked = (
-                        tracked_prerelease_tag is not None
-                        and prerelease.tag_name == tracked_prerelease_tag
-                        and not self.client_app_downloader.is_release_complete(
-                            prerelease
-                        )
+                    needs_backfill = not self.client_app_downloader.is_release_complete(
+                        prerelease
                     )
-                    if should_backfill_tracked:
+                    if needs_backfill:
                         logger.info(
-                            "Backfilling tracked client app prerelease %s to include newly selected assets",
+                            "Backfilling client app prerelease %s to include newly selected assets",
                             prerelease.tag_name,
                         )
                     else:
@@ -496,7 +489,6 @@ class DownloadOrchestrator:
                             "Failed to update client app prerelease tracking for %s",
                             prerelease.tag_name,
                         )
-                    tracked_prerelease_tag = prerelease.tag_name
 
             if (
                 self.config.get(
