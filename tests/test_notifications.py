@@ -131,7 +131,7 @@ class TestSendDownloadCompletionNotification:
         )
 
         expected_message = (
-            "Downloaded Android APK versions: 1.2.3, 1.3.0\n2024-01-01T12:00:00"
+            "Downloaded Meshtastic Client versions: 1.2.3, 1.3.0\n2024-01-01T12:00:00"
         )
         mock_send.assert_called_once_with(
             "https://ntfy.sh",
@@ -153,7 +153,7 @@ class TestSendDownloadCompletionNotification:
             config, ["2.7.4"], ["1.2.3"]
         )
 
-        expected_message = "Downloaded Firmware versions: 2.7.4\nDownloaded Android APK versions: 1.2.3\n2024-01-01T12:00:00"
+        expected_message = "Downloaded Firmware versions: 2.7.4\nDownloaded Meshtastic Client versions: 1.2.3\n2024-01-01T12:00:00"
         mock_send.assert_called_once_with(
             "https://ntfy.sh",
             "test",
@@ -209,7 +209,7 @@ class TestSendNewReleasesAvailableNotification:
         )
 
         expected_message = (
-            "Android APK versions available: 1.2.3, 1.3.0\n2024-01-01T12:00:00"
+            "Meshtastic Client versions available: 1.2.3, 1.3.0\n2024-01-01T12:00:00"
         )
         mock_send.assert_called_once_with(
             "https://ntfy.sh",
@@ -347,8 +347,8 @@ class TestNotificationEdgeCases:
         expected_message = (
             "Downloaded Firmware versions: 2.7.4\n"
             "Downloaded Firmware prerelease versions: 2.8.0-alpha\n"
-            "Downloaded Android APK versions: 1.2.3\n"
-            "Downloaded Android APK prerelease versions: 1.3.0-beta\n"
+            "Downloaded Meshtastic Client versions: 1.2.3\n"
+            "Downloaded Meshtastic Client prerelease versions: 1.3.0-beta\n"
             "2024-01-01T12:00:00"
         )
         mock_send.assert_called_once_with(
@@ -379,7 +379,7 @@ class TestNotificationEdgeCases:
         expected_message = (
             "Downloads skipped due to rate limiting\n"
             "Firmware versions available: 2.7.4\n"
-            "Android APK versions available: 1.2.3\n"
+            "Meshtastic Client versions available: 1.2.3\n"
             "2024-01-01T12:00:00"
         )
         mock_send.assert_called_once_with(
@@ -387,6 +387,38 @@ class TestNotificationEdgeCases:
             "test",
             expected_message,
             title="Fetchtastic Downloads Skipped",
+        )
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    @patch("fetchtastic.notifications.datetime")
+    def test_send_completion_notification_combines_client_app_assets(
+        self, mock_datetime, mock_send
+    ):
+        """APK and Desktop reports for the same release should share one client line."""
+        mock_datetime.now.return_value.astimezone.return_value.isoformat.return_value = (
+            "2024-01-01T12:00:00"
+        )
+
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_download_completion_notification(
+            config,
+            [],
+            ["v2.7.14"],
+            downloaded_desktop=["v2.7.14", "v2.7.13"],
+            downloaded_apk_prereleases=["v2.7.15-open.1"],
+            downloaded_desktop_prereleases=["v2.7.15-open.1"],
+        )
+
+        expected_message = (
+            "Downloaded Meshtastic Client versions: v2.7.14, v2.7.13\n"
+            "Downloaded Meshtastic Client prerelease versions: v2.7.15-open.1\n"
+            "2024-01-01T12:00:00"
+        )
+        mock_send.assert_called_once_with(
+            "https://ntfy.sh",
+            "test",
+            expected_message,
+            title="Fetchtastic Download Completed",
         )
 
     def test_send_notification_empty_config(self):
