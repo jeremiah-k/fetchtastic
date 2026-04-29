@@ -994,6 +994,38 @@ class TestDownloadOrchestrator:
 
         assert result in orchestrator.download_results
 
+    def test_handle_download_result_completion_log_includes_filename(
+        self, orchestrator, tmp_path
+    ):
+        """Completion debug logs should include filenames for repeated release tags."""
+        result = DownloadResult(
+            success=True,
+            release_tag="firmware-2.7.23.c0e52e6",
+            file_path=str(tmp_path / "firmware-rak4631.zip"),
+        )
+
+        with patch("fetchtastic.download.orchestrator.logger.debug") as debug_log:
+            orchestrator._handle_download_result(result, "firmware_prerelease_repo")
+
+        assert any(
+            call.args
+            == (
+                "Completed %s: %s",
+                "firmware_prerelease_repo",
+                "firmware-rak4631.zip",
+            )
+            for call in debug_log.call_args_list
+        )
+        assert not any(
+            call.args
+            == (
+                "Completed %s: %s",
+                "firmware_prerelease_repo",
+                "firmware-2.7.23.c0e52e6",
+            )
+            for call in debug_log.call_args_list
+        )
+
     def test_process_firmware_downloads_symlink_cleanup(self, tmp_path):
         """Firmware processing should skip symlinks in prerelease cleanup."""
         config = {

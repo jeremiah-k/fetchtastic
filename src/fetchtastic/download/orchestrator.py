@@ -1058,7 +1058,12 @@ class DownloadOrchestrator:
                 if "prerelease" not in operation_type:
                     logger.debug("Skipped %s: %s", operation_type, result.release_tag)
             else:
-                logger.debug("Completed %s: %s", operation_type, result.release_tag)
+                completed_name = (
+                    os.path.basename(str(result.file_path))
+                    if result.file_path
+                    else result.release_tag
+                )
+                logger.debug("Completed %s: %s", operation_type, completed_name)
         else:
             self.failed_downloads.append(result)
             error_msg = result.error_message or "Unknown error"

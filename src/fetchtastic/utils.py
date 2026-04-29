@@ -1498,6 +1498,19 @@ def matches_selected_patterns(
     base_legacy = legacy_strip_version_numbers(filename)
     base_modern_lower = base_modern.lower()
     base_legacy_lower = base_legacy.lower()
+    comparison_bases = [base_modern_lower, base_legacy_lower]
+    desktop_extensions = (".dmg", ".exe", ".msi", ".deb", ".rpm", ".appimage")
+    if filename.lower().endswith(desktop_extensions):
+        for base in (base_modern_lower, base_legacy_lower):
+            for marker in (
+                "meshtastic desktop",
+                "meshtastic-desktop",
+                "meshtastic_desktop",
+            ):
+                if marker in base:
+                    alias = base.replace(marker, "meshtastic")
+                    if alias not in comparison_bases:
+                        comparison_bases.append(alias)
     base_modern_sanitised = None  # lazy
     base_legacy_sanitised = None  # lazy
 
@@ -1518,9 +1531,7 @@ def matches_selected_patterns(
         else:
             # For other patterns, the modern form is generally preferred,
             # but we check both for backward compatibility.
-            match_found = (
-                pat_lower in base_modern_lower or pat_lower in base_legacy_lower
-            )
+            match_found = any(pat_lower in base for base in comparison_bases)
         if match_found:
             return True
 

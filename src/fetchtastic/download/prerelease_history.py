@@ -10,7 +10,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import requests  # type: ignore[import-untyped]
 
@@ -697,22 +697,37 @@ class PrereleaseHistoryManager:
 
         # Read existing prerelease tracking data
         existing_prereleases = []
+        invalid_tracking_files = []
         for file_path in tracking_files:
             tracking_data = cache_manager.read_json(file_path)
             if tracking_data and self.version_manager.validate_version_tracking_data(
                 tracking_data, ["prerelease_version", "base_version"]
             ):
                 existing_prereleases.append(tracking_data)
+            else:
+                invalid_tracking_files.append(file_path)
+
+        for file_path in invalid_tracking_files:
+            try:
+                os.remove(file_path)
+                logger.debug(
+                    "Removed invalid prerelease tracking metadata file: %s",
+                    os.path.basename(file_path),
+                )
+            except OSError as e:
+                logger.error(
+                    "Error removing invalid prerelease tracking metadata file %s: %s",
+                    os.path.basename(file_path),
+                    e,
+                )
 
         # Cleanup superseded/expired prereleases by comparing to current set
         for existing in existing_prereleases:
-            should_cleanup = False
-            for current in current_prereleases:
-                if self.should_cleanup_superseded_prerelease(existing, current):
-                    should_cleanup = True
-                    break
+            cleanup_reason = self.get_prerelease_tracking_cleanup_reason(
+                existing, current_prereleases
+            )
 
-            if should_cleanup:
+            if cleanup_reason:
                 prerelease_version = existing.get("prerelease_version", "")
                 if not prerelease_version:
                     continue
@@ -725,12 +740,16 @@ class PrereleaseHistoryManager:
                             if fnmatch.fnmatch(entry.name, filename_pattern):
                                 try:
                                     os.remove(entry.path)
-                                    logger.info(
-                                        f"Cleaned up superseded prerelease tracking: {entry.name}"
+                                    logger.debug(
+                                        "Removed %s prerelease tracking metadata file: %s",
+                                        cleanup_reason,
+                                        entry.name,
                                     )
                                 except OSError as e:
                                     logger.error(
-                                        f"Error cleaning up prerelease tracking {entry.name}: {e}"
+                                        "Error removing prerelease tracking metadata file %s: %s",
+                                        entry.name,
+                                        e,
                                     )
                 except FileNotFoundError:
                     pass
@@ -812,26 +831,39 @@ class PrereleaseHistoryManager:
         Returns:
             `True` if the current prerelease should be cleaned up, `False` otherwise.
         """
-        # Check if new prerelease is based on a newer version
-        current_base = current_prerelease.get("base_version")
-        new_base = new_prerelease.get("base_version")
+        return (
+            self.get_prerelease_tracking_cleanup_reason(
+                current_prerelease, [new_prerelease]
+            )
+            is not None
+        )
 
-        if current_base and new_base:
-            comparison = self.version_manager.compare_versions(new_base, current_base)
-            if comparison > 0:  # New base version is newer
-                return True
-
-        # Check if current prerelease has expired
-        expiry_str = current_prerelease.get("expiry_timestamp")
+    def get_prerelease_tracking_cleanup_reason(
+        self,
+        existing_prerelease: Dict[str, Any],
+        current_prereleases: List[Dict[str, Any]],
+    ) -> Literal["expired", "superseded"] | None:
+        """Return why a prerelease tracking metadata file should be removed."""
+        expiry_str = existing_prerelease.get("expiry_timestamp")
         if expiry_str:
             try:
                 expiry_time = datetime.fromisoformat(expiry_str)
                 if datetime.now(timezone.utc) > expiry_time:
-                    return True
+                    return "expired"
             except ValueError:
                 pass
 
-        return False
+        current_base = existing_prerelease.get("base_version")
+        if not current_base:
+            return None
+        for new_prerelease in current_prereleases:
+            new_base = new_prerelease.get("base_version")
+            if not new_base:
+                continue
+            comparison = self.version_manager.compare_versions(new_base, current_base)
+            if comparison > 0:
+                return "superseded"
+        return None
 
     def scan_directory_for_prerelease_versions(
         self, directory_path: str, pattern: str = "*"

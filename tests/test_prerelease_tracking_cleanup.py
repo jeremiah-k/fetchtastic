@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -95,3 +96,91 @@ def test_manage_prerelease_tracking_files_cleanup_pattern_is_scoped(tmp_path):
     assert not to_delete_2.exists()
     assert to_keep_1.exists()
     assert to_keep_2.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_expired_tracking_metadata_cleanup_logs_debug_only(tmp_path):
+    tracking_dir = tmp_path / "tracking"
+    tracking_dir.mkdir()
+    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.7.14-closed.10",
+                "base_version": "v2.7.14",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) - timedelta(hours=1)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    app_prerelease_dir = tmp_path / "app" / "prerelease" / "v2.7.14-closed.10"
+    app_prerelease_dir.mkdir(parents=True)
+
+    manager = PrereleaseHistoryManager()
+    with (
+        patch("fetchtastic.download.prerelease_history.logger.debug") as debug_log,
+        patch("fetchtastic.download.prerelease_history.logger.info") as info_log,
+    ):
+        manager.manage_prerelease_tracking_files(
+            str(tracking_dir),
+            current_prereleases=[],
+            cache_manager=_SimpleCacheManager(),
+        )
+
+    assert not tracking_file.exists()
+    assert app_prerelease_dir.exists()
+    assert any(
+        call.args[:2] == ("Removed %s prerelease tracking metadata file: %s", "expired")
+        for call in debug_log.call_args_list
+    )
+    assert not info_log.called
+    assert not any(
+        "Cleaned up prerelease" in call.args[0] and "metadata" not in call.args[0]
+        for call in debug_log.call_args_list
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_superseded_tracking_metadata_cleanup_logs_debug(tmp_path):
+    tracking_dir = tmp_path / "tracking"
+    tracking_dir.mkdir()
+    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.7.14-closed.10",
+                "base_version": "v2.7.14",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) + timedelta(hours=1)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = PrereleaseHistoryManager()
+    with patch("fetchtastic.download.prerelease_history.logger.debug") as debug_log:
+        manager.manage_prerelease_tracking_files(
+            str(tracking_dir),
+            current_prereleases=[
+                {
+                    "prerelease_version": "v2.7.15-open.1",
+                    "base_version": "v2.7.15",
+                    "expiry_timestamp": (
+                        datetime.now(timezone.utc) + timedelta(hours=1)
+                    ).isoformat(),
+                }
+            ],
+            cache_manager=_SimpleCacheManager(),
+        )
+
+    assert not tracking_file.exists()
+    assert any(
+        call.args[:2]
+        == ("Removed %s prerelease tracking metadata file: %s", "superseded")
+        for call in debug_log.call_args_list
+    )
