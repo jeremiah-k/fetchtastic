@@ -790,7 +790,10 @@ class PrereleaseHistoryManager:
                     pass
 
         # Ensure tracking subdirectory exists before writing
-        os.makedirs(tracking_subdir, exist_ok=True)
+        try:
+            os.makedirs(tracking_subdir, exist_ok=True)
+        except FileNotFoundError:
+            return
 
         # Write/update tracking files for current prereleases
         for current in current_prereleases:
