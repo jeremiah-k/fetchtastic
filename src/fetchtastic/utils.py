@@ -1504,6 +1504,7 @@ def matches_selected_patterns(
         for base in (base_modern_lower, base_legacy_lower):
             for marker in (
                 "meshtastic desktop",
+                "meshtastic.desktop",
                 "meshtastic-desktop",
                 "meshtastic_desktop",
             ):
