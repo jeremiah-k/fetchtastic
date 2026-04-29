@@ -442,7 +442,7 @@ class DownloadOrchestrator:
                         )
                     else:
                         logger.debug(
-                            "Skipping client app prerelease %s because it is not newer than tracked prerelease",
+                            "Client app prerelease %s is retained and already tracked; no download needed",
                             prerelease.tag_name,
                         )
                         continue
