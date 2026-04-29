@@ -52,8 +52,10 @@ def test_android_wrapper_uses_unified_prerelease_path(downloader):
     )
 
 
-def test_download_apk_returns_android_file_type(downloader, mocker):
-    """Wrapper should return legacy android file_type from download_app result."""
+def test_download_apk_mutates_client_app_result_to_legacy_android_file_type(
+    downloader, mocker
+):
+    """Wrapper mutates download_app result in-place to expose legacy android file_type."""
     release = Release(tag_name="v2.7.14", prerelease=False)
     asset = Asset(
         name="meshtastic.apk",
@@ -66,12 +68,14 @@ def test_download_apk_returns_android_file_type(downloader, mocker):
         release_tag="v2.7.14",
         file_type="client_app",
     )
+    original_file_type = mock_download_app.return_value.file_type
 
     result = downloader.download_apk(release, asset)
 
     mock_download_app.assert_called_once_with(release, asset)
     assert result is mock_download_app.return_value
-    assert result.file_type == "android"
+    assert original_file_type == "client_app"  # mock returned unified type
+    assert result.file_type == "android"  # mutated in-place by wrapper
 
 
 def test_android_release_notes_use_single_client_app_file(downloader):

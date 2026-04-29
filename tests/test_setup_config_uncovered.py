@@ -377,8 +377,8 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_partial_non_desktop_preserves_desktop_state(mocker):
-    """Partial runs outside desktop should not clear saved desktop selections."""
+def test_setup_downloads_partial_non_download_preserves_desktop_state(mocker):
+    """Partial runs with non-download section should not clear saved desktop selections."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {
@@ -390,7 +390,7 @@ def test_setup_downloads_partial_non_desktop_preserves_desktop_state(mocker):
     }
 
     def wants(section: str) -> bool:
-        return section == "app"
+        return section == "notifications"
 
     mocker.patch("builtins.input", side_effect=["n"])
 

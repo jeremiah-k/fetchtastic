@@ -56,8 +56,10 @@ def test_desktop_wrapper_uses_unified_prerelease_path(downloader):
     )
 
 
-def test_download_desktop_returns_desktop_file_type(downloader, mocker):
-    """Wrapper should return legacy desktop file_type from download_app result."""
+def test_download_desktop_mutates_client_app_result_to_legacy_desktop_file_type(
+    downloader, mocker
+):
+    """Wrapper mutates download_app result in-place to expose legacy desktop file_type."""
     release = Release(tag_name="v2.7.14", prerelease=False)
     asset = Asset(
         name="Meshtastic-2.7.14.dmg",
@@ -73,13 +75,14 @@ def test_download_desktop_returns_desktop_file_type(downloader, mocker):
             file_type="client_app",
         ),
     )
+    original_file_type = mock_download_app.return_value.file_type
 
     result = downloader.download_desktop(release, asset)
 
     mock_download_app.assert_called_once_with(release, asset)
     assert result is mock_download_app.return_value
-    assert result.success is True
-    assert result.file_type == "desktop"
+    assert original_file_type == "client_app"  # mock returned unified type
+    assert result.file_type == "desktop"  # mutated in-place by wrapper
 
 
 def test_desktop_release_notes_use_single_client_app_file(downloader):

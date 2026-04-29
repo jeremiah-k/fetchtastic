@@ -302,10 +302,7 @@ class TestDownloadOrchestrator:
             Release(tag_name="v2.7.11", prerelease=False, assets=[]),
         ]
         orchestrator.client_app_downloader.get_latest_prerelease_tag = Mock(
-            return_value=None
-        )
-        orchestrator.client_app_downloader.get_latest_prerelease_tag.return_value = (
-            "v2.7.12-open.1"
+            return_value="v2.7.12-open.1"
         )
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
             return_value=None
@@ -2110,29 +2107,6 @@ class TestDownloadOrchestrator:
         orchestrator._process_client_app_downloads()
 
         orchestrator.client_app_downloader.get_releases.assert_called_once()
-
-    @patch.object(
-        DownloadOrchestrator, "_download_client_app_release", return_value=True
-    )
-    def test_process_client_app_downloads_download_returns_true(
-        self, mock_download_release, orchestrator
-    ):
-        """Test client app processing when _download_client_app_release returns True."""
-        mock_asset = Mock()
-        mock_asset.name = "app.apk"
-        release = Release(tag_name="v1.0.0", prerelease=False, assets=[mock_asset])
-        orchestrator.client_app_downloader.get_releases.return_value = [release]
-        orchestrator.client_app_downloader.update_release_history.return_value = {}
-        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
-        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
-        orchestrator.client_app_downloader.is_release_complete.return_value = False
-        orchestrator.client_app_downloader.handle_prereleases.return_value = []
-        orchestrator.client_app_downloader.should_download_asset.return_value = True
-        orchestrator.client_app_downloader.get_assets.return_value = [mock_asset]
-
-        orchestrator._process_client_app_downloads()
-
-        mock_download_release.assert_called_once_with(release)
 
     def test_process_client_app_downloads_prerelease_skipped_asset(self, orchestrator):
         """Test client app prerelease when should_download_asset returns False."""

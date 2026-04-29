@@ -202,6 +202,9 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     elif has_any_selection_key:
         config["SAVE_APKS"] = False
         config["SAVE_DESKTOP_APP"] = False
+    else:
+        config["SAVE_APKS"] = False
+        config["SAVE_DESKTOP_APP"] = False
     config.pop("SELECTED_DESKTOP_PLATFORMS", None)
     config["ANDROID_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
     config["DESKTOP_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]

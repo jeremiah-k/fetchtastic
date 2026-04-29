@@ -112,22 +112,26 @@ def test_explicit_apk_prerelease_false_does_not_default_desktop_true():
 
 
 def test_legacy_save_apks_preserved_when_no_selection_keys():
+    """Legacy SAVE_APKS=True without selections: SAVE_CLIENT_APPS=True, but no assets to download."""
     config = {"SAVE_APKS": True}
 
     normalized = normalize_client_app_config(config)
 
     assert normalized["SAVE_CLIENT_APPS"] is True
-    assert normalized["SAVE_APKS"] is True
+    # Empty selection means nothing to download; legacy booleans alone cannot
+    # bypass should_download_asset, so SAVE_* sub-flags are forced False.
+    assert normalized["SAVE_APKS"] is False
     assert normalized["SELECTED_APP_ASSETS"] == []
 
 
 def test_legacy_save_desktop_app_preserved_when_no_selection_keys():
+    """Legacy SAVE_DESKTOP_APP=True without selections: SAVE_CLIENT_APPS=True, but no assets to download."""
     config = {"SAVE_DESKTOP_APP": True}
 
     normalized = normalize_client_app_config(config)
 
     assert normalized["SAVE_CLIENT_APPS"] is True
-    assert normalized["SAVE_DESKTOP_APP"] is True
+    assert normalized["SAVE_DESKTOP_APP"] is False
     assert normalized["SELECTED_APP_ASSETS"] == []
 
 
@@ -208,6 +212,7 @@ def test_absent_primary_still_ors_legacy_prerelease_flags():
         "CHECK_APK_PRERELEASES": False,
         "CHECK_DESKTOP_PRERELEASES": True,
         "SAVE_DESKTOP_APP": True,
+        "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg"],
     }
 
     normalized = normalize_client_app_config(config)
