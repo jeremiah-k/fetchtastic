@@ -1800,7 +1800,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         logger.debug("Expected prerelease version: %s", expected_version)
 
-        active_dir, history_entries = (
+        latest_active_dir, history_entries = (
             prerelease_manager.get_latest_active_prerelease_from_history(
                 expected_version,
                 cache_manager=self.cache_manager,
@@ -1817,9 +1817,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 "expected_version": expected_version,
             }
 
-        if active_dir:
+        active_dirs = self._get_active_prerelease_dirs_from_history(history_entries)
+        if latest_active_dir and latest_active_dir not in active_dirs:
+            active_dirs.append(latest_active_dir)
+
+        if active_dirs:
             logger.info("Using commit history for prerelease detection")
         else:
+            fallback_dir = None
             # Fallback: scan repo root for prerelease directories
             try:
                 dirs = self.cache_manager.get_repo_directories(
@@ -1846,40 +1851,43 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         ),
                         reverse=True,
                     )
-                    active_dir = f"{FIRMWARE_DIR_PREFIX}{matches[0]}"
+                    fallback_dir = f"{FIRMWARE_DIR_PREFIX}{matches[0]}"
             except (requests.RequestException, OSError, ValueError, TypeError) as exc:
                 logger.debug(
                     "Fallback prerelease directory scan failed; skipping prerelease detection: %s",
                     exc,
                 )
-                active_dir = None
+                fallback_dir = None
+            if fallback_dir:
+                active_dirs = [fallback_dir]
 
-        if active_dir:
+        if active_dirs:
             repo_dirs = self.cache_manager.get_repo_directories(
                 "",
                 force_refresh=True,
                 github_token=self.config.get("GITHUB_TOKEN"),
                 allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
             )
-            if active_dir not in repo_dirs:
-                fallback_dir = self._select_existing_active_prerelease_dir(
-                    history_entries or [], repo_dirs
-                )
-                if fallback_dir:
+            repo_dir_set = set(repo_dirs)
+            missing_dirs = [
+                directory for directory in active_dirs if directory not in repo_dir_set
+            ]
+            active_dirs = [
+                directory for directory in active_dirs if directory in repo_dir_set
+            ]
+            for missing_dir in missing_dirs:
+                if active_dirs:
                     logger.info(
-                        "Prerelease directory %s no longer exists; using active prerelease %s",
-                        active_dir,
-                        fallback_dir,
+                        "Prerelease directory %s no longer exists; continuing with remaining active prereleases",
+                        missing_dir,
                     )
-                    active_dir = fallback_dir
                 else:
                     logger.info(
                         "Prerelease directory %s no longer exists; skipping prerelease download",
-                        active_dir,
+                        missing_dir,
                     )
-                    return [], [], None, prerelease_summary
 
-        if not active_dir:
+        if not active_dirs:
             logger.info("No pre-release firmware available")
             return [], [], None, prerelease_summary
 
@@ -1901,42 +1909,65 @@ class FirmwareReleaseDownloader(BaseDownloader):
         except FileNotFoundError:
             pass
 
-        successes, failures, any_downloaded = self._download_prerelease_assets(
-            active_dir,
-            selected_patterns=selected_patterns,
-            exclude_patterns=exclude_patterns,
-            force_refresh=force_refresh,
-        )
-
-        if not any_downloaded and active_dir in existing_dirs and not failures:
-            logger.info("Found an existing pre-release, but no new files to download.")
+        successes: list[DownloadResult] = []
+        failures: list[DownloadResult] = []
+        any_downloaded = False
+        downloaded_dirs: list[str] = []
+        for active_dir in active_dirs:
+            (
+                prerelease_successes,
+                prerelease_failures,
+                prerelease_downloaded,
+            ) = self._download_prerelease_assets(
+                active_dir,
+                selected_patterns=selected_patterns,
+                exclude_patterns=exclude_patterns,
+                force_refresh=force_refresh,
+            )
+            successes.extend(prerelease_successes)
+            failures.extend(prerelease_failures)
+            if prerelease_downloaded:
+                any_downloaded = True
+                downloaded_dirs.append(active_dir)
+            if (
+                not prerelease_downloaded
+                and active_dir in existing_dirs
+                and not prerelease_failures
+            ):
+                logger.info(
+                    "Found existing pre-release %s, but no new files to download.",
+                    active_dir,
+                )
 
         if any_downloaded or force_refresh:
-            prerelease_manager.update_prerelease_tracking(
-                latest_release_tag, active_dir, cache_manager=self.cache_manager
-            )
+            for active_dir in downloaded_dirs or active_dirs:
+                prerelease_manager.update_prerelease_tracking(
+                    latest_release_tag, active_dir, cache_manager=self.cache_manager
+                )
 
         # Consolidate skipped messages
         skipped_count = sum(1 for result in successes if result.was_skipped)
         if skipped_count > 0:
             logger.debug(f"Skipped {skipped_count} existing pre-release files.")
 
-        return successes, failures, active_dir, prerelease_summary
+        return successes, failures, active_dirs[-1], prerelease_summary
 
-    def _select_existing_active_prerelease_dir(
-        self, history_entries: List[Dict[str, Any]], repo_dirs: List[str]
-    ) -> Optional[str]:
-        """Return the newest active prerelease directory that still exists upstream."""
-        repo_dir_set = set(repo_dirs)
-        for entry in reversed(history_entries):
+    def _get_active_prerelease_dirs_from_history(
+        self, history_entries: List[Dict[str, Any]]
+    ) -> list[str]:
+        """Return active prerelease directories from history in history order."""
+        active_dirs: list[str] = []
+        seen: set[str] = set()
+        for entry in history_entries:
             directory = entry.get("directory")
             if (
                 entry.get("status") == "active"
                 and isinstance(directory, str)
-                and directory in repo_dir_set
+                and directory not in seen
             ):
-                return directory
-        return None
+                active_dirs.append(directory)
+                seen.add(directory)
+        return active_dirs
 
     def log_prerelease_summary(
         self,
