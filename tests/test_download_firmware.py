@@ -2818,10 +2818,92 @@ class TestFirmwareUncoveredBranches:
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
         assert result[2] == "firmware-2.7.23.2a858be"
-        assert [call.args[0] for call in download_assets.call_args_list] == [
+        assert {call.args[0] for call in download_assets.call_args_list} == {
             "firmware-2.7.23.7be5426",
             "firmware-2.7.23.2a858be",
+        }
+
+    def test_download_repo_prerelease_firmware_syncs_existing_repo_dirs(
+        self, downloader, tmp_path
+    ):
+        """Backfill matching prerelease dirs that still exist even if history missed them."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "identifier": "2.7.23.c0e52e6",
+                "directory": "firmware-2.7.23.c0e52e6",
+                "status": "deleted",
+            },
+            {
+                "identifier": "2.7.23.7be5426",
+                "directory": "firmware-2.7.23.7be5426",
+                "status": "active",
+            },
         ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.c0e52e6",
+                    "firmware-2.7.23.7be5426",
+                    "firmware-2.7.23.2a858be",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.7be5426", history_entries),
+            ),
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        assert result[2] == "firmware-2.7.23.2a858be"
+        assert {call.args[0] for call in download_assets.call_args_list} == {
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.2a858be",
+        }
+
+    def test_download_repo_prerelease_firmware_fallback_downloads_all_existing_dirs(
+        self, downloader, tmp_path
+    ):
+        """Fallback repo scanning should download every matching available prerelease dir."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.7be5426",
+                    "firmware-2.7.23.2a858be",
+                    "firmware-2.7.24.bad9999",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        assert result[2] == "firmware-2.7.23.7be5426"
+        assert {call.args[0] for call in download_assets.call_args_list} == {
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.2a858be",
+        }
 
     # Lines 1797-1835: Release notes logging
     def test_log_prerelease_summary(self, downloader):
