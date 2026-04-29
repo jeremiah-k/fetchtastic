@@ -465,9 +465,15 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             )
         )
         preferred_release_dir = os.path.join(preferred_base_dir, safe_release)
-        if os.path.islink(preferred_release_dir):
+        if os.path.islink(preferred_base_dir) or os.path.islink(preferred_release_dir):
             raise ValueError(
                 f"Refusing symlinked client app release dir: {preferred_release_dir}"
+            )
+        if os.path.exists(preferred_release_dir) and not self._is_safe_managed_dir(
+            preferred_release_dir
+        ):
+            raise ValueError(
+                f"Refusing unsafe client app release dir: {preferred_release_dir}"
             )
         if self._is_safe_managed_dir(preferred_release_dir):
             return preferred_release_dir
@@ -483,15 +489,16 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                     return preferred_release_dir
                 if self._is_safe_managed_dir(preferred_release_dir):
                     return preferred_release_dir
-                return legacy_release_dir
         if create_if_missing:
-            if os.path.islink(preferred_base_dir) or not self._is_within_download_tree(
-                preferred_release_dir
-            ):
+            if not self._is_within_download_tree(preferred_release_dir):
                 raise ValueError(
                     f"Refusing unsafe client app release dir: {preferred_release_dir}"
                 )
             os.makedirs(preferred_release_dir, exist_ok=True)
+            if not self._is_safe_managed_dir(preferred_release_dir):
+                raise ValueError(
+                    f"Refusing unsafe client app release dir: {preferred_release_dir}"
+                )
         return preferred_release_dir
 
     def _is_client_app_prerelease(self, release: Release) -> bool:

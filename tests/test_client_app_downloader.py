@@ -68,6 +68,89 @@ def test_migrates_legacy_apks_and_split_app_dirs(downloader, tmp_path):
     ).exists()
 
 
+@pytest.mark.parametrize(
+    "legacy_parts",
+    [
+        ("app", "android"),
+        ("app", "desktop"),
+        ("apks",),
+    ],
+)
+def test_resolve_release_dir_never_returns_legacy_dir_after_migration_failure(
+    downloader, tmp_path, mocker, legacy_parts
+):
+    downloads = tmp_path / "downloads"
+    legacy_dir = downloads.joinpath(*legacy_parts, "v2.7.14")
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "asset.txt").write_text("x", encoding="utf-8")
+    preferred_dir = downloads / APP_DIR_NAME / "v2.7.14"
+    mocker.patch.object(downloader, "_move_legacy_path", return_value=False)
+
+    resolved = downloader._resolve_release_dir(
+        "v2.7.14", is_prerelease=False, create_if_missing=True
+    )
+
+    assert Path(resolved) == preferred_dir
+    assert Path(resolved) != legacy_dir
+    assert preferred_dir.is_dir()
+
+
+def test_resolve_release_dir_unsafe_preferred_raises_without_legacy_fallback(
+    downloader, tmp_path
+):
+    downloads = tmp_path / "downloads"
+    legacy_dir = downloads / "apks" / "v2.7.14"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "asset.txt").write_text("x", encoding="utf-8")
+    preferred_dir = downloads / APP_DIR_NAME / "v2.7.14"
+    preferred_dir.parent.mkdir(parents=True)
+    try:
+        preferred_dir.symlink_to(tmp_path, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    with pytest.raises(ValueError, match="symlinked client app release dir"):
+        downloader._resolve_release_dir(
+            "v2.7.14", is_prerelease=False, create_if_missing=True
+        )
+
+
+def test_resolve_release_dir_migrates_legacy_into_unified_app_dir(downloader, tmp_path):
+    downloads = tmp_path / "downloads"
+    legacy_dir = downloads / "apks" / "v2.7.14"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "asset.txt").write_text("x", encoding="utf-8")
+    preferred_dir = downloads / APP_DIR_NAME / "v2.7.14"
+
+    resolved = downloader._resolve_release_dir(
+        "v2.7.14", is_prerelease=False, create_if_missing=True
+    )
+
+    assert Path(resolved) == preferred_dir
+    assert (preferred_dir / "asset.txt").exists()
+    assert not legacy_dir.exists()
+
+
+def test_resolve_release_dir_prefers_existing_safe_unified_dir_after_migration_attempt(
+    downloader, tmp_path, mocker
+):
+    downloads = tmp_path / "downloads"
+    legacy_dir = downloads / "apks" / "v2.7.14"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "legacy.txt").write_text("x", encoding="utf-8")
+    preferred_dir = downloads / APP_DIR_NAME / "v2.7.14"
+    preferred_dir.mkdir(parents=True)
+    (preferred_dir / "asset.txt").write_text("x", encoding="utf-8")
+    move_mock = mocker.patch.object(downloader, "_move_legacy_path")
+
+    resolved = downloader._resolve_release_dir(
+        "v2.7.14", is_prerelease=False, create_if_missing=True
+    )
+
+    assert Path(resolved) == preferred_dir
+    move_mock.assert_not_called()
+
+
 def test_move_legacy_path_rejects_symlinked_destination_ancestor(downloader, tmp_path):
     downloads = tmp_path / "downloads"
     source = downloads / "apks" / "v2.7.13"
