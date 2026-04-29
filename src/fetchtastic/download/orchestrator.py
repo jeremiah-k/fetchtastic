@@ -1289,6 +1289,10 @@ class DownloadOrchestrator:
                     if file_type in (
                         FILE_TYPE_CLIENT_APP,
                         FILE_TYPE_CLIENT_APP_PRERELEASE,
+                        "android",
+                        "android_prerelease",
+                        "desktop",
+                        "desktop_prerelease",
                         FILE_TYPE_DESKTOP,
                         FILE_TYPE_DESKTOP_PRERELEASE,
                     ):
@@ -1902,6 +1906,12 @@ class DownloadOrchestrator:
                 if file_type not in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    "android",
+                    "android_prerelease",
+                    "desktop",
+                    "desktop_prerelease",
+                    FILE_TYPE_DESKTOP,
+                    FILE_TYPE_DESKTOP_PRERELEASE,
                 }:
                     continue
 
@@ -1954,13 +1964,16 @@ class DownloadOrchestrator:
             logger.info("Cleaning up old versions...")
 
             # Clean up client app versions once for the unified app tree.
-            if self.android_downloader is not self.client_app_downloader:
-                app_keep = 5
-            else:
-                app_keep = self.config.get(
-                    "APP_VERSIONS_TO_KEEP",
-                    self.config.get("ANDROID_VERSIONS_TO_KEEP", 5),
-                )
+            raw_app_keep = self.config.get(
+                "APP_VERSIONS_TO_KEEP",
+                self.config.get(
+                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP
+                ),
+            )
+            try:
+                app_keep = max(0, int(raw_app_keep))
+            except (TypeError, ValueError):
+                app_keep = int(DEFAULT_APP_VERSIONS_TO_KEEP)
             cached_app_releases = (
                 self.client_app_releases
                 or self.android_releases
@@ -1973,7 +1986,11 @@ class DownloadOrchestrator:
                 else self.client_app_downloader
             )
             app_cleanup_downloader.cleanup_old_versions(
-                app_keep, cached_releases=cached_app_releases
+                app_keep,
+                cached_releases=cached_app_releases,
+                keep_last_beta=self.config.get(
+                    "KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA
+                ),
             )
             if (
                 self.config.get("SAVE_DESKTOP_APP", False)

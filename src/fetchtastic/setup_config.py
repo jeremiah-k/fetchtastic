@@ -3519,7 +3519,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if config is None:
             return None
         config = _migrate_desktop_asset_key(config)
-        if config:
+        if config is not None:
             config = normalize_client_app_config(config)
 
         # Update global variables
@@ -3538,7 +3538,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             if config is None:
                 return None
             config = _migrate_desktop_asset_key(config)
-            if config:
+            if config is not None:
                 config = normalize_client_app_config(config)
 
             # Update BASE_DIR from config
@@ -3553,7 +3553,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             if config is None:
                 return None
             config = _migrate_desktop_asset_key(config)
-            if config:
+            if config is not None:
                 config = normalize_client_app_config(config)
 
             # Update BASE_DIR from config

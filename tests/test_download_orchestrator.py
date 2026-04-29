@@ -3,6 +3,7 @@
 # Comprehensive unit tests for the DownloadOrchestrator class.
 
 import time
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -642,7 +643,9 @@ class TestDownloadOrchestrator:
         orchestrator.cleanup_old_versions()
 
         mock_android.cleanup_old_versions.assert_called_once_with(
-            5, cached_releases=orchestrator.android_releases
+            2,
+            cached_releases=orchestrator.android_releases,
+            keep_last_beta=False,
         )
         mock_firmware.cleanup_old_versions.assert_called_once()
 
@@ -1322,6 +1325,7 @@ class TestDownloadOrchestrator:
         failed_result.retry_count = 0
         failed_result.file_type = "android_prerelease"
         failed_result.file_size = 1000
+        Path(failed_result.file_path).write_bytes(b"x" * 1000)
 
         orchestrator.android_downloader.download = Mock(return_value=True)
         orchestrator.android_downloader.verify = Mock(return_value=True)

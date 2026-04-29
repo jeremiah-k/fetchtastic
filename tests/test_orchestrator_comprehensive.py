@@ -162,6 +162,7 @@ class TestDownloadOrchestrator:
             release_tag="test-tag",
             file_size=1000,
         )
+        (tmp_path / "test.apk").write_bytes(b"x" * 1000)
 
         with (
             patch.object(

@@ -567,6 +567,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         )
 
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
+        if os.path.islink(target_path):
+            return False
         if not os.path.exists(target_path):
             return False
         if (
@@ -716,6 +718,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 is_prerelease=release.prerelease,
                 release=release,
             )
+            if os.path.islink(target_path):
+                raise ValueError(f"Refusing symlinked client app target: {target_path}")
             if self._is_asset_complete_for_target(target_path, asset):
                 logger.debug(
                     "Client app asset %s (release %s) already exists and is complete",
@@ -828,12 +832,13 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         keep_last_beta: bool = False,
     ) -> None:
         try:
-            del keep_last_beta
             releases = cached_releases or self.get_releases()
             if not releases:
                 return
             self.cleanup_prerelease_directories(
-                cached_releases=releases, keep_limit_override=keep_limit
+                cached_releases=releases,
+                keep_limit_override=keep_limit,
+                keep_last_beta=keep_last_beta,
             )
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.error("Error cleaning up old client app versions: %s", exc)
@@ -842,6 +847,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         self,
         cached_releases: list[Release] | None = None,
         keep_limit_override: int | None = None,
+        keep_last_beta: bool = False,
     ) -> None:
         if not cached_releases:
             return
@@ -895,6 +901,23 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
         expected_stable = _safe_tags(stable_releases[:keep_limit], "release")
         expected_prerelease = _safe_tags(prerelease_releases, "prerelease")
+        if keep_last_beta:
+            latest_prerelease = next(
+                (
+                    release
+                    for release in sorted(
+                        cached_releases,
+                        key=lambda item: item.published_at or "",
+                        reverse=True,
+                    )
+                    if self._is_client_app_prerelease(release)
+                ),
+                None,
+            )
+            if latest_prerelease:
+                expected_prerelease.update(
+                    _safe_tags([latest_prerelease], "prerelease")
+                )
         self._remove_unexpected_entries(
             app_dir, expected_stable | {APK_PRERELEASES_DIR_NAME}
         )

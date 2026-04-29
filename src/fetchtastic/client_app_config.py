@@ -202,7 +202,10 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     config["SELECTED_APK_ASSETS"] = apk_assets
     config["SELECTED_DESKTOP_ASSETS"] = desktop_assets
     client_apps_enabled = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
-    if config["SELECTED_APP_ASSETS"]:
+    if not client_apps_enabled:
+        config["SAVE_APKS"] = False
+        config["SAVE_DESKTOP_APP"] = False
+    elif config["SELECTED_APP_ASSETS"]:
         config["SAVE_APKS"] = client_apps_enabled and (
             bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets
         )
