@@ -191,6 +191,77 @@ def test_superseded_tracking_metadata_cleanup_logs_debug(tmp_path):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_symlinked_prerelease_tracking_dir_is_rejected(tmp_path):
+    tracking_dir = tmp_path / "tracking"
+    tracking_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = tracking_dir / "prerelease_tracking"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    manager = PrereleaseHistoryManager()
+    with patch("fetchtastic.download.prerelease_history.logger.error") as error_log:
+        manager.manage_prerelease_tracking_files(
+            str(tracking_dir),
+            current_prereleases=[
+                {
+                    "prerelease_version": "v2.7.14-open.1",
+                    "base_version": "v2.7.14",
+                }
+            ],
+            cache_manager=_SimpleCacheManager(),
+        )
+
+    assert not any(outside.iterdir())
+    error_log.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_invalid_tracking_payload_is_removed_as_metadata(tmp_path):
+    tracking_dir = tmp_path / "tracking"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+    tracking_file = tracking_subdir / "prerelease_v2.7.14-open.1_v2.7.14.json"
+    tracking_file.write_text(
+        json.dumps({"prerelease_version": 123, "base_version": "v2.7.14"}),
+        encoding="utf-8",
+    )
+
+    manager = PrereleaseHistoryManager()
+    manager.manage_prerelease_tracking_files(
+        str(tracking_dir),
+        current_prereleases=[],
+        cache_manager=_SimpleCacheManager(),
+    )
+
+    assert not tracking_file.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_unreadable_tracking_payload_is_removed_as_metadata(tmp_path):
+    tracking_dir = tmp_path / "tracking"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+    tracking_file = tracking_subdir / "prerelease_v2.7.14-open.1_v2.7.14.json"
+    tracking_file.write_text("{", encoding="utf-8")
+
+    manager = PrereleaseHistoryManager()
+    manager.manage_prerelease_tracking_files(
+        str(tracking_dir),
+        current_prereleases=[],
+        cache_manager=_SimpleCacheManager(),
+    )
+
+    assert not tracking_file.exists()
+
+
 # --- Regression: current-but-expired prerelease tracking refreshed silently ---
 
 

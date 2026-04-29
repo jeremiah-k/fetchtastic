@@ -92,7 +92,7 @@ class TestDiscoverAvailableApkVersionsWhenWifiSkipped:
         orchestrator.version_manager.compare_versions.return_value = 1
         orchestrator.client_app_downloader.get_latest_release_tag.return_value = None
         orchestrator._discover_available_apk_versions_when_wifi_skipped()
-        assert isinstance(orchestrator.available_new_apk_versions, list)
+        assert orchestrator.available_new_apk_versions == [release.tag_name]
 
 
 class TestProcessClientAppDownloadsEarlyReturn:

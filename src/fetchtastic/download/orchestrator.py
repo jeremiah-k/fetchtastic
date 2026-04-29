@@ -364,11 +364,7 @@ class DownloadOrchestrator:
 
             self.client_app_downloader.migrate_legacy_layout()
             logger.info("Scanning client app releases")
-            app_releases = (
-                self.client_app_releases
-                or self.android_releases
-                or self._ensure_client_app_releases()
-            )
+            app_releases = self._ensure_client_app_releases()
             if not app_releases:
                 logger.info("No client app releases found")
                 return
@@ -911,6 +907,13 @@ class DownloadOrchestrator:
                     any_downloaded = True
                 self._handle_download_result(result, FILE_TYPE_CLIENT_APP)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            failure = DownloadResult(
+                success=False,
+                release_tag=release.tag_name,
+                file_type=FILE_TYPE_CLIENT_APP,
+                error_message=str(e),
+            )
+            self._handle_download_result(failure, FILE_TYPE_CLIENT_APP)
             logger.error(
                 f"Error downloading client app release {release.tag_name}: {e}"
             )
@@ -1475,10 +1478,7 @@ class DownloadOrchestrator:
                     result.file_type = "android"
                 elif self._is_firmware_manifest_asset(file_path.name):
                     result.file_type = FILE_TYPE_FIRMWARE_MANIFEST
-                elif any(
-                    file_path_str.lower().endswith(ext)
-                    for ext in (".dmg", ".msi", ".exe", ".deb", ".rpm", ".appimage")
-                ):
+                elif is_desktop_asset_name(file_path.name):
                     result.file_type = "desktop"
                 elif FIRMWARE_DIR_NAME in path_parts or file_path_str.endswith(
                     (".zip", ".bin", ".elf")
@@ -1875,6 +1875,8 @@ class DownloadOrchestrator:
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
                     "android",
                     "android_prerelease",
+                    "desktop",
+                    "desktop_prerelease",
                     FILE_TYPE_DESKTOP,
                     FILE_TYPE_DESKTOP_PRERELEASE,
                 }
@@ -2193,7 +2195,11 @@ class DownloadOrchestrator:
 
             desktop_releases = self.desktop_releases or []
             latest_desktop_release = next(
-                (release for release in desktop_releases if not release.prerelease),
+                (
+                    release
+                    for release in desktop_releases
+                    if not self._is_client_app_prerelease_release(release)
+                ),
                 None,
             )
             if latest_desktop_release is None and self.client_app_releases:
@@ -2201,7 +2207,7 @@ class DownloadOrchestrator:
                     (
                         release
                         for release in self.client_app_releases
-                        if not release.prerelease
+                        if not self._is_client_app_prerelease_release(release)
                     ),
                     None,
                 )

@@ -827,20 +827,29 @@ def test_get_releases_exception(downloader, mocker):
     assert result == []
 
 
-def test_get_releases_pagination(downloader, mocker):
-    downloader.config["APP_VERSIONS_TO_KEEP"] = 50
+def test_get_releases_expands_scan_window(downloader, mocker):
+    downloader.config["APP_VERSIONS_TO_KEEP"] = 15
     call_params = []
 
     def _fetch(params):
         call_params.append(dict(params))
-        return [_make_release_data("v2.7.14")]
+        per_page = params.get("per_page")
+        if per_page == 30:
+            return [
+                _make_release_data(f"v2.7.14-open.{idx}", prerelease=True)
+                for idx in range(30)
+            ]
+        return [_make_release_data(f"v2.7.{idx}") for idx in range(30, 15, -1)]
 
     mocker.patch.object(
         downloader.github_source, "fetch_raw_releases_data", side_effect=_fetch
     )
     result = downloader.get_releases()
-    assert isinstance(result, list)
-    assert len(result) >= 1
+    assert len(call_params) >= 2
+    assert [params["per_page"] for params in call_params[:2]] == [30, 60]
+    assert [release.tag_name for release in result] == [
+        *[f"v2.7.{idx}" for idx in range(30, 15, -1)]
+    ]
     assert any("per_page" in p for p in call_params)
 
 
@@ -1299,7 +1308,7 @@ def test_handle_prereleases_filters_by_expected_base(downloader, mocker):
     mocker.patch.object(
         downloader.version_manager,
         "calculate_expected_prerelease_version",
-        return_value="2.7.",
+        return_value="2.7.15",
     )
     mocker.patch.object(
         downloader.version_manager,
@@ -1325,7 +1334,7 @@ def test_handle_prereleases_filters_by_expected_base_exclude(downloader, mocker)
     mocker.patch.object(
         downloader.version_manager,
         "calculate_expected_prerelease_version",
-        return_value="2.7.",
+        return_value="2.7.15",
     )
     mocker.patch.object(
         downloader.version_manager,
@@ -1333,7 +1342,30 @@ def test_handle_prereleases_filters_by_expected_base_exclude(downloader, mocker)
         return_value="v2.7.14",
     )
     result = downloader.handle_prereleases(releases)
-    assert len(result) == 1
+    assert result == []
+
+
+def test_handle_prereleases_expected_base_does_not_prefix_match(downloader, mocker):
+    downloader.config["CHECK_APP_PRERELEASES"] = True
+    releases = [
+        Release(
+            tag_name="v2.7.0", prerelease=False, published_at="2026-01-01T00:00:00Z"
+        ),
+        Release(
+            tag_name="v2.7.10-open.1",
+            prerelease=True,
+            published_at="2026-01-02T00:00:00Z",
+        ),
+    ]
+    mocker.patch.object(
+        downloader.version_manager,
+        "calculate_expected_prerelease_version",
+        return_value="2.7.1",
+    )
+
+    result = downloader.handle_prereleases(releases)
+
+    assert result == []
 
 
 def test_handle_prereleases_filters_by_expected_base_no_clean(downloader, mocker):
@@ -1351,7 +1383,7 @@ def test_handle_prereleases_filters_by_expected_base_no_clean(downloader, mocker
     mocker.patch.object(
         downloader.version_manager,
         "calculate_expected_prerelease_version",
-        return_value="2.7.",
+        return_value="2.7.15",
     )
     mocker.patch.object(
         downloader.version_manager,
@@ -1382,7 +1414,7 @@ def test_handle_prereleases_recent_commits(downloader, mocker):
     mocker.patch.object(
         downloader.version_manager,
         "calculate_expected_prerelease_version",
-        return_value="2.7.",
+        return_value="2.7.15",
     )
     mocker.patch.object(
         downloader.version_manager,
@@ -1401,7 +1433,7 @@ def test_handle_prereleases_recent_commits_no_match_keeps_all(downloader, mocker
             tag_name="v2.7.14", prerelease=False, published_at="2026-01-01T00:00:00Z"
         ),
         Release(
-            tag_name="v2.7.14-closed.1",
+            tag_name="v2.7.15-closed.1",
             prerelease=True,
             published_at="2026-01-02T00:00:00Z",
         ),
@@ -1409,12 +1441,12 @@ def test_handle_prereleases_recent_commits_no_match_keeps_all(downloader, mocker
     mocker.patch.object(
         downloader.version_manager,
         "calculate_expected_prerelease_version",
-        return_value="2.7.",
+        return_value="2.7.15",
     )
     mocker.patch.object(
         downloader.version_manager,
         "extract_clean_version",
-        return_value="v2.7.14",
+        return_value="v2.7.15",
     )
     commits = [{"sha": "zzz9999999999"}]
     result = downloader.handle_prereleases(releases, recent_commits=commits)

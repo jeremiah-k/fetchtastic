@@ -1036,10 +1036,12 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             else None
         )
         if expected_base:
+            expected_tuple = self.version_manager.get_release_tuple(expected_base)
             filtered = []
             for prerelease in prereleases:
                 clean = self.version_manager.extract_clean_version(prerelease.tag_name)
-                if not clean or clean.lstrip("vV").startswith(expected_base):
+                clean_tuple = self.version_manager.get_release_tuple(clean)
+                if not clean or clean_tuple is None or clean_tuple == expected_tuple:
                     filtered.append(prerelease)
             prereleases = filtered
         if recent_commits and expected_base:

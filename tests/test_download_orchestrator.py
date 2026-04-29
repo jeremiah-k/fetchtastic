@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
+from fetchtastic.constants import FILE_TYPE_CLIENT_APP
 from fetchtastic.download.interfaces import DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -2400,6 +2401,12 @@ class TestDownloadOrchestrator:
         result = orchestrator._download_client_app_release(release)
 
         assert result is False
+        assert orchestrator.failed_downloads
+        failure = orchestrator.failed_downloads[-1]
+        assert failure.success is False
+        assert failure.release_tag == "v1.0.0"
+        assert failure.file_type == FILE_TYPE_CLIENT_APP
+        assert "network error" in failure.error_message
 
     def test_handle_download_result_with_url_logging(self, orchestrator):
         """Test handling failed download result with URL logging."""

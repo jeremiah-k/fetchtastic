@@ -63,7 +63,7 @@ def test_setup_downloads_run_menu_returns_no_selected_assets_no_existing(
         return_value={},
     )
 
-    result_config, result_apps, result_fw = _setup_downloads(
+    result_config, result_apps, _result_fw = _setup_downloads(
         config, is_partial_run=True, wants=wants
     )
 
@@ -95,7 +95,7 @@ def test_setup_downloads_run_menu_returns_no_selected_assets_with_existing(mocke
         return_value={},
     )
 
-    result_config, result_apps, result_fw = _setup_downloads(
+    result_config, _result_apps, _result_fw = _setup_downloads(
         config, is_partial_run=True, wants=wants
     )
 
@@ -136,7 +136,7 @@ def test_setup_downloads_rerun_false_no_existing_assets(mocker, capsys):
 
     switch_config = SwitchConfig(config)
 
-    result_config, result_apps, result_fw = _setup_downloads(
+    result_config, result_apps, _result_fw = _setup_downloads(
         switch_config, is_partial_run=True, wants=wants
     )
 
@@ -201,7 +201,7 @@ def test_migrate_pip_to_pipx_in_setup_base_success(mocker, capsys, tmp_path):
         config,
         is_partial_run=False,
         is_first_run=True,
-        wants=lambda s: True,
+        wants=lambda _section: True,
     )
 
     captured = capsys.readouterr()

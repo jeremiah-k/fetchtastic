@@ -684,6 +684,12 @@ class PrereleaseHistoryManager:
             return
 
         tracking_subdir = os.path.join(tracking_dir, "prerelease_tracking")
+        if not self._is_safe_prerelease_tracking_dir(tracking_dir, tracking_subdir):
+            logger.error(
+                "Refusing unsafe prerelease tracking directory: %s",
+                tracking_subdir,
+            )
+            return
 
         # Get existing tracking files from the tracking subdirectory.
         # Only consider files matching the per-release naming pattern:
@@ -713,10 +719,11 @@ class PrereleaseHistoryManager:
         existing_prereleases = []
         invalid_tracking_files = []
         for file_path in tracking_files:
-            tracking_data = cache_manager.read_json(file_path)
-            if tracking_data and self.version_manager.validate_version_tracking_data(
-                tracking_data, ["prerelease_version", "base_version"]
-            ):
+            try:
+                tracking_data = cache_manager.read_json(file_path)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                tracking_data = None
+            if self._is_valid_prerelease_tracking_data(tracking_data):
                 existing_prereleases.append(tracking_data)
             else:
                 invalid_tracking_files.append(file_path)
@@ -737,10 +744,21 @@ class PrereleaseHistoryManager:
 
         # Build set of prerelease versions that are still current
         current_prerelease_versions: set[str] = set()
+        valid_current_prereleases = []
         for current in current_prereleases:
+            if not self._is_valid_prerelease_tracking_data(current):
+                logger.warning(
+                    "Invalid prerelease tracking data skipped: %s",
+                    (
+                        current.get("prerelease_version")
+                        if isinstance(current, dict)
+                        else current
+                    ),
+                )
+                continue
+            valid_current_prereleases.append(current)
             pv = current.get("prerelease_version")
-            if isinstance(pv, str) and pv:
-                current_prerelease_versions.add(pv)
+            current_prerelease_versions.add(pv)
 
         # Cleanup superseded/expired prereleases by comparing to current set.
         # Current prereleases are NEVER removed — their metadata is refreshed
@@ -755,7 +773,7 @@ class PrereleaseHistoryManager:
                 continue
 
             cleanup_reason = self.get_prerelease_tracking_cleanup_reason(
-                existing, current_prereleases
+                existing, valid_current_prereleases
             )
 
             if cleanup_reason:
@@ -790,19 +808,9 @@ class PrereleaseHistoryManager:
             return
 
         # Write/update tracking files for current prereleases
-        for current in current_prereleases:
-            if not self.version_manager.validate_version_tracking_data(
-                current, ["prerelease_version", "base_version"]
-            ):
-                logger.warning(
-                    f"Invalid prerelease tracking data skipped: {current.get('prerelease_version')}"
-                )
-                continue
-
+        for current in valid_current_prereleases:
             prerelease_version = current.get("prerelease_version")
             base_version = current.get("base_version")
-            if not prerelease_version or not base_version:
-                continue
 
             safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
             safe_base = re.sub(r"[^a-zA-Z0-9.-]", "_", base_version)
@@ -810,6 +818,36 @@ class PrereleaseHistoryManager:
             file_path = os.path.join(tracking_subdir, filename)
 
             cache_manager.atomic_write_json(file_path, current)
+
+    def _is_safe_prerelease_tracking_dir(
+        self, tracking_dir: str, tracking_subdir: str
+    ) -> bool:
+        tracking_root = os.path.realpath(tracking_dir)
+        tracking_subdir_real = os.path.realpath(tracking_subdir)
+        try:
+            return (
+                not os.path.islink(tracking_subdir)
+                and os.path.commonpath([tracking_root, tracking_subdir_real])
+                == tracking_root
+            )
+        except ValueError:
+            return False
+
+    def _is_valid_prerelease_tracking_data(self, data: Any) -> bool:
+        if not isinstance(data, dict):
+            return False
+        if not self.version_manager.validate_version_tracking_data(
+            data, ["prerelease_version", "base_version"]
+        ):
+            return False
+        prerelease_version = data.get("prerelease_version")
+        base_version = data.get("base_version")
+        return (
+            isinstance(prerelease_version, str)
+            and bool(prerelease_version.strip())
+            and isinstance(base_version, str)
+            and bool(base_version.strip())
+        )
 
     def create_prerelease_tracking_data(
         self,
