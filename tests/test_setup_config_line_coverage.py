@@ -11,7 +11,7 @@ from fetchtastic.setup_config import (
 pytestmark = [pytest.mark.unit, pytest.mark.configuration]
 
 
-def test_setup_downloads_menu_runtime_error(mocker, tmp_path):
+def test_setup_downloads_menu_runtime_error(mocker):
     config = {
         "SAVE_CLIENT_APPS": True,
         "SAVE_APKS": True,
@@ -31,7 +31,7 @@ def test_setup_downloads_menu_runtime_error(mocker, tmp_path):
     )
     mocker.patch("fetchtastic.setup_config.logger")
 
-    result_config, result_apps, result_fw = _setup_downloads(
+    result_config, result_apps, _result_fw = _setup_downloads(
         config, is_partial_run=True, wants=wants
     )
 
@@ -105,7 +105,7 @@ def test_setup_downloads_run_menu_returns_no_selected_assets_with_existing(mocke
 def test_setup_downloads_rerun_false_no_existing_assets(mocker, capsys):
     call_count = [0]
 
-    def fake_safe_input(prompt, **kwargs):
+    def fake_safe_input(prompt: str, **_kwargs: object) -> str:
         call_count[0] += 1
         if "Re-run the client app asset selection menu" in prompt:
             return "n"
@@ -128,7 +128,7 @@ def test_setup_downloads_rerun_false_no_existing_assets(mocker, capsys):
     original_get = dict.get
 
     class SwitchConfig(dict):
-        def get(self, key, default=None):
+        def get(self, key: object, default: object = None) -> object:
             val = original_get(self, key, default)
             if key == "SELECTED_APP_ASSETS" and call_count[0] >= 2:
                 return []
@@ -175,7 +175,7 @@ def test_load_config_old_location_returns_none(tmp_path, mocker):
     assert result is None
 
 
-def test_migrate_pip_to_pipx_in_setup_base_success(mocker, capsys):
+def test_migrate_pip_to_pipx_in_setup_base_success(mocker, capsys, tmp_path):
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mocker.patch(
@@ -188,7 +188,7 @@ def test_migrate_pip_to_pipx_in_setup_base_success(mocker, capsys):
 
     mocker.patch(
         "fetchtastic.setup_config._safe_input",
-        side_effect=["y", "/tmp/test"],
+        side_effect=["y", str(tmp_path)],
     )
     mocker.patch("shutil.which", return_value="/usr/bin/fake")
     mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))

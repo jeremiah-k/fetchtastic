@@ -793,12 +793,10 @@ def test_get_releases_exception(downloader, mocker):
 
 def test_get_releases_pagination(downloader, mocker):
     downloader.config["APP_VERSIONS_TO_KEEP"] = 50
-    call_count = [0]
+    call_params = []
 
     def _fetch(params):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return [_make_release_data("v2.7.14")]
+        call_params.append(dict(params))
         return [_make_release_data("v2.7.14")]
 
     mocker.patch.object(
@@ -806,6 +804,8 @@ def test_get_releases_pagination(downloader, mocker):
     )
     result = downloader.get_releases()
     assert isinstance(result, list)
+    assert len(result) >= 1
+    assert any("per_page" in p for p in call_params)
 
 
 def test_should_download_asset_wildcard(downloader):

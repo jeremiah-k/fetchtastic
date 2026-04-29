@@ -2196,6 +2196,15 @@ class DownloadOrchestrator:
                 (release for release in desktop_releases if not release.prerelease),
                 None,
             )
+            if latest_desktop_release is None and self.client_app_releases:
+                latest_desktop_release = next(
+                    (
+                        release
+                        for release in self.client_app_releases
+                        if not release.prerelease
+                    ),
+                    None,
+                )
             if (
                 latest_desktop_release
                 and self.desktop_downloader is not self.client_app_downloader

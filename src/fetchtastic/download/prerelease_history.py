@@ -786,7 +786,7 @@ class PrereleaseHistoryManager:
         # Ensure tracking subdirectory exists before writing
         try:
             os.makedirs(tracking_subdir, exist_ok=True)
-        except FileNotFoundError:
+        except OSError:
             return
 
         # Write/update tracking files for current prereleases
@@ -880,14 +880,14 @@ class PrereleaseHistoryManager:
     ) -> Literal["expired", "superseded"] | None:
         """Return why a prerelease tracking metadata file should be removed."""
         expiry_str = existing_prerelease.get("expiry_timestamp")
-        if expiry_str:
+        if isinstance(expiry_str, str) and expiry_str:
             try:
                 expiry_time = datetime.fromisoformat(expiry_str)
                 if expiry_time.tzinfo is None:
                     expiry_time = expiry_time.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) > expiry_time:
                     return "expired"
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
 
         current_base = existing_prerelease.get("base_version")

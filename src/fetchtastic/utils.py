@@ -26,6 +26,7 @@ from fetchtastic.constants import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CONNECT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    DESKTOP_EXTENSIONS,
     FILE_TYPE_PREFIXES,
     GITHUB_API_TIMEOUT,
     WINDOWS_INITIAL_RETRY_DELAY,
@@ -1499,8 +1500,7 @@ def matches_selected_patterns(
     base_modern_lower = base_modern.lower()
     base_legacy_lower = base_legacy.lower()
     comparison_bases = [base_modern_lower, base_legacy_lower]
-    desktop_extensions = (".dmg", ".exe", ".msi", ".deb", ".rpm", ".appimage")
-    if filename.lower().endswith(desktop_extensions):
+    if filename.lower().endswith(DESKTOP_EXTENSIONS):
         for base in (base_modern_lower, base_legacy_lower):
             for marker in (
                 "meshtastic desktop",
