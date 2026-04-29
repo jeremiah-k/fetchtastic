@@ -8,6 +8,7 @@ Meshtastic-Android release feed. Storage is intentionally platform-neutral:
 - app/prerelease/<version>/
 """
 
+import filecmp
 import fnmatch
 import json
 import os
@@ -193,6 +194,19 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             and self._is_within_download_tree(path)
         )
 
+    def _is_duplicate_migration_file(
+        self, source_path: str, destination_path: str
+    ) -> bool:
+        try:
+            return (
+                os.path.isfile(source_path)
+                and os.path.isfile(destination_path)
+                and not os.path.islink(destination_path)
+                and filecmp.cmp(source_path, destination_path, shallow=False)
+            )
+        except OSError:
+            return False
+
     def _move_legacy_path(self, source_path: str, destination_path: str) -> bool:
         if not os.path.exists(source_path):
             return False
@@ -241,6 +255,21 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
         if os.path.isfile(source_path):
             if os.path.exists(abs_destination):
+                if self._is_duplicate_migration_file(source_path, abs_destination):
+                    try:
+                        os.remove(source_path)
+                        logger.debug(
+                            "Removed duplicate client app migration file already present at destination: %s",
+                            source_path,
+                        )
+                        return True
+                    except OSError as exc:
+                        logger.warning(
+                            "Failed to remove duplicate client app migration file %s: %s",
+                            source_path,
+                            exc,
+                        )
+                        return False
                 logger.debug(
                     "Skipping client app migration because destination file exists: %s",
                     abs_destination,
@@ -296,6 +325,21 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                     )
                     continue
                 if os.path.exists(dst_entry):
+                    if self._is_duplicate_migration_file(src_entry, dst_entry):
+                        try:
+                            os.remove(src_entry)
+                            logger.debug(
+                                "Removed duplicate client app migration file already present at destination: %s",
+                                src_entry,
+                            )
+                            moved_any = True
+                        except OSError as exc:
+                            logger.warning(
+                                "Failed to remove duplicate client app migration file %s: %s",
+                                src_entry,
+                                exc,
+                            )
+                        continue
                     logger.debug(
                         "Skipping client app migration file because destination exists: %s",
                         dst_entry,

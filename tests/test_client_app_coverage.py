@@ -180,6 +180,24 @@ def test_move_legacy_path_file_dest_exists(downloader, tmp_path):
     assert result is False
 
 
+def test_move_legacy_path_file_removes_identical_destination_duplicate(
+    downloader, tmp_path
+):
+    downloads = tmp_path / "downloads"
+    source = downloads / "apks" / "v2.7.13" / "release_notes-v2.7.13.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("same notes", encoding="utf-8")
+    dest = downloads / APP_DIR_NAME / "v2.7.13" / "release_notes-v2.7.13.md"
+    dest.parent.mkdir(parents=True)
+    dest.write_text("same notes", encoding="utf-8")
+
+    result = downloader._move_legacy_path(str(source), str(dest))
+
+    assert result is True
+    assert not source.exists()
+    assert dest.read_text(encoding="utf-8") == "same notes"
+
+
 def test_move_legacy_path_file_oserror(downloader, tmp_path, mocker):
     downloads = tmp_path / "downloads"
     source = downloads / "apks" / "v2.7.13" / "asset.apk"
@@ -240,6 +258,24 @@ def test_move_legacy_path_dir_merge_skips_existing(downloader, tmp_path):
     result = downloader._move_legacy_path(str(source), str(dest))
     assert result is False
     assert (dest / "file1.apk").read_text() == "old"
+
+
+def test_move_legacy_path_dir_merge_removes_identical_existing_file(
+    downloader, tmp_path
+):
+    downloads = tmp_path / "downloads"
+    source = downloads / "apks" / "v2.7.13"
+    source.mkdir(parents=True)
+    (source / "release_notes-v2.7.13.md").write_text("same", encoding="utf-8")
+    dest = downloads / APP_DIR_NAME / "v2.7.13"
+    dest.mkdir(parents=True)
+    (dest / "release_notes-v2.7.13.md").write_text("same", encoding="utf-8")
+
+    result = downloader._move_legacy_path(str(source), str(dest))
+
+    assert result is True
+    assert not source.exists()
+    assert (dest / "release_notes-v2.7.13.md").read_text(encoding="utf-8") == "same"
 
 
 def test_move_legacy_path_dir_merge_symlink_entry(downloader, tmp_path):
