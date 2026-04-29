@@ -721,6 +721,13 @@ class PrereleaseHistoryManager:
                     e,
                 )
 
+        # Build set of prerelease versions that are still current
+        current_prerelease_versions: set[str] = set()
+        for current in current_prereleases:
+            pv = current.get("prerelease_version")
+            if isinstance(pv, str) and pv:
+                current_prerelease_versions.add(pv)
+
         # Cleanup superseded/expired prereleases by comparing to current set
         for existing in existing_prereleases:
             cleanup_reason = self.get_prerelease_tracking_cleanup_reason(
@@ -731,6 +738,15 @@ class PrereleaseHistoryManager:
                 prerelease_version = existing.get("prerelease_version", "")
                 if not prerelease_version:
                     continue
+
+                # Expired tracking metadata for current prereleases is refreshed
+                # silently by the atomic_write_json loop below; do not delete it.
+                if (
+                    cleanup_reason == "expired"
+                    and prerelease_version in current_prerelease_versions
+                ):
+                    continue
+
                 safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
                 filename_pattern = f"prerelease_{safe_version}_*.json"
 

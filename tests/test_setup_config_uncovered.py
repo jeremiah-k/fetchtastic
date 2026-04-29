@@ -2468,3 +2468,44 @@ def test_get_version_info(mocker):
     assert current == "1.0.0"
     assert latest == "1.1.0"
     assert available is True
+
+
+# --- Regression: load_config normalizes empty YAML mappings ---
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_normalizes_empty_dict(tmp_path, mocker):
+    """Empty YAML config '{}' is normalized by load_config()."""
+    from fetchtastic.setup_config import load_config
+
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch(
+        "fetchtastic.setup_config._load_yaml_mapping",
+        return_value={},
+    )
+
+    result = load_config()
+
+    assert result is not None
+    assert isinstance(result, dict)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_empty_dict_directory_mode(tmp_path, mocker):
+    """Empty YAML config '{}' is normalized in directory mode load_config()."""
+    from fetchtastic.setup_config import load_config
+
+    tmp_dir = str(tmp_path / "custom_config")
+    expected_path = os.path.join(tmp_dir, "fetchtastic.yaml")
+    mocker.patch("os.path.exists", side_effect=lambda path: path == expected_path)
+    mocker.patch(
+        "fetchtastic.setup_config._load_yaml_mapping",
+        return_value={},
+    )
+
+    result = load_config(tmp_dir)
+
+    assert result is not None
+    assert isinstance(result, dict)

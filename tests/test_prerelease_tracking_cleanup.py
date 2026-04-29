@@ -184,3 +184,108 @@ def test_superseded_tracking_metadata_cleanup_logs_debug(tmp_path):
         == ("Removed %s prerelease tracking metadata file: %s", "superseded")
         for call in debug_log.call_args_list
     )
+
+
+# --- Regression: current-but-expired prerelease tracking refreshed silently ---
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_current_expired_metadata_not_removed_but_refreshed(tmp_path):
+    """
+    Expired tracking metadata for a prerelease that is still current
+    must not be removed — atomic_write_json refreshes it silently.
+    """
+    tracking_dir = tmp_path / "tracking"
+    tracking_dir.mkdir()
+    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.10_v2.7.14.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.7.14-closed.10",
+                "base_version": "v2.7.14",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) - timedelta(hours=1)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = PrereleaseHistoryManager()
+    with (patch("fetchtastic.download.prerelease_history.logger.debug") as debug_log,):
+        manager.manage_prerelease_tracking_files(
+            str(tracking_dir),
+            current_prereleases=[
+                {
+                    "prerelease_version": "v2.7.14-closed.10",
+                    "base_version": "v2.7.14",
+                    "expiry_timestamp": (
+                        datetime.now(timezone.utc) + timedelta(hours=24)
+                    ).isoformat(),
+                }
+            ],
+            cache_manager=_SimpleCacheManager(),
+        )
+
+    # Tracking file still exists — it was silently refreshed by atomic_write_json
+    assert tracking_file.exists()
+    # Fresh data written
+    with open(tracking_file, encoding="utf-8") as f:
+        refreshed = json.load(f)
+    assert refreshed["base_version"] == "v2.7.14"
+    assert datetime.fromisoformat(refreshed["expiry_timestamp"]) > datetime.now(
+        timezone.utc
+    )
+
+    # No removal log message for expired current prerelease
+    removal_calls = [
+        call
+        for call in debug_log.call_args_list
+        if call.args[:2]
+        == ("Removed %s prerelease tracking metadata file: %s", "expired")
+    ]
+    assert not removal_calls
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_expired_noncurrent_metadata_still_removed(tmp_path):
+    """
+    Expired tracking metadata for a prerelease NOT in current_prereleases
+    is still removed with DEBUG metadata wording.
+    """
+    tracking_dir = tmp_path / "tracking"
+    tracking_dir.mkdir()
+    tracking_file = tracking_dir / "prerelease_v2.7.14-closed.9_v2.7.14.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.7.14-closed.9",
+                "base_version": "v2.7.14",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) - timedelta(hours=1)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = PrereleaseHistoryManager()
+    with patch("fetchtastic.download.prerelease_history.logger.debug") as debug_log:
+        manager.manage_prerelease_tracking_files(
+            str(tracking_dir),
+            current_prereleases=[
+                {
+                    "prerelease_version": "v2.7.14-closed.10",
+                    "base_version": "v2.7.14",
+                }
+            ],
+            cache_manager=_SimpleCacheManager(),
+        )
+
+    assert not tracking_file.exists()
+    assert any(
+        call.args[:2] == ("Removed %s prerelease tracking metadata file: %s", "expired")
+        for call in debug_log.call_args_list
+    )

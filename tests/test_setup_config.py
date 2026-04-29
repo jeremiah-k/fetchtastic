@@ -1177,14 +1177,15 @@ def test_load_config_rejects_non_mapping_yaml(tmp_path):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_load_config_empty_file_returns_empty_mapping(tmp_path, mocker):
-    """Empty config files should return an empty dict instead of crashing."""
+    """Empty config files should be normalized by load_config()."""
     config_path = tmp_path / "fetchtastic.yaml"
     config_path.write_text("", encoding="utf-8")
     mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
     mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(tmp_path / "old.yaml"))
 
     config = setup_config.load_config()
-    assert config == {}
+    assert config is not None
+    assert isinstance(config, dict)
 
 
 @pytest.mark.configuration
