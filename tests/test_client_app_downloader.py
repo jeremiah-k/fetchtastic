@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -179,7 +180,7 @@ def test_ensure_prerelease_base_dir_rejects_symlinked_app_dir(downloader, tmp_pa
     downloads = tmp_path / "downloads"
     outside = tmp_path / "outside-app"
     outside.mkdir()
-    (downloads).mkdir(parents=True, exist_ok=True)
+    downloads.mkdir(parents=True, exist_ok=True)
     try:
         (downloads / APP_DIR_NAME).symlink_to(outside, target_is_directory=True)
     except (OSError, NotImplementedError):
@@ -211,7 +212,6 @@ def test_ensure_prerelease_base_dir_rejects_realpath_outside_download_dir(
 ):
     outside = tmp_path / "outside-realpath"
     outside.mkdir()
-    import os
 
     original_realpath = os.path.realpath
 

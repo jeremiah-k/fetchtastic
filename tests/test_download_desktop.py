@@ -56,7 +56,8 @@ def test_desktop_wrapper_uses_unified_prerelease_path(downloader):
     )
 
 
-def test_download_desktop_returns_client_app_file_type(downloader, mocker):
+def test_download_desktop_returns_desktop_file_type(downloader, mocker):
+    """Wrapper should return legacy desktop file_type from download_app result."""
     release = Release(tag_name="v2.7.14", prerelease=False)
     asset = Asset(
         name="Meshtastic-2.7.14.dmg",

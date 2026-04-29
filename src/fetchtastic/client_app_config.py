@@ -174,26 +174,13 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
         )
         config["CHECK_APP_PRERELEASES"] = apk_check or desktop_check
     else:
-        config["CHECK_APP_PRERELEASES"] = coerce_bool(
+        primary_value = coerce_bool(
             config.get("CHECK_APP_PRERELEASES"),
             default=DEFAULT_CHECK_APP_PRERELEASES,
         )
-        apk_check = coerce_bool(
-            (
-                config.get(apk_key)
-                if apk_key is not None
-                else config["CHECK_APP_PRERELEASES"]
-            ),
-            default=config["CHECK_APP_PRERELEASES"],
-        )
-        desktop_check = coerce_bool(
-            (
-                config.get(desktop_key)
-                if desktop_key is not None
-                else config["CHECK_APP_PRERELEASES"]
-            ),
-            default=config["CHECK_APP_PRERELEASES"],
-        )
+        config["CHECK_APP_PRERELEASES"] = primary_value
+        apk_check = primary_value
+        desktop_check = primary_value
 
     # Keep legacy keys readable for compatibility without guessing from substrings.
     apk_assets, desktop_assets, has_ambiguous_assets = _classify_selected_assets(

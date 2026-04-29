@@ -864,6 +864,8 @@ class PrereleaseHistoryManager:
         if expiry_str:
             try:
                 expiry_time = datetime.fromisoformat(expiry_str)
+                if expiry_time.tzinfo is None:
+                    expiry_time = expiry_time.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) > expiry_time:
                     return "expired"
             except ValueError:

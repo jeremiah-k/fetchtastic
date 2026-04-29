@@ -53,8 +53,8 @@ def test_new_client_app_keys_are_authoritative():
     assert normalized["SAVE_DESKTOP_APP"] is False
     assert normalized["APP_VERSIONS_TO_KEEP"] == 4
     assert normalized["CHECK_APP_PRERELEASES"] is False
-    assert normalized["CHECK_APK_PRERELEASES"] is True
-    assert normalized["CHECK_DESKTOP_PRERELEASES"] is True
+    assert normalized["CHECK_APK_PRERELEASES"] is False
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is False
 
 
 def test_explicit_platform_prerelease_opt_out_survives_legacy_union():
@@ -169,3 +169,49 @@ def test_ambiguous_client_app_asset_does_not_use_apk_substring_guess():
     assert normalized["SELECTED_DESKTOP_ASSETS"] == []
     assert normalized["SAVE_APKS"] is True
     assert normalized["SAVE_DESKTOP_APP"] is True
+
+
+# --- Regression: explicit primary CHECK_APP_PRERELEASES overrides legacy flags ---
+
+
+@pytest.mark.unit
+@pytest.mark.configuration
+def test_explicit_primary_false_overrides_true_legacy_apk_prerelease():
+    """CHECK_APP_PRERELEASES=False must override CHECK_APK_PRERELEASES=True."""
+    config = {"CHECK_APP_PRERELEASES": False, "CHECK_APK_PRERELEASES": True}
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["CHECK_APP_PRERELEASES"] is False
+    assert normalized["CHECK_APK_PRERELEASES"] is False
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.configuration
+def test_explicit_primary_false_overrides_true_legacy_desktop_prerelease():
+    """CHECK_APP_PRERELEASES=False must override CHECK_DESKTOP_PRERELEASES=True."""
+    config = {"CHECK_APP_PRERELEASES": False, "CHECK_DESKTOP_PRERELEASES": True}
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["CHECK_APP_PRERELEASES"] is False
+    assert normalized["CHECK_APK_PRERELEASES"] is False
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.configuration
+def test_absent_primary_still_ors_legacy_prerelease_flags():
+    """Absent CHECK_APP_PRERELEASES still ORs legacy prerelease flags."""
+    config = {
+        "CHECK_APK_PRERELEASES": False,
+        "CHECK_DESKTOP_PRERELEASES": True,
+        "SAVE_DESKTOP_APP": True,
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["CHECK_APP_PRERELEASES"] is True
+    assert normalized["CHECK_APK_PRERELEASES"] is False
+    assert normalized["CHECK_DESKTOP_PRERELEASES"] is True

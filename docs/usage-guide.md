@@ -294,7 +294,7 @@ Enable pre-release downloads to get the latest development firmware from meshtas
 
 ### Multiple Asset Types
 
-Firmware and client-app retention policies are configured independently during a single `fetchtastic setup` run. Re-run setup only when changing those policies later.
+Firmware and client app retention policies are configured independently during a single `fetchtastic setup` run. Re-run setup only when changing those policies later.
 
 ## Getting Help
 

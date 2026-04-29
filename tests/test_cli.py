@@ -1316,6 +1316,8 @@ def test_show_help_early_return_behavior(mocker, capsys):
     assert "Repo 'browse' command help:" in captured.out
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_termux_success(mocker):
     """Test clipboard functionality on Termux (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
@@ -1332,6 +1334,8 @@ def test_copy_to_clipboard_func_termux_success(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_termux_failure(mocker):
     """Test clipboard functionality on Termux (failure)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
@@ -1349,6 +1353,8 @@ def test_copy_to_clipboard_func_termux_failure(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_macos_success(mocker):
     """Test clipboard functionality on macOS (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1367,6 +1373,8 @@ def test_copy_to_clipboard_func_macos_success(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_linux_xclip_success(mocker):
     """Test clipboard functionality on Linux with xclip (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1387,6 +1395,8 @@ def test_copy_to_clipboard_func_linux_xclip_success(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_linux_xsel_success(mocker):
     """Test clipboard functionality on Linux with xsel (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1407,6 +1417,8 @@ def test_copy_to_clipboard_func_linux_xsel_success(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_linux_no_tools(mocker):
     """Test clipboard functionality on Linux with no clipboard tools."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1422,6 +1434,8 @@ def test_copy_to_clipboard_func_linux_no_tools(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_unsupported_platform(mocker):
     """Test clipboard functionality on unsupported platform."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1620,6 +1634,8 @@ def test_normalize_download_main_result_wrong_types_for_indices_10_12_coerced_to
     assert result[12] == ""
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_subprocess_error(mocker):
     """Test clipboard functionality with subprocess error."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)

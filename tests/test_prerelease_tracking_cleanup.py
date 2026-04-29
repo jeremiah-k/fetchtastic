@@ -138,7 +138,9 @@ def test_expired_tracking_metadata_cleanup_logs_debug_only(tmp_path):
     )
     assert not info_log.called
     assert not any(
-        "Cleaned up prerelease" in call.args[0] and "metadata" not in call.args[0]
+        call.args
+        and "Cleaned up prerelease" in call.args[0]
+        and "metadata" not in call.args[0]
         for call in debug_log.call_args_list
     )
 

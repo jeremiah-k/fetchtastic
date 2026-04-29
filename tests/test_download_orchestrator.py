@@ -3,7 +3,6 @@
 # Comprehensive unit tests for the DownloadOrchestrator class.
 
 import time
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -1348,16 +1347,17 @@ class TestDownloadOrchestrator:
 
         assert result.success is True
 
-    def test_retry_single_failure_android_prerelease_type(self, orchestrator):
+    def test_retry_single_failure_android_prerelease_type(self, orchestrator, tmp_path):
         """_retry_single_failure should use Android downloader for android_prerelease type."""
+        fake_file = tmp_path / "app.apk"
+        fake_file.write_bytes(b"x" * 1000)
         failed_result = Mock(spec=DownloadResult)
         failed_result.release_tag = "v1.0.0-open.1"
         failed_result.download_url = "https://example.com/app.apk"
-        failed_result.file_path = "/tmp/app.apk"
+        failed_result.file_path = str(fake_file)
         failed_result.retry_count = 0
         failed_result.file_type = "android_prerelease"
         failed_result.file_size = 1000
-        Path(failed_result.file_path).write_bytes(b"x" * 1000)
 
         orchestrator.android_downloader.download = Mock(return_value=True)
         orchestrator.android_downloader.verify = Mock(return_value=True)

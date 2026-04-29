@@ -1770,7 +1770,6 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 @patch("fetchtastic.setup_config.os.makedirs")
 @patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.yaml.safe_load")
-@patch("fetchtastic.setup_config.menu_app.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=True)
 @patch("fetchtastic.setup_config.remove_cron_job")
@@ -1793,7 +1792,6 @@ def test_run_setup_existing_config(
     mock_remove_cron_job,
     mock_check_any_cron_jobs_exist,
     mock_menu_firmware,
-    mock_menu_app,
     mock_yaml_safe_load,
     mock_yaml_dump,
     mock_makedirs,

@@ -95,13 +95,13 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     """
 
     def __init__(self, config: dict[str, Any], cache_manager: CacheManager):
-        normalize_client_app_config(config)
-        super().__init__(config, cache_manager)
+        normalized_config = normalize_client_app_config(config)
+        super().__init__(normalized_config, cache_manager)
         self.client_app_releases_url = MESHTASTIC_CLIENT_APP_RELEASES_URL
         self.github_source = GithubReleaseSource(
             releases_url=MESHTASTIC_CLIENT_APP_RELEASES_URL,
             cache_manager=cache_manager,
-            config=config,
+            config=self.config,
         )
         self.latest_release_file = LATEST_CLIENT_APP_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_CLIENT_APP_PRERELEASE_JSON_FILE
@@ -685,7 +685,6 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return any(fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude)
 
     def should_download_asset(self, asset_name: str) -> bool:
-        normalize_client_app_config(self.config)
         raw_selected = self.config.get("SELECTED_APP_ASSETS")
         if raw_selected is None:
             return False

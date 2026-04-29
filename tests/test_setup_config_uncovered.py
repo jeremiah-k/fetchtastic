@@ -222,8 +222,8 @@ def test_setup_downloads_full_run_none_selection(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_partial_desktop_section(mocker):
-    """Test partial run with desktop section (lines 827-836)."""
+def test_setup_downloads_partial_non_download_preserves_desktop(mocker):
+    """Test partial run with non-download section preserves desktop state (lines 827-836)."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {

@@ -52,7 +52,8 @@ def test_android_wrapper_uses_unified_prerelease_path(downloader):
     )
 
 
-def test_download_apk_returns_client_app_file_type(downloader, mocker):
+def test_download_apk_returns_android_file_type(downloader, mocker):
+    """Wrapper should return legacy android file_type from download_app result."""
     release = Release(tag_name="v2.7.14", prerelease=False)
     asset = Asset(
         name="meshtastic.apk",

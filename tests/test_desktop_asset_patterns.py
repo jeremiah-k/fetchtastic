@@ -200,7 +200,7 @@ class TestPatternMatchingAlignment:
     def test_should_download_asset_wildcard(self):
         """Test that wildcard pattern downloads all desktop assets."""
         config = {
-            "SELECTED_APP_ASSETS": ["*"],
+            "SELECTED_DESKTOP_ASSETS": ["*"],
         }
 
         mock_cache = MagicMock()
