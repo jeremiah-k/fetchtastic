@@ -100,7 +100,7 @@ def test_wifi_only_allows_downloads_when_connected_to_wifi(orchestrator, mock_co
         ),
         patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
         patch.object(orchestrator, "_process_firmware_downloads"),
-        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_process_client_app_downloads"),
         patch.object(orchestrator, "_retry_failed_downloads"),
         patch.object(orchestrator, "_log_download_summary"),
     ):
@@ -116,7 +116,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
         patch("fetchtastic.download.orchestrator.is_connected_to_wifi") as mock_wifi,
         patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
         patch.object(orchestrator, "_process_firmware_downloads"),
-        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_process_client_app_downloads"),
         patch.object(orchestrator, "_retry_failed_downloads"),
         patch.object(orchestrator, "_log_download_summary"),
     ):
@@ -132,7 +132,7 @@ def test_wifi_only_default_false(orchestrator):
         patch("fetchtastic.download.orchestrator.is_connected_to_wifi") as mock_wifi,
         patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
         patch.object(orchestrator, "_process_firmware_downloads"),
-        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_process_client_app_downloads"),
         patch.object(orchestrator, "_retry_failed_downloads"),
         patch.object(orchestrator, "_log_download_summary"),
     ):
@@ -150,7 +150,7 @@ def test_wifi_only_non_termux_always_allows_downloads(orchestrator, mock_config)
         patch("fetchtastic.download.orchestrator.is_connected_to_wifi") as mock_wifi,
         patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
         patch.object(orchestrator, "_process_firmware_downloads"),
-        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_process_client_app_downloads"),
         patch.object(orchestrator, "_retry_failed_downloads"),
         patch.object(orchestrator, "_log_download_summary"),
     ):

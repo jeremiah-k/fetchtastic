@@ -45,6 +45,16 @@ class TestExtractWildcardPatternRealWorldFilenames:
             ("Meshtastic-2.7.14.x86_64.rpm", "meshtastic.x86_64.rpm"),
             # Windows EXE installer
             ("Meshtastic-2.7.14.exe", "meshtastic.exe"),
+            ("Meshtastic Desktop-2.7.14.dmg", "meshtastic desktop.dmg"),
+            ("Meshtastic Desktop-2.7.14.exe", "meshtastic desktop.exe"),
+            (
+                "meshtastic-desktop-2.7.14-1.x86_64.rpm",
+                "meshtastic-desktop-1.x86_64.rpm",
+            ),
+            (
+                "meshtastic-desktop_2.7.14_amd64.deb",
+                "meshtastic-desktop_amd64.deb",
+            ),
         ],
     )
     def test_real_world_filename_patterns(self, filename, expected):
@@ -102,6 +112,19 @@ class TestPatternMatchingAlignment:
             # Cross-pattern non-matching
             ("Meshtastic-2.7.14.dmg", ["meshtastic.exe"], False),
             ("Meshtastic-2.7.14.msi", ["meshtastic.dmg"], False),
+            ("Meshtastic Desktop-2.7.14.dmg", ["meshtastic.dmg"], True),
+            ("Meshtastic Desktop-2.7.14.exe", ["meshtastic.exe"], True),
+            ("Meshtastic Desktop-2.7.14.msi", ["meshtastic.msi"], True),
+            (
+                "meshtastic-desktop-2.7.14-1.x86_64.rpm",
+                ["meshtastic-1.x86_64.rpm"],
+                True,
+            ),
+            (
+                "meshtastic-desktop_2.7.14_amd64.deb",
+                ["meshtastic_amd64.deb"],
+                True,
+            ),
         ],
     )
     def test_pattern_matching_flow(self, filename, selected_patterns, should_match):
@@ -114,7 +137,7 @@ class TestPatternMatchingAlignment:
         result = matches_selected_patterns(filename, selected_patterns)
         assert result == should_match
 
-    def test_should_download_asset_with_configured_patterns(self, mocker):
+    def test_should_download_asset_with_configured_patterns(self):
         """Test MeshtasticDesktopDownloader.should_download_asset with configured patterns.
 
         This test simulates the real-world scenario where a user selects desktop
@@ -132,6 +155,7 @@ class TestPatternMatchingAlignment:
         # Test that DMG files match
         assert downloader.should_download_asset("Meshtastic-2.7.14.dmg") is True
         assert downloader.should_download_asset("Meshtastic-2.8.0.dmg") is True
+        assert downloader.should_download_asset("Meshtastic Desktop-2.7.14.dmg") is True
 
         # Test that MSI files match
         assert downloader.should_download_asset("Meshtastic_x64_2.7.14.msi") is True
@@ -143,7 +167,7 @@ class TestPatternMatchingAlignment:
             is False
         )
 
-    def test_should_download_asset_with_excludes(self, mocker):
+    def test_should_download_asset_with_excludes(self):
         """Test that exclude patterns take precedence over include patterns."""
         config = {
             "SELECTED_DESKTOP_ASSETS": ["meshtastic.dmg", "meshtastic.exe"],
@@ -160,8 +184,8 @@ class TestPatternMatchingAlignment:
         assert downloader.should_download_asset("Meshtastic-2.7.14-open.1.dmg") is False
         assert downloader.should_download_asset("Meshtastic-2.7.14beta1.exe") is False
 
-    def test_should_download_asset_no_patterns(self, mocker):
-        """Test that when no patterns are configured, all desktop assets match."""
+    def test_should_download_asset_no_patterns(self):
+        """Test that when no patterns are configured, nothing is downloaded."""
         config = {
             "SELECTED_DESKTOP_ASSETS": [],
         }
@@ -169,7 +193,19 @@ class TestPatternMatchingAlignment:
         mock_cache = MagicMock()
         downloader = MeshtasticDesktopDownloader(config, mock_cache)
 
-        # When no patterns selected, all should match
+        assert downloader.should_download_asset("Meshtastic-2.7.14.dmg") is False
+        assert downloader.should_download_asset("Meshtastic-2.7.14.msi") is False
+        assert downloader.should_download_asset("Meshtastic-2.7.14.exe") is False
+
+    def test_should_download_asset_wildcard(self):
+        """Test that wildcard pattern downloads all desktop assets."""
+        config = {
+            "SELECTED_DESKTOP_ASSETS": ["*"],
+        }
+
+        mock_cache = MagicMock()
+        downloader = MeshtasticDesktopDownloader(config, mock_cache)
+
         assert downloader.should_download_asset("Meshtastic-2.7.14.dmg") is True
         assert downloader.should_download_asset("Meshtastic-2.7.14.msi") is True
         assert downloader.should_download_asset("Meshtastic-2.7.14.exe") is True

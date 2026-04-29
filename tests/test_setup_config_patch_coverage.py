@@ -171,7 +171,7 @@ def test_run_setup_mixed_partial_sections_do_not_return_early(mocker):
     mocker.patch("builtins.open", mocker.mock_open())
     mock_yaml_dump = mocker.patch("fetchtastic.setup_config.yaml.safe_dump")
 
-    setup_config.run_setup(sections=["desktop", "notifications"])
+    setup_config.run_setup(sections=["app", "notifications"])
 
     mock_notifications.assert_called_once()
     mock_yaml_dump.assert_called_once()

@@ -13,11 +13,18 @@ if TYPE_CHECKING:
 
 import requests  # type: ignore[import-untyped]
 
+from fetchtastic.client_release_discovery import (
+    is_android_asset_name,
+    is_desktop_asset_name,
+)
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
+    CLIENT_APP_FILE_TYPES,
     DESKTOP_FILE_TYPES,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_CLIENT_APP,
+    FILE_TYPE_CLIENT_APP_PRERELEASE,
     FILE_TYPE_DESKTOP,
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
@@ -35,7 +42,6 @@ from fetchtastic.notifications import (
     send_up_to_date_notification,
 )
 from fetchtastic.utils import (
-    coerce_bool,
     format_api_summary,
     get_api_request_summary,
     get_effective_github_token,
@@ -408,8 +414,19 @@ class DownloadCLIIntegration:
 
         latest_versions = self.get_latest_versions()
         latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
-        latest_apk_prerelease = latest_versions.get("android_prerelease")
-        latest_desktop_prerelease = latest_versions.get("desktop_prerelease")
+        # Prefer the unified client app key; fall back to legacy APK/Desktop
+        # values while older result summaries and config files are transitioning.
+        latest_client_app = (
+            latest_versions.get("client_app")
+            or latest_apk_version
+            or latest_desktop_version
+        )
+        # Same compatibility fallback for the unified prerelease line.
+        latest_client_app_prerelease = (
+            latest_versions.get("client_app_prerelease")
+            or latest_versions.get("android_prerelease")
+            or latest_versions.get("desktop_prerelease")
+        )
 
         if latest_firmware_version:
             log.info(f"Latest firmware: {latest_firmware_version}")
@@ -418,19 +435,15 @@ class DownloadCLIIntegration:
         else:
             log.info("Latest firmware prerelease: none")
 
-        if latest_apk_version:
-            log.info(f"Latest APK: {latest_apk_version}")
-        if latest_apk_prerelease:
-            log.info(f"Latest APK prerelease: {latest_apk_prerelease}")
+        if latest_client_app:
+            log.info("Latest Meshtastic Client release: %s", latest_client_app)
+        if latest_client_app_prerelease:
+            log.info(
+                "Latest Meshtastic Client prerelease: %s",
+                latest_client_app_prerelease,
+            )
         else:
-            log.info("Latest APK prerelease: none")
-
-        if latest_desktop_version:
-            log.info(f"Latest desktop: {latest_desktop_version}")
-        if latest_desktop_prerelease:
-            log.info(f"Latest desktop prerelease: {latest_desktop_prerelease}")
-        else:
-            log.info("Latest desktop prerelease: none")
+            log.info("Latest Meshtastic Client prerelease: none")
 
         if failed_downloads:
             log.info(f"{len(failed_downloads)} downloads failed:")
@@ -452,33 +465,6 @@ class DownloadCLIIntegration:
             )
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
-
-        desktop_enabled = coerce_bool(
-            (self.config or {}).get("SAVE_DESKTOP_APP", False)
-        )
-        has_known_mismatch = (
-            desktop_enabled
-            and self.desktop_downloader is not None
-            and self.desktop_downloader.has_known_2714_prerelease_version_mismatch()
-        )
-        if has_known_mismatch:
-            mismatch_tags = (
-                self.desktop_downloader.get_known_2714_prerelease_mismatch_tags()
-            )
-            newest_mismatch_tag = mismatch_tags[0] if mismatch_tags else "v2.7.14"
-            latest_is_2714_prerelease = isinstance(
-                latest_desktop_prerelease, str
-            ) and latest_desktop_prerelease.startswith("v2.7.14")
-            if latest_is_2714_prerelease:
-                log.info(
-                    "Desktop prerelease note: installer version labels do not match release tag versions for %s. This is a known 2.7.14 prerelease packaging discrepancy while Desktop CI/build requirements are still being finalized upstream.",
-                    newest_mismatch_tag,
-                )
-            else:
-                log.debug(
-                    "Known 2.7.14 desktop installer-label mismatch observed only in scanned historical prereleases; suppressing end-of-run note (latest desktop prerelease: %s).",
-                    latest_desktop_prerelease or "none",
-                )
 
         new_versions_available = bool(
             (new_firmware_versions or [])
@@ -601,6 +587,27 @@ class DownloadCLIIntegration:
             is_firmware = file_type in FIRMWARE_FILE_TYPES and not is_firmware_manifest
             is_android = file_type in ANDROID_FILE_TYPES
             is_desktop = file_type in DESKTOP_FILE_TYPES
+            is_client_app = file_type in CLIENT_APP_FILE_TYPES
+            is_client_app_prerelease = file_type == FILE_TYPE_CLIENT_APP_PRERELEASE
+            if is_client_app:
+                file_path = getattr(result, "file_path", None)
+                download_url = getattr(result, "download_url", None)
+                file_name = (
+                    os.path.basename(str(file_path))
+                    if file_path
+                    else os.path.basename(str(download_url)) if download_url else ""
+                )
+                is_android = is_android or is_android_asset_name(file_name)
+                is_desktop = is_desktop or is_desktop_asset_name(file_name)
+                if not is_android and not is_desktop:
+                    logger.debug("Unclassified client app asset, defaulting to Android")
+                    is_android = True
+            is_android_prerelease = file_type == FILE_TYPE_ANDROID_PRERELEASE or (
+                is_client_app_prerelease and is_android
+            )
+            is_desktop_prerelease = file_type == FILE_TYPE_DESKTOP_PRERELEASE or (
+                is_client_app_prerelease and is_desktop
+            )
             was_skipped = getattr(result, "was_skipped", False)
 
             # Legacy parity: only mark new versions when a download actually occurred.
@@ -629,7 +636,7 @@ class DownloadCLIIntegration:
                 )
             if is_android:
                 compare_current = current_android
-                if file_type == FILE_TYPE_ANDROID_PRERELEASE:
+                if is_android_prerelease:
                     compare_current = current_android_prerelease or current_android
                 self._update_new_versions(
                     release_tag,
@@ -639,7 +646,7 @@ class DownloadCLIIntegration:
                 )
             if is_desktop:
                 compare_current = current_desktop
-                if file_type == FILE_TYPE_DESKTOP_PRERELEASE:
+                if is_desktop_prerelease:
                     compare_current = current_desktop_prerelease or current_desktop
                 self._update_new_versions(
                     release_tag,
@@ -661,7 +668,7 @@ class DownloadCLIIntegration:
                         release_tag, downloaded_firmwares, downloaded_firmware_set
                     )
             if is_android:
-                if file_type == FILE_TYPE_ANDROID_PRERELEASE:
+                if is_android_prerelease:
                     if release_tag not in downloaded_apk_prerelease_set:
                         downloaded_apk_prereleases.append(release_tag)
                         downloaded_apk_prerelease_set.add(release_tag)
@@ -670,7 +677,7 @@ class DownloadCLIIntegration:
                         release_tag, downloaded_apks, downloaded_apk_set
                     )
             if is_desktop:
-                if file_type == FILE_TYPE_DESKTOP_PRERELEASE:
+                if is_desktop_prerelease:
                     if release_tag not in downloaded_desktop_prerelease_set:
                         downloaded_desktop_prereleases.append(release_tag)
                         downloaded_desktop_prerelease_set.add(release_tag)
@@ -816,6 +823,8 @@ class DownloadCLIIntegration:
             FILE_TYPE_ANDROID_PRERELEASE: "Android APK Prerelease",
             FILE_TYPE_DESKTOP: "Desktop",
             FILE_TYPE_DESKTOP_PRERELEASE: "Desktop Prerelease",
+            FILE_TYPE_CLIENT_APP: "Client App",
+            FILE_TYPE_CLIENT_APP_PRERELEASE: "Client App Prerelease",
         }
 
         for result in self.orchestrator.failed_downloads:
@@ -959,18 +968,20 @@ class DownloadCLIIntegration:
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """
-        Return aggregated download statistics for reporting.
+        Summarizes download attempts and outcomes for the current run.
 
         Returns:
-            dict: Aggregated download statistics with keys:
-                - total_downloads (int): Number of attempted downloads (excludes skipped results).
-                - successful_downloads (int): Number of completed, non-skipped downloads.
-                - skipped_downloads (int): Number of downloads marked as skipped.
-                - failed_downloads (int): Number of downloads that failed.
-                - success_rate (float): Overall success percentage as a float (0-100).
-                - android_downloads (int): Number of successful Android artifact downloads.
-                - firmware_downloads (int): Number of successful firmware artifact downloads.
-                - repository_downloads (int): Number of repository downloads (always 0 for automatic pipeline).
+            dict: Mapping with the following keys:
+                - "total_downloads": number of attempted downloads (excludes skipped results).
+                - "successful_downloads": number of completed, non-skipped downloads.
+                - "skipped_downloads": number of downloads marked as skipped.
+                - "failed_downloads": number of failed downloads.
+                - "success_rate": overall success percentage as a float (0-100).
+                - "client_app_downloads": count of successful client app artifact downloads.
+                - "firmware_downloads": count of successful firmware artifact downloads.
+                - "android_downloads": legacy compat — count of client app downloads with Android-compatible filenames.
+                - "desktop_downloads": legacy compat — count of client app downloads with Desktop-compatible filenames.
+                - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
         """
         if self.orchestrator:
             return self.orchestrator.get_download_statistics()
@@ -980,8 +991,10 @@ class DownloadCLIIntegration:
             "skipped_downloads": 0,
             "failed_downloads": 0,
             "success_rate": 0.0,
-            "android_downloads": 0,
+            "client_app_downloads": 0,
             "firmware_downloads": 0,
+            "android_downloads": 0,
+            "desktop_downloads": 0,
             "repository_downloads": 0,
         }
 
@@ -999,6 +1012,8 @@ class DownloadCLIIntegration:
             "android_prerelease": "",
             "desktop": "",
             "desktop_prerelease": "",
+            "client_app": "",
+            "client_app_prerelease": "",
         }
         if self.orchestrator:
             versions.update(self.orchestrator.get_latest_versions())

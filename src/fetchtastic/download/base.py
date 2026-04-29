@@ -568,6 +568,7 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
         release_tag: str,
         body: Optional[str],
         base_dir: str,
+        notes_prefix: Optional[str] = None,
     ) -> Optional[str]:
         """
         Write sanitized release notes to a markdown file within the given release directory if not already present.
@@ -591,7 +592,18 @@ class BaseDownloader(AsyncDownloadCoreMixin, Downloader, ABC):
             logger.warning("Skipping release notes for unsafe tag: %s", release_tag)
             return None
 
-        notes_path = os.path.join(release_dir, f"release_notes-{safe_tag}.md")
+        safe_prefix = None
+        if notes_prefix:
+            safe_prefix = _sanitize_path_component(notes_prefix)
+            if safe_prefix is None:
+                logger.warning(
+                    "Skipping unsafe notes_prefix for release notes: %s", notes_prefix
+                )
+                return None
+        prefix_part = f"{safe_prefix}-" if safe_prefix else ""
+        notes_path = os.path.join(
+            release_dir, f"release_notes-{prefix_part}{safe_tag}.md"
+        )
 
         real_base = os.path.realpath(base_dir)
         try:

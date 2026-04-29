@@ -207,22 +207,20 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_apk_only(mocker, capsys):
-    """Test _setup_downloads with APK-only selection."""
+    """Test _setup_downloads with client app APK selection."""
     config = {}
 
-    # Mock input to select APK only
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "a",  # Choose APK only
-            "y",  # Check APK prereleases
-            "n",  # Add channel suffixes
+            "a",
+            "y",
+            "n",
         ],
     )
 
-    # Mock menu to return some APK assets
-    mock_menu_result = {"selected_assets": ["meshtastic"]}
-    mocker.patch("fetchtastic.menu_apk.run_menu", return_value=mock_menu_result)
+    mock_menu_result = {"selected_assets": ["meshtastic.apk"]}
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_menu_result)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
         config, is_partial_run=False, wants=lambda _: True
@@ -232,6 +230,7 @@ def test_setup_downloads_apk_only(mocker, capsys):
     assert save_firmware is False
     assert result_config["SAVE_APKS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
+    assert result_config["CHECK_APP_PRERELEASES"] is True
     assert result_config["CHECK_APK_PRERELEASES"] is True
 
 
@@ -271,21 +270,19 @@ def test_setup_downloads_both_selected(mocker, capsys):
     """Test _setup_downloads with both APK and firmware selected."""
     config = {}
 
-    # Mock input to select both
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "b",  # Choose both
-            "n",  # Check firmware prereleases
-            "y",  # Check APK prereleases
-            "n",  # Add channel suffixes
+            "b",
+            "n",
+            "y",
+            "n",
         ],
     )
 
-    # Mock menus
-    mock_apk_result = {"selected_assets": ["meshtastic"]}
+    mock_app_result = {"selected_assets": ["meshtastic.apk"]}
     mock_firmware_result = {"selected_assets": ["rak4631-"]}
-    mocker.patch("fetchtastic.menu_apk.run_menu", return_value=mock_apk_result)
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_app_result)
     mocker.patch(
         "fetchtastic.menu_firmware.run_menu", return_value=mock_firmware_result
     )
@@ -306,9 +303,15 @@ def test_setup_downloads_no_selection(mocker, capsys):
     """Test _setup_downloads when user selects nothing."""
     config = {}
 
-    # Mock input to select APK but then menu returns None
-    mocker.patch("builtins.input", side_effect=["a"])  # Choose APK only
-    mocker.patch("fetchtastic.menu_apk.run_menu", return_value=None)
+    # Mock input to select client app but then menu returns None
+    mocker.patch("builtins.input", side_effect=["a"])  # Choose client app only
+
+    def _menu_returns_none() -> None:
+        print(
+            "No client app assets selected. Client app releases will not be downloaded."
+        )
+
+    mocker.patch("fetchtastic.menu_app.run_menu", side_effect=_menu_returns_none)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
         config, is_partial_run=False, wants=lambda _: True
@@ -320,7 +323,7 @@ def test_setup_downloads_no_selection(mocker, capsys):
     assert result_config["SAVE_FIRMWARE"] is False
 
     captured = capsys.readouterr()
-    assert "No APK assets selected" in captured.out
+    assert "No client app assets selected" in captured.out
 
 
 @pytest.mark.configuration
@@ -356,19 +359,19 @@ def test_setup_downloads_firmware_empty_selection(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_apk_empty_selection(mocker):
-    """Empty APK selections should disable APK downloads."""
+    """Empty client app selections should disable client app downloads."""
     config = {}
 
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "a",  # Choose APK only
-            "y",  # Check APK prereleases
+            "a",  # Choose client app only
+            "y",  # Check client app prereleases
             "n",  # Add channel suffixes
         ],
     )
     mocker.patch(
-        "fetchtastic.menu_apk.run_menu",
+        "fetchtastic.menu_app.run_menu",
         return_value={"selected_assets": []},
     )
 
@@ -390,57 +393,57 @@ def test_setup_downloads_partial_run(mocker):
     config = {
         "SAVE_APKS": True,
         "SAVE_FIRMWARE": False,
-        "SELECTED_APK_ASSETS": ["existing"],
+        "SELECTED_APK_ASSETS": ["existing.apk"],
         "CHECK_APK_PRERELEASES": False,
     }
 
-    # Mock input for partial run - only update APK settings
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",  # Download Android APKs
-            "n",  # Don't rerun menu (keep existing selection)
+            "y",  # Keep downloading client app releases
+            "n",  # Skip re-running menu (existing selection kept)
             "y",  # Enable prereleases
-            "n",  # Add channel suffixes
+            "n",  # No channel suffixes
         ],
     )
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=True, wants=lambda section: section == "android"
+        config, is_partial_run=True, wants=lambda section: section == "app"
     )
 
     assert save_apks is True
-    assert save_firmware is False  # Unchanged in partial run
+    assert save_firmware is False
     assert result_config["SAVE_APKS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
+    assert result_config["CHECK_APP_PRERELEASES"] is True
     assert result_config["CHECK_APK_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
-    """Partial Android run should skip the menu when user keeps existing selection."""
+    """Partial app run should skip the menu when user keeps existing selection."""
     config = {
         "SAVE_APKS": True,
         "SAVE_FIRMWARE": False,
-        "SELECTED_APK_ASSETS": ["existing"],
+        "SELECTED_APK_ASSETS": ["existing.apk"],
         "CHECK_APK_PRERELEASES": False,
     }
 
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",  # Download Android APKs
-            "n",  # Don't rerun menu
+            "y",  # Keep downloading client app releases
+            "n",  # Skip re-running menu (existing selection kept)
             "n",  # Disable prereleases
-            "n",  # Add channel suffixes
+            "n",  # No channel suffixes
         ],
     )
 
-    mock_menu = mocker.patch("fetchtastic.menu_apk.run_menu")
+    mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=True, wants=lambda section: section == "android"
+        config, is_partial_run=True, wants=lambda section: section == "app"
     )
 
     assert save_apks is True
@@ -752,7 +755,10 @@ def test_copy_to_clipboard_termux_success(mocker):
 
     assert result is True
     mock_subprocess.assert_called_once_with(
-        ["termux-clipboard-set"], input="test text".encode("utf-8"), check=True
+        ["termux-clipboard-set"],
+        input=b"test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -813,7 +819,11 @@ def test_copy_to_clipboard_macos_success(mocker):
 
     assert result is True
     mock_subprocess.assert_called_once_with(
-        "pbcopy", text=True, input="test text", check=True
+        ["pbcopy"],
+        text=True,
+        input="test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -833,8 +843,9 @@ def test_copy_to_clipboard_linux_xclip_success(mocker):
     assert result is True
     mock_subprocess.assert_called_once_with(
         ["xclip", "-selection", "clipboard"],
-        input="test text".encode("utf-8"),
+        input=b"test text",
         check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
@@ -858,8 +869,9 @@ def test_copy_to_clipboard_linux_xsel_success(mocker):
     assert result is True
     mock_subprocess.assert_called_once_with(
         ["xsel", "--clipboard", "--input"],
-        input="test text".encode("utf-8"),
+        input=b"test text",
         check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 

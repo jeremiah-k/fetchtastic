@@ -58,7 +58,7 @@ def test_cli_setup_with_multiple_sections(mocker, mock_cli_dependencies):
     """Test 'setup' command with multiple --section arguments."""
     mocker.patch(
         "sys.argv",
-        ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
+        ["fetchtastic", "setup", "--section", "firmware", "--section", "app"],
     )
     mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch(
@@ -87,7 +87,7 @@ def test_cli_help_with_specific_command(mocker, mock_cli_dependencies, capsys):
 @pytest.mark.unit
 def test_cli_setup_positional_sections(mocker, mock_cli_dependencies):
     """Test 'setup' command with positional sections."""
-    mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "android"])
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "app"])
     mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch(
         "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)

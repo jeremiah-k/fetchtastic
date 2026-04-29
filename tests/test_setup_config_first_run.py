@@ -27,7 +27,11 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
     mocker.patch(
         "fetchtastic.setup_config._setup_downloads",
         side_effect=lambda config, *_args, **_kwargs: (
-            {**config, "SAVE_DESKTOP_APP": True},
+            {
+                **config,
+                "SAVE_CLIENT_APPS": True,
+                "SELECTED_APP_ASSETS": ["Meshtastic.dmg"],
+            },
             True,
             True,
         ),
@@ -52,7 +56,10 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
 
     mock_integration.assert_called_once()
     integration_instance.main.assert_called_once()
-    assert isinstance(integration_instance.main.call_args.kwargs.get("config"), dict)
+    integration_config = integration_instance.main.call_args.kwargs.get("config")
+    assert isinstance(integration_config, dict)
+    assert integration_config["SAVE_CLIENT_APPS"] is True
+    assert "Meshtastic.dmg" in integration_config["SELECTED_APP_ASSETS"]
     assert integration_instance.main.call_args.kwargs.get("include_desktop") is True
 
 

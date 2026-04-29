@@ -18,13 +18,17 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, ca
 import platformdirs
 import yaml  # type: ignore[import-untyped]
 
-from fetchtastic import menu_apk, menu_desktop, menu_firmware
+from fetchtastic import menu_apk, menu_app, menu_desktop, menu_firmware
+from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
-    DEFAULT_CHECK_APK_PRERELEASES,
-    DEFAULT_CHECK_DESKTOP_PRERELEASES,
-    DEFAULT_DESKTOP_VERSIONS_TO_KEEP,
+    DEFAULT_CHECK_APP_PRERELEASES,
+)
+from fetchtastic.constants import (
+    DEFAULT_DESKTOP_VERSIONS_TO_KEEP as _DEFAULT_DESKTOP_VERSIONS_TO_KEEP,
+)
+from fetchtastic.constants import (
     DEFAULT_EXTRACTION_PATTERNS,
     DEFAULT_KEEP_LAST_BETA,
     MESHTASTIC_DIR_NAME,
@@ -33,6 +37,9 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import coerce_bool, expand_apk_selected_patterns
+
+_LEGACY_MENU_MODULES = (menu_apk, menu_desktop)
+DEFAULT_DESKTOP_VERSIONS_TO_KEEP = _DEFAULT_DESKTOP_VERSIONS_TO_KEEP
 
 # Recommended default exclude patterns for firmware extraction
 # These patterns exclude specialized variants and debug files that most users don't need
@@ -277,9 +284,8 @@ WINDOWS_START_MENU_FOLDER = os.path.join(
 # Supported setup sections for partial reconfiguration
 SETUP_SECTION_CHOICES: Set[str] = {
     "base",  # Base directory and environment-specific options
-    "android",  # Android APK download preferences
+    "app",  # Client app asset download preferences (APKs + Desktop installers)
     "firmware",  # Firmware download preferences (including prereleases/extraction)
-    "desktop",  # Desktop client download preferences
     "notifications",  # NTFY configuration
     "automation",  # Cron/startup automation choices
     "github",  # GitHub API token configuration
@@ -287,9 +293,8 @@ SETUP_SECTION_CHOICES: Set[str] = {
 
 SECTION_SHORTCUTS = {
     "b": "base",
-    "a": "android",
+    "a": "app",
     "f": "firmware",
-    "d": "desktop",
     "n": "notifications",
     "m": "automation",
     "g": "github",
@@ -344,7 +349,7 @@ def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
 
 def is_fetchtastic_installed_via_pip() -> bool:
     """
-    Check whether Fetchtastic appears among the packages reported by the system `pip` command.
+    Check whether Fetchtastic appears among packages reported by this Python's pip.
 
     If the `pip` command is unavailable or the check fails, the function returns `false`.
 
@@ -352,9 +357,12 @@ def is_fetchtastic_installed_via_pip() -> bool:
         `true` if `fetchtastic` appears in the output of `pip list`, `false` otherwise.
     """
     try:
-        # Check if fetchtastic is in pip list
         result = subprocess.run(
-            ["pip", "list"], capture_output=True, text=True, check=False
+            [sys.executable, "-m", "pip", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
@@ -374,7 +382,11 @@ def is_fetchtastic_installed_via_pipx() -> bool:
     try:
         # Check if fetchtastic is in pipx list
         result = subprocess.run(
-            ["pipx", "list"], capture_output=True, text=True, check=False
+            ["pipx", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
@@ -700,9 +712,10 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
         "Press ENTER to run the full setup, or choose one or more sections (comma separated):"
     )
     print("  [b] base           — base directory and general settings")
-    print("  [a] android        — Android APK download preferences")
+    print(
+        "  [a] app            — client app asset download preferences (APKs + Desktop)"
+    )
     print("  [f] firmware       — firmware download preferences")
-    print("  [d] desktop        — Desktop client download preferences")
     print("  [n] notifications  — NTFY server/topic settings")
     print("  [m] automation     — scheduled/automatic execution options")
     print("  [g] github         — GitHub API token (rate-limit boost)")
@@ -710,7 +723,7 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
 
     while True:
         response = _safe_input(
-            "Selection (examples: f, android; default: full setup, q to quit): ",
+            "Selection (examples: f, app; default: full setup, q to quit): ",
             default="",
         ).strip()
         if not response:
@@ -784,26 +797,28 @@ def _setup_downloads(
     config: Dict[str, Any], is_partial_run: bool, wants: Callable[[str], bool]
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """
-    Configure which asset types (Android APKs and firmware) should be downloaded and update the provided configuration accordingly.
+    Configure which asset types (client app assets and firmware) should be downloaded and update the provided configuration accordingly.
 
-    Updates the config in place with keys such as "SAVE_APKS", "SAVE_FIRMWARE", and, when asset selection menus run, "SELECTED_APK_ASSETS", "SELECTED_FIRMWARE_ASSETS", "CHECK_PRERELEASES", "CHECK_APK_PRERELEASES", and "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES". Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
+    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
 
     Parameters:
         config (dict): Mutable configuration dictionary to update.
         is_partial_run (bool): When True, only prompt sections for which wants(section) is True and prefer existing config defaults.
-        wants (Callable[[str], bool]): Callable that accepts a section name (for example "android" or "firmware") and returns True when that section should be processed in this run.
+        wants (Callable[[str], bool]): Callable that accepts a section name (for example ``"app"`` or ``"firmware"``) and returns True when that section should be processed in this run.
 
     Returns:
-        tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where `save_apks` and `save_firmware` indicate whether APKs and firmware, respectively, will be downloaded.
+        tuple[dict, bool, bool]: (updated_config, save_client_apps, save_firmware) where ``save_client_apps`` and ``save_firmware`` indicate whether client app assets and firmware, respectively, will be downloaded.
     """
-    # Track prior desktop-enabled state so we only clear desktop selections when
-    # the user explicitly turns desktop downloads off.
-    save_desktop_was_enabled = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
+    config = normalize_client_app_config(config)
+    save_client_apps_was_enabled = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
 
-    # Prompt to save APKs, firmware, desktop, or combinations
+    # Prompt to save client app assets, firmware, or both.
     if not is_partial_run:
         valid_choices = {
             "a",
+            "app",
+            "c",
+            "client",
             "f",
             "d",
             "desktop",
@@ -817,7 +832,7 @@ def _setup_downloads(
         while True:
             save_choice = (
                 _safe_input(
-                    "Would you like to download APKs, firmware, desktop clients, or multiple? [a/f/d/m/b/n] (default: both apk+firmware): ",
+                    "Would you like to download client app assets, firmware, both, or none? [a/f/b/n] (default: both): ",
                     default="b",
                 )
                 .strip()
@@ -828,22 +843,17 @@ def _setup_downloads(
                 break
             print("Invalid choice. Please enter a, f, d, m, b, or n.")
 
-        if save_choice == "a":
-            save_apks = True
+        if save_choice in ("a", "app", "c", "client", "d", "desktop"):
+            save_client_apps = True
             save_firmware = False
-            save_desktop = False
         elif save_choice == "f":
-            save_apks = False
+            save_client_apps = False
             save_firmware = True
-            save_desktop = False
-        elif save_choice in ("d", "desktop"):
-            save_apks = False
-            save_firmware = False
-            save_desktop = True
         elif save_choice in ("m", "multiple"):
-            save_apks = _coerce_bool(
+            save_client_apps = _coerce_bool(
                 _safe_input(
-                    "Download Android APKs? [y/n] (default: yes): ", default="y"
+                    "Download client app releases? [y/n] (default: yes): ",
+                    default="y",
                 ),
                 default=True,
             )
@@ -851,34 +861,25 @@ def _setup_downloads(
                 _safe_input("Download firmware? [y/n] (default: yes): ", default="y"),
                 default=True,
             )
-            save_desktop = _coerce_bool(
-                _safe_input(
-                    "Download desktop clients? [y/n] (default: yes): ", default="y"
-                ),
-                default=True,
-            )
         elif save_choice in ("n", "none"):
-            save_apks = False
+            save_client_apps = False
             save_firmware = False
-            save_desktop = False
         else:
-            save_apks = True
+            save_client_apps = True
             save_firmware = True
-            save_desktop = False
     else:
-        save_apks = _coerce_bool(config.get("SAVE_APKS", False))
+        save_client_apps = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
         save_firmware = _coerce_bool(config.get("SAVE_FIRMWARE", False))
-        save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
-        if wants("android"):
-            current_apk_default = "y" if save_apks else "n"
+        if wants("app"):
+            current_app_default = "y" if save_client_apps else "n"
             choice = (
                 _safe_input(
-                    f"Download Android APKs? [y/n] (current: {current_apk_default}): ",
-                    default=current_apk_default,
+                    f"Download client app releases? [y/n] (current: {current_app_default}): ",
+                    default=current_app_default,
                 )
-                or current_apk_default
+                or current_app_default
             )
-            save_apks = _coerce_bool(choice)
+            save_client_apps = _coerce_bool(choice)
         if wants("firmware"):
             current_fw_default = "y" if save_firmware else "n"
             choice = (
@@ -889,26 +890,24 @@ def _setup_downloads(
                 or current_fw_default
             )
             save_firmware = _coerce_bool(choice)
-        if wants("desktop"):
-            current_desktop_default = "y" if save_desktop else "n"
-            choice = (
-                _safe_input(
-                    f"Download desktop clients? [y/n] (current: {current_desktop_default}): ",
-                    default=current_desktop_default,
-                )
-                or current_desktop_default
-            )
-            save_desktop = _coerce_bool(choice, default=save_desktop)
-
+    save_apks = save_client_apps
+    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", save_client_apps))
+    config["SAVE_CLIENT_APPS"] = save_client_apps
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
     config["SAVE_DESKTOP_APP"] = save_desktop
     if not save_firmware and (not is_partial_run or wants("firmware")):
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
-    if save_desktop_was_enabled and not save_desktop:
+    if save_client_apps_was_enabled and not save_client_apps:
+        config["CHECK_APP_PRERELEASES"] = False
+        config["CHECK_APK_PRERELEASES"] = False
         config["CHECK_DESKTOP_PRERELEASES"] = False
+        config["SAVE_DESKTOP_APP"] = False
+        config["SELECTED_APP_ASSETS"] = []
+        config["SELECTED_APK_ASSETS"] = []
         _clear_desktop_assets(config)
+        save_desktop = False
 
     if save_firmware and (not is_partial_run or wants("firmware")):
         rerun_menu = True
@@ -948,105 +947,116 @@ def _setup_downloads(
         )
         config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
 
-    if save_apks and (not is_partial_run or wants("android")):
+    app_section_requested = not is_partial_run or wants("app")
+
+    if save_client_apps and app_section_requested:
         rerun_menu = True
         if is_partial_run:
-            if config.get("SELECTED_APK_ASSETS"):
+            if config.get("SELECTED_APP_ASSETS"):
                 rerun_menu_choice = _safe_input(
-                    "Re-run the Android APK selection menu? [y/n] (default: yes): ",
+                    "Re-run the client app asset selection menu? [y/n] (default: yes): ",
                     default="y",
                 )
                 if not _coerce_bool(rerun_menu_choice, default=True):
                     rerun_menu = False
         if rerun_menu:
-            apk_selection = menu_apk.run_menu()
+            try:
+                app_selection = menu_app.run_menu()
+            except RuntimeError as exc:
+                logger.warning(
+                    "Client app asset menu failed (%s); disabling client app downloads for this setup pass.",
+                    exc,
+                )
+                config["SAVE_CLIENT_APPS"] = False
+                config["SAVE_APKS"] = False
+                config["SAVE_DESKTOP_APP"] = False
+                config["CHECK_APP_PRERELEASES"] = False
+                config["CHECK_APK_PRERELEASES"] = False
+                config["CHECK_DESKTOP_PRERELEASES"] = False
+                config["SELECTED_APP_ASSETS"] = []
+                config["SELECTED_APK_ASSETS"] = []
+                _clear_desktop_assets(config)
+                save_client_apps = False
+                save_apks = False
+                save_desktop = False
+                app_selection = {"selected_assets": []}
             selected_assets = (
-                apk_selection.get("selected_assets")
-                if isinstance(apk_selection, dict)
+                app_selection.get("selected_assets")
+                if isinstance(app_selection, dict)
                 else None
             )
+            if selected_assets is None and isinstance(app_selection, dict):
+                existing_assets = config.get("SELECTED_APP_ASSETS")
+                if existing_assets:
+                    selected_assets = existing_assets
+                else:
+                    print(
+                        "No client app asset selection was returned. Client app releases will not be downloaded."
+                    )
+                    selected_assets = []
+            elif app_selection is None:
+                selected_assets = []
             if not selected_assets:
-                config, save_apks = _disable_asset_downloads(config, "APK")
-            else:
-                _set_apk_assets(config, selected_assets)
-        elif not config.get("SELECTED_APK_ASSETS"):
-            config, save_apks = _disable_asset_downloads(
-                config,
-                "APK",
-                "No existing APK selection found. APKs will not be downloaded.",
-            )
-        else:
-            _set_apk_assets(config, config.get("SELECTED_APK_ASSETS") or [])
-
-    # --- APK Pre-release Configuration ---
-    if save_apks and (not is_partial_run or wants("android")):
-        check_apk_prereleases_current = _coerce_bool(
-            config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES)
-        )  # Default: True. APK prereleases are typically more stable than firmware prereleases and safer to enable by default.
-        check_apk_prereleases_default = "yes" if check_apk_prereleases_current else "no"
-        check_apk_prereleases_input = _safe_input(
-            f"\nWould you like to check for and download pre-release APKs from GitHub? [y/n] (default: {check_apk_prereleases_default}): ",
-            default=check_apk_prereleases_default,
-        )
-        config["CHECK_APK_PRERELEASES"] = _coerce_bool(check_apk_prereleases_input)
-
-    # --- Desktop Client Selection ---
-    if save_desktop and (not is_partial_run or wants("desktop")):
-        rerun_menu = True
-        if is_partial_run:
-            if _get_desktop_assets(config):
-                rerun_menu_choice = _safe_input(
-                    "Re-run the desktop client selection menu? [y/n] (default: yes): ",
-                    default="y",
-                )
-                if not _coerce_bool(rerun_menu_choice, default=True):
-                    rerun_menu = False
-        if rerun_menu:
-            desktop_selection = menu_desktop.run_menu()
-            selected_assets = (
-                desktop_selection.get("selected_assets")
-                if isinstance(desktop_selection, dict)
-                else None
-            )
-            if not selected_assets:
-                print(
-                    "No desktop assets selected. Desktop clients will not be downloaded."
-                )
+                if isinstance(app_selection, dict):
+                    print(
+                        "No client app assets selected. Client app releases will not be downloaded."
+                    )
+                config["SAVE_CLIENT_APPS"] = False
+                config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False
+                config["CHECK_APP_PRERELEASES"] = False
+                config["CHECK_APK_PRERELEASES"] = False
                 config["CHECK_DESKTOP_PRERELEASES"] = False
+                config["SELECTED_APP_ASSETS"] = []
+                config["SELECTED_APK_ASSETS"] = []
                 _clear_desktop_assets(config)
+                save_client_apps = False
+                save_apks = False
                 save_desktop = False
             else:
-                _set_desktop_assets(config, selected_assets)
-        else:
-            # Not re-running menu, but ensure both keys are set for backward compat
-            existing = _get_desktop_assets(config)
-            _set_desktop_assets(config, existing)
-            if not _get_desktop_assets(config):
-                print(
-                    "No existing desktop selection found. Desktop clients will not be downloaded."
-                )
-                config["SAVE_DESKTOP_APP"] = False
-                config["CHECK_DESKTOP_PRERELEASES"] = False
+                config["SELECTED_APP_ASSETS"] = selected_assets
+                config.pop("SELECTED_APK_ASSETS", None)
                 _clear_desktop_assets(config)
-                save_desktop = False
+                normalize_client_app_config(config)
+        elif not config.get("SELECTED_APP_ASSETS"):
+            print(
+                "No existing client app asset selection found. Client app releases will not be downloaded."
+            )
+            config["SAVE_CLIENT_APPS"] = False
+            config["SAVE_APKS"] = False
+            config["SAVE_DESKTOP_APP"] = False
+            config["CHECK_APP_PRERELEASES"] = False
+            config["CHECK_APK_PRERELEASES"] = False
+            config["CHECK_DESKTOP_PRERELEASES"] = False
+            config["SELECTED_APP_ASSETS"] = []
+            config["SELECTED_APK_ASSETS"] = []
+            _clear_desktop_assets(config)
+            save_client_apps = False
+            save_apks = False
+            save_desktop = False
+        else:
+            normalize_client_app_config(config)
 
-    # --- Desktop Prerelease Configuration ---
-    if save_desktop and (not is_partial_run or wants("desktop")):
-        check_desktop_prereleases_current = _coerce_bool(
-            config.get("CHECK_DESKTOP_PRERELEASES", DEFAULT_CHECK_DESKTOP_PRERELEASES)
+    # --- Client App Pre-release Configuration ---
+    if save_client_apps and app_section_requested:
+        check_app_prereleases_current = _coerce_bool(
+            config.get("CHECK_APP_PRERELEASES", DEFAULT_CHECK_APP_PRERELEASES)
         )
-        check_desktop_prereleases_default = (
-            "yes" if check_desktop_prereleases_current else "no"
+        check_app_prereleases_default = "yes" if check_app_prereleases_current else "no"
+        check_app_prereleases_input = _safe_input(
+            f"\nWould you like to check for and download pre-release client app assets from GitHub? [y/n] (default: {check_app_prereleases_default}): ",
+            default=check_app_prereleases_default,
         )
-        check_desktop_prereleases_input = _safe_input(
-            f"\nWould you like to check for and download pre-release desktop clients from GitHub? [y/n] (default: {check_desktop_prereleases_default}): ",
-            default=check_desktop_prereleases_default,
+        config["CHECK_APP_PRERELEASES"] = _coerce_bool(
+            check_app_prereleases_input,
+            default=check_app_prereleases_current,
         )
-        config["CHECK_DESKTOP_PRERELEASES"] = _coerce_bool(
-            check_desktop_prereleases_input,
-            default=check_desktop_prereleases_current,
-        )
+        normalize_client_app_config(config)
+
+    # --- Client App Compatibility Normalization ---
+    normalize_client_app_config(config)
+    save_apks = save_client_apps
+    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
     # --- Channel Suffix Configuration ---
     if save_firmware:
@@ -1065,18 +1075,13 @@ def _setup_downloads(
                 add_channel_suffixes_input
             )
 
-    # If save_apks, save_firmware, and save_desktop are all False, inform the user and exit setup.
+    # If client app and firmware downloads are both disabled, inform the user and exit setup.
     # During partial runs that only update non-download sections (e.g. automation),
     # allow setup to proceed even when downloads are disabled.
-    wants_downloads = (
-        (wants("android") or wants("firmware") or wants("desktop"))
-        if is_partial_run
-        else True
-    )
+    wants_downloads = (wants("app") or wants("firmware")) if is_partial_run else True
     if (
-        not save_apks
+        not save_client_apps
         and not save_firmware
-        and not save_desktop
         and (not is_partial_run or wants_downloads)
     ):
         requested_non_download_sections = is_partial_run and any(
@@ -1084,7 +1089,7 @@ def _setup_downloads(
             for section in ("base", "notifications", "automation", "github")
         )
         print(
-            "Please select at least one type of asset to download (APK, firmware, or desktop)."
+            "Please select at least one type of asset to download (client app or firmware)."
         )
         if requested_non_download_sections:
             print(
@@ -1100,40 +1105,52 @@ def _setup_downloads(
     return config, save_apks, save_firmware
 
 
-def _setup_android(
+def _setup_client_app(
     config: Dict[str, Any], is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
-    Prompt the user for how many Android APK versions to keep and store that value in the configuration.
+    Prompt the user for how many client app versions to keep and store that value in the configuration.
 
-    Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["ANDROID_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
+    Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["APP_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
 
     Parameters:
-        config (dict): Configuration mapping to read and update; the function sets "ANDROID_VERSIONS_TO_KEEP" in-place.
+        config (dict): Configuration mapping to read and update; the function sets "APP_VERSIONS_TO_KEEP" in-place.
         is_first_run (bool): If True, use first-run wording in the prompt.
         default_versions (int): Fallback number to use when the config does not already contain a value.
 
     Returns:
-        dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set to an integer.
+        dict: The updated configuration dictionary with client app retention keys normalized.
     """
-    current_versions = config.get("ANDROID_VERSIONS_TO_KEEP", default_versions)
+    current_versions = config.get(
+        "APP_VERSIONS_TO_KEEP",
+        config.get("ANDROID_VERSIONS_TO_KEEP", default_versions),
+    )
     if is_first_run:
-        prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
+        prompt_text = f"How many versions of the client app would you like to keep? (default is {current_versions}): "
     else:
-        prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
+        prompt_text = f"How many versions of the client app would you like to keep? (current: {current_versions}): "
     raw = _safe_input(prompt_text, default=str(current_versions)).strip() or str(
         current_versions
     )
-    try:
-        config["ANDROID_VERSIONS_TO_KEEP"] = int(raw)
-    except ValueError:
+    parsed = _parse_non_negative_int(raw)
+    if parsed is not None:
+        config["APP_VERSIONS_TO_KEEP"] = parsed
+    else:
         print("Invalid number — keeping current value.")
-        try:
-            config["ANDROID_VERSIONS_TO_KEEP"] = int(current_versions)
-        except (ValueError, TypeError):
-            print("Invalid number in current value — using default.")
-            config["ANDROID_VERSIONS_TO_KEEP"] = default_versions
-    return config
+        fallback = _parse_non_negative_int(current_versions)
+        if fallback is not None:
+            config["APP_VERSIONS_TO_KEEP"] = fallback
+        else:
+            print("Invalid current value — using default.")
+            config["APP_VERSIONS_TO_KEEP"] = default_versions
+    return normalize_client_app_config(config)
+
+
+def _setup_android(
+    config: Dict[str, Any], is_first_run: bool, default_versions: int
+) -> Dict[str, Any]:
+    """Backward-compatible alias for _setup_client_app."""
+    return _setup_client_app(config, is_first_run, default_versions)
 
 
 def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
@@ -1969,6 +1986,7 @@ def _setup_base(
                         [pkg_exe, "install", "python-pipx"],
                         check=True,
                         capture_output=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
                     )
                     print("✓ pipx installed")
 
@@ -1978,6 +1996,7 @@ def _setup_base(
                         [pip_exe, "uninstall", "fetchtastic", "-y"],
                         check=True,
                         capture_output=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS,
                     )
                     print("✓ Removed pip installation")
 
@@ -1987,6 +2006,7 @@ def _setup_base(
                         [pipx_exe, "install", "fetchtastic"],
                         check=True,
                         capture_output=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
                     )
                     print("✓ Installed with pipx")
 
@@ -2173,20 +2193,23 @@ def run_setup(
 
     # Handle download type selection and asset menus
     config, save_apks, save_firmware = _setup_downloads(config, is_partial_run, wants)
+    if save_apks and "SAVE_CLIENT_APPS" not in config:
+        config["SAVE_CLIENT_APPS"] = True
+    config = normalize_client_app_config(config)
+    save_client_apps = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
     # If all download types are disabled, only short-circuit when this run is either
     # full setup or a partial run that requested download sections only.
     requested_download_sections = is_partial_run and any(
-        wants(section) for section in ("android", "firmware", "desktop")
+        wants(section) for section in ("app", "firmware")
     )
     requested_non_download_sections = is_partial_run and any(
         wants(section) for section in ("base", "notifications", "automation", "github")
     )
     if (
-        not save_apks
+        not save_client_apps
         and not save_firmware
-        and not save_desktop
         and (
             not is_partial_run
             or (requested_download_sections and not requested_non_download_sections)
@@ -2197,38 +2220,15 @@ def run_setup(
     # Determine default number of versions to keep based on platform
     default_versions_to_keep = 2 if is_termux() else 3
 
-    # Handle Android configuration
-    if save_apks and (not is_partial_run or wants("android")):
-        config = _setup_android(config, is_first_run, default_versions_to_keep)
+    # Handle client app configuration
+    if save_client_apps and (not is_partial_run or wants("app")):
+        config = _setup_client_app(config, is_first_run, default_versions_to_keep)
     # Handle firmware configuration
     if save_firmware and (not is_partial_run or wants("firmware")):
         config = _setup_firmware(config, is_first_run, default_versions_to_keep)
 
-    # Handle desktop client configuration
-    if save_desktop and (not is_partial_run or wants("desktop")):
-        current_desktop_versions = config.get(
-            "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
-        )
-        if is_first_run:
-            prompt_text = f"How many versions of desktop clients would you like to keep? (default is {current_desktop_versions}): "
-        else:
-            prompt_text = f"How many versions of desktop clients would you like to keep? (current: {current_desktop_versions}): "
-        raw = _safe_input(
-            prompt_text, default=str(current_desktop_versions)
-        ).strip() or str(current_desktop_versions)
-        parsed_keep_count = _parse_non_negative_int(raw)
-        if parsed_keep_count is None:
-            print("Invalid number — keeping current value.")
-            parsed_keep_count = _parse_non_negative_int(current_desktop_versions)
-            if parsed_keep_count is None:
-                print("Invalid number in current value — using default.")
-                parsed_keep_count = DEFAULT_DESKTOP_VERSIONS_TO_KEEP
-        config["DESKTOP_VERSIONS_TO_KEEP"] = parsed_keep_count
-    else:
-        if not save_desktop:
-            config.setdefault(
-                "DESKTOP_VERSIONS_TO_KEEP", DEFAULT_DESKTOP_VERSIONS_TO_KEEP
-            )
+    if not save_client_apps:
+        normalize_client_app_config(config)
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
@@ -2281,6 +2281,11 @@ def run_setup(
     # Handle GitHub token configuration
     if not is_partial_run or wants("github"):
         config = _setup_github(config)
+
+    if not _coerce_bool(config.get("SAVE_CLIENT_APPS", False)):
+        config.pop("SELECTED_APK_ASSETS", None)
+        config.pop("SELECTED_DESKTOP_ASSETS", None)
+        config.pop("SELECTED_DESKTOP_PLATFORMS", None)
 
     # Persist configuration after all interactive sections
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -2924,7 +2929,10 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
         # Termux environment
         try:
             subprocess.run(
-                ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
+                ["termux-clipboard-set"],
+                input=text.encode("utf-8"),
+                check=True,
+                timeout=CRON_COMMAND_TIMEOUT_SECONDS,
             )
             return True
         except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
@@ -2962,7 +2970,13 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
         try:
             if system == "Darwin":
                 # macOS
-                subprocess.run("pbcopy", text=True, input=text, check=True)
+                subprocess.run(
+                    ["pbcopy"],
+                    text=True,
+                    input=text,
+                    check=True,
+                    timeout=CRON_COMMAND_TIMEOUT_SECONDS,
+                )
                 return True
             elif system == "Linux":
                 # Linux
@@ -2972,6 +2986,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                         ["xclip", "-selection", "clipboard"],
                         input=encoded_text,
                         check=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS,
                     )
                     return True
                 elif shutil.which("xsel"):
@@ -2979,6 +2994,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                         ["xsel", "--clipboard", "--input"],
                         input=encoded_text,
                         check=True,
+                        timeout=CRON_COMMAND_TIMEOUT_SECONDS,
                     )
                     return True
                 else:
@@ -3015,7 +3031,11 @@ def install_termux_packages() -> None:
         packages_to_install.append("cronie")
     if packages_to_install:
         print("Installing required Termux packages...")
-        subprocess.run(["pkg", "install"] + packages_to_install + ["-y"], check=True)
+        subprocess.run(
+            ["pkg", "install"] + packages_to_install + ["-y"],
+            check=True,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
+        )
         print("Required Termux packages installed.")
     else:
         print("All required Termux packages are already installed.")
@@ -3032,8 +3052,10 @@ def setup_storage() -> None:
     # Run termux-setup-storage
     print("Setting up Termux storage access...")
     try:
-        subprocess.run(["termux-setup-storage"], check=True)
-    except subprocess.CalledProcessError:
+        subprocess.run(
+            ["termux-setup-storage"], check=True, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         print("An error occurred while setting up Termux storage.")
         print("Please grant storage permissions when prompted.")
 
@@ -3050,12 +3072,18 @@ def install_crond() -> None:
             if crond_path is None:
                 print("Installing cronie...")
                 # Install cronie
-                subprocess.run(["pkg", "install", "cronie", "-y"], check=True)
+                subprocess.run(
+                    ["pkg", "install", "cronie", "-y"],
+                    check=True,
+                    timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
+                )
                 print("cronie installed.")
             else:
                 print("cronie is already installed.")
             # Enable crond service
-            subprocess.run(["sv-enable", "crond"], check=True)
+            subprocess.run(
+                ["sv-enable", "crond"], check=True, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+            )
             print("crond service enabled.")
         except Exception as e:  # noqa: BLE001
             print(f"An error occurred while installing or enabling crond: {e}")
@@ -3491,6 +3519,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if config is None:
             return None
         config = _migrate_desktop_asset_key(config)
+        config = normalize_client_app_config(config)
 
         # Update global variables
         BASE_DIR = directory
@@ -3508,6 +3537,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             if config is None:
                 return None
             config = _migrate_desktop_asset_key(config)
+            config = normalize_client_app_config(config)
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:
@@ -3521,6 +3551,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             if config is None:
                 return None
             config = _migrate_desktop_asset_key(config)
+            config = normalize_client_app_config(config)
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:

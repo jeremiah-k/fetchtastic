@@ -15,13 +15,12 @@ import requests
 from fetchtastic import log_utils
 from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_MANIFEST,
-    FILE_TYPE_FIRMWARE_PRERELEASE,
     FIRMWARE_DIR_NAME,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-from fetchtastic.download.interfaces import Asset, FirmwareManifest, Release
+from fetchtastic.download.interfaces import Asset, Release
 from fetchtastic.download.version import VersionManager
 
 
@@ -678,7 +677,8 @@ class TestFirmwareReleaseDownloader:
 
         # Should not call get_releases or rmtree for negative keep_limit
         downloader.get_releases.assert_not_called()
-        assert mock_rmtree.call_count == 0
+        mock_scandir.assert_not_called()
+        mock_rmtree.assert_not_called()
 
     @patch("os.path.exists")
     @patch("os.scandir")

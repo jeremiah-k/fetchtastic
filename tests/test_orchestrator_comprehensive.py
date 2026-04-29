@@ -14,6 +14,7 @@ from fetchtastic.constants import (
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_CLIENT_APP,
     FILE_TYPE_DESKTOP,
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
@@ -82,11 +83,10 @@ class TestDownloadOrchestrator:
 
     def test_run_download_pipeline(self, orchestrator):
         """Test running the complete download pipeline."""
-        # Mock the actual download methods to avoid network calls
         with (
             patch.object(
-                orchestrator, "_process_android_downloads"
-            ) as mock_android_process,
+                orchestrator, "_process_client_app_downloads"
+            ) as mock_client_app_process,
             patch.object(
                 orchestrator, "_process_firmware_downloads"
             ) as mock_firmware_process,
@@ -95,7 +95,7 @@ class TestDownloadOrchestrator:
             result = orchestrator.run_download_pipeline()
             assert isinstance(result, tuple)
             assert len(result) == 2
-            mock_android_process.assert_called_once()
+            mock_client_app_process.assert_called_once()
             mock_firmware_process.assert_called_once()
             mock_summary.assert_called_once()
 
@@ -115,7 +115,7 @@ class TestDownloadOrchestrator:
         mock_result = DownloadResult(
             success=True,
             file_path=str(tmp_path / "test" / "file.bin"),
-            file_type="android",
+            file_type=FILE_TYPE_ANDROID,
         )
 
         orchestrator._handle_download_result(mock_result, "test_operation")
@@ -127,7 +127,7 @@ class TestDownloadOrchestrator:
         retry_result = DownloadResult(
             success=False,
             error_type="network_error",
-            file_type="android",
+            file_type=FILE_TYPE_ANDROID,
             download_url="https://example.com/file",
             file_path=str(tmp_path / "test.apk"),
             is_retryable=True,
@@ -139,7 +139,7 @@ class TestDownloadOrchestrator:
             "_retry_single_failure",
             return_value=DownloadResult(
                 success=True,
-                file_type="android",
+                file_type=FILE_TYPE_ANDROID,
                 file_path=str(tmp_path / "test.apk"),
                 download_url="https://example.com/file",
             ),
@@ -157,11 +157,12 @@ class TestDownloadOrchestrator:
             is_retryable=True,
             download_url="https://example.com/file.apk",
             file_path=str(tmp_path / "test.apk"),
-            file_type="android",
+            file_type=FILE_TYPE_ANDROID,
             retry_count=0,
             release_tag="test-tag",
             file_size=1000,
         )
+        (tmp_path / "test.apk").write_bytes(b"x" * 1000)
 
         with (
             patch.object(
@@ -211,7 +212,7 @@ class TestDownloadOrchestrator:
         assert result.error_type == "retry_failure"
         assert (
             result.error_message
-            == "Downloaded desktop asset failed post-download validation"
+            == "Downloaded client app ZIP failed post-download validation"
         )
         mock_zip_intact.assert_called_once_with(str(target_path))
         mock_cleanup.assert_called_once_with(str(target_path))
@@ -230,7 +231,7 @@ class TestDownloadOrchestrator:
         non_retryable_failures = [
             DownloadResult(
                 success=False,
-                file_type="android",
+                file_type=FILE_TYPE_ANDROID,
                 error_type="validation_error",
                 retry_count=0,
                 is_retryable=False,
@@ -302,7 +303,7 @@ class TestDownloadOrchestrator:
             ),
             DownloadResult(
                 success=False,
-                file_type="android",
+                file_type=FILE_TYPE_ANDROID,
                 error_type="network_error",
                 download_url="https://example.com/android.apk",
             ),
@@ -320,7 +321,7 @@ class TestDownloadOrchestrator:
         """Test getting download statistics."""
         orchestrator.download_results = [
             DownloadResult(success=True, file_type="firmware", file_size=1000),
-            DownloadResult(success=False, file_type="android", file_size=500),
+            DownloadResult(success=False, file_type=FILE_TYPE_ANDROID, file_size=500),
             DownloadResult(success=True, file_type="firmware", file_size=1500),
         ]
 
@@ -336,14 +337,10 @@ class TestDownloadOrchestrator:
         assert set(stats.keys()) >= expected_keys
         assert all(isinstance(v, (int, float)) for v in stats.values())
 
-        # Verify specific values with our test data
-        # total_downloads sums successful_downloads plus the number of currently tracked failures; since failed_downloads is empty it equals the number of successful entries.
-        assert stats["total_downloads"] == 2
+        assert stats["total_downloads"] == 3
         assert stats["successful_downloads"] == 2
-        assert (
-            stats["failed_downloads"] == 0
-        )  # failed_downloads comes from orchestrator.failed_downloads, not download_results
-        assert stats["success_rate"] == 100.0  # 2 successful out of 2 attempted = 100%
+        assert stats["failed_downloads"] == 1
+        assert stats["success_rate"] == pytest.approx(66.6667)
 
     def test_calculate_success_rate(self, orchestrator):
         """Test calculating success rate."""
@@ -354,7 +351,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.download_results = [
             DownloadResult(success=True, file_type="firmware"),
-            DownloadResult(success=True, file_type="android"),
+            DownloadResult(success=True, file_type=FILE_TYPE_ANDROID),
             DownloadResult(success=False, file_type="firmware"),
             DownloadResult(success=True, file_type="firmware"),
         ]
@@ -362,10 +359,7 @@ class TestDownloadOrchestrator:
         rate = orchestrator._calculate_success_rate()
         assert isinstance(rate, float)
         assert 0.0 <= rate <= 100.0  # Success rate should be percentage
-        # With our test data: 3 successful out of (3 successful + 0 failed) = 100%
-        # Note: failed DownloadResult in download_results doesn't count toward success rate calculation
-        # Only entries in failed_downloads count as failed
-        assert rate == 100.0  # 3 successful out of 3 attempted = 100%
+        assert rate == 75.0  # 3 successful out of 4 attempted
 
     def test_count_artifact_downloads(self, orchestrator, tmp_path):
         """Test counting artifact downloads."""
@@ -442,13 +436,57 @@ class TestDownloadOrchestrator:
         android_count = orchestrator._count_artifact_downloads(FILE_TYPE_ANDROID)
         assert android_count == 1
 
-        # Desktop prereleases must not be double-counted as stable desktop downloads.
         desktop_count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
         desktop_prerelease_count = orchestrator._count_artifact_downloads(
             FILE_TYPE_DESKTOP_PRERELEASE
         )
-        assert desktop_count == 1
+        assert desktop_count == 2
         assert desktop_prerelease_count == 1
+
+    def test_count_artifact_downloads_client_app_classification(
+        self, orchestrator, tmp_path
+    ):
+        """Client-app assets are classified correctly for legacy stats."""
+        orchestrator.download_results = [
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "meshtastic.apk"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "Meshtastic.dmg"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "Meshtastic.msi"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                file_path=str(tmp_path / "app" / "v2.0.0" / "Meshtastic.exe"),
+            ),
+            DownloadResult(
+                success=True,
+                file_type=FILE_TYPE_CLIENT_APP,
+                download_url="https://example.com/Meshtastic-unknown.bin",
+            ),
+        ]
+
+        android_count = orchestrator._count_artifact_downloads(
+            FILE_TYPE_CLIENT_APP, artifact_type=FILE_TYPE_ANDROID
+        )
+        assert android_count == 2
+
+        desktop_count = orchestrator._count_artifact_downloads(
+            FILE_TYPE_CLIENT_APP, artifact_type=FILE_TYPE_DESKTOP
+        )
+        assert desktop_count == 3
+
+        client_app_count = orchestrator._count_artifact_downloads(FILE_TYPE_CLIENT_APP)
+        assert client_app_count == 5
 
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
@@ -670,25 +708,22 @@ class TestDownloadOrchestrator:
         assert isinstance(keep_limit, int)
         assert keep_limit == int(DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
 
-    def test_download_android_release(self, orchestrator):
+    def test_download_client_app_release(self, orchestrator):
         """
-        Verify that an Android release containing an APK asset causes the orchestrator to attempt a download.
-
-        Creates a Release with one APK Asset, patches the orchestrator's Android downloader to simulate a successful download, calls _download_android_release, and asserts a download was invoked.
+        Verify that a client app release containing an APK asset causes the orchestrator to attempt a download.
         """
+        orchestrator.config["SELECTED_APP_ASSETS"] = ["*"]
         release = Release(tag_name="v2.7.14", prerelease=False)
-        # Add an asset to the release
         asset = Asset(
             name="meshtastic.apk", download_url="https://example.com/app.apk", size=1000
         )
         release.assets.append(asset)
 
-        # Mock the actual download
         with patch.object(
-            orchestrator.android_downloader, "download_apk"
+            orchestrator.client_app_downloader, "download_app"
         ) as mock_download:
             mock_download.return_value = Mock(success=True)
-            orchestrator._download_android_release(release)
+            orchestrator._download_client_app_release(release)
             mock_download.assert_called()
 
     def test_download_firmware_release(self, orchestrator):

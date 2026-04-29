@@ -6,6 +6,7 @@ import pytest
 
 # Import the package module (matches how users invoke it)
 import fetchtastic.cli as cli
+from fetchtastic import setup_config
 
 
 @pytest.fixture
@@ -565,29 +566,35 @@ def test_cli_setup_command(mocker):
     mock_setup_run.assert_called_once_with(sections=None)
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_sections(mocker):
     """Ensure the setup command forwards section filters."""
     mocker.patch(
         "sys.argv",
-        ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
+        ["fetchtastic", "setup", "--section", "firmware", "--section", "app"],
     )
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
-    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+    mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_positional_sections(mocker):
     """Positional section arguments should be passed to setup."""
-    mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "android"])
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "app"])
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
-    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+    mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_invalid_positional_sections(mocker):
     """Invalid positional section arguments should cause an error."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "invalid_section", "firmware"])
@@ -600,6 +607,8 @@ def test_cli_setup_command_with_invalid_positional_sections(mocker):
     assert exc_info.value.code == 2
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_cli_setup_command_with_duplicate_sections(mocker):
     """Duplicate section arguments should be deduplicated."""
     mocker.patch(
@@ -610,7 +619,7 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
             "--section",
             "firmware",
             "firmware",
-            "android",
+            "app",
             "firmware",
         ],
     )
@@ -619,8 +628,8 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
 
     cli.main()
 
-    # Should deduplicate while preserving order: firmware, android
-    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+    # Should deduplicate while preserving order: firmware, app
+    mock_setup_run.assert_called_once_with(sections=["firmware", "app"])
 
 
 def test_cli_setup_command_with_update_available(mocker):
@@ -1307,6 +1316,8 @@ def test_show_help_early_return_behavior(mocker, capsys):
     assert "Repo 'browse' command help:" in captured.out
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_termux_success(mocker):
     """Test clipboard functionality on Termux (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
@@ -1316,10 +1327,15 @@ def test_copy_to_clipboard_func_termux_success(mocker):
 
     assert result is True
     mock_run.assert_called_once_with(
-        ["termux-clipboard-set"], input=b"test text", check=True
+        ["termux-clipboard-set"],
+        input=b"test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_termux_failure(mocker):
     """Test clipboard functionality on Termux (failure)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
@@ -1337,6 +1353,8 @@ def test_copy_to_clipboard_func_termux_failure(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_macos_success(mocker):
     """Test clipboard functionality on macOS (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1346,9 +1364,17 @@ def test_copy_to_clipboard_func_macos_success(mocker):
     result = cli.copy_to_clipboard_func("test text")
 
     assert result is True
-    mock_run.assert_called_once_with("pbcopy", text=True, input="test text", check=True)
+    mock_run.assert_called_once_with(
+        ["pbcopy"],
+        text=True,
+        input="test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
+    )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_linux_xclip_success(mocker):
     """Test clipboard functionality on Linux with xclip (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1362,10 +1388,15 @@ def test_copy_to_clipboard_func_linux_xclip_success(mocker):
 
     assert result is True
     mock_run.assert_called_once_with(
-        ["xclip", "-selection", "clipboard"], input=b"test text", check=True
+        ["xclip", "-selection", "clipboard"],
+        input=b"test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_linux_xsel_success(mocker):
     """Test clipboard functionality on Linux with xsel (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1379,10 +1410,15 @@ def test_copy_to_clipboard_func_linux_xsel_success(mocker):
 
     assert result is True
     mock_run.assert_called_once_with(
-        ["xsel", "--clipboard", "--input"], input=b"test text", check=True
+        ["xsel", "--clipboard", "--input"],
+        input=b"test text",
+        check=True,
+        timeout=setup_config.CRON_COMMAND_TIMEOUT_SECONDS,
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_linux_no_tools(mocker):
     """Test clipboard functionality on Linux with no clipboard tools."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1398,6 +1434,8 @@ def test_copy_to_clipboard_func_linux_no_tools(mocker):
     )
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_unsupported_platform(mocker):
     """Test clipboard functionality on unsupported platform."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1596,6 +1634,8 @@ def test_normalize_download_main_result_wrong_types_for_indices_10_12_coerced_to
     assert result[12] == ""
 
 
+@pytest.mark.unit
+@pytest.mark.user_interface
 def test_copy_to_clipboard_func_subprocess_error(mocker):
     """Test clipboard functionality with subprocess error."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1995,7 +2035,7 @@ def test_cli_setup_with_multiple_sections(mocker):
     """Test 'setup' command with multiple --section arguments."""
     mocker.patch(
         "sys.argv",
-        ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
+        ["fetchtastic", "setup", "--section", "firmware", "--section", "app"],
     )
     mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch(
@@ -2004,4 +2044,4 @@ def test_cli_setup_with_multiple_sections(mocker):
 
     cli.main()
 
-    mock_run_setup.assert_called_once()
+    mock_run_setup.assert_called_once_with(sections=["firmware", "app"])

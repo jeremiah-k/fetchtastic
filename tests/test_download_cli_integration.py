@@ -866,7 +866,7 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
 
 
 def test_log_download_results_summary_logging_order(mocker):
-    """log_download_results_summary should log versions in correct order: firmware, firmware prerelease, APK, APK prerelease."""
+    """log_download_results_summary should log firmware then unified client app versions."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
 
@@ -897,12 +897,13 @@ def test_log_download_results_summary_logging_order(mocker):
 
     latest_version_calls = []
     for call_args in mock_logger.info.call_args_list:
-        call_str = str(call_args)
+        args = call_args.args
+        call_str = args[0] % args[1:] if len(args) > 1 else str(call_args)
         if (
             "Latest firmware:" in call_str
-            or "Latest APK:" in call_str
+            or "Latest Meshtastic Client release:" in call_str
             or "firmware prerelease:" in call_str
-            or "APK prerelease:" in call_str
+            or "Meshtastic Client prerelease:" in call_str
         ):
             latest_version_calls.append(call_str)
 
@@ -910,18 +911,20 @@ def test_log_download_results_summary_logging_order(mocker):
 
     assert "Latest firmware: v2.7.18.fb3bf78" in joined_calls
     assert "Latest firmware prerelease: v2.7.19-prerelease" in joined_calls
-    assert "Latest APK: v2.7.11" in joined_calls
-    assert "Latest APK prerelease: none" in joined_calls
+    assert "Latest Meshtastic Client release: v2.7.11" in joined_calls
+    assert "Latest Meshtastic Client prerelease: none" in joined_calls
+    assert "Latest APK:" not in joined_calls
+    assert "Latest desktop:" not in joined_calls
 
     assert joined_calls.index("Latest firmware: v2.7.18.fb3bf78") < joined_calls.index(
         "Latest firmware prerelease: v2.7.19-prerelease"
     )
     assert joined_calls.index(
         "Latest firmware prerelease: v2.7.19-prerelease"
-    ) < joined_calls.index("Latest APK: v2.7.11")
-    assert joined_calls.index("Latest APK: v2.7.11") < joined_calls.index(
-        "Latest APK prerelease: none"
-    )
+    ) < joined_calls.index("Latest Meshtastic Client release: v2.7.11")
+    assert joined_calls.index(
+        "Latest Meshtastic Client release: v2.7.11"
+    ) < joined_calls.index("Latest Meshtastic Client prerelease: none")
 
 
 def test_run_download_orchestrator_none_after_init(mocker):
@@ -1088,7 +1091,7 @@ def test_log_download_results_summary_empty_versions(mocker):
 
 
 def test_log_download_results_summary_with_desktop_prerelease(mocker):
-    """log_download_results_summary should log desktop prerelease (line 342)."""
+    """log_download_results_summary should log unified client app prerelease."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
@@ -1112,23 +1115,20 @@ def test_log_download_results_summary_with_desktop_prerelease(mocker):
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
-    assert any("v2.0.0-beta" in msg for msg in logged_messages)
+    assert any(
+        "Latest Meshtastic Client prerelease:" in msg and "v2.0.0-beta" in msg
+        for msg in logged_messages
+    )
 
 
-def test_log_download_results_summary_logs_desktop_wip_note_for_known_2714_mismatch(
+def test_log_download_results_summary_removes_desktop_wip_note_for_known_2714_mismatch(
     mocker,
 ):
-    """Desktop WIP note should be logged when Desktop is enabled and a known 2.7.14 mismatch is observed."""
+    """Obsolete Desktop-specific 2.7.14 mismatch notes should not be logged."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": True}
     integration.desktop_downloader = mocker.MagicMock()
-    integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.return_value = (
-        True
-    )
-    integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.return_value = [
-        "v2.7.14-closed.10"
-    ]
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",
@@ -1151,25 +1151,17 @@ def test_log_download_results_summary_logs_desktop_wip_note_for_known_2714_misma
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
-    assert any("Desktop prerelease note:" in msg for msg in logged_messages)
-    assert any("v2.7.14-closed.10" in msg for msg in logged_messages)
+    assert not any("Desktop prerelease note:" in msg for msg in logged_messages)
 
 
-def test_log_download_results_summary_desktop_wip_note_uses_newest_tag_only(
+def test_log_download_results_summary_does_not_call_desktop_mismatch_helpers(
     mocker,
 ):
-    """Desktop WIP note should include only the newest observed mismatch tag."""
+    """The unified client-app summary should not call old Desktop mismatch helpers."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": True}
     integration.desktop_downloader = mocker.MagicMock()
-    integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.return_value = (
-        True
-    )
-    integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.return_value = [
-        "v2.7.14-closed.10",
-        "v2.7.14-closed.1",
-    ]
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",
@@ -1191,13 +1183,14 @@ def test_log_download_results_summary_desktop_wip_note_uses_newest_tag_only(
         latest_desktop_version="",
     )
 
-    note_calls = [
-        call
-        for call in mock_logger.info.call_args_list
-        if call.args and "Desktop prerelease note:" in call.args[0]
-    ]
-    assert len(note_calls) == 1
-    assert note_calls[0].args[1] == "v2.7.14-closed.10"
+    assert (
+        integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.call_count
+        == 0
+    )
+    assert (
+        integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.call_count
+        == 0
+    )
 
 
 def test_log_download_results_summary_suppresses_wip_note_for_non_2714_latest_prerelease(
@@ -1208,12 +1201,6 @@ def test_log_download_results_summary_suppresses_wip_note_for_non_2714_latest_pr
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": True}
     integration.desktop_downloader = mocker.MagicMock()
-    integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.return_value = (
-        True
-    )
-    integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.return_value = [
-        "v2.7.14-closed.10"
-    ]
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",
@@ -1236,9 +1223,7 @@ def test_log_download_results_summary_suppresses_wip_note_for_non_2714_latest_pr
     )
 
     logged_info_messages = [str(call) for call in mock_logger.info.call_args_list]
-    logged_debug_messages = [str(call) for call in mock_logger.debug.call_args_list]
     assert not any("Desktop prerelease note:" in msg for msg in logged_info_messages)
-    assert any("suppressing end-of-run note" in msg for msg in logged_debug_messages)
 
 
 def test_log_download_results_summary_skips_desktop_wip_note_when_desktop_disabled(
@@ -1249,12 +1234,6 @@ def test_log_download_results_summary_skips_desktop_wip_note_when_desktop_disabl
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": False}
     integration.desktop_downloader = mocker.MagicMock()
-    integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.return_value = (
-        True
-    )
-    integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.return_value = [
-        "v2.7.14-closed.10"
-    ]
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",

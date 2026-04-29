@@ -30,7 +30,7 @@ fetchtastic --help
 Available commands:
 
 - `setup` - Run the setup process
-- `download` - Download firmware and APKs from GitHub releases
+- `download` - Download firmware and client app assets from GitHub releases
 - `cache` - Clear cached API data without downloading
 - `topic` - Display the current NTFY topic
 - `clean` - Remove Fetchtastic configuration, downloads, and cron jobs
@@ -66,10 +66,10 @@ fetchtastic setup
 **Asset Types**: Choose what to download:
 
 - Firmware
-- Android APKs
-- Both firmware and APKs
+- Client app assets, including APKs and Desktop installers
+- Both firmware and client app releases
 
-**Asset Selection**: Choose specific firmware devices or APK variants
+**Asset Selection**: Choose specific firmware devices, APK variants, or Desktop installers
 
 **Version Management**: How many versions to keep (default: 2)
 
@@ -94,7 +94,7 @@ fetchtastic download
 
 This command:
 
-1. Checks for new firmware and APK releases on GitHub
+1. Checks for new firmware and client app releases on GitHub
 2. Downloads missing or updated files
 3. Extracts firmware files (if configured)
 4. Cleans up old versions
@@ -109,10 +109,10 @@ This command:
 - Installation scripts
 - Release notes
 
-**Android APKs**: Latest releases from [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)
+**Client app assets**: Latest app assets from [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)
 
-- Main APK files
-- Debug variants (if selected)
+- Android APK files
+- Desktop installers
 - Release notes
 
 ## Repository Browser
@@ -153,11 +153,13 @@ Fetchtastic organizes downloads in a structured way:
 
 ```text
 ~/Downloads/Meshtastic/
-├── apks/
-│   ├── v2.3.2/
-│   │   ├── app-release.apk
-│   │   └── release_notes.md
-│   └── v2.3.1/
+├── app/
+│   ├── v2.7.14/
+│   │   ├── app-fdroid-universal-release.apk
+│   │   ├── Meshtastic-2.7.14.dmg
+│   │   └── release_notes-v2.7.14.md
+│   └── prerelease/ (if enabled)
+│       └── v2.7.14-closed.17/
 ├── firmware/
 │   ├── v2.3.2/
 │   │   ├── firmware-heltec-v3-2.3.2.xxxxxxxx.bin
@@ -169,6 +171,8 @@ Fetchtastic organizes downloads in a structured way:
 │   └── prerelease/ (if enabled)
 │       └── v2.3.3.abcdef/
 ```
+
+APKs and desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
 
 ## Notifications
 
@@ -290,7 +294,7 @@ Enable pre-release downloads to get the latest development firmware from meshtas
 
 ### Multiple Asset Types
 
-You can configure different retention policies for firmware vs APKs by running setup multiple times and adjusting settings.
+Firmware and client app retention policies are configured independently during a single `fetchtastic setup` run. Re-run setup only when changing those policies later.
 
 ## Getting Help
 
