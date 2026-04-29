@@ -2736,6 +2736,47 @@ class TestFirmwareUncoveredBranches:
         assert result[2] is None  # active_dir
         assert result[3] is not None  # prerelease_summary
 
+    def test_download_repo_prerelease_firmware_falls_back_to_existing_active_dir(
+        self, downloader, tmp_path
+    ):
+        """When latest active history dir is gone, use an older active dir still in repo."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "identifier": "7be5426",
+                "directory": "firmware-2.7.23.7be5426",
+                "status": "active",
+            },
+            {
+                "identifier": "2a858be",
+                "directory": "firmware-2.7.23.2a858be",
+                "status": "active",
+            },
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=["firmware-2.7.23.7be5426"],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.2a858be", history_entries),
+            ),
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        assert result[2] == "firmware-2.7.23.7be5426"
+        download_assets.assert_called_once()
+        assert download_assets.call_args.args[0] == "firmware-2.7.23.7be5426"
+
     # Lines 1797-1835: Release notes logging
     def test_log_prerelease_summary(self, downloader):
         """Test log_prerelease_summary with various entry statuses."""

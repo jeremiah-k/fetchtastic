@@ -1862,11 +1862,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
             )
             if active_dir not in repo_dirs:
-                logger.info(
-                    "Prerelease directory %s no longer exists; skipping prerelease download",
-                    active_dir,
+                fallback_dir = self._select_existing_active_prerelease_dir(
+                    history_entries or [], repo_dirs
                 )
-                return [], [], None, prerelease_summary
+                if fallback_dir:
+                    logger.info(
+                        "Prerelease directory %s no longer exists; using active prerelease %s",
+                        active_dir,
+                        fallback_dir,
+                    )
+                    active_dir = fallback_dir
+                else:
+                    logger.info(
+                        "Prerelease directory %s no longer exists; skipping prerelease download",
+                        active_dir,
+                    )
+                    return [], [], None, prerelease_summary
 
         if not active_dir:
             logger.info("No pre-release firmware available")
@@ -1911,6 +1922,21 @@ class FirmwareReleaseDownloader(BaseDownloader):
             logger.debug(f"Skipped {skipped_count} existing pre-release files.")
 
         return successes, failures, active_dir, prerelease_summary
+
+    def _select_existing_active_prerelease_dir(
+        self, history_entries: List[Dict[str, Any]], repo_dirs: List[str]
+    ) -> Optional[str]:
+        """Return the newest active prerelease directory that still exists upstream."""
+        repo_dir_set = set(repo_dirs)
+        for entry in reversed(history_entries):
+            directory = entry.get("directory")
+            if (
+                entry.get("status") == "active"
+                and isinstance(directory, str)
+                and directory in repo_dir_set
+            ):
+                return directory
+        return None
 
     def log_prerelease_summary(
         self,
