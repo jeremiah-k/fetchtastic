@@ -296,3 +296,229 @@ def test_expired_noncurrent_metadata_still_removed(tmp_path):
         call.args[:2] == ("Removed %s prerelease tracking metadata file: %s", "expired")
         for call in debug_log.call_args_list
     )
+
+
+# --- Regression: current-superseded guard ---
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_current_prerelease_not_removed_even_if_other_supersedes(tmp_path):
+    """
+    If v2.7.14-closed.17 is in current_prereleases, it must not be removed
+    even when v2.7.14-open.1 (with a "newer" base_version) is also current.
+    """
+    tracking_dir = tmp_path / "tracking"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+    closed_file = tracking_subdir / "prerelease_v2.7.14-closed.17_v2.7.14-closed.json"
+    closed_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.7.14-closed.17",
+                "base_version": "v2.7.14-closed",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) + timedelta(hours=1)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = PrereleaseHistoryManager()
+    with patch("fetchtastic.download.prerelease_history.logger.debug") as debug_log:
+        manager.manage_prerelease_tracking_files(
+            str(tracking_dir),
+            current_prereleases=[
+                {
+                    "prerelease_version": "v2.7.14-closed.17",
+                    "base_version": "v2.7.14-closed",
+                },
+                {
+                    "prerelease_version": "v2.7.14-open.1",
+                    "base_version": "v2.7.14-open",
+                },
+            ],
+            cache_manager=_SimpleCacheManager(),
+        )
+
+    assert closed_file.exists()
+    superseded_removals = [
+        call
+        for call in debug_log.call_args_list
+        if call.args[:2]
+        == ("Removed %s prerelease tracking metadata file: %s", "superseded")
+    ]
+    assert (
+        not superseded_removals
+    ), "Current prerelease must not be removed as superseded"
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_all_current_entries_written(tmp_path):
+    """
+    When current_prereleases contains both closed.17 and open.1, both
+    metadata files must exist after manage_prerelease_tracking_files().
+    """
+    tracking_dir = tmp_path / "tracking"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+
+    manager = PrereleaseHistoryManager()
+    manager.manage_prerelease_tracking_files(
+        str(tracking_dir),
+        current_prereleases=[
+            {
+                "prerelease_version": "v2.7.14-closed.17",
+                "base_version": "v2.7.14-closed",
+            },
+            {
+                "prerelease_version": "v2.7.14-open.1",
+                "base_version": "v2.7.14-open",
+            },
+        ],
+        cache_manager=_SimpleCacheManager(),
+    )
+
+    assert (
+        tracking_subdir / "prerelease_v2.7.14-closed.17_v2.7.14-closed.json"
+    ).exists()
+    assert (tracking_subdir / "prerelease_v2.7.14-open.1_v2.7.14-open.json").exists()
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_non_release_cache_files_skipped(tmp_path):
+    """
+    Files like prerelease_commit_history.json that do not match the per-release
+    naming shape must not be deleted as invalid metadata.
+    """
+    tracking_dir = tmp_path / "tracking"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+
+    cache_files = [
+        "prerelease_commit_history.json",
+        "prerelease_tracking.json",
+        "prerelease_dirs.json",
+        "prerelease_commits_cache.json",
+    ]
+    for name in cache_files:
+        (tracking_subdir / name).write_text("{}", encoding="utf-8")
+
+    manager = PrereleaseHistoryManager()
+    manager.manage_prerelease_tracking_files(
+        str(tracking_dir),
+        current_prereleases=[],
+        cache_manager=_SimpleCacheManager(),
+    )
+
+    for name in cache_files:
+        assert (
+            tracking_subdir / name
+        ).exists(), f"Cache file {name} must not be deleted"
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_manage_tracking_files_idempotent(tmp_path):
+    """
+    Running manage_prerelease_tracking_files twice with the same
+    current_prereleases must not remove current metadata on the second run.
+    """
+    tracking_dir = tmp_path / "tracking"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+
+    config = {
+        "prerelease_version": "v2.7.14-closed.17",
+        "base_version": "v2.7.14-closed",
+        "expiry_timestamp": (
+            datetime.now(timezone.utc) + timedelta(hours=24)
+        ).isoformat(),
+    }
+    closed_file = tracking_subdir / "prerelease_v2.7.14-closed.17_v2.7.14-closed.json"
+    closed_file.write_text(json.dumps(config), encoding="utf-8")
+
+    current = [
+        {"prerelease_version": "v2.7.14-closed.17", "base_version": "v2.7.14-closed"},
+        {"prerelease_version": "v2.7.14-open.1", "base_version": "v2.7.14-open"},
+    ]
+    manager = PrereleaseHistoryManager()
+
+    # First run
+    manager.manage_prerelease_tracking_files(
+        str(tracking_dir),
+        current_prereleases=current,
+        cache_manager=_SimpleCacheManager(),
+    )
+    assert closed_file.exists()
+
+    # Second run
+    with patch("fetchtastic.download.prerelease_history.logger.debug") as debug_log:
+        manager.manage_prerelease_tracking_files(
+            str(tracking_dir),
+            current_prereleases=current,
+            cache_manager=_SimpleCacheManager(),
+        )
+
+    assert closed_file.exists()
+    removal_logs = [
+        call
+        for call in debug_log.call_args_list
+        if call.args[:2]
+        == ("Removed %s prerelease tracking metadata file: %s", "superseded")
+    ]
+    assert not removal_logs, "Second run must not remove current metadata"
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_noncurrent_cleanup_reason_still_removed(tmp_path):
+    """Expired/superseded metadata not in current_prereleases is still cleaned up."""
+    tracking_dir = tmp_path / "tracking"
+    tracking_subdir = tracking_dir / "prerelease_tracking"
+    tracking_subdir.mkdir(parents=True)
+
+    # Expired, not current
+    expired_file = tracking_subdir / "prerelease_v2.7.14-closed.1_v2.7.14.json"
+    expired_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.7.14-closed.1",
+                "base_version": "v2.7.14",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) - timedelta(hours=1)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Superseded by newer base, not current
+    superseded_file = tracking_subdir / "prerelease_v2.7.14_v2.7.14.json"
+    superseded_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.7.14",
+                "base_version": "v2.7.14",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) + timedelta(hours=1)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = PrereleaseHistoryManager()
+    manager.manage_prerelease_tracking_files(
+        str(tracking_dir),
+        current_prereleases=[
+            {"prerelease_version": "v2.7.15", "base_version": "v2.7.15"},
+        ],
+        cache_manager=_SimpleCacheManager(),
+    )
+
+    assert not expired_file.exists()
+    assert not superseded_file.exists()

@@ -685,16 +685,27 @@ class PrereleaseHistoryManager:
 
         tracking_subdir = os.path.join(tracking_dir, "prerelease_tracking")
 
-        # Get existing tracking files from the tracking subdirectory
+        # Get existing tracking files from the tracking subdirectory.
+        # Only consider files matching the per-release naming pattern:
+        #   prerelease_<prerelease_version>_<base_version>.json
+        # Distinguished from cache files by requiring a dot in the version
+        # segment (cache names like commit_history lack version dots).
         tracking_files = []
         try:
             if os.path.isdir(tracking_subdir):
                 with os.scandir(tracking_subdir) as it:
                     for entry in it:
-                        if entry.name.startswith("prerelease_") and entry.name.endswith(
-                            ".json"
+                        if not (
+                            entry.name.startswith("prerelease_")
+                            and entry.name.endswith(".json")
                         ):
-                            tracking_files.append(entry.path)
+                            continue
+                        stem = entry.name[: -len(".json")]
+                        name_without_prefix = stem[len("prerelease_") :]
+                        parts = name_without_prefix.rsplit("_", 1)
+                        if len(parts) != 2 or "." not in parts[0]:
+                            continue
+                        tracking_files.append(entry.path)
         except FileNotFoundError:
             pass
 
@@ -731,40 +742,23 @@ class PrereleaseHistoryManager:
             if isinstance(pv, str) and pv:
                 current_prerelease_versions.add(pv)
 
-        # Identify entries superseded by another entry in the same current set
-        superseded_versions: set[str] = set()
-        for current in current_prereleases:
-            current_pv = current.get("prerelease_version")
-            current_base = current.get("base_version")
-            if not current_pv or not current_base:
-                continue
-            for other in current_prereleases:
-                other_base = other.get("base_version")
-                if current_pv == other.get("prerelease_version") or not other_base:
-                    continue
-                if self.version_manager.compare_versions(other_base, current_base) > 0:
-                    superseded_versions.add(str(current_pv))
-                    break
-
-        # Cleanup superseded/expired prereleases by comparing to current set
+        # Cleanup superseded/expired prereleases by comparing to current set.
+        # Current prereleases are NEVER removed — their metadata is refreshed
+        # by the atomic_write_json loop below regardless of expiry or
+        # supersession status.
         for existing in existing_prereleases:
+            prerelease_version = existing.get("prerelease_version", "")
+            if not prerelease_version:
+                continue
+
+            if prerelease_version in current_prerelease_versions:
+                continue
+
             cleanup_reason = self.get_prerelease_tracking_cleanup_reason(
                 existing, current_prereleases
             )
 
             if cleanup_reason:
-                prerelease_version = existing.get("prerelease_version", "")
-                if not prerelease_version:
-                    continue
-
-                # Expired tracking metadata for current prereleases is refreshed
-                # silently by the atomic_write_json loop below; do not delete it.
-                if (
-                    cleanup_reason == "expired"
-                    and prerelease_version in current_prerelease_versions
-                ):
-                    continue
-
                 safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
                 filename_pattern = f"prerelease_{safe_version}_*.json"
 
@@ -808,14 +802,6 @@ class PrereleaseHistoryManager:
             prerelease_version = current.get("prerelease_version")
             base_version = current.get("base_version")
             if not prerelease_version or not base_version:
-                continue
-
-            # Skip entries that are superseded by another entry in the same set
-            if prerelease_version in superseded_versions:
-                logger.debug(
-                    "Skipping write of superseded prerelease tracking metadata: %s",
-                    prerelease_version,
-                )
                 continue
 
             safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
