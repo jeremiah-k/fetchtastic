@@ -416,7 +416,7 @@ def test_setup_downloads_partial_run(mocker):
     assert result_config["SAVE_APKS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
     assert result_config["CHECK_APP_PRERELEASES"] is True
-    assert result_config["CHECK_APK_PRERELEASES"] is False
+    assert result_config["CHECK_APK_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
