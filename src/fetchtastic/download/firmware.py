@@ -1888,6 +1888,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 for directory in active_dirs
                 if directory in repo_dir_set and directory not in deleted_dirs
             ]
+            if prerelease_summary is not None:
+                prerelease_summary["available_history_entries"] = [
+                    entry
+                    for entry in history_entries
+                    if entry.get("status") == "deleted"
+                    or entry.get("directory") in active_dirs
+                ]
             for missing_dir in missing_dirs:
                 if active_dirs:
                     logger.info(
@@ -1952,7 +1959,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     active_dir,
                 )
 
-        if any_downloaded or force_refresh:
+        if any_downloaded or force_refresh or (active_dirs and not failures):
             for active_dir in downloaded_dirs or active_dirs:
                 prerelease_manager.update_prerelease_tracking(
                     latest_release_tag, active_dir, cache_manager=self.cache_manager
