@@ -411,7 +411,7 @@ class TestDownloadOrchestrator:
         mock_release.tag_name = "v1.0.0"
         mock_release.prerelease = False
         mock_release.assets = [mock_asset]
-        orchestrator.client_app_downloader.get_releases.return_value = [mock_release]
+        orchestrator.client_app_releases = [mock_release]
         orchestrator.client_app_downloader.is_release_complete.return_value = False
         orchestrator.client_app_downloader.handle_prereleases.return_value = []
         orchestrator.client_app_downloader.should_download_asset.return_value = True
@@ -419,7 +419,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._process_client_app_downloads()
 
-        orchestrator.client_app_downloader.get_releases.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_not_called()
         orchestrator.client_app_downloader.is_release_complete.assert_called_once_with(
             mock_release
         )
@@ -1872,7 +1872,7 @@ class TestDownloadOrchestrator:
         mock_asset = Mock()
         mock_asset.name = "app.apk"
         release = Release(tag_name="v1.0.0", prerelease=False, assets=[mock_asset])
-        orchestrator.client_app_downloader.get_releases.return_value = [release]
+        orchestrator.client_app_releases = [release]
         orchestrator.client_app_downloader.update_release_history.return_value = {}
         orchestrator.client_app_downloader.ensure_release_notes.return_value = None
         orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""

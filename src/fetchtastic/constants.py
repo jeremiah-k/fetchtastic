@@ -46,12 +46,12 @@ FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
-# Compatibility-only: retained so older call sites that reference these names
-# continue to work. They are NOT used to drive new storage logic. The primary
+# Compatibility-only aliases: legacy Android/Desktop references map to unified
+# app storage. They are NOT used to drive new storage logic. The primary
 # client-app storage layout is app/<version>/ and app/prerelease/<version>/
 # with no platform subdirectories.
-ANDROID_DIR_NAME = ""  # compatibility-only -- do not use for new storage paths
-DESKTOP_DIR_NAME = ""  # compatibility-only -- do not use for new storage paths
+ANDROID_DIR_NAME = APP_DIR_NAME
+DESKTOP_DIR_NAME = APP_DIR_NAME
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
 LATEST_ANDROID_PRERELEASE_JSON_FILE = "latest_android_prerelease.json"
 LATEST_FIRMWARE_PRERELEASE_JSON_FILE = "latest_firmware_prerelease.json"

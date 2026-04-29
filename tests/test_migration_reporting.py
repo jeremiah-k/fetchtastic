@@ -4,7 +4,6 @@ import pytest
 
 from fetchtastic.constants import (
     ANDROID_DIR_NAME,
-    APP_DIR_NAME,
     FIRMWARE_DIR_NAME,
 )
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
@@ -59,11 +58,9 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
     skipped_android = DownloadResult(
         success=True,
         release_tag="v2.0.0",
-        # ANDROID_DIR_NAME is intentionally empty compatibility surface; this
-        # path must still resolve under app/<version>, not downloads/<version>.
-        file_path=Path(
-            tmp_path / APP_DIR_NAME / ANDROID_DIR_NAME / "v2.0.0" / "app.apk"
-        ),
+        # ANDROID_DIR_NAME intentionally aliases unified app storage for
+        # compatibility and must not route paths under downloads/<version>.
+        file_path=Path(tmp_path / ANDROID_DIR_NAME / "v2.0.0" / "app.apk"),
         file_type="android",
         was_skipped=True,
     )

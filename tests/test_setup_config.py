@@ -1562,7 +1562,7 @@ def test_run_setup_first_run_linux_simple(
     ]
     mock_input.side_effect = user_inputs
 
-    mock_menu_app.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
@@ -1646,7 +1646,7 @@ def test_run_setup_first_run_windows(
     ]
     mock_input.side_effect = user_inputs
 
-    mock_menu_app.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
@@ -1742,7 +1742,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
     ]
     mock_input.side_effect = user_inputs
 
-    mock_menu_app.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):

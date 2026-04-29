@@ -234,7 +234,7 @@ def test_setup_downloads_partial_desktop_section(mocker):
     }
 
     def wants(section: str) -> bool:
-        return section == "app"
+        return section == "notifications"
 
     mocker.patch(
         "builtins.input",

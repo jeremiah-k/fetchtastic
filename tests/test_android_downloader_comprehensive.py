@@ -59,7 +59,7 @@ def android_downloader(test_config):
     return MeshtasticAndroidAppDownloader(test_config, cache_manager)
 
 
-class TestMeshtasticClientAppDownloader:
+class TestMeshtasticAndroidAppDownloader:
     """Test suite for AndroidReleaseDownloader functionality."""
 
     def test_initialization(self, test_config):

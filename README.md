@@ -4,6 +4,8 @@
 
 Fetchtastic automatically downloads the latest Meshtastic firmware and selected client app assets from GitHub, with support for notifications, scheduling, and repository browsing.
 
+Requires Python 3.10+; Python 3.9 and earlier are unsupported.
+
 ## ✨ Features
 
 - 🔄 **Automatic Downloads**: Latest firmware and Meshtastic client app assets
@@ -22,6 +24,8 @@ Fetchtastic automatically downloads the latest Meshtastic firmware and selected 
 ## 🚀 Quick Start
 
 ### One-Line Installation
+
+Requires Python 3.10+.
 
 **Linux/MacOS/Android (Termux):**
 
