@@ -414,7 +414,7 @@ class DownloadCLIIntegration:
 
         latest_versions = self.get_latest_versions()
         latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
-        # Prefer the unified client-app key; fall back to legacy APK/Desktop
+        # Prefer the unified client app key; fall back to legacy APK/Desktop
         # values while older result summaries and config files are transitioning.
         latest_client_app = (
             latest_versions.get("client_app")
@@ -600,7 +600,7 @@ class DownloadCLIIntegration:
                 is_android = is_android or is_android_asset_name(file_name)
                 is_desktop = is_desktop or is_desktop_asset_name(file_name)
                 if not is_android and not is_desktop:
-                    logger.debug("Unclassified client-app asset, defaulting to Android")
+                    logger.debug("Unclassified client app asset, defaulting to Android")
                     is_android = True
             is_android_prerelease = file_type == FILE_TYPE_ANDROID_PRERELEASE or (
                 is_client_app_prerelease and is_android

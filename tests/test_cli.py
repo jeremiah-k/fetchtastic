@@ -1365,7 +1365,7 @@ def test_copy_to_clipboard_func_macos_success(mocker):
 
     assert result is True
     mock_run.assert_called_once_with(
-        "pbcopy",
+        ["pbcopy"],
         text=True,
         input="test text",
         check=True,

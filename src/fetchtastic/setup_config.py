@@ -2971,7 +2971,7 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
             if system == "Darwin":
                 # macOS
                 subprocess.run(
-                    "pbcopy",
+                    ["pbcopy"],
                     text=True,
                     input=text,
                     check=True,

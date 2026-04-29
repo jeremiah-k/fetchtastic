@@ -1857,7 +1857,7 @@ class DownloadOrchestrator:
 
         Parameters:
             file_type_filter (str): Artifact identifier to match against a result's `file_type` or as a substring in `file_path` (e.g., "android", "firmware").
-            artifact_type (Optional[str]): Optional client-app subtype to classify when `file_type_filter` is FILE_TYPE_CLIENT_APP.
+            artifact_type (Optional[str]): Optional client app subtype to classify when `file_type_filter` is FILE_TYPE_CLIENT_APP.
 
         Returns:
             int: Number of matching downloads that were not skipped.
