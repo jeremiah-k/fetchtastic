@@ -36,7 +36,7 @@ def test_returns_early_when_tracking_dir_does_not_exist(tmp_path):
     result = manager.manage_prerelease_tracking_files(
         nonexistent,
         current_prereleases=[
-            {"prerelease_version": "1.0.0-rc.1", "base_version": "1.0.0"}
+            {"prerelease_version": "v2.5.10.abc1234", "base_version": "2.5.10"}
         ],
         cache_manager=_SimpleCacheManager(),
     )
@@ -50,15 +50,15 @@ def test_removes_invalid_tracking_files_when_read_returns_none(tmp_path):
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
 
-    invalid_file = tracking_subdir / "prerelease_1.0.0-rc.1_1.0.0.json"
+    invalid_file = tracking_subdir / "prerelease_v2.5.10.abc1234_2.5.10.json"
     invalid_file.write_text("{}", encoding="utf-8")
 
-    valid_file = tracking_subdir / "prerelease_1.0.0-rc.2_1.0.0.json"
+    valid_file = tracking_subdir / "prerelease_v2.5.10.def5678_2.5.10.json"
     valid_file.write_text(
         json.dumps(
             {
-                "prerelease_version": "1.0.0-rc.2",
-                "base_version": "1.0.0",
+                "prerelease_version": "v2.5.10.def5678",
+                "base_version": "2.5.10",
                 "expiry_timestamp": (
                     datetime.now(timezone.utc) + timedelta(hours=24)
                 ).isoformat(),
@@ -84,9 +84,9 @@ def test_removes_invalid_tracking_files_missing_required_keys(tmp_path):
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
 
-    missing_keys_file = tracking_subdir / "prerelease_bad_data_1.0.0.json"
+    missing_keys_file = tracking_subdir / "prerelease_v2.5.10.abc1234_2.5.10.json"
     missing_keys_file.write_text(
-        json.dumps({"prerelease_version": "1.0.0-rc.1"}),
+        json.dumps({"prerelease_version": "v2.5.10.abc1234"}),
         encoding="utf-8",
     )
 
@@ -107,7 +107,7 @@ def test_handles_oserror_removing_invalid_file(tmp_path):
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
 
-    bad_file = tracking_subdir / "prerelease_bad_1.0.0.json"
+    bad_file = tracking_subdir / "prerelease_v2.5.10.bad_data_2.5.10.json"
     bad_file.write_text(
         json.dumps({"prerelease_version": "bad"}),
         encoding="utf-8",
@@ -135,8 +135,8 @@ def test_creates_tracking_subdir_if_missing(tmp_path):
         str(tracking_dir),
         current_prereleases=[
             {
-                "prerelease_version": "1.0.0-rc.1",
-                "base_version": "1.0.0",
+                "prerelease_version": "v2.5.10.abc1234",
+                "base_version": "2.5.10",
                 "expiry_timestamp": (
                     datetime.now(timezone.utc) + timedelta(hours=24)
                 ).isoformat(),
@@ -153,30 +153,41 @@ def test_creates_tracking_subdir_if_missing(tmp_path):
 
 @pytest.mark.unit
 @pytest.mark.core_downloads
-def test_skips_superseded_current_prerelease_from_write(tmp_path):
+def test_cleans_up_existing_superseded_prerelease_file(tmp_path):
     tracking_dir = tmp_path / "tracking"
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
+
+    old_file = tracking_subdir / "prerelease_v2.5.10.abc1234_2.5.10.json"
+    old_file.write_text(
+        json.dumps(
+            {
+                "prerelease_version": "v2.5.10.abc1234",
+                "base_version": "2.5.10",
+                "expiry_timestamp": (
+                    datetime.now(timezone.utc) + timedelta(hours=24)
+                ).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
 
     manager = PrereleaseHistoryManager()
     manager.manage_prerelease_tracking_files(
         str(tracking_dir),
         current_prereleases=[
             {
-                "prerelease_version": "1.0.0-rc.1",
-                "base_version": "1.0.0",
-            },
-            {
-                "prerelease_version": "1.0.1-rc.1",
-                "base_version": "1.0.1",
+                "prerelease_version": "v2.5.11.def5678",
+                "base_version": "2.5.11",
             },
         ],
         cache_manager=_SimpleCacheManager(),
     )
 
+    assert not old_file.exists()
     files = sorted(p.name for p in tracking_subdir.iterdir())
     assert len(files) == 1
-    assert "1.0.1" in files[0]
+    assert "v2.5.11" in files[0]
 
 
 @pytest.mark.unit
@@ -190,12 +201,12 @@ def test_skips_current_prerelease_without_version_keys(tmp_path):
     manager.manage_prerelease_tracking_files(
         str(tracking_dir),
         current_prereleases=[
-            {"prerelease_version": "", "base_version": "1.0.0"},
-            {"prerelease_version": "1.0.0-rc.1", "base_version": ""},
+            {"prerelease_version": "", "base_version": "2.5.10"},
+            {"prerelease_version": "v2.5.10.abc1234", "base_version": ""},
             {"prerelease_version": "", "base_version": ""},
             {
-                "prerelease_version": "1.0.0-rc.1",
-                "base_version": "1.0.0",
+                "prerelease_version": "v2.5.10.abc1234",
+                "base_version": "2.5.10",
             },
         ],
         cache_manager=_SimpleCacheManager(),
@@ -216,7 +227,7 @@ def test_skips_invalid_current_prerelease_data(tmp_path):
     manager.manage_prerelease_tracking_files(
         str(tracking_dir),
         current_prereleases=[
-            {"only_prerelease_version": "1.0.0-rc.1"},
+            {"only_prerelease_version": "v2.5.10.abc1234"},
         ],
         cache_manager=_SimpleCacheManager(),
     )
@@ -232,12 +243,12 @@ def test_cleanup_skips_entry_with_empty_prerelease_version(tmp_path):
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
 
-    existing_file = tracking_subdir / "prerelease___1.0.0.json"
+    existing_file = tracking_subdir / "prerelease___2.5.10.json"
     existing_file.write_text(
         json.dumps(
             {
                 "prerelease_version": "",
-                "base_version": "1.0.0",
+                "base_version": "2.5.10",
                 "expiry_timestamp": (
                     datetime.now(timezone.utc) - timedelta(hours=1)
                 ).isoformat(),
@@ -251,8 +262,8 @@ def test_cleanup_skips_entry_with_empty_prerelease_version(tmp_path):
         str(tracking_dir),
         current_prereleases=[
             {
-                "prerelease_version": "1.0.1-rc.1",
-                "base_version": "1.0.1",
+                "prerelease_version": "v2.5.11.ghi9012",
+                "base_version": "2.5.11",
             }
         ],
         cache_manager=_SimpleCacheManager(),
@@ -268,12 +279,12 @@ def test_handles_oserror_during_cleanup_removal(tmp_path):
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
 
-    existing_file = tracking_subdir / "prerelease_1.0.0-rc.1_1.0.0.json"
+    existing_file = tracking_subdir / "prerelease_v2.5.10.abc1234_2.5.10.json"
     existing_file.write_text(
         json.dumps(
             {
-                "prerelease_version": "1.0.0-rc.1",
-                "base_version": "1.0.0",
+                "prerelease_version": "v2.5.10.abc1234",
+                "base_version": "2.5.10",
                 "expiry_timestamp": (
                     datetime.now(timezone.utc) - timedelta(hours=1)
                 ).isoformat(),
@@ -300,12 +311,12 @@ def test_write_updates_existing_tracking_file(tmp_path):
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
 
-    old_file = tracking_subdir / "prerelease_1.0.0-rc.1_1.0.0.json"
+    old_file = tracking_subdir / "prerelease_v2.5.10.abc1234_2.5.10.json"
     old_file.write_text(
         json.dumps(
             {
-                "prerelease_version": "1.0.0-rc.1",
-                "base_version": "1.0.0",
+                "prerelease_version": "v2.5.10.abc1234",
+                "base_version": "2.5.10",
                 "expiry_timestamp": (
                     datetime.now(timezone.utc) - timedelta(hours=1)
                 ).isoformat(),
@@ -315,8 +326,8 @@ def test_write_updates_existing_tracking_file(tmp_path):
     )
 
     new_data = {
-        "prerelease_version": "1.0.0-rc.1",
-        "base_version": "1.0.0",
+        "prerelease_version": "v2.5.10.abc1234",
+        "base_version": "2.5.10",
         "expiry_timestamp": (
             datetime.now(timezone.utc) + timedelta(hours=48)
         ).isoformat(),
@@ -339,12 +350,12 @@ def test_write_updates_existing_tracking_file(tmp_path):
 def test_create_prerelease_tracking_data_without_commit_hash():
     manager = PrereleaseHistoryManager()
     data = manager.create_prerelease_tracking_data(
-        prerelease_version="1.2.3-rc.1",
-        base_version="1.2.3",
+        prerelease_version="v2.5.12.jkl3456",
+        base_version="2.5.12",
         expiry_hours=48.0,
     )
-    assert data["prerelease_version"] == "1.2.3-rc.1"
-    assert data["base_version"] == "1.2.3"
+    assert data["prerelease_version"] == "v2.5.12.jkl3456"
+    assert data["base_version"] == "2.5.12"
     assert "commit_hash" not in data
     assert "expiry_timestamp" in data
     assert "created_at" in data
@@ -357,13 +368,13 @@ def test_create_prerelease_tracking_data_without_commit_hash():
 def test_create_prerelease_tracking_data_with_commit_hash():
     manager = PrereleaseHistoryManager()
     data = manager.create_prerelease_tracking_data(
-        prerelease_version="1.2.3-rc.2",
-        base_version="1.2.3",
+        prerelease_version="v2.5.12.mno7890",
+        base_version="2.5.12",
         expiry_hours=24.0,
         commit_hash="abc123def456",
     )
-    assert data["prerelease_version"] == "1.2.3-rc.2"
-    assert data["base_version"] == "1.2.3"
+    assert data["prerelease_version"] == "v2.5.12.mno7890"
+    assert data["base_version"] == "2.5.12"
     assert data["commit_hash"] == "abc123def456"
 
 
@@ -371,8 +382,8 @@ def test_create_prerelease_tracking_data_with_commit_hash():
 @pytest.mark.core_downloads
 def test_should_cleanup_superseded_prerelease_returns_true():
     manager = PrereleaseHistoryManager()
-    current = {"base_version": "1.0.0"}
-    new = {"base_version": "1.0.1"}
+    current = {"base_version": "2.5.10"}
+    new = {"base_version": "2.5.11"}
     assert manager.should_cleanup_superseded_prerelease(current, new) is True
 
 
@@ -381,12 +392,12 @@ def test_should_cleanup_superseded_prerelease_returns_true():
 def test_should_cleanup_superseded_prerelease_returns_false():
     manager = PrereleaseHistoryManager()
     current = {
-        "base_version": "1.0.1",
+        "base_version": "2.5.11",
         "expiry_timestamp": (
             datetime.now(timezone.utc) + timedelta(hours=24)
         ).isoformat(),
     }
-    new = {"base_version": "1.0.0"}
+    new = {"base_version": "2.5.10"}
     assert manager.should_cleanup_superseded_prerelease(current, new) is False
 
 
@@ -398,7 +409,7 @@ def test_get_cleanup_reason_expired():
         "expiry_timestamp": (
             datetime.now(timezone.utc) - timedelta(hours=1)
         ).isoformat(),
-        "base_version": "1.0.0",
+        "base_version": "2.5.10",
     }
     assert manager.get_prerelease_tracking_cleanup_reason(existing, []) == "expired"
 
@@ -411,9 +422,9 @@ def test_get_cleanup_reason_superseded():
         "expiry_timestamp": (
             datetime.now(timezone.utc) + timedelta(hours=24)
         ).isoformat(),
-        "base_version": "1.0.0",
+        "base_version": "2.5.10",
     }
-    current = [{"base_version": "1.0.1"}]
+    current = [{"base_version": "2.5.11"}]
     assert (
         manager.get_prerelease_tracking_cleanup_reason(existing, current)
         == "superseded"
@@ -428,9 +439,9 @@ def test_get_cleanup_reason_returns_none_when_valid():
         "expiry_timestamp": (
             datetime.now(timezone.utc) + timedelta(hours=24)
         ).isoformat(),
-        "base_version": "1.0.1",
+        "base_version": "2.5.11",
     }
-    current = [{"base_version": "1.0.0"}]
+    current = [{"base_version": "2.5.10"}]
     assert manager.get_prerelease_tracking_cleanup_reason(existing, current) is None
 
 
@@ -441,7 +452,7 @@ def test_get_cleanup_reason_handles_naive_expiry_timestamp():
     naive_past = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None)
     existing = {
         "expiry_timestamp": naive_past.isoformat(),
-        "base_version": "1.0.0",
+        "base_version": "2.5.10",
     }
     assert manager.get_prerelease_tracking_cleanup_reason(existing, []) == "expired"
 
@@ -452,9 +463,9 @@ def test_get_cleanup_reason_handles_invalid_expiry_timestamp():
     manager = PrereleaseHistoryManager()
     existing = {
         "expiry_timestamp": "not-a-valid-timestamp",
-        "base_version": "1.0.0",
+        "base_version": "2.5.10",
     }
-    current = [{"base_version": "1.0.1"}]
+    current = [{"base_version": "2.5.11"}]
     assert (
         manager.get_prerelease_tracking_cleanup_reason(existing, current)
         == "superseded"
@@ -473,7 +484,7 @@ def test_get_cleanup_reason_returns_none_no_base_version():
 @pytest.mark.core_downloads
 def test_get_cleanup_reason_skips_new_without_base_version():
     manager = PrereleaseHistoryManager()
-    existing = {"base_version": "1.0.0"}
+    existing = {"base_version": "2.5.10"}
     current = [{"other_key": "value"}, {"base_version": ""}]
     assert manager.get_prerelease_tracking_cleanup_reason(existing, current) is None
 
@@ -489,8 +500,8 @@ def test_no_tracking_subdir_still_writes_current(tmp_path):
         str(tracking_dir),
         current_prereleases=[
             {
-                "prerelease_version": "2.0.0-rc.1",
-                "base_version": "2.0.0",
+                "prerelease_version": "v2.6.0.pqr1234",
+                "base_version": "2.6.0",
             }
         ],
         cache_manager=_SimpleCacheManager(),
@@ -500,7 +511,7 @@ def test_no_tracking_subdir_still_writes_current(tmp_path):
     assert tracking_subdir.is_dir()
     files = list(tracking_subdir.iterdir())
     assert len(files) == 1
-    assert "2.0.0" in files[0].name
+    assert "2.6.0" in files[0].name
 
 
 @pytest.mark.unit
@@ -510,12 +521,12 @@ def test_current_prerelease_set_ignores_non_string_values(tmp_path):
     tracking_subdir = tracking_dir / "prerelease_tracking"
     tracking_subdir.mkdir(parents=True)
 
-    existing_file = tracking_subdir / "prerelease_1.0.0-rc.1_1.0.0.json"
+    existing_file = tracking_subdir / "prerelease_v2.5.10.abc1234_2.5.10.json"
     existing_file.write_text(
         json.dumps(
             {
-                "prerelease_version": "1.0.0-rc.1",
-                "base_version": "1.0.0",
+                "prerelease_version": "v2.5.10.abc1234",
+                "base_version": "2.5.10",
                 "expiry_timestamp": (
                     datetime.now(timezone.utc) - timedelta(hours=1)
                 ).isoformat(),
@@ -533,8 +544,8 @@ def test_current_prerelease_set_ignores_non_string_values(tmp_path):
         manager.manage_prerelease_tracking_files(
             str(tracking_dir),
             current_prereleases=[
-                {"prerelease_version": 123, "base_version": "1.0.1"},
-                {"prerelease_version": None, "base_version": "1.0.2"},
+                {"prerelease_version": 123, "base_version": "2.5.11"},
+                {"prerelease_version": None, "base_version": "2.5.12"},
             ],
             cache_manager=_SimpleCacheManager(),
         )
