@@ -14,6 +14,11 @@ from fetchtastic.constants import NTFY_REQUEST_TIMEOUT
 from fetchtastic.log_utils import logger
 
 
+def _dedupe_preserving_order(items: List[str]) -> List[str]:
+    """Return unique non-empty items while preserving their first-seen order."""
+    return list(dict.fromkeys(item for item in items if item))
+
+
 def send_ntfy_notification(
     ntfy_server: Optional[str],
     ntfy_topic: Optional[str],
@@ -75,11 +80,11 @@ def send_download_completion_notification(
     Parameters:
         config (Dict[str, Any]): Configuration containing NTFY settings.
         downloaded_firmwares (List[str]): List of firmware versions that were downloaded.
-        downloaded_apks (List[str]): List of APK versions that were downloaded.
+        downloaded_apks (List[str]): Legacy list of client app APK versions that were downloaded.
         downloaded_firmware_prereleases (Optional[List[str]]): List of firmware prerelease versions that were downloaded.
-        downloaded_apk_prereleases (Optional[List[str]]): List of APK prerelease versions that were downloaded.
-        downloaded_desktop (Optional[List[str]]): List of desktop versions that were downloaded.
-        downloaded_desktop_prereleases (Optional[List[str]]): List of desktop prerelease versions that were downloaded.
+        downloaded_apk_prereleases (Optional[List[str]]): Legacy list of client app APK prerelease versions that were downloaded.
+        downloaded_desktop (Optional[List[str]]): Legacy list of client app desktop versions that were downloaded.
+        downloaded_desktop_prereleases (Optional[List[str]]): Legacy list of client app desktop prerelease versions that were downloaded.
 
     Side effects:
         - Sends notification to configured NTFY server/topic if downloads occurred.
@@ -91,6 +96,12 @@ def send_download_completion_notification(
     downloaded_apk_prereleases = downloaded_apk_prereleases or []
     downloaded_desktop = downloaded_desktop or []
     downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
+    downloaded_client_apps = _dedupe_preserving_order(
+        [*downloaded_apks, *downloaded_desktop]
+    )
+    downloaded_client_app_prereleases = _dedupe_preserving_order(
+        [*downloaded_apk_prereleases, *downloaded_desktop_prereleases]
+    )
 
     if (
         not downloaded_firmwares
@@ -112,20 +123,18 @@ def send_download_completion_notification(
         message = f"Downloaded Firmware prerelease versions: {', '.join(downloaded_firmware_prereleases)}"
         notification_messages.append(message)
 
-    if downloaded_apks:
-        message = f"Downloaded Android APK versions: {', '.join(downloaded_apks)}"
+    if downloaded_client_apps:
+        message = (
+            "Downloaded Meshtastic Client versions: "
+            f"{', '.join(downloaded_client_apps)}"
+        )
         notification_messages.append(message)
 
-    if downloaded_apk_prereleases:
-        message = f"Downloaded Android APK prerelease versions: {', '.join(downloaded_apk_prereleases)}"
-        notification_messages.append(message)
-
-    if downloaded_desktop:
-        message = f"Downloaded Desktop versions: {', '.join(downloaded_desktop)}"
-        notification_messages.append(message)
-
-    if downloaded_desktop_prereleases:
-        message = f"Downloaded Desktop prerelease versions: {', '.join(downloaded_desktop_prereleases)}"
+    if downloaded_client_app_prereleases:
+        message = (
+            "Downloaded Meshtastic Client prerelease versions: "
+            f"{', '.join(downloaded_client_app_prereleases)}"
+        )
         notification_messages.append(message)
 
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -147,7 +156,7 @@ def send_new_releases_available_notification(
     downloads_skipped_reason: Optional[str] = None,
 ) -> None:
     """
-    Notify the configured NTFY topic about new firmware or APK releases when downloads were skipped.
+    Notify the configured NTFY topic about new firmware or client app releases when downloads were skipped.
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary. Recognized keys:
@@ -155,12 +164,12 @@ def send_new_releases_available_notification(
             - "NTFY_TOPIC": NTFY topic to post the notification to.
             - "NOTIFY_ON_DOWNLOAD_ONLY": if True, suppresses this notification.
         new_firmware_versions (List[str]): Available firmware version identifiers to report.
-        new_apk_versions (List[str]): Available Android APK version identifiers to report.
+        new_apk_versions (List[str]): Available client app version identifiers to report.
         downloads_skipped_reason (Optional[str]): Human-readable reason why downloads were skipped;
             if provided it is included as the first line of the notification.
 
     Behavior:
-        If "NOTIFY_ON_DOWNLOAD_ONLY" is True or there are no new firmware/APK versions, no notification is sent.
+        If "NOTIFY_ON_DOWNLOAD_ONLY" is True or there are no new firmware/client app versions, no notification is sent.
     """
     ntfy_server = config.get("NTFY_SERVER", "")
     ntfy_topic = config.get("NTFY_TOPIC", "")
@@ -188,7 +197,7 @@ def send_new_releases_available_notification(
 
     if new_apk_versions:
         message_lines.append(
-            f"Android APK versions available: {', '.join(new_apk_versions)}"
+            f"Meshtastic Client versions available: {', '.join(new_apk_versions)}"
         )
 
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")

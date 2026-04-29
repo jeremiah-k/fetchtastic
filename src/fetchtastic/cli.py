@@ -373,7 +373,7 @@ def main() -> None:
     Fetchtastic files, display version information, or interact with the repository).
     """
     parser = argparse.ArgumentParser(
-        description="Fetchtastic - Meshtastic Firmware and APK Downloader"
+        description="Fetchtastic - Meshtastic Firmware and Client App Downloader"
     )
     subparsers = parser.add_subparsers(dest="command")
 
