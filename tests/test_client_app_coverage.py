@@ -1,16 +1,14 @@
 import json
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 import requests
 
 from fetchtastic.constants import (
     APK_PRERELEASES_DIR_NAME,
-    APKS_DIR_NAME,
     APP_DIR_NAME,
-    DEFAULT_APP_VERSIONS_TO_KEEP,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_VALIDATION,
@@ -361,7 +359,7 @@ def test_migrate_legacy_layout_prerelease_ensure_fails(downloader, tmp_path, moc
 
 def test_get_target_path_for_release_with_release_object(downloader, tmp_path):
     release = Release(tag_name="v2.7.14", prerelease=False)
-    asset = Asset(name="app.apk", download_url="https://example.com/app.apk", size=100)
+    Asset(name="app.apk", download_url="https://example.com/app.apk", size=100)
     path = downloader.get_target_path_for_release("v2.7.14", "app.apk", release=release)
     assert APP_DIR_NAME in path
     assert "v2.7.14" in path

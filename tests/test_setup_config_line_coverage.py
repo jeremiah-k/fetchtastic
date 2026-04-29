@@ -1,10 +1,7 @@
-import os
-import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-import fetchtastic.setup_config as setup_config
 from fetchtastic.setup_config import (
     _setup_downloads,
     install_crond,

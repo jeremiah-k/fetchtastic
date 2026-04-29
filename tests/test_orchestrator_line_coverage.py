@@ -1,25 +1,13 @@
-import os
-import time
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, PropertyMock, patch
+from unittest.mock import Mock, patch
 
 import pytest
-import requests
 
 from fetchtastic.constants import (
-    DEFAULT_APP_VERSIONS_TO_KEEP,
-    ERROR_TYPE_RETRY_FAILURE,
-    FILE_TYPE_ANDROID,
-    FILE_TYPE_ANDROID_PRERELEASE,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
     FILE_TYPE_DESKTOP,
     FILE_TYPE_DESKTOP_PRERELEASE,
-    FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
-    FILE_TYPE_REPOSITORY,
-    FILE_TYPE_UNKNOWN,
-    REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator

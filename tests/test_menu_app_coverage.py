@@ -192,7 +192,7 @@ class TestRunMenu:
             patch("fetchtastic.menu_app.pick") as mock_pick,
         ):
             mock_pick.return_value = [("Android APK: x.apk", 0)]
-            result = run_menu()
+            run_menu()
         assert "Warning: unable to fetch Android APK assets" in capsys.readouterr().out
 
     def test_desktop_fetch_error(self, capsys):
@@ -205,7 +205,7 @@ class TestRunMenu:
             patch("fetchtastic.menu_app.pick") as mock_pick,
         ):
             mock_pick.return_value = [("macOS: Meshtastic-2.7.14.dmg", 0)]
-            result = run_menu()
+            run_menu()
         assert (
             "Warning: unable to fetch Desktop installer assets"
             in capsys.readouterr().out
