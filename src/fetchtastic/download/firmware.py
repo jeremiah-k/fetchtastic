@@ -1927,21 +1927,28 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 ]
 
             if prerelease_summary is not None:
-                available_history_entries = list(history_entries)
+                available_dirs = set(active_dirs)
+                available_history_entries = [
+                    entry
+                    for entry in history_entries
+                    if entry.get("status") == "deleted"
+                    or bool(entry.get("removed_at"))
+                    or entry.get("directory") in available_dirs
+                ]
                 available_dirs_in_history = {
                     entry.get("directory")
-                    for entry in history_entries
+                    for entry in available_history_entries
                     if entry.get("directory")
                 }
-                for active_dir_dir in active_dirs:
-                    if active_dir_dir not in available_dirs_in_history:
-                        identifier = active_dir_dir.removeprefix(FIRMWARE_DIR_PREFIX)
+                for active_dir in active_dirs:
+                    if active_dir not in available_dirs_in_history:
+                        identifier = active_dir.removeprefix(FIRMWARE_DIR_PREFIX)
                         base_version = (
                             ".".join(identifier.split(".")[:3]) if identifier else ""
                         )
                         available_history_entries.append(
                             {
-                                "directory": active_dir_dir,
+                                "directory": active_dir,
                                 "identifier": identifier,
                                 "base_version": base_version,
                                 "status": "active",

@@ -3581,3 +3581,61 @@ class TestFirmwarePrereleaseBaselineDerivation:
         assert synthetic[0]["status"] == "active"
         assert synthetic[0]["active"] is True
         assert synthetic[0]["identifier"] == "2.7.23.2a858be"
+
+    def test_download_repo_prerelease_firmware_summary_excludes_stale_active_entries(
+        self, downloader, tmp_path
+    ):
+        """Prerelease summary should exclude stale active history entries not present in the repo."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        history_entries = [
+            {
+                "identifier": "aaaaaa",
+                "directory": "firmware-2.7.23.aaaaaa",
+                "status": "active",
+            },
+            {
+                "identifier": "bbbbbb",
+                "directory": "firmware-2.7.23.bbbbbb",
+                "status": "active",
+            },
+            {
+                "identifier": "cccccc",
+                "directory": "firmware-2.7.23.cccccc",
+                "status": "deleted",
+            },
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.aaaaaa",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.aaaaaa", history_entries),
+            ),
+        ):
+            _results, _failed, _latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        assert summary is not None
+        available_entries = summary.get("available_history_entries")
+        assert available_entries is not None
+        available_dirs = {e["directory"] for e in available_entries}
+        # Available active dir should be included
+        assert "firmware-2.7.23.aaaaaa" in available_dirs
+        # Deleted dir should be included
+        assert "firmware-2.7.23.cccccc" in available_dirs
+        # Stale active dir missing from repo should be excluded
+        assert "firmware-2.7.23.bbbbbb" not in available_dirs
