@@ -178,6 +178,7 @@ class DownloadOrchestrator:
         self.firmware_release_history: Optional[Dict[str, Any]] = None
         # Single-run only: cleared after _log_prerelease_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
+        self.latest_available_firmware_prerelease_dir: Optional[str] = None
         # Run-scoped selected set: reset at start of _process_firmware_downloads()
         self.firmware_releases_selected: Optional[List[Release]] = None
         self._client_app_downloads_processed = False
@@ -206,6 +207,7 @@ class DownloadOrchestrator:
         """
         start_time = time.time()
         self.wifi_skipped = False
+        self.latest_available_firmware_prerelease_dir = None
         self.available_new_firmware_versions = []
         self.available_new_apk_versions = []
         self._client_app_downloads_processed = False
@@ -707,6 +709,7 @@ class DownloadOrchestrator:
         try:
             # Reset the selected releases at the start of each run
             self.firmware_releases_selected = None
+            self.latest_available_firmware_prerelease_dir = None
 
             if not self.config.get("SAVE_FIRMWARE", False):
                 logger.info("Firmware downloads are disabled in configuration")
@@ -785,11 +788,12 @@ class DownloadOrchestrator:
                 (
                     successes,
                     failures,
-                    _active_dir,
+                    active_dir,
                     prerelease_summary,
                 ) = self.firmware_downloader.download_repo_prerelease_firmware(
                     latest_release.tag_name, force_refresh=False
                 )
+                self.latest_available_firmware_prerelease_dir = active_dir
                 if prerelease_summary:
                     self.firmware_prerelease_summary = prerelease_summary
                 for result in successes:
@@ -1717,7 +1721,11 @@ class DownloadOrchestrator:
 
         self.firmware_prerelease_summary = None
 
-        history_entries = summary.get("history_entries") or []
+        history_entries = (
+            summary.get("available_history_entries")
+            or summary.get("history_entries")
+            or []
+        )
         clean_latest_release = summary.get("clean_latest_release")
         expected_version = summary.get("expected_version")
 
@@ -2097,7 +2105,13 @@ class DownloadOrchestrator:
         firmware_prerelease = None
         latest_firmware_release = self.firmware_downloader.get_latest_release_tag()
 
-        if latest_firmware_release:
+        active_dir = self.latest_available_firmware_prerelease_dir
+        if active_dir and active_dir.startswith(FIRMWARE_DIR_PREFIX):
+            firmware_prerelease = active_dir[len(FIRMWARE_DIR_PREFIX) :]
+        elif active_dir:
+            firmware_prerelease = active_dir
+
+        if latest_firmware_release and firmware_prerelease is None:
             clean_latest_release = (
                 self.version_manager.extract_clean_version(latest_firmware_release)
                 or latest_firmware_release

@@ -1622,6 +1622,29 @@ class TestDownloadOrchestrator:
 
         orchestrator.firmware_downloader.log_prerelease_summary.assert_called_once()
 
+    def test_log_prerelease_summary_prefers_available_entries(self, orchestrator):
+        """_log_prerelease_summary should omit missing active dirs after availability filtering."""
+        available_entries = [{"directory": "firmware-2.7.23.7be5426"}]
+        full_entries = [
+            {"directory": "firmware-2.7.23.7be5426"},
+            {"directory": "firmware-2.7.23.2a858be"},
+        ]
+        orchestrator.firmware_prerelease_summary = {
+            "history_entries": full_entries,
+            "available_history_entries": available_entries,
+            "clean_latest_release": "v2.7.22.96dd647",
+            "expected_version": "2.7.23",
+        }
+        orchestrator.firmware_downloader.log_prerelease_summary = Mock()
+
+        orchestrator._log_prerelease_summary()
+
+        orchestrator.firmware_downloader.log_prerelease_summary.assert_called_once_with(
+            available_entries,
+            "v2.7.22.96dd647",
+            "2.7.23",
+        )
+
     def test_log_firmware_history_with_filter_revoked(self, orchestrator):
         """log_firmware_release_history_summary should filter revoked releases."""
         orchestrator.config["FILTER_REVOKED_RELEASES"] = True
@@ -1784,6 +1807,25 @@ class TestDownloadOrchestrator:
 
         assert versions["firmware_prerelease"] == "1.0.1.abcdef"
 
+    def test_get_latest_versions_prefers_available_prerelease_dir(self, orchestrator):
+        """Verified available prerelease dir should win over stale commit-history latest."""
+        orchestrator.android_releases = []
+        orchestrator.desktop_releases = []
+        orchestrator.latest_available_firmware_prerelease_dir = (
+            "firmware-2.7.23.7be5426"
+        )
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v2.7.22.96dd647"
+        )
+        orchestrator.prerelease_manager.get_latest_active_prerelease_from_history = (
+            Mock(return_value=("firmware-2.7.23.2a858be", []))
+        )
+
+        versions = orchestrator.get_latest_versions()
+
+        assert versions["firmware_prerelease"] == "2.7.23.7be5426"
+        orchestrator.prerelease_manager.get_latest_active_prerelease_from_history.assert_not_called()
+
     def test_get_latest_versions_with_firmware_prerelease_no_prefix(self, orchestrator):
         """get_latest_versions should keep prerelease without firmware- prefix."""
         orchestrator.android_releases = []
@@ -1843,9 +1885,10 @@ class TestDownloadOrchestrator:
 
         orchestrator._manage_prerelease_tracking()
 
-    def test_run_download_pipeline_resets_stale_wifi_skipped(self, orchestrator):
-        """Stale wifi_skipped=True must be cleared at the start of a subsequent run."""
+    def test_run_download_pipeline_resets_stale_pipeline_state(self, orchestrator):
+        """Stale pipeline state must be cleared at the start of a subsequent run."""
         orchestrator.wifi_skipped = True
+        orchestrator.latest_available_firmware_prerelease_dir = "firmware-2.0.0.stale"
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
@@ -1856,6 +1899,7 @@ class TestDownloadOrchestrator:
             orchestrator.run_download_pipeline()
 
         assert orchestrator.wifi_skipped is False
+        assert orchestrator.latest_available_firmware_prerelease_dir is None
 
     def test_run_download_pipeline_wifi_only_not_connected(self, orchestrator):
         """Pipeline should skip when WIFI_ONLY and not connected."""
@@ -1876,6 +1920,7 @@ class TestDownloadOrchestrator:
             result = orchestrator.run_download_pipeline()
 
         assert result == ([], [])
+        assert orchestrator.latest_available_firmware_prerelease_dir is None
         orchestrator._process_client_app_downloads.assert_not_called()
 
     def test_get_firmware_keep_limit_invalid(self, orchestrator):
@@ -2293,7 +2338,7 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
             [mock_result],
             [],
-            None,
+            "firmware-2.0.1.available",
             prerelease_summary,
         )
         orchestrator._handle_download_result = Mock()
@@ -2301,6 +2346,10 @@ class TestDownloadOrchestrator:
         orchestrator._process_firmware_downloads()
 
         assert orchestrator.firmware_prerelease_summary == prerelease_summary
+        assert (
+            orchestrator.latest_available_firmware_prerelease_dir
+            == "firmware-2.0.1.available"
+        )
         orchestrator._handle_download_result.assert_any_call(
             mock_result, "firmware_prerelease_repo"
         )
