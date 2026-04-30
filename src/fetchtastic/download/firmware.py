@@ -1926,6 +1926,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     if directory not in deleted_dirs
                 ]
 
+            if prerelease_summary is None and active_dirs:
+                prerelease_summary = {
+                    "history_entries": history_entries or [],
+                    "clean_latest_release": clean_latest_release,
+                    "expected_version": expected_version,
+                }
+
             if prerelease_summary is not None:
                 available_dirs = set(active_dirs)
                 available_history_entries = [

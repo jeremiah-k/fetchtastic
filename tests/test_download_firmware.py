@@ -3639,3 +3639,44 @@ class TestFirmwarePrereleaseBaselineDerivation:
         assert "firmware-2.7.23.cccccc" in available_dirs
         # Stale active dir missing from repo should be excluded
         assert "firmware-2.7.23.bbbbbb" not in available_dirs
+
+    def test_download_repo_prerelease_firmware_summary_fallback_no_history(
+        self, downloader, tmp_path
+    ):
+        """Repo-discovered prereleases with no history should still produce a summary."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.aaaaaa",
+                    "firmware-2.7.23.bbbbbb",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+        ):
+            _results, _failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        assert summary is not None
+        assert summary["history_entries"] == []
+        assert summary["clean_latest_release"] == "v2.7.22"
+        assert summary["expected_version"] == "2.7.23"
+        available_entries = summary.get("available_history_entries")
+        assert available_entries is not None
+        available_dirs = {e["directory"] for e in available_entries}
+        assert "firmware-2.7.23.aaaaaa" in available_dirs
+        assert "firmware-2.7.23.bbbbbb" in available_dirs
+        assert latest == "firmware-2.7.23.bbbbbb"
