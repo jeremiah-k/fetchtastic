@@ -1835,7 +1835,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if not isinstance(dirs, list):
                     logger.debug(
                         "Expected list of repo directories from cache manager, got %s",
-                        type(dirs),
+                        type(dirs).__name__,
                     )
                     dirs = []
                 matches = prerelease_manager.scan_prerelease_directories(
@@ -1859,6 +1859,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
 
         if active_dirs:
+            repo_availability_verified = False
             try:
                 repo_dirs = self.cache_manager.get_repo_directories(
                     "",
@@ -1869,60 +1870,78 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if not isinstance(repo_dirs, list):
                     logger.debug(
                         "Expected list of repo directories from cache manager, got %s",
-                        type(repo_dirs),
+                        type(repo_dirs).__name__,
                     )
-                    repo_dirs = []
-                repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
+                else:
+                    repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
+                    repo_availability_verified = True
             except (requests.RequestException, OSError, ValueError, TypeError) as exc:
                 logger.debug(
                     "Repo availability scan failed; continuing with best history-derived active dirs: %s",
                     exc,
                 )
                 repo_dirs = []
-            repo_dir_set = set(repo_dirs)
             deleted_dirs = self._get_deleted_prerelease_dirs_from_history(
                 history_entries
             )
-            matching_repo_dirs = [
-                f"{FIRMWARE_DIR_PREFIX}{identifier}"
-                for identifier in prerelease_manager.scan_prerelease_directories(
-                    repo_dirs, expected_version
-                )
-            ]
-            active_dirs_set = set(active_dirs)
-            for repo_dir in matching_repo_dirs:
-                if repo_dir not in deleted_dirs and repo_dir not in active_dirs_set:
-                    active_dirs.append(repo_dir)
-                    active_dirs_set.add(repo_dir)
+            if repo_availability_verified:
+                repo_dir_set = set(repo_dirs)
+                matching_repo_dirs = [
+                    f"{FIRMWARE_DIR_PREFIX}{identifier}"
+                    for identifier in prerelease_manager.scan_prerelease_directories(
+                        repo_dirs, expected_version
+                    )
+                ]
+                active_dirs_set = set(active_dirs)
+                for repo_dir in matching_repo_dirs:
+                    if repo_dir not in deleted_dirs and repo_dir not in active_dirs_set:
+                        active_dirs.append(repo_dir)
+                        active_dirs_set.add(repo_dir)
 
-            missing_dirs = [
-                directory for directory in active_dirs if directory not in repo_dir_set
-            ]
-            active_dirs = [
-                directory
-                for directory in active_dirs
-                if directory in repo_dir_set and directory not in deleted_dirs
-            ]
+                missing_dirs = [
+                    directory
+                    for directory in active_dirs
+                    if directory not in repo_dir_set
+                ]
+                active_dirs = [
+                    directory
+                    for directory in active_dirs
+                    if directory in repo_dir_set and directory not in deleted_dirs
+                ]
+                for missing_dir in missing_dirs:
+                    if active_dirs:
+                        logger.info(
+                            "Prerelease directory %s no longer exists; continuing with remaining active prereleases",
+                            missing_dir,
+                        )
+                    else:
+                        logger.info(
+                            "Prerelease directory %s no longer exists; skipping prerelease download",
+                            missing_dir,
+                        )
+            else:
+                active_dirs = [
+                    directory
+                    for directory in active_dirs
+                    if directory not in deleted_dirs
+                ]
+
             if prerelease_summary is not None:
+                available_history_entries = list(history_entries)
                 available_dirs_in_history = {
                     entry.get("directory")
                     for entry in history_entries
-                    if entry.get("directory") in active_dirs
+                    if entry.get("directory")
                 }
-                available_history_entries = [
-                    entry
-                    for entry in history_entries
-                    if entry.get("directory") in available_dirs_in_history
-                ]
-                for active_dir in active_dirs:
-                    if active_dir not in available_dirs_in_history:
-                        identifier = active_dir.removeprefix(FIRMWARE_DIR_PREFIX)
+                for active_dir_dir in active_dirs:
+                    if active_dir_dir not in available_dirs_in_history:
+                        identifier = active_dir_dir.removeprefix(FIRMWARE_DIR_PREFIX)
                         base_version = (
                             ".".join(identifier.split(".")[:3]) if identifier else ""
                         )
                         available_history_entries.append(
                             {
-                                "directory": active_dir,
+                                "directory": active_dir_dir,
                                 "identifier": identifier,
                                 "base_version": base_version,
                                 "status": "active",
@@ -1932,17 +1951,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 prerelease_summary["available_history_entries"] = (
                     available_history_entries
                 )
-            for missing_dir in missing_dirs:
-                if active_dirs:
-                    logger.info(
-                        "Prerelease directory %s no longer exists; continuing with remaining active prereleases",
-                        missing_dir,
-                    )
-                else:
-                    logger.info(
-                        "Prerelease directory %s no longer exists; skipping prerelease download",
-                        missing_dir,
-                    )
 
         if not active_dirs:
             logger.info("No pre-release firmware available")

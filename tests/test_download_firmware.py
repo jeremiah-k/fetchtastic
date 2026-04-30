@@ -2819,10 +2819,10 @@ class TestFirmwareUncoveredBranches:
 
         # After deterministic sorting, newest by dir string tiebreaker
         assert result[2] == "firmware-2.7.23.7be5426"
-        assert {call.args[0] for call in download_assets.call_args_list} == {
-            "firmware-2.7.23.7be5426",
+        assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
-        }
+            "firmware-2.7.23.7be5426",
+        ]
 
     def test_download_repo_prerelease_firmware_syncs_existing_repo_dirs(
         self, downloader, tmp_path
@@ -2867,10 +2867,10 @@ class TestFirmwareUncoveredBranches:
 
         # After deterministic sorting, newest by dir string tiebreaker
         assert result[2] == "firmware-2.7.23.7be5426"
-        assert {call.args[0] for call in download_assets.call_args_list} == {
-            "firmware-2.7.23.7be5426",
+        assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
-        }
+            "firmware-2.7.23.7be5426",
+        ]
 
     def test_download_repo_prerelease_firmware_fallback_downloads_all_existing_dirs(
         self, downloader, tmp_path
@@ -2903,10 +2903,10 @@ class TestFirmwareUncoveredBranches:
 
         # After deterministic sorting, the newest (by directory string tiebreaker) is returned
         assert result[2] == "firmware-2.7.23.7be5426"
-        assert {call.args[0] for call in download_assets.call_args_list} == {
-            "firmware-2.7.23.7be5426",
+        assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
-        }
+            "firmware-2.7.23.7be5426",
+        ]
 
     # Lines 1797-1835: Release notes logging
     def test_log_prerelease_summary(self, downloader):
@@ -3382,12 +3382,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
             patch.object(
                 downloader.cache_manager,
                 "get_repo_directories",
-                side_effect=[
-                    [active_dir],  # first call (fallback scan) succeeds
-                    requests.RequestException(
-                        "Second scan failed"
-                    ),  # second call fails
-                ],
+                side_effect=requests.RequestException("Second scan failed"),
             ),
             patch.object(
                 downloader,
@@ -3399,9 +3394,10 @@ class TestFirmwarePrereleaseBaselineDerivation:
                 downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
             )
 
-        # Should still complete without raising; active_dirs derived from history
+        # Should still complete without raising; history-derived active dir preserved
         assert isinstance(results, list)
         assert isinstance(failed, list)
+        assert latest == active_dir
 
     def test_download_repo_prerelease_firmware_second_scan_non_list(
         self, downloader, tmp_path
@@ -3423,10 +3419,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
             patch.object(
                 downloader.cache_manager,
                 "get_repo_directories",
-                side_effect=[
-                    [active_dir],  # first call succeeds
-                    "not-a-list",  # second call returns non-list
-                ],
+                return_value="not-a-list",
             ),
             patch.object(
                 downloader,
@@ -3440,6 +3433,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
 
         assert isinstance(results, list)
         assert isinstance(failed, list)
+        assert latest == active_dir
 
     # =========================================================================
     # Tests for unsorted repo directory listings (review fix 6)
