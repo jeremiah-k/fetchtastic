@@ -1448,7 +1448,9 @@ class TestFirmwareReleaseDownloader:
                 "get_repo_directories",
                 return_value=[],
             ),
-            patch.object(downloader, "_download_prerelease_assets") as mock_download,
+            patch.object(
+                downloader, "_download_prerelease_assets", return_value=([], [], False)
+            ),
         ):
             results, failed, latest, summary = (
                 downloader.download_repo_prerelease_firmware("v2.7.17.9058cce")
@@ -1456,10 +1458,9 @@ class TestFirmwareReleaseDownloader:
 
         assert results == []
         assert failed == []
-        assert latest is None
+        assert latest == active_dir
         assert summary is not None
         assert summary["history_entries"] == history_entries
-        mock_download.assert_not_called()
 
     @pytest.mark.unit
     @patch("os.path.exists")
@@ -3680,3 +3681,63 @@ class TestFirmwarePrereleaseBaselineDerivation:
         assert "firmware-2.7.23.aaaaaa" in available_dirs
         assert "firmware-2.7.23.bbbbbb" in available_dirs
         assert latest == "firmware-2.7.23.bbbbbb"
+
+    def test_download_repo_prerelease_firmware_empty_repo_scan_preserves_history(
+        self, downloader, tmp_path
+    ):
+        """Empty repo availability scan should preserve history-derived active dirs."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        deleted_dir = "firmware-2.7.23.cccccc"
+        history_entries = [
+            {
+                "identifier": "aaaaaa",
+                "directory": active_dir,
+                "status": "active",
+            },
+            {
+                "identifier": "bbbbbb",
+                "directory": "firmware-2.7.23.bbbbbb",
+                "status": "active",
+            },
+            {
+                "identifier": "cccccc",
+                "directory": deleted_dir,
+                "status": "deleted",
+            },
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+        ):
+            _results, _failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        # History-derived active dirs should be preserved even with empty repo scan
+        # Sorted order puts bbbbbb last (dir string tiebreaker)
+        assert latest == "firmware-2.7.23.bbbbbb"
+        assert summary is not None
+        available_entries = summary.get("available_history_entries")
+        assert available_entries is not None
+        available_dirs = {e["directory"] for e in available_entries}
+        # All history-derived active dirs preserved when repo scan is empty
+        assert active_dir in available_dirs
+        assert "firmware-2.7.23.bbbbbb" in available_dirs
+        # Deleted dir should still be included in summary
+        assert deleted_dir in available_dirs

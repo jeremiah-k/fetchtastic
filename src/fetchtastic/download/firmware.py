@@ -1776,7 +1776,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 - successes: list of DownloadResult for assets that were successfully downloaded or skipped.
                 - failures: list of DownloadResult for assets that failed to download.
                 - active_dir: remote prerelease directory identifier used for the download, or `None` if no prerelease was found.
-                - prerelease_summary: a dict with prerelease history details (keys: `history_entries`, `clean_latest_release`, `expected_version`) for later reporting, or `None` when no history is available.
+                - prerelease_summary: a dict with prerelease history and/or repo-discovered details (keys: `history_entries`, `clean_latest_release`, `expected_version`, `available_history_entries`) for later reporting, or `None` when no prerelease processing was performed.
         """
         check_prereleases = self.config.get(
             "CHECK_FIRMWARE_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
@@ -1874,7 +1874,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     )
                 else:
                     repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
-                    repo_availability_verified = True
+                    if repo_dirs:
+                        repo_availability_verified = True
+                    else:
+                        logger.debug(
+                            "Repo availability scan returned no directories; "
+                            "cannot verify availability of history-derived prereleases"
+                        )
             except (requests.RequestException, OSError, ValueError, TypeError) as exc:
                 logger.debug(
                     "Repo availability scan failed; continuing with best history-derived active dirs: %s",
