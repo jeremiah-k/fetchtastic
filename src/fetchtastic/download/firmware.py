@@ -36,6 +36,7 @@ from fetchtastic.constants import (
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
+    LATEST_POINTER_NAME,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
@@ -56,6 +57,7 @@ from .cache import CacheManager
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .github_source import GithubReleaseSource, create_release_from_github_data
 from .interfaces import Asset, DownloadResult, FirmwareManifest, Release
+from .latest_pointer import update_latest_pointer
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
@@ -219,6 +221,26 @@ class FirmwareReleaseDownloader(BaseDownloader):
         version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
+
+    def update_latest_pointer_for_release(self, release: Release) -> bool:
+        """Best-effort update of firmware latest pointer for a completed release."""
+        if not self.config.get("CREATE_LATEST_SYMLINKS", True):
+            return False
+        try:
+            if release.prerelease:
+                parent_dir = self._get_prerelease_base_dir()
+                target_name = f"{FIRMWARE_DIR_PREFIX}{self._sanitize_required(release.tag_name, 'release tag')}"
+            else:
+                parent_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+                target_name = self._get_release_storage_tag(release)
+            return update_latest_pointer(parent_dir, target_name, LATEST_POINTER_NAME)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug(
+                "Skipping firmware latest pointer for %s: %s",
+                release.tag_name,
+                exc,
+            )
+            return False
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
@@ -1407,6 +1429,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     if entry.name in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
                         REPO_DOWNLOADS_DIR,
+                        LATEST_POINTER_NAME,
                     }:
                         continue
                     if entry.is_symlink():
@@ -2034,6 +2057,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         for active_dir in dirs_to_track:
             prerelease_manager.update_prerelease_tracking(
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
+            )
+        if dirs_to_track and self.config.get("CREATE_LATEST_SYMLINKS", True):
+            update_latest_pointer(
+                prerelease_base_dir,
+                dirs_to_track[-1],
+                LATEST_POINTER_NAME,
             )
 
         # Consolidate skipped messages

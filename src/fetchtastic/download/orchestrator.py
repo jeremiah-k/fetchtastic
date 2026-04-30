@@ -480,6 +480,13 @@ class DownloadOrchestrator:
                 if prerelease_results and all(
                     result.success for result in prerelease_results
                 ):
+                    update_pointer = getattr(
+                        self.client_app_downloader,
+                        "update_latest_pointer_for_release",
+                        None,
+                    )
+                    if update_pointer is not None:
+                        update_pointer(prerelease)
                     if not self.client_app_downloader.update_prerelease_tracking(
                         prerelease.tag_name
                     ):
@@ -902,11 +909,13 @@ class DownloadOrchestrator:
     def _download_client_app_release(self, release: Release) -> bool:
         """Download all selected client app assets for a release."""
         any_downloaded = False
+        attempted_results: list[DownloadResult] = []
         try:
             for asset in self.client_app_downloader.get_assets(release):
                 if not self.client_app_downloader.should_download_asset(asset.name):
                     continue
                 result = self.client_app_downloader.download_app(release, asset)
+                attempted_results.append(result)
                 if result.success and not result.was_skipped:
                     any_downloaded = True
                 self._handle_download_result(result, FILE_TYPE_CLIENT_APP)
@@ -923,6 +932,16 @@ class DownloadOrchestrator:
             )
             return False
         else:
+            if attempted_results and all(
+                result.success for result in attempted_results
+            ):
+                update_pointer = getattr(
+                    self.client_app_downloader,
+                    "update_latest_pointer_for_release",
+                    None,
+                )
+                if update_pointer is not None:
+                    update_pointer(release)
             return any_downloaded
 
     def _download_firmware_release(self, release: Release) -> bool:
@@ -939,6 +958,7 @@ class DownloadOrchestrator:
             bool: `True` if at least one asset was downloaded, `False` otherwise.
         """
         any_downloaded = False
+        attempted_results: list[DownloadResult] = []
         try:
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
@@ -951,6 +971,7 @@ class DownloadOrchestrator:
                 raw_manifest_results if isinstance(raw_manifest_results, list) else []
             )
             for result in manifest_results:
+                attempted_results.append(result)
                 if result.success and not result.was_skipped:
                     any_downloaded = True
                 self._handle_download_result(result, FILE_TYPE_FIRMWARE_MANIFEST)
@@ -981,6 +1002,7 @@ class DownloadOrchestrator:
                 download_result = self.firmware_downloader.download_firmware(
                     release, asset
                 )
+                attempted_results.append(download_result)
                 if download_result.success and not download_result.was_skipped:
                     any_downloaded = True
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
@@ -1000,6 +1022,16 @@ class DownloadOrchestrator:
                         release, asset, extract_patterns, exclude_patterns
                     )
                     self._handle_download_result(extract_result, "firmware_extraction")
+            if attempted_results and all(
+                result.success for result in attempted_results
+            ):
+                update_pointer = getattr(
+                    self.firmware_downloader,
+                    "update_latest_pointer_for_release",
+                    None,
+                )
+                if update_pointer is not None:
+                    update_pointer(release)
             return any_downloaded
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")

@@ -46,6 +46,7 @@ FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
+LATEST_POINTER_NAME = "latest"
 # Compatibility-only aliases: legacy Android/Desktop references map to unified
 # app storage. They are NOT used to drive new storage logic. The primary
 # client-app storage layout is app/<version>/ and app/prerelease/<version>/
