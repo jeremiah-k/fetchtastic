@@ -207,6 +207,7 @@ class DownloadOrchestrator:
         """
         start_time = time.time()
         self.wifi_skipped = False
+        self.latest_available_firmware_prerelease_dir = None
         self.available_new_firmware_versions = []
         self.available_new_apk_versions = []
         self._client_app_downloads_processed = False

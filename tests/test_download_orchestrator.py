@@ -1885,9 +1885,10 @@ class TestDownloadOrchestrator:
 
         orchestrator._manage_prerelease_tracking()
 
-    def test_run_download_pipeline_resets_stale_wifi_skipped(self, orchestrator):
-        """Stale wifi_skipped=True must be cleared at the start of a subsequent run."""
+    def test_run_download_pipeline_resets_stale_pipeline_state(self, orchestrator):
+        """Stale pipeline state must be cleared at the start of a subsequent run."""
         orchestrator.wifi_skipped = True
+        orchestrator.latest_available_firmware_prerelease_dir = "firmware-2.0.0.stale"
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
@@ -1898,6 +1899,7 @@ class TestDownloadOrchestrator:
             orchestrator.run_download_pipeline()
 
         assert orchestrator.wifi_skipped is False
+        assert orchestrator.latest_available_firmware_prerelease_dir is None
 
     def test_run_download_pipeline_wifi_only_not_connected(self, orchestrator):
         """Pipeline should skip when WIFI_ONLY and not connected."""
@@ -1918,6 +1920,7 @@ class TestDownloadOrchestrator:
             result = orchestrator.run_download_pipeline()
 
         assert result == ([], [])
+        assert orchestrator.latest_available_firmware_prerelease_dir is None
         orchestrator._process_client_app_downloads.assert_not_called()
 
     def test_get_firmware_keep_limit_invalid(self, orchestrator):

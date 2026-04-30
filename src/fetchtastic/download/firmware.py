@@ -1889,9 +1889,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     repo_dirs, expected_version
                 )
             ]
+            active_dirs_set = set(active_dirs)
             for repo_dir in matching_repo_dirs:
-                if repo_dir not in deleted_dirs and repo_dir not in active_dirs:
+                if repo_dir not in deleted_dirs and repo_dir not in active_dirs_set:
                     active_dirs.append(repo_dir)
+                    active_dirs_set.add(repo_dir)
 
             missing_dirs = [
                 directory for directory in active_dirs if directory not in repo_dir_set
