@@ -2026,11 +2026,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     active_dir,
                 )
 
-        if any_downloaded or force_refresh or (active_dirs and not failures):
-            for active_dir in downloaded_dirs or active_dirs:
-                prerelease_manager.update_prerelease_tracking(
-                    latest_release_tag, active_dir, cache_manager=self.cache_manager
-                )
+        dirs_to_track: list[str] = []
+        if force_refresh or (active_dirs and not failures):
+            dirs_to_track = active_dirs
+        elif any_downloaded:
+            dirs_to_track = downloaded_dirs
+        for active_dir in dirs_to_track:
+            prerelease_manager.update_prerelease_tracking(
+                latest_release_tag, active_dir, cache_manager=self.cache_manager
+            )
 
         # Consolidate skipped messages
         skipped_count = sum(1 for result in successes if result.was_skipped)

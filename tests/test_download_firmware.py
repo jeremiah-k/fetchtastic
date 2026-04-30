@@ -3741,3 +3741,94 @@ class TestFirmwarePrereleaseBaselineDerivation:
         assert "firmware-2.7.23.bbbbbb" in available_dirs
         # Deleted dir should still be included in summary
         assert deleted_dir in available_dirs
+
+    def test_download_repo_prerelease_firmware_tracks_all_active_dirs_when_no_failures(
+        self, downloader, tmp_path
+    ):
+        """All deterministic active dirs should be tracked when there are no failures."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        older_dir = "firmware-2.7.23.aaaaaa"
+        newer_dir = "firmware-2.7.23.bbbbbb"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": older_dir, "status": "active"},
+            {"identifier": "bbbbbb", "directory": newer_dir, "status": "active"},
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[older_dir, newer_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                side_effect=[
+                    ([], [], True),  # older downloads new files
+                    ([], [], False),  # newer already exists (skipped)
+                ],
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(newer_dir, history_entries),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.update_prerelease_tracking"
+            ) as mock_track,
+        ):
+            _results, _failed, latest, _summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        # Newer dir should be returned as latest (sorted order)
+        assert latest == newer_dir
+        # Both dirs should be tracked (no failures, so all active_dirs tracked)
+        assert mock_track.call_count == 2
+        track_dirs = [call.args[1] for call in mock_track.call_args_list]
+        assert track_dirs == [older_dir, newer_dir]
+
+    def test_download_repo_prerelease_firmware_tracks_only_downloaded_when_failures(
+        self, downloader, tmp_path
+    ):
+        """Only successfully downloaded dirs should be tracked when there are failures."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        success_dir = "firmware-2.7.23.aaaaaa"
+        fail_dir = "firmware-2.7.23.bbbbbb"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": success_dir, "status": "active"},
+            {"identifier": "bbbbbb", "directory": fail_dir, "status": "active"},
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[success_dir, fail_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                side_effect=[
+                    ([], [], True),  # success downloads
+                    ([], [Mock(success=False)], False),  # fail_dir has failures
+                ],
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(fail_dir, history_entries),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.update_prerelease_tracking"
+            ) as mock_track,
+        ):
+            _results, _failed, latest, _summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        # Only the successfully downloaded dir should be tracked
+        assert mock_track.call_count == 1
+        assert mock_track.call_args.args[1] == success_dir
