@@ -24,6 +24,7 @@ from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_CHECK_APP_PRERELEASES,
+    DEFAULT_CREATE_LATEST_SYMLINKS,
 )
 from fetchtastic.constants import (
     DEFAULT_DESKTOP_VERSIONS_TO_KEEP as _DEFAULT_DESKTOP_VERSIONS_TO_KEEP,
@@ -315,6 +316,15 @@ def is_termux() -> bool:
 
 def _coerce_bool(value: Any, default: bool = False) -> bool:
     return coerce_bool(value, default)
+
+
+def _normalize_latest_symlink_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize the derived latest symlink setting shared by all downloaders."""
+    config["CREATE_LATEST_SYMLINKS"] = _coerce_bool(
+        config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+        default=DEFAULT_CREATE_LATEST_SYMLINKS,
+    )
+    return config
 
 
 def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
@@ -2286,6 +2296,7 @@ def run_setup(
         config.pop("SELECTED_APK_ASSETS", None)
         config.pop("SELECTED_DESKTOP_ASSETS", None)
         config.pop("SELECTED_DESKTOP_PLATFORMS", None)
+    _normalize_latest_symlink_config(config)
 
     # Persist configuration after all interactive sections
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -3520,6 +3531,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             return None
         config = _migrate_desktop_asset_key(config)
         config = normalize_client_app_config(config)
+        config = _normalize_latest_symlink_config(config)
 
         # Update global variables
         BASE_DIR = directory
@@ -3538,6 +3550,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
                 return None
             config = _migrate_desktop_asset_key(config)
             config = normalize_client_app_config(config)
+            config = _normalize_latest_symlink_config(config)
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:
@@ -3552,6 +3565,7 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
                 return None
             config = _migrate_desktop_asset_key(config)
             config = normalize_client_app_config(config)
+            config = _normalize_latest_symlink_config(config)
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:

@@ -659,6 +659,7 @@ def test_load_config_new_location(tmp_path, mocker):
     config = setup_config.load_config()
     assert config is not None
     assert config["SAVE_APKS"] is True
+    assert config["CREATE_LATEST_SYMLINKS"] is True
 
 
 @pytest.mark.configuration
@@ -1579,6 +1580,7 @@ def test_run_setup_first_run_linux_simple(
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
         assert saved_config["CHECK_PRERELEASES"] is False
         assert saved_config["CHECK_APK_PRERELEASES"] is True
+        assert saved_config["CREATE_LATEST_SYMLINKS"] is True
         assert saved_config["AUTO_EXTRACT"] is False
         assert saved_config["EXTRACT_PATTERNS"] == []
         assert saved_config["EXCLUDE_PATTERNS"] == []
@@ -1856,6 +1858,7 @@ def test_run_setup_existing_config(
         assert saved_config["AUTO_EXTRACT"] is True
         assert saved_config["EXTRACT_PATTERNS"] == ["rak4631-", "tbeam"]
         assert saved_config["CHECK_PRERELEASES"] is True
+        assert saved_config["CREATE_LATEST_SYMLINKS"] is True
         assert saved_config["SELECTED_FIRMWARE_ASSETS"] == ["new-firmware"]
         assert saved_config["SELECTED_PRERELEASE_ASSETS"] == ["rak4631-", "tbeam"]
         assert "SELECTED_APK_ASSETS" not in saved_config

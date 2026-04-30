@@ -2489,6 +2489,7 @@ def test_load_config_normalizes_empty_dict(tmp_path, mocker):
 
     assert result is not None
     assert isinstance(result, dict)
+    assert result["CREATE_LATEST_SYMLINKS"] is True
 
 
 @pytest.mark.configuration
@@ -2509,3 +2510,4 @@ def test_load_config_empty_dict_directory_mode(tmp_path, mocker):
 
     assert result is not None
     assert isinstance(result, dict)
+    assert result["CREATE_LATEST_SYMLINKS"] is True
