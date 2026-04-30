@@ -2817,7 +2817,8 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        assert result[2] == "firmware-2.7.23.2a858be"
+        # After deterministic sorting, newest by dir string tiebreaker
+        assert result[2] == "firmware-2.7.23.7be5426"
         assert {call.args[0] for call in download_assets.call_args_list} == {
             "firmware-2.7.23.7be5426",
             "firmware-2.7.23.2a858be",
@@ -2864,7 +2865,8 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        assert result[2] == "firmware-2.7.23.2a858be"
+        # After deterministic sorting, newest by dir string tiebreaker
+        assert result[2] == "firmware-2.7.23.7be5426"
         assert {call.args[0] for call in download_assets.call_args_list} == {
             "firmware-2.7.23.7be5426",
             "firmware-2.7.23.2a858be",
@@ -2899,6 +2901,7 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
+        # After deterministic sorting, the newest (by directory string tiebreaker) is returned
         assert result[2] == "firmware-2.7.23.7be5426"
         assert {call.args[0] for call in download_assets.call_args_list} == {
             "firmware-2.7.23.7be5426",
@@ -3269,3 +3272,318 @@ class TestFirmwarePrereleaseBaselineDerivation:
 
         assert result is True
         mock_rmtree.assert_called_once_with("/mock/prerelease/firmware-2.7.22.oldhash")
+
+    # =========================================================================
+    # Tests for deterministic prerelease directory sorting (review fix 1)
+    # =========================================================================
+
+    def test_sort_prerelease_dirs_orders_by_version_then_string(self, downloader):
+        """_sort_prerelease_dirs should sort by version tuple then directory string."""
+        unsorted = [
+            "firmware-2.7.25.999999",
+            "firmware-2.7.23.aaaaaa",
+            "firmware-2.7.24.cccccc",
+            "firmware-2.7.23.bbbbbb",
+        ]
+        sorted_dirs = downloader._sort_prerelease_dirs(unsorted)
+        assert sorted_dirs == [
+            "firmware-2.7.23.aaaaaa",
+            "firmware-2.7.23.bbbbbb",
+            "firmware-2.7.24.cccccc",
+            "firmware-2.7.25.999999",
+        ]
+
+    def test_sort_prerelease_dirs_dedupes(self, downloader):
+        """_sort_prerelease_dirs should remove duplicate entries."""
+        dirs = [
+            "firmware-2.7.24.cccccc",
+            "firmware-2.7.23.aaaaaa",
+            "firmware-2.7.24.cccccc",
+        ]
+        sorted_dirs = downloader._sort_prerelease_dirs(dirs)
+        assert sorted_dirs == [
+            "firmware-2.7.23.aaaaaa",
+            "firmware-2.7.24.cccccc",
+        ]
+
+    def test_sort_prerelease_dirs_newest_last(self, downloader):
+        """After sorting, the last element is the newest prerelease dir."""
+        dirs = [
+            "firmware-2.7.23.aaaaaa",
+            "firmware-2.7.25.999999",
+            "firmware-2.7.24.cccccc",
+        ]
+        sorted_dirs = downloader._sort_prerelease_dirs(dirs)
+        assert sorted_dirs[-1] == "firmware-2.7.25.999999"
+
+    # =========================================================================
+    # Tests for _get_active_prerelease_dirs_from_history tightening (review fix 4)
+    # =========================================================================
+
+    def test_get_active_prerelease_dirs_from_history_active_only(self, downloader):
+        """Only explicitly active entries should be returned."""
+        entries = [
+            {"directory": "firmware-2.7.23.aaaaaa", "status": "active"},
+            {"directory": "firmware-2.7.23.bbbbbb", "status": "deleted"},
+            {"directory": "firmware-2.7.23.cccccc", "status": "active"},
+            {
+                "directory": "firmware-2.7.23.dddddd"
+            },  # no status key, not explicitly active
+            {"directory": "firmware-2.7.23.eeeeee", "status": "unknown"},
+        ]
+        result = downloader._get_active_prerelease_dirs_from_history(entries)
+        assert result == ["firmware-2.7.23.aaaaaa", "firmware-2.7.23.cccccc"]
+
+    def test_get_active_prerelease_dirs_from_history_respects_removed_at(
+        self, downloader
+    ):
+        """Entries with removed_at should be excluded even if status is active."""
+        entries = [
+            {"directory": "firmware-2.7.23.aaaaaa", "status": "active"},
+            {
+                "directory": "firmware-2.7.23.bbbbbb",
+                "status": "active",
+                "removed_at": "2024-01-01",
+            },
+        ]
+        result = downloader._get_active_prerelease_dirs_from_history(entries)
+        assert result == ["firmware-2.7.23.aaaaaa"]
+
+    def test_get_active_prerelease_dirs_from_history_active_flag(self, downloader):
+        """Entries with active=True should be included."""
+        entries = [
+            {"directory": "firmware-2.7.23.aaaaaa", "active": True},
+            {"directory": "firmware-2.7.23.bbbbbb", "active": False},
+        ]
+        result = downloader._get_active_prerelease_dirs_from_history(entries)
+        assert result == ["firmware-2.7.23.aaaaaa"]
+
+    # =========================================================================
+    # Tests for error handling in second repo scan (review fixes 2/3)
+    # =========================================================================
+
+    def test_download_repo_prerelease_firmware_second_scan_error(
+        self, downloader, tmp_path
+    ):
+        """Exception in second repo availability scan should not crash prerelease processing."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                side_effect=[
+                    [active_dir],  # first call (fallback scan) succeeds
+                    requests.RequestException(
+                        "Second scan failed"
+                    ),  # second call fails
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            results, failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        # Should still complete without raising; active_dirs derived from history
+        assert isinstance(results, list)
+        assert isinstance(failed, list)
+
+    def test_download_repo_prerelease_firmware_second_scan_non_list(
+        self, downloader, tmp_path
+    ):
+        """Non-list response from second repo scan should be handled gracefully."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                side_effect=[
+                    [active_dir],  # first call succeeds
+                    "not-a-list",  # second call returns non-list
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            results, failed, latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        assert isinstance(results, list)
+        assert isinstance(failed, list)
+
+    # =========================================================================
+    # Tests for unsorted repo directory listings (review fix 6)
+    # =========================================================================
+
+    def test_download_repo_prerelease_firmware_unsorted_fallback_dirs(
+        self, downloader, tmp_path
+    ):
+        """Fallback scan with unsorted repo dirs should download all matching and return the sorted newest."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        # All dirs must match expected_version "2.7.23"
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.bbbbbb",
+                    "firmware-2.7.23.aaaaaa",
+                    "firmware-2.7.23.2a858be",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        # The returned active_dir should be the sorted newest (dir string tiebreaker)
+        # String comparison: '2' < 'a' < 'b', so newest = bbbbbb
+        assert result[2] == "firmware-2.7.23.bbbbbb"
+        # All matching dirs should be downloaded in deterministic sorted order (by dir string)
+        call_args = [call.args[0] for call in download_assets.call_args_list]
+        assert call_args == [
+            "firmware-2.7.23.2a858be",
+            "firmware-2.7.23.aaaaaa",
+            "firmware-2.7.23.bbbbbb",
+        ]
+
+    def test_download_repo_prerelease_firmware_unsorted_history_dirs(
+        self, downloader, tmp_path
+    ):
+        """History-derived dirs in arbitrary order should be sorted deterministically."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        history_entries = [
+            {
+                "identifier": "2a858be",
+                "directory": "firmware-2.7.23.2a858be",
+                "status": "active",
+            },
+            {
+                "identifier": "7be5426",
+                "directory": "firmware-2.7.23.7be5426",
+                "status": "active",
+            },
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=["firmware-2.7.23.7be5426", "firmware-2.7.23.2a858be"],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.2a858be", history_entries),
+            ),
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        # Download order should be deterministic: sorted by version tuple then directory string
+        call_args = [call.args[0] for call in download_assets.call_args_list]
+        assert call_args == [
+            "firmware-2.7.23.2a858be",
+            "firmware-2.7.23.7be5426",
+        ]
+
+    # =========================================================================
+    # Tests for synthetic entries in prerelease summary (review fix 5)
+    # =========================================================================
+
+    def test_download_repo_prerelease_firmware_summary_includes_synthetic_entries(
+        self, downloader, tmp_path
+    ):
+        """Prerelease summary should include synthetic entries for repo-discovered dirs not in history."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        history_entries = [
+            {
+                "identifier": "7be5426",
+                "directory": "firmware-2.7.23.7be5426",
+                "status": "active",
+            },
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.7be5426",
+                    "firmware-2.7.23.2a858be",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.7be5426", history_entries),
+            ),
+        ):
+            _results, _failed, _latest, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+
+        assert summary is not None
+        available_entries = summary.get("available_history_entries")
+        assert available_entries is not None
+        available_dirs = {e["directory"] for e in available_entries}
+        assert "firmware-2.7.23.7be5426" in available_dirs
+        assert "firmware-2.7.23.2a858be" in available_dirs
+        # Find the synthetic entry
+        synthetic = [
+            e for e in available_entries if e["directory"] == "firmware-2.7.23.2a858be"
+        ]
+        assert len(synthetic) == 1
+        assert synthetic[0]["status"] == "active"
+        assert synthetic[0]["active"] is True
+        assert synthetic[0]["identifier"] == "2.7.23.2a858be"

@@ -1859,13 +1859,26 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
 
         if active_dirs:
-            repo_dirs = self.cache_manager.get_repo_directories(
-                "",
-                force_refresh=True,
-                github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
-            )
-            repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
+            try:
+                repo_dirs = self.cache_manager.get_repo_directories(
+                    "",
+                    force_refresh=True,
+                    github_token=self.config.get("GITHUB_TOKEN"),
+                    allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
+                )
+                if not isinstance(repo_dirs, list):
+                    logger.debug(
+                        "Expected list of repo directories from cache manager, got %s",
+                        type(repo_dirs),
+                    )
+                    repo_dirs = []
+                repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
+            except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+                logger.debug(
+                    "Repo availability scan failed; continuing with best history-derived active dirs: %s",
+                    exc,
+                )
+                repo_dirs = []
             repo_dir_set = set(repo_dirs)
             deleted_dirs = self._get_deleted_prerelease_dirs_from_history(
                 history_entries
@@ -1889,12 +1902,34 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if directory in repo_dir_set and directory not in deleted_dirs
             ]
             if prerelease_summary is not None:
-                prerelease_summary["available_history_entries"] = [
+                available_dirs_in_history = {
+                    entry.get("directory")
+                    for entry in history_entries
+                    if entry.get("directory") in active_dirs
+                }
+                available_history_entries = [
                     entry
                     for entry in history_entries
-                    if entry.get("status") == "deleted"
-                    or entry.get("directory") in active_dirs
+                    if entry.get("directory") in available_dirs_in_history
                 ]
+                for active_dir in active_dirs:
+                    if active_dir not in available_dirs_in_history:
+                        identifier = active_dir.removeprefix(FIRMWARE_DIR_PREFIX)
+                        base_version = (
+                            ".".join(identifier.split(".")[:3]) if identifier else ""
+                        )
+                        available_history_entries.append(
+                            {
+                                "directory": active_dir,
+                                "identifier": identifier,
+                                "base_version": base_version,
+                                "status": "active",
+                                "active": True,
+                            }
+                        )
+                prerelease_summary["available_history_entries"] = (
+                    available_history_entries
+                )
             for missing_dir in missing_dirs:
                 if active_dirs:
                     logger.info(
@@ -1910,6 +1945,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not active_dirs:
             logger.info("No pre-release firmware available")
             return [], [], None, prerelease_summary
+
+        active_dirs = self._sort_prerelease_dirs(active_dirs)
 
         selected_patterns = self._get_prerelease_patterns()
         exclude_patterns = self._get_exclude_patterns()
@@ -1972,18 +2009,43 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return successes, failures, active_dirs[-1], prerelease_summary
 
+    @staticmethod
+    def _sort_prerelease_dirs(dirs: List[str]) -> List[str]:
+        """Deduplicate and sort prerelease directory names by parsed version tuple, then directory string as tie breaker."""
+        version_manager = VersionManager()
+
+        def sort_key(directory: str) -> Tuple:
+            identifier = directory.removeprefix(FIRMWARE_DIR_PREFIX)
+            version_tuple = version_manager.get_release_tuple(identifier) or ()
+            return (version_tuple, directory)
+
+        seen: set[str] = set()
+        unique_dirs: list[str] = []
+        for d in dirs:
+            if d not in seen:
+                seen.add(d)
+                unique_dirs.append(d)
+        unique_dirs.sort(key=sort_key)
+        return unique_dirs
+
     def _get_active_prerelease_dirs_from_history(
         self, history_entries: List[Dict[str, Any]]
     ) -> list[str]:
-        """Return non-deleted prerelease directories from history in history order."""
+        """Return explicitly active prerelease directories from history in history order."""
         active_dirs: list[str] = []
         seen: set[str] = set()
         for entry in history_entries:
             directory = entry.get("directory")
+            is_active = entry.get("status") == "active" or entry.get("active") is True
             is_deleted = entry.get("status") == "deleted" or bool(
                 entry.get("removed_at")
             )
-            if not is_deleted and isinstance(directory, str) and directory not in seen:
+            if (
+                is_active
+                and not is_deleted
+                and isinstance(directory, str)
+                and directory not in seen
+            ):
                 active_dirs.append(directory)
                 seen.add(directory)
         return active_dirs
