@@ -3517,7 +3517,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
                 return_value=("firmware-2.7.23.2a858be", history_entries),
             ),
         ):
-            result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
         # Download order should be deterministic: sorted by version tuple then directory string
         call_args = [call.args[0] for call in download_assets.call_args_list]
