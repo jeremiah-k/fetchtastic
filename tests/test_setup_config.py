@@ -691,6 +691,31 @@ def test_load_config_prefers_download_dir_over_legacy_base_dir(tmp_path, mocker)
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_load_config_expands_download_dir_user_home(tmp_path, mocker):
+    """DOWNLOAD_DIR values with ~ are expanded when loaded."""
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    config_path = tmp_path / "fetchtastic.yaml"
+    old_config_path = tmp_path / "old_fetchtastic.yaml"
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
+
+    with open(config_path, "w") as f:
+        yaml.safe_dump({"DOWNLOAD_DIR": "~/Downloads/Meshtastic"}, f)
+
+    original_base_dir = setup_config.BASE_DIR
+    try:
+        with patch.dict(os.environ, {"HOME": str(home_dir)}):
+            config = setup_config.load_config()
+
+        assert config is not None
+        assert setup_config.BASE_DIR == str(home_dir / "Downloads" / "Meshtastic")
+    finally:
+        setup_config.BASE_DIR = original_base_dir
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_load_config_old_location_suggests_migration(tmp_path, mocker):
     """Test loading config from old location suggests migration."""
     new_config_path = tmp_path / "new_config.yaml"

@@ -1617,10 +1617,15 @@ class TestFirmwareReleaseDownloader:
         with (
             patch("fetchtastic.download.firmware.logger.warning") as mock_warning,
             patch("fetchtastic.download.firmware.logger.debug") as mock_debug,
+            patch("fetchtastic.download.firmware.shutil.rmtree") as mock_rmtree,
         ):
             downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
 
         mock_warning.assert_not_called()
+        assert not any(
+            call.args and call.args[0] == mock_latest.path
+            for call in mock_rmtree.call_args_list
+        )
         debug_messages = [c[0][0] for c in mock_debug.call_args_list]
         assert not any(
             LATEST_POINTER_NAME in msg and "pointer" in msg.lower()
@@ -3888,7 +3893,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
             ),
             patch(
                 "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
-                return_value=(newer_dir, history_entries),
+                return_value=(older_dir, history_entries),
             ),
             patch(
                 "fetchtastic.download.firmware.PrereleaseHistoryManager.update_prerelease_tracking"
@@ -4595,6 +4600,7 @@ class TestPrereleaseAvailabilityVerification:
             latest_link.symlink_to(old_prerelease, target_is_directory=True)
         except (OSError, NotImplementedError):
             pytest.skip("Symlinks not supported on this platform")
+        original_target = latest_link.readlink()
 
         with (
             patch.object(
@@ -4611,6 +4617,8 @@ class TestPrereleaseAvailabilityVerification:
             LATEST_POINTER_NAME in str(call)
             for call in mock_logger.warning.call_args_list
         )
+        assert latest_link.is_symlink()
+        assert latest_link.readlink() == original_target
 
     # =========================================================================
     # Tests for summary/latest consistency (log_prerelease_summary chronology)

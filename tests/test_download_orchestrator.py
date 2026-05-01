@@ -957,6 +957,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         asset = Mock()
@@ -993,6 +994,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         asset = Mock()
@@ -1027,6 +1029,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         asset = Mock()
@@ -1076,6 +1079,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         asset = Mock()
@@ -1122,6 +1126,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         asset = Mock()
@@ -1158,6 +1163,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
@@ -1189,6 +1195,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         asset = Mock()
@@ -1244,6 +1251,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 2,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
@@ -1645,6 +1653,7 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 1,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         manifest = Mock()
@@ -1681,6 +1690,7 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 1,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         release = Release(tag_name="v2.0.0", prerelease=False, assets=[])
@@ -1717,6 +1727,7 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         manifest = Mock()
@@ -1759,6 +1770,7 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 1,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         manifest = Mock()
@@ -1948,6 +1960,7 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         payload = Mock()
@@ -1993,6 +2006,7 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         payload = Mock()
@@ -4403,7 +4417,7 @@ class TestDownloadOrchestrator:
             "SAVE_APKS": False,
             "SAVE_FIRMWARE": True,
             "CHECK_FIRMWARE_PRERELEASES": False,
-            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631", "tbeam"],
             "EXCLUDE_PATTERNS": [],
             "GITHUB_TOKEN": "test_token",
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
@@ -4413,10 +4427,20 @@ class TestDownloadOrchestrator:
             "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
-        payload = Mock()
-        payload.name = "firmware-rak4631.zip"
-        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[payload])
-        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
+        payload_rak = Mock()
+        payload_rak.name = "firmware-rak4631.zip"
+        payload_tbeam = Mock()
+        payload_tbeam.name = "firmware-tbeam.zip"
+        newer = Release(
+            tag_name="v2.0.0",
+            prerelease=False,
+            assets=[payload_rak, payload_tbeam],
+        )
+        older = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            assets=[payload_rak, payload_tbeam],
+        )
         orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
         orch.firmware_downloader.is_release_complete = Mock(return_value=False)
         orch.firmware_downloader.should_download_release = Mock(return_value=True)
@@ -4429,9 +4453,9 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
         orch.firmware_downloader.download_manifests = Mock(return_value=[])
 
-        def _download_firmware_side_effect(release, _asset):
+        def _download_firmware_side_effect(release, asset):
             result = Mock(spec=DownloadResult)
-            result.success = release is older
+            result.success = release is older or asset is payload_rak
             result.was_skipped = False
             return result
 

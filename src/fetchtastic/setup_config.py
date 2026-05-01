@@ -329,7 +329,8 @@ def _normalize_latest_symlink_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def _get_config_download_dir(config: Dict[str, Any]) -> str:
     """Return the canonical download directory, falling back to legacy BASE_DIR."""
-    return str(config.get("DOWNLOAD_DIR") or config.get("BASE_DIR") or DEFAULT_BASE_DIR)
+    raw = str(config.get("DOWNLOAD_DIR") or config.get("BASE_DIR") or DEFAULT_BASE_DIR)
+    return os.path.expanduser(raw)
 
 
 def _store_download_dir_config(config: Dict[str, Any], directory: str) -> None:
