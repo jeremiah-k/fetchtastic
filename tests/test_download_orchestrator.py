@@ -1155,9 +1155,7 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
 
         with (
-            patch.object(
-                orch, "_download_firmware_release", return_value=True
-            ) as mock_dl,
+            patch.object(orch, "_download_firmware_release", return_value=True),
             patch.object(
                 orch.firmware_downloader,
                 "update_latest_pointer_for_release",
@@ -1205,7 +1203,7 @@ class TestDownloadOrchestrator:
                 orch,
                 "_download_firmware_release",
                 side_effect=_download_firmware_side_effect,
-            ) as mock_dl,
+            ),
             patch.object(
                 orch.firmware_downloader,
                 "update_latest_pointer_for_release",
@@ -3578,7 +3576,7 @@ class TestDownloadOrchestrator:
                 orch,
                 "_download_firmware_release",
                 side_effect=_download_firmware_side_effect,
-            ) as mock_dl,
+            ),
             patch.object(
                 orch.firmware_downloader,
                 "update_latest_pointer_for_release",
