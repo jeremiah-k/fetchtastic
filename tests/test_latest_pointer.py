@@ -55,16 +55,17 @@ def test_update_latest_pointer_replaces_existing_symlink_without_following(
 ):
     if not symlinks_supported:
         pytest.skip("os.symlink not supported on this platform")
-    old_target = tmp_path / "v2.6.0"
-    new_target = tmp_path / "v2.7.0"
-    outside = tmp_path.parent / "outside-latest-target"
-    old_target.mkdir()
-    new_target.mkdir()
+    managed = tmp_path / "managed"
+    old_target = managed / "v2.6.0"
+    new_target = managed / "v2.7.0"
+    outside = tmp_path / "outside-target"
+    old_target.mkdir(parents=True)
+    new_target.mkdir(parents=True)
     outside.mkdir(exist_ok=True)
-    latest = tmp_path / LATEST_POINTER_NAME
+    latest = managed / LATEST_POINTER_NAME
     latest.symlink_to(outside)
 
-    result = update_latest_pointer(tmp_path, new_target.name)
+    result = update_latest_pointer(managed, new_target.name)
 
     assert result is True
     assert latest.is_symlink()
@@ -98,7 +99,9 @@ def test_update_latest_pointer_rejects_symlink_parent_before_mutation(
     symlink_parent.symlink_to(real_parent, target_is_directory=True)
 
     with (
-        patch("os.symlink", wraps=os.symlink) as mock_symlink,
+        patch(
+            "fetchtastic.download.latest_pointer.os.symlink", wraps=os.symlink
+        ) as mock_symlink,
         patch(
             "fetchtastic.download.latest_pointer._is_valid_latest_target"
         ) as mock_target_check,
@@ -124,7 +127,9 @@ def test_update_latest_pointer_rejects_symlink_ancestor_before_mutation(
     parent = symlink_ancestor / "downloads"
 
     with (
-        patch("os.symlink", wraps=os.symlink) as mock_symlink,
+        patch(
+            "fetchtastic.download.latest_pointer.os.symlink", wraps=os.symlink
+        ) as mock_symlink,
         patch(
             "fetchtastic.download.latest_pointer._is_valid_latest_target"
         ) as mock_target_check,
@@ -224,7 +229,9 @@ def test_update_latest_pointer_calls_symlink_with_target_is_directory_for_dir_ta
     target = tmp_path / "v2.7.0"
     target.mkdir()
 
-    with patch("os.symlink", wraps=os.symlink) as mock_symlink:
+    with patch(
+        "fetchtastic.download.latest_pointer.os.symlink", wraps=os.symlink
+    ) as mock_symlink:
         update_latest_pointer(tmp_path, target.name)
 
     mock_symlink.assert_called()

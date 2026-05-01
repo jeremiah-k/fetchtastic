@@ -2089,17 +2089,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if latest_successful_dir and self.config.get(
             "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
         ):
-            try:
-                update_latest_pointer(
-                    prerelease_base_dir,
-                    latest_successful_dir,
-                    LATEST_POINTER_NAME,
-                )
-            except Exception as exc:
+            if not update_latest_pointer(
+                prerelease_base_dir,
+                latest_successful_dir,
+                LATEST_POINTER_NAME,
+            ):
                 logger.debug(
-                    "Skipping firmware prerelease latest pointer for %s: %s",
+                    "Skipping firmware prerelease latest pointer for %s",
                     latest_successful_dir,
-                    exc,
                 )
 
         # Consolidate skipped messages

@@ -42,7 +42,7 @@ def update_latest_pointer(
         )
         return False
     for ancestor in parent.parents:
-        if ancestor.exists() and ancestor.is_symlink():
+        if ancestor.is_symlink():
             logger.debug(
                 "Skipping latest pointer because ancestor is symlinked: %s",
                 ancestor,
@@ -117,7 +117,7 @@ def remove_latest_pointer(
         )
         return False
     for ancestor in parent.parents:
-        if ancestor.exists() and ancestor.is_symlink():
+        if ancestor.is_symlink():
             logger.debug(
                 "Skipping latest pointer removal because ancestor is symlinked: %s",
                 ancestor,

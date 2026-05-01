@@ -435,7 +435,7 @@ class DownloadOrchestrator:
             latest_successful_stable = self._select_latest_successful_release(
                 successful_stable_releases
             )
-            if latest_successful_stable is not None and update_pointer is not None:
+            if latest_successful_stable is not None and callable(update_pointer):
                 update_pointer(latest_successful_stable)
 
             logger.info("Checking for client app prereleases...")
@@ -514,7 +514,7 @@ class DownloadOrchestrator:
             latest_successful_prerelease = self._select_latest_successful_release(
                 successful_prereleases
             )
-            if latest_successful_prerelease is not None and update_pointer is not None:
+            if latest_successful_prerelease is not None and callable(update_pointer):
                 update_pointer(latest_successful_prerelease)
 
             if (
@@ -814,7 +814,8 @@ class DownloadOrchestrator:
                     self.firmware_downloader.ensure_release_notes(release)
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
-                        successful_firmware_releases.append(release)
+                        if self._has_selected_non_manifest_firmware_asset(release):
+                            successful_firmware_releases.append(release)
 
             update_pointer = getattr(
                 self.firmware_downloader,
@@ -824,7 +825,7 @@ class DownloadOrchestrator:
             latest_successful_firmware = self._select_latest_successful_release(
                 successful_firmware_releases
             )
-            if latest_successful_firmware is not None and update_pointer is not None:
+            if latest_successful_firmware is not None and callable(update_pointer):
                 update_pointer(latest_successful_firmware)
 
             if latest_release:
@@ -1120,6 +1121,26 @@ class DownloadOrchestrator:
             asset_name_lower.startswith(FIRMWARE_DIR_PREFIX)
             and asset_name_lower.endswith(".json")
             and not asset_name_lower.endswith(FIRMWARE_MANIFEST_EXTENSION)
+        )
+
+    def _has_selected_non_manifest_firmware_asset(self, release: Release) -> bool:
+        """Check whether a firmware release has at least one selected non-manifest asset.
+
+        Releases with no assets at all are considered to have no payload (no
+        manifest-only disqualification applies). Only releases with assets that
+        are ALL manifest-type are excluded from latest eligibility.
+        """
+        assets = getattr(release, "assets", None) or []
+        if not assets:
+            return True
+        non_manifest = [
+            a for a in assets if a.name and not self._is_firmware_manifest_asset(a.name)
+        ]
+        if not non_manifest:
+            return False
+        return any(
+            self.firmware_downloader.should_download_release(release.tag_name, a.name)
+            for a in non_manifest
         )
 
     def _get_extraction_patterns(self) -> List[str]:
