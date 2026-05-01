@@ -335,9 +335,8 @@ def _get_config_download_dir(config: Dict[str, Any]) -> str:
 def _store_download_dir_config(config: Dict[str, Any], directory: str) -> None:
     """Write DOWNLOAD_DIR canonically while keeping legacy BASE_DIR in sync if present."""
     config["DOWNLOAD_DIR"] = directory
-    # Migration compatibility: preserve BASE_DIR only for configs that already use it.
-    if "BASE_DIR" in config:
-        config["BASE_DIR"] = directory
+    # Migration compatibility: always set BASE_DIR for backward compatibility
+    config["BASE_DIR"] = directory
 
 
 def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
