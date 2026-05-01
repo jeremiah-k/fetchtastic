@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests  # type: ignore[import-untyped]
+from packaging.version import Version
 
 from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.client_release_discovery import (
@@ -957,6 +958,11 @@ class DownloadOrchestrator:
         return max(releases, key=self._successful_release_sort_key)
 
     def _successful_release_sort_key(self, release: Release) -> tuple[Any, ...]:
+        try:
+            parsed_version = self.version_manager.normalize_version(release.tag_name)
+        except (AttributeError, TypeError, ValueError):
+            parsed_version = None
+
         release_tuple = self.version_manager.get_release_tuple(release.tag_name)
         version_parts: tuple[int, ...] = ()
         if isinstance(release_tuple, tuple) and all(
@@ -978,6 +984,14 @@ class DownloadOrchestrator:
         timestamp = timestamp_dt.timestamp() if timestamp_dt is not None else 0.0
         tag_name = str(release.tag_name or "")
         release_name = str(release.name or "")
+        if isinstance(parsed_version, Version):
+            return (
+                2,
+                parsed_version,
+                timestamp,
+                tag_name,
+                release_name,
+            )
         return (
             1 if version_parts else 0,
             *normalized_version,

@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from packaging.version import Version
 
 from fetchtastic.constants import FILE_TYPE_CLIENT_APP
 from fetchtastic.download.interfaces import DownloadResult, Release
@@ -1558,6 +1559,70 @@ class TestDownloadOrchestrator:
         )
 
         assert selected is parseable
+
+    def test_select_latest_successful_release_beta_10_beats_beta_2_without_timestamps(
+        self, orchestrator
+    ):
+        """Normalized prerelease versions order beta.10 after beta.2."""
+        beta_2 = Release(tag_name="v2.0.0-beta.2", prerelease=True)
+        beta_10 = Release(tag_name="v2.0.0-beta.10", prerelease=True)
+        orchestrator.version_manager.normalize_version.side_effect = lambda tag: {
+            "v2.0.0-beta.2": Version("2.0.0b2"),
+            "v2.0.0-beta.10": Version("2.0.0b10"),
+        }[tag]
+        orchestrator.version_manager.get_release_tuple.return_value = (2, 0, 0)
+
+        selected = orchestrator._select_latest_successful_release([beta_2, beta_10])
+
+        assert selected is beta_10
+
+    def test_select_latest_successful_release_rc_beats_beta(self, orchestrator):
+        """Normalized prerelease versions order rc after beta."""
+        beta = Release(tag_name="v2.0.0-beta.10", prerelease=True)
+        rc = Release(tag_name="v2.0.0-rc.1", prerelease=True)
+        orchestrator.version_manager.normalize_version.side_effect = lambda tag: {
+            "v2.0.0-beta.10": Version("2.0.0b10"),
+            "v2.0.0-rc.1": Version("2.0.0rc1"),
+        }[tag]
+        orchestrator.version_manager.get_release_tuple.return_value = (2, 0, 0)
+
+        selected = orchestrator._select_latest_successful_release([rc, beta])
+
+        assert selected is rc
+
+    def test_select_latest_successful_release_equal_normalized_uses_published_at(
+        self, orchestrator
+    ):
+        """Equal normalized versions still use timestamp tie breakers."""
+        older = Release(
+            tag_name="v2.0.0",
+            prerelease=False,
+            published_at="2025-01-01T00:00:00Z",
+        )
+        newer = Release(
+            tag_name="2.0.0",
+            prerelease=False,
+            published_at="2025-01-02T00:00:00Z",
+        )
+        orchestrator.version_manager.normalize_version.return_value = Version("2.0.0")
+        orchestrator.version_manager.get_release_tuple.return_value = (2, 0, 0)
+
+        selected = orchestrator._select_latest_successful_release([newer, older])
+
+        assert selected is newer
+
+    def test_select_latest_successful_release_unparsable_tags_are_deterministic(
+        self, orchestrator
+    ):
+        """Unparsable tags fall back to deterministic string ordering without crashing."""
+        lower = Release(tag_name=123, name=456, prerelease=False)
+        higher = Release(tag_name="nightly-z", name="release-z", prerelease=False)
+        orchestrator.version_manager.normalize_version.return_value = None
+        orchestrator.version_manager.get_release_tuple.return_value = None
+
+        selected = orchestrator._select_latest_successful_release([higher, lower])
+
+        assert selected is higher
 
     def test_select_latest_successful_release_equal_version_uses_published_at(
         self, orchestrator
