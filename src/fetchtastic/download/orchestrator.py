@@ -799,8 +799,14 @@ class DownloadOrchestrator:
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
-                    successful_firmware_releases.append(release)
                     self.firmware_downloader.ensure_release_notes(release)
+                    if self._has_selected_non_manifest_firmware_asset(release):
+                        successful_firmware_releases.append(release)
+                    else:
+                        logger.debug(
+                            "Skipping firmware release %s as latest candidate because no selected non-manifest firmware assets matched",
+                            release.tag_name,
+                        )
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -1126,15 +1132,17 @@ class DownloadOrchestrator:
     def _has_selected_non_manifest_firmware_asset(self, release: Release) -> bool:
         """Check whether a firmware release has at least one selected non-manifest asset.
 
-        Releases with no assets at all are considered to have no payload (no
-        manifest-only disqualification applies). Only releases with assets that
-        are ALL manifest-type are excluded from latest eligibility.
+        Releases with no assets or only manifest assets are excluded from latest
+        eligibility. A release qualifies only when at least one non-manifest
+        payload asset matches the configured firmware selection.
         """
         assets = getattr(release, "assets", None) or []
         if not assets:
-            return True
+            return False
         non_manifest = [
-            a for a in assets if a.name and not self._is_firmware_manifest_asset(a.name)
+            a
+            for a in assets
+            if getattr(a, "name", None) and not self._is_firmware_manifest_asset(a.name)
         ]
         if not non_manifest:
             return False

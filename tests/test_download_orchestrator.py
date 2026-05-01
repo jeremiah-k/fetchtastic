@@ -1425,10 +1425,13 @@ class TestDownloadOrchestrator:
             "FILTER_REVOKED_RELEASES": False,
         }
         orch = DownloadOrchestrator(config)
-        newer = Release(tag_name="v2.0.0", prerelease=False)
-        older = Release(tag_name="v1.0.0", prerelease=False)
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[payload])
+        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
         orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
         orch.firmware_downloader.is_release_complete = Mock(return_value=False)
+        orch.firmware_downloader.should_download_release = Mock(return_value=True)
         orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
             return_value=([], [], None, None)
         )
@@ -1464,10 +1467,13 @@ class TestDownloadOrchestrator:
             "FILTER_REVOKED_RELEASES": False,
         }
         orch = DownloadOrchestrator(config)
-        newer = Release(tag_name="v2.0.0", prerelease=False)
-        older = Release(tag_name="v1.0.0", prerelease=False)
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[payload])
+        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
         orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
         orch.firmware_downloader.is_release_complete = Mock(return_value=False)
+        orch.firmware_downloader.should_download_release = Mock(return_value=True)
         orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
             return_value=([], [], None, None)
         )
@@ -1512,10 +1518,13 @@ class TestDownloadOrchestrator:
             "FILTER_REVOKED_RELEASES": False,
         }
         orch = DownloadOrchestrator(config)
-        newer = Release(tag_name="v2.0.0", prerelease=False)
-        older = Release(tag_name="v1.0.0", prerelease=False)
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[payload])
+        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
         orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
         orch.firmware_downloader.is_release_complete = Mock(side_effect=[True, False])
+        orch.firmware_downloader.should_download_release = Mock(return_value=True)
         orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
             return_value=([], [], None, None)
         )
@@ -1534,6 +1543,161 @@ class TestDownloadOrchestrator:
 
         assert mock_pointer.call_count == 1
         mock_pointer.assert_called_once_with(newer)
+
+    def test_process_firmware_downloads_complete_manifest_only_not_latest(
+        self, tmp_path
+    ):
+        """Already-complete manifest-only firmware releases do not update latest."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+            "FIRMWARE_VERSIONS_TO_KEEP": 1,
+            "KEEP_LAST_BETA": False,
+            "FILTER_REVOKED_RELEASES": False,
+        }
+        orch = DownloadOrchestrator(config)
+        manifest = Mock()
+        manifest.name = "firmware-2.0.0.json"
+        release = Release(tag_name="v2.0.0", prerelease=False, assets=[manifest])
+        orch.firmware_downloader.get_releases = Mock(return_value=[release])
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            return_value=([release], [release], 8)
+        )
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+
+        with patch.object(
+            orch.firmware_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_firmware_downloads()
+
+        mock_pointer.assert_not_called()
+
+    def test_process_firmware_downloads_complete_no_assets_not_latest(self, tmp_path):
+        """Already-complete firmware releases with no assets do not update latest."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+            "FIRMWARE_VERSIONS_TO_KEEP": 1,
+            "KEEP_LAST_BETA": False,
+            "FILTER_REVOKED_RELEASES": False,
+        }
+        orch = DownloadOrchestrator(config)
+        release = Release(tag_name="v2.0.0", prerelease=False, assets=[])
+        orch.firmware_downloader.get_releases = Mock(return_value=[release])
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            return_value=([release], [release], 8)
+        )
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+
+        with patch.object(
+            orch.firmware_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_firmware_downloads()
+
+        mock_pointer.assert_not_called()
+
+    def test_process_firmware_downloads_older_payload_beats_newer_manifest_only(
+        self, tmp_path
+    ):
+        """Older complete payload release wins when newer complete release is manifest-only."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+            "FIRMWARE_VERSIONS_TO_KEEP": 2,
+            "KEEP_LAST_BETA": False,
+            "FILTER_REVOKED_RELEASES": False,
+        }
+        orch = DownloadOrchestrator(config)
+        manifest = Mock()
+        manifest.name = "firmware-2.0.0.json"
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[manifest])
+        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
+        orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.should_download_release = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            return_value=([newer, older], [newer, older], 8)
+        )
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+
+        with patch.object(
+            orch.firmware_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_firmware_downloads()
+
+        mock_pointer.assert_called_once_with(older)
+
+    def test_process_firmware_downloads_new_manifest_only_download_not_latest(
+        self, tmp_path
+    ):
+        """Newly downloaded manifest-only firmware releases do not update latest."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+            "FIRMWARE_VERSIONS_TO_KEEP": 1,
+            "KEEP_LAST_BETA": False,
+            "FILTER_REVOKED_RELEASES": False,
+        }
+        orch = DownloadOrchestrator(config)
+        manifest = Mock()
+        manifest.name = "firmware-2.0.0.json"
+        release = Release(tag_name="v2.0.0", prerelease=False, assets=[manifest])
+        orch.firmware_downloader.get_releases = Mock(return_value=[release])
+        orch.firmware_downloader.is_release_complete = Mock(return_value=False)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            return_value=([release], [release], 8)
+        )
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+
+        with (
+            patch.object(orch, "_download_firmware_release", return_value=True),
+            patch.object(
+                orch.firmware_downloader,
+                "update_latest_pointer_for_release",
+            ) as mock_pointer,
+        ):
+            orch._process_firmware_downloads()
+
+        mock_pointer.assert_not_called()
 
     def test_select_latest_successful_release_parseable_beats_unparsable_timestamp(
         self, orchestrator
@@ -1697,12 +1861,15 @@ class TestDownloadOrchestrator:
             "FILTER_REVOKED_RELEASES": False,
         }
         orch = DownloadOrchestrator(config)
-        newer = Release(tag_name="v2.0.0", prerelease=False)
-        older = Release(tag_name="v1.0.0", prerelease=False)
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[payload])
+        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
         orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
         orch.firmware_downloader.is_release_complete = Mock(
             side_effect=lambda release: release is older
         )
+        orch.firmware_downloader.should_download_release = Mock(return_value=True)
         orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
             return_value=([], [], None, None)
         )
@@ -1739,12 +1906,15 @@ class TestDownloadOrchestrator:
             "FILTER_REVOKED_RELEASES": False,
         }
         orch = DownloadOrchestrator(config)
-        older = Release(tag_name="v1.0.0", prerelease=False)
-        newer = Release(tag_name="v2.0.0", prerelease=False)
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
+        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[payload])
         orch.firmware_downloader.get_releases = Mock(return_value=[older, newer])
         orch.firmware_downloader.is_release_complete = Mock(
             side_effect=lambda release: release is newer
         )
+        orch.firmware_downloader.should_download_release = Mock(return_value=True)
         orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
             return_value=([], [], None, None)
         )
@@ -4066,10 +4236,13 @@ class TestDownloadOrchestrator:
             "FILTER_REVOKED_RELEASES": False,
         }
         orch = DownloadOrchestrator(config)
-        newer = Release(tag_name="v2.0.0", prerelease=False)
-        older = Release(tag_name="v1.0.0", prerelease=False)
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        newer = Release(tag_name="v2.0.0", prerelease=False, assets=[payload])
+        older = Release(tag_name="v1.0.0", prerelease=False, assets=[payload])
         orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
         orch.firmware_downloader.is_release_complete = Mock(return_value=False)
+        orch.firmware_downloader.should_download_release = Mock(return_value=True)
         orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
             return_value=([], [], None, None)
         )
