@@ -2156,10 +2156,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         ordering or VersionManager.get_release_tuple.
 
         Ranking (higher wins):
-          1. has_timestamp – entry carries an added_at value
-          2. timestamp – parsed added_at datetime
-          3. history_index – position in history_entries, or a repo-only sentinel
-          4. fallback_key – deterministic sort via _sort_prerelease_dirs
+          1. has_history – entry is present in history_entries (real beats synthetic)
+          2. has_timestamp – entry carries an added_at value
+          3. timestamp – parsed added_at datetime
+          4. history_index – position in history_entries, or a repo-only sentinel
+          5. fallback_key – deterministic sort via _sort_prerelease_dirs
 
         Deleted/removed entries and entries whose directory is not in
         candidate_dirs are excluded.
@@ -2203,11 +2204,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         for candidate in candidate_dirs:
             info = history_rank_by_dir.get(candidate)
+            has_history = info is not None
             timestamp = info.get("timestamp") if info is not None else None
             history_index = (
                 info["history_index"] if info is not None else repo_only_history_index
             )
             sort_key = (
+                1 if has_history else 0,
                 1 if timestamp is not None else 0,
                 timestamp or datetime.min.replace(tzinfo=timezone.utc),
                 history_index,
@@ -2287,17 +2290,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             summary["deleted"],
             summary["active"],
         )
-
-        active_commits = []
-        deleted_commits = []
-        for entry in history_entries:
-            identifier = entry.get("identifier")
-            if not identifier:
-                continue
-            if entry.get("status") == "active":
-                active_commits.append(f"[green]{identifier}[/green]")
-            else:
-                deleted_commits.append(f"[red][strike]{identifier}[/strike][/red]")
 
         active_candidate_dirs = [
             entry.get("directory")

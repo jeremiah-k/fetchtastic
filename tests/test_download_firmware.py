@@ -16,6 +16,7 @@ from fetchtastic import log_utils
 from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_MANIFEST,
     FIRMWARE_DIR_NAME,
+    FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
     LATEST_POINTER_NAME,
     RELEASE_SCAN_COUNT,
@@ -4532,10 +4533,10 @@ class TestPrereleaseAvailabilityVerification:
         )
         assert result == "firmware-2.7.23.7be5426"
 
-    def test_select_latest_prerelease_dir_repo_only_beats_untimestamped_history(
+    def test_select_latest_prerelease_dir_untimestamped_history_beats_repo_only(
         self, downloader, tmp_path
     ):
-        """Repo-only candidates can win when history has no timestamp to compare."""
+        """Untimestamped history-backed entries should beat repo-only synthetic entries."""
         downloader.download_dir = str(tmp_path)
         history_entries = [
             {
@@ -4551,7 +4552,29 @@ class TestPrereleaseAvailabilityVerification:
         result = downloader._select_latest_prerelease_dir(
             candidate_dirs, history_entries
         )
-        assert result == "firmware-2.7.24.aaaaaa"
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_repo_only_fallback_when_no_history(
+        self, downloader, tmp_path
+    ):
+        """When no history-backed candidates exist, repo-only entries use deterministic fallback."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "deleted",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        sorted_dirs = downloader._sort_prerelease_dirs(candidate_dirs)
+        assert result == sorted_dirs[-1]
 
     # =========================================================================
     # Tests for expected-symlink warning suppression in cleanup
@@ -4724,3 +4747,17 @@ class TestPrereleaseAvailabilityVerification:
         info_calls = [str(call) for call in mock_logger.info.call_args_list]
         latest_calls = [c for c in info_calls if "(latest)" in c]
         assert len(latest_calls) == 1
+
+        active_candidate_dirs = [
+            entry.get("directory")
+            for entry in history_entries
+            if isinstance(entry.get("directory"), str)
+            and (entry.get("status") == "active" or entry.get("active") is True)
+            and entry.get("status") != "deleted"
+            and not entry.get("removed_at")
+        ]
+        expected_latest_dir = downloader._select_latest_prerelease_dir(
+            active_candidate_dirs, history_entries
+        )
+        expected_identifier = expected_latest_dir.removeprefix(FIRMWARE_DIR_PREFIX)
+        assert any(expected_identifier in call for call in latest_calls)
