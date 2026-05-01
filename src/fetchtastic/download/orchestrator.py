@@ -458,6 +458,7 @@ class DownloadOrchestrator:
                             "Client app prerelease %s is retained and already tracked; no download needed",
                             prerelease.tag_name,
                         )
+                        successful_prereleases.append(prerelease)
                         continue
 
                 selected_assets = [

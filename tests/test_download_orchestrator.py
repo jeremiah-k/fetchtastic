@@ -1066,6 +1066,123 @@ class TestDownloadOrchestrator:
         )
         mock_pointer.assert_called_once_with(older)
 
+    def test_process_client_app_retained_complete_prerelease_repairs_latest(
+        self, tmp_path
+    ):
+        """A retained complete prerelease can repair the latest pointer."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "APP_VERSIONS_TO_KEEP": 2,
+        }
+        orch = DownloadOrchestrator(config)
+        stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        prerelease = Release(tag_name="v2.0.0-beta.1", prerelease=True, assets=[])
+        orch.client_app_downloader.get_releases = Mock(return_value=[stable])
+        orch.client_app_downloader.update_release_history = Mock(return_value={})
+        orch.client_app_downloader.handle_prereleases = Mock(return_value=[prerelease])
+        orch.client_app_downloader.should_download_prerelease = Mock(return_value=False)
+        orch.client_app_downloader.is_release_complete = Mock(return_value=True)
+        orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
+
+        with (
+            patch.object(
+                orch, "_client_app_download_asset", create=True
+            ) as mock_download_asset,
+            patch.object(
+                orch.client_app_downloader,
+                "update_latest_pointer_for_release",
+            ) as mock_pointer,
+        ):
+            orch._process_client_app_downloads()
+
+        mock_download_asset.assert_not_called()
+        orch.client_app_downloader.update_prerelease_tracking.assert_not_called()
+        mock_pointer.assert_called_once_with(prerelease)
+
+    def test_process_client_app_newer_retained_prerelease_beats_older_processed(
+        self, tmp_path
+    ):
+        """Retained complete prereleases participate in identity-based selection."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "APP_VERSIONS_TO_KEEP": 2,
+        }
+        orch = DownloadOrchestrator(config)
+        asset = Mock()
+        asset.name = "app.apk"
+        stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        older = Release(
+            tag_name="v2.0.0-beta.1",
+            prerelease=True,
+            published_at="2025-01-01T00:00:00Z",
+            assets=[asset],
+        )
+        newer = Release(
+            tag_name="v2.0.0-beta.2",
+            prerelease=True,
+            published_at="2025-01-02T00:00:00Z",
+            assets=[],
+        )
+        orch.client_app_downloader.get_releases = Mock(return_value=[stable])
+        orch.client_app_downloader.update_release_history = Mock(return_value={})
+        orch.client_app_downloader.handle_prereleases = Mock(
+            return_value=[older, newer]
+        )
+        orch.client_app_downloader.should_download_prerelease = Mock(
+            side_effect=lambda release_tag: release_tag == older.tag_name
+        )
+        orch.client_app_downloader.is_release_complete = Mock(return_value=True)
+        orch.client_app_downloader.get_assets = Mock(
+            side_effect=lambda release: release.assets
+        )
+        orch.client_app_downloader.should_download_asset = Mock(return_value=True)
+        orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.was_skipped = False
+        orch.client_app_downloader.download_app = Mock(return_value=result)
+
+        with patch.object(
+            orch.client_app_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_client_app_downloads()
+
+        orch.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
+            older.tag_name
+        )
+        mock_pointer.assert_called_once_with(newer)
+
+    def test_process_client_app_incomplete_retained_prerelease_does_not_qualify(
+        self, tmp_path
+    ):
+        """A retained prerelease only qualifies when it is complete locally."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "APP_VERSIONS_TO_KEEP": 2,
+        }
+        orch = DownloadOrchestrator(config)
+        stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        prerelease = Release(tag_name="v2.0.0-beta.1", prerelease=True, assets=[])
+        orch.client_app_downloader.get_releases = Mock(return_value=[stable])
+        orch.client_app_downloader.update_release_history = Mock(return_value={})
+        orch.client_app_downloader.handle_prereleases = Mock(return_value=[prerelease])
+        orch.client_app_downloader.should_download_prerelease = Mock(return_value=False)
+        orch.client_app_downloader.is_release_complete = Mock(return_value=False)
+        orch.client_app_downloader.get_assets = Mock(return_value=[])
+        orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
+
+        with patch.object(
+            orch.client_app_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_client_app_downloads()
+
+        mock_pointer.assert_not_called()
+
     def test_download_client_app_release_skipped(self, orchestrator):
         """Test client app release download when skipped (clean skip remains eligible)."""
         release = Mock(spec=Release)

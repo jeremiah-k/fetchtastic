@@ -2041,6 +2041,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         failures: list[DownloadResult] = []
         any_downloaded = False
         downloaded_dirs: list[str] = []
+        successful_dirs: list[str] = []
         for active_dir in active_dirs:
             (
                 prerelease_successes,
@@ -2054,6 +2055,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
             successes.extend(prerelease_successes)
             failures.extend(prerelease_failures)
+            if (
+                prerelease_successes
+                and not prerelease_failures
+                and all(result.success for result in prerelease_successes)
+            ):
+                successful_dirs.append(active_dir)
             if prerelease_downloaded:
                 any_downloaded = True
                 downloaded_dirs.append(active_dir)
@@ -2076,19 +2083,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_manager.update_prerelease_tracking(
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
             )
-        if dirs_to_track and self.config.get(
+        latest_successful_dir = (
+            self._sort_prerelease_dirs(successful_dirs)[-1] if successful_dirs else None
+        )
+        if latest_successful_dir and self.config.get(
             "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
         ):
             try:
                 update_latest_pointer(
                     prerelease_base_dir,
-                    dirs_to_track[-1],
+                    latest_successful_dir,
                     LATEST_POINTER_NAME,
                 )
             except Exception as exc:
                 logger.debug(
                     "Skipping firmware prerelease latest pointer for %s: %s",
-                    dirs_to_track[-1],
+                    latest_successful_dir,
                     exc,
                 )
 

@@ -165,6 +165,47 @@ def test_remove_latest_pointer_removes_managed_symlink_and_leaves_target(
     assert target.exists()
 
 
+def test_remove_latest_pointer_rejects_symlink_parent_without_unlinking_external(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    real_parent = tmp_path / "real"
+    symlink_parent = tmp_path / "linked"
+    target = real_parent / "v2.7.0"
+    real_parent.mkdir()
+    target.mkdir()
+    external_latest = real_parent / LATEST_POINTER_NAME
+    external_latest.symlink_to(target.name)
+    symlink_parent.symlink_to(real_parent, target_is_directory=True)
+
+    result = remove_latest_pointer(symlink_parent)
+
+    assert result is False
+    assert external_latest.is_symlink()
+
+
+def test_remove_latest_pointer_rejects_symlink_ancestor_without_unlinking_external(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    real_ancestor = tmp_path / "real"
+    symlink_ancestor = tmp_path / "linked"
+    real_parent = real_ancestor / "downloads"
+    target = real_parent / "v2.7.0"
+    real_parent.mkdir(parents=True)
+    target.mkdir()
+    external_latest = real_parent / LATEST_POINTER_NAME
+    external_latest.symlink_to(target.name)
+    symlink_ancestor.symlink_to(real_ancestor, target_is_directory=True)
+
+    result = remove_latest_pointer(symlink_ancestor / "downloads")
+
+    assert result is False
+    assert external_latest.is_symlink()
+
+
 def test_remove_latest_pointer_refuses_to_remove_regular_file(tmp_path):
     target = tmp_path / "v2.7.0"
     target.mkdir()

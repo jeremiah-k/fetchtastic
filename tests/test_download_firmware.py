@@ -16,12 +16,13 @@ from fetchtastic import log_utils
 from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_MANIFEST,
     FIRMWARE_DIR_NAME,
+    FIRMWARE_PRERELEASES_DIR_NAME,
     LATEST_POINTER_NAME,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.version import VersionManager
 
 
@@ -3889,7 +3890,133 @@ class TestFirmwarePrereleaseBaselineDerivation:
         assert mock_track.call_count == 1
         assert mock_track.call_args.args[1] == success_dir
 
+    def test_download_repo_prerelease_latest_uses_successful_dir_despite_older_failure(
+        self, downloader, tmp_path
+    ):
+        """A newer skipped/successful prerelease can update latest even when tracking is empty."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = True
+        downloader.download_dir = str(tmp_path)
 
+        older_dir = "firmware-2.7.23.aaaaaa"
+        newer_dir = "firmware-2.7.23.bbbbbb"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": older_dir, "status": "active"},
+            {"identifier": "bbbbbb", "directory": newer_dir, "status": "active"},
+        ]
+        skipped_success = DownloadResult(success=True, was_skipped=True)
+        failure = DownloadResult(success=False)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[older_dir, newer_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                side_effect=[
+                    ([], [failure], False),
+                    ([skipped_success], [], False),
+                ],
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(newer_dir, history_entries),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.update_prerelease_tracking"
+            ) as mock_track,
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_track.assert_not_called()
+        mock_latest.assert_called_once_with(
+            str(tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME),
+            newer_dir,
+            LATEST_POINTER_NAME,
+        )
+
+    def test_download_repo_prerelease_latest_uses_newest_successful_dir(
+        self, downloader, tmp_path
+    ):
+        """Latest pointer chooses the newest successful prerelease dir deterministically."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = True
+        downloader.download_dir = str(tmp_path)
+
+        older_dir = "firmware-2.7.23.aaaaaa"
+        newer_dir = "firmware-2.7.23.bbbbbb"
+        history_entries = [
+            {"identifier": "bbbbbb", "directory": newer_dir, "status": "active"},
+            {"identifier": "aaaaaa", "directory": older_dir, "status": "active"},
+        ]
+        success = DownloadResult(success=True)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[older_dir, newer_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(newer_dir, history_entries),
+            ),
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_latest.assert_called_once_with(
+            str(tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME),
+            newer_dir,
+            LATEST_POINTER_NAME,
+        )
+
+    def test_download_repo_prerelease_latest_not_updated_without_successful_dir(
+        self, downloader, tmp_path
+    ):
+        """No successful prerelease result means no latest pointer update."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": active_dir, "status": "active"}
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_latest.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
 class TestPrereleaseAvailabilityVerification:
     """Tests for prerelease repo availability verification (force_refresh and fallback reuse)."""
 

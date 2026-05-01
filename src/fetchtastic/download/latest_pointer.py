@@ -109,7 +109,21 @@ def remove_latest_pointer(
     safe_link = _sanitize_path_component(link_name)
     if safe_link is None or safe_link != link_name:
         return False
-    link_path = Path(parent_dir) / link_name
+    parent = Path(parent_dir)
+    if parent.is_symlink():
+        logger.debug(
+            "Skipping latest pointer removal because parent dir is symlinked: %s",
+            parent,
+        )
+        return False
+    for ancestor in parent.parents:
+        if ancestor.exists() and ancestor.is_symlink():
+            logger.debug(
+                "Skipping latest pointer removal because ancestor is symlinked: %s",
+                ancestor,
+            )
+            return False
+    link_path = parent / link_name
     try:
         if link_path.is_symlink():
             link_path.unlink()
