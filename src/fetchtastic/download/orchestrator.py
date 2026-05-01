@@ -54,7 +54,7 @@ from fetchtastic.setup_config import is_termux
 from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .client_app import (
     MeshtasticClientAppDownloader,
     _is_apk_prerelease_by_name,
@@ -406,13 +406,12 @@ class DownloadOrchestrator:
                 releases_to_process, self.client_app_downloader.is_release_complete
             )
             releases_to_download = []
-            newest_successful_stable: Release | None = None
+            successful_stable_releases: list[Release] = []
             for release, is_complete in zip(
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
-                    if newest_successful_stable is None:
-                        newest_successful_stable = release
+                    successful_stable_releases.append(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -425,16 +424,18 @@ class DownloadOrchestrator:
                     logger.info(f"Downloading client app release {release.tag_name}")
                     if self._download_client_app_release(release):
                         any_app_downloaded = True
-                        if newest_successful_stable is None:
-                            newest_successful_stable = release
+                        successful_stable_releases.append(release)
 
             update_pointer = getattr(
                 self.client_app_downloader,
                 "update_latest_pointer_for_release",
                 None,
             )
-            if newest_successful_stable is not None and update_pointer is not None:
-                update_pointer(newest_successful_stable)
+            latest_successful_stable = self._select_latest_successful_release(
+                successful_stable_releases
+            )
+            if latest_successful_stable is not None and update_pointer is not None:
+                update_pointer(latest_successful_stable)
 
             logger.info("Checking for client app prereleases...")
             prereleases = self.client_app_downloader.handle_prereleases(app_releases)
@@ -789,13 +790,12 @@ class DownloadOrchestrator:
                 releases_to_process, self.firmware_downloader.is_release_complete
             )
             releases_to_download = []
-            newest_successful_firmware: Release | None = None
+            successful_firmware_releases: list[Release] = []
             for release, is_complete in zip(
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
-                    if newest_successful_firmware is None:
-                        newest_successful_firmware = release
+                    successful_firmware_releases.append(release)
                     self.firmware_downloader.ensure_release_notes(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
@@ -810,16 +810,18 @@ class DownloadOrchestrator:
                     self.firmware_downloader.ensure_release_notes(release)
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
-                        if newest_successful_firmware is None:
-                            newest_successful_firmware = release
+                        successful_firmware_releases.append(release)
 
             update_pointer = getattr(
                 self.firmware_downloader,
                 "update_latest_pointer_for_release",
                 None,
             )
-            if newest_successful_firmware is not None and update_pointer is not None:
-                update_pointer(newest_successful_firmware)
+            latest_successful_firmware = self._select_latest_successful_release(
+                successful_firmware_releases
+            )
+            if latest_successful_firmware is not None and update_pointer is not None:
+                update_pointer(latest_successful_firmware)
 
             if latest_release:
                 (
@@ -934,6 +936,51 @@ class DownloadOrchestrator:
 
         return (
             best_release or best_revoked_release or (releases[0] if releases else None)
+        )
+
+    def _select_latest_successful_release(
+        self, releases: List[Release]
+    ) -> Optional[Release]:
+        """
+        Select the latest completed release by release identity.
+
+        Completed releases can be a mix of already-present releases and releases
+        downloaded during this run. The latest pointer must be based on version
+        and release metadata, not the order in which those outcomes were found.
+        """
+        if not releases:
+            return None
+
+        return max(releases, key=self._successful_release_sort_key)
+
+    def _successful_release_sort_key(self, release: Release) -> tuple[Any, ...]:
+        release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+        version_parts: tuple[int, ...] = ()
+        if isinstance(release_tuple, tuple) and all(
+            isinstance(part, int) for part in release_tuple
+        ):
+            version_parts = release_tuple
+        elif isinstance(release_tuple, list) and all(
+            isinstance(part, int) for part in release_tuple
+        ):
+            version_parts = tuple(release_tuple)
+
+        max_components = 8
+        normalized_version = version_parts[:max_components] + (0,) * (
+            max_components - len(version_parts[:max_components])
+        )
+        published_dt = parse_iso_datetime_utc(getattr(release, "published_at", None))
+        created_dt = parse_iso_datetime_utc(getattr(release, "created_at", None))
+        timestamp_dt = published_dt or created_dt
+        timestamp = timestamp_dt.timestamp() if timestamp_dt is not None else 0.0
+        tag_name = release.tag_name or ""
+        release_name = release.name or ""
+        return (
+            1 if version_parts else 0,
+            *normalized_version,
+            timestamp,
+            tag_name,
+            release_name,
         )
 
     def _download_client_app_release(self, release: Release) -> bool:
