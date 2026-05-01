@@ -2172,10 +2172,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not candidate_dirs:
             return None
 
+        deleted_dirs = self._get_deleted_prerelease_dirs_from_history(history_entries)
         history_rank_by_dir: dict[str, dict[str, Any]] = {}
         for idx, entry in enumerate(history_entries):
             directory = entry.get("directory")
             if not isinstance(directory, str):
+                continue
+            if directory in deleted_dirs:
                 continue
             is_deleted = entry.get("status") == "deleted" or bool(
                 entry.get("removed_at")
@@ -2203,6 +2206,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
         repo_only_history_index = len(history_entries) + len(candidate_dirs) + 1
 
         for candidate in candidate_dirs:
+            if candidate in deleted_dirs:
+                continue
             info = history_rank_by_dir.get(candidate)
             has_history = info is not None
             timestamp = info.get("timestamp") if info is not None else None
@@ -2291,10 +2296,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
             summary["active"],
         )
 
+        deleted_dirs = self._get_deleted_prerelease_dirs_from_history(history_entries)
         active_candidate_dirs = [
             entry.get("directory")
             for entry in history_entries
             if isinstance(entry.get("directory"), str)
+            and entry.get("directory") not in deleted_dirs
             and (entry.get("status") == "active" or entry.get("active") is True)
             and entry.get("status") != "deleted"
             and not entry.get("removed_at")

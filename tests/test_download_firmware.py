@@ -4427,6 +4427,99 @@ class TestPrereleaseAvailabilityVerification:
         )
         assert result == "firmware-2.7.23.7be5426"
 
+    def test_select_latest_prerelease_dir_active_then_deleted_excludes_directory(
+        self, downloader, tmp_path
+    ):
+        """A directory later marked deleted should not remain eligible via an older active row."""
+        downloader.download_dir = str(tmp_path)
+        stale_dir = "firmware-2.7.23.abc123"
+        valid_dir = "firmware-2.7.23.def456"
+        history_entries = [
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "deleted",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+            {
+                "directory": valid_dir,
+                "identifier": "2.7.23.def456",
+                "status": "active",
+                "added_at": "2026-04-28T00:00:00Z",
+            },
+        ]
+
+        result = downloader._select_latest_prerelease_dir(
+            [stale_dir, valid_dir], history_entries
+        )
+
+        assert result == valid_dir
+
+    def test_select_latest_prerelease_dir_only_later_deleted_returns_none(
+        self, downloader, tmp_path
+    ):
+        """A candidate with any later deleted row should not fall back to repo-only ranking."""
+        downloader.download_dir = str(tmp_path)
+        stale_dir = "firmware-2.7.23.abc123"
+        history_entries = [
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "deleted",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+        ]
+
+        result = downloader._select_latest_prerelease_dir([stale_dir], history_entries)
+
+        assert result is None
+
+    def test_select_latest_prerelease_dir_removed_at_excludes_stale_active(
+        self, downloader, tmp_path
+    ):
+        """A later removed_at row should exclude older active rows for the same directory."""
+        downloader.download_dir = str(tmp_path)
+        stale_dir = "firmware-2.7.23.abc123"
+        valid_dir = "firmware-2.7.23.def456"
+        history_entries = [
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+            {
+                "directory": valid_dir,
+                "identifier": "2.7.23.def456",
+                "status": "active",
+                "added_at": "2026-04-28T00:00:00Z",
+            },
+        ]
+
+        result = downloader._select_latest_prerelease_dir(
+            [stale_dir, valid_dir], history_entries
+        )
+
+        assert result == valid_dir
+
     def test_select_latest_prerelease_dir_repo_scan_does_not_outrank_history(
         self, downloader, tmp_path
     ):
@@ -4732,6 +4825,40 @@ class TestPrereleaseAvailabilityVerification:
         latest_calls = [c for c in info_calls if "(latest)" in c]
         assert len(latest_calls) == 1
         assert "2.7.23.7be5426" in latest_calls[0]
+
+    def test_log_prerelease_summary_active_then_deleted_not_latest(
+        self, downloader, tmp_path
+    ):
+        """Summary latest marker should ignore active rows for later-deleted directories."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.abc123",
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.abc123",
+                "identifier": "2.7.23.abc123",
+                "status": "deleted",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.def456",
+                "identifier": "2.7.23.def456",
+                "status": "active",
+                "added_at": "2026-04-28T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.def456" in latest_calls[0]
+        assert "2.7.23.abc123" not in latest_calls[0]
 
     def test_log_prerelease_summary_only_repo_scan_synthetic_entries(
         self, downloader, tmp_path

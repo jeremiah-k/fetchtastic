@@ -2269,9 +2269,6 @@ def run_setup(
             # For non-Termux environments, remove WIFI_ONLY from config if it exists
             config.pop("WIFI_ONLY", None)
 
-    # Store canonical DOWNLOAD_DIR and mirror to legacy BASE_DIR for backward compatibility.
-    _store_download_dir_config(config, BASE_DIR)
-
     # Record the version at which setup was last run
     try:
         current_version = version("fetchtastic")
