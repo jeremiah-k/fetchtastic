@@ -665,6 +665,28 @@ def test_load_config_new_location(tmp_path, mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_load_config_prefers_download_dir_over_legacy_base_dir(tmp_path, mocker):
+    """DOWNLOAD_DIR is canonical when both it and legacy BASE_DIR are present."""
+    config_path = tmp_path / "fetchtastic.yaml"
+    old_config_path = tmp_path / "old_fetchtastic.yaml"
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
+
+    config_data = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "BASE_DIR": str(tmp_path / "legacy"),
+    }
+    with open(config_path, "w") as f:
+        yaml.safe_dump(config_data, f)
+
+    config = setup_config.load_config()
+
+    assert config is not None
+    assert setup_config.BASE_DIR == config_data["DOWNLOAD_DIR"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_load_config_old_location_suggests_migration(tmp_path, mocker):
     """Test loading config from old location suggests migration."""
     new_config_path = tmp_path / "new_config.yaml"

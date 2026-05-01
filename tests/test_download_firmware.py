@@ -2934,7 +2934,6 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        # After deterministic sorting, newest by dir string tiebreaker
         assert result[2] == "firmware-2.7.23.7be5426"
         assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
@@ -2982,8 +2981,8 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        # After deterministic sorting, newest by dir string tiebreaker
-        assert result[2] == "firmware-2.7.23.7be5426"
+        # Repo-only candidates can become latest when history has no timestamp.
+        assert result[2] == "firmware-2.7.23.2a858be"
         assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
             "firmware-2.7.23.7be5426",
@@ -4304,7 +4303,7 @@ class TestPrereleaseAvailabilityVerification:
                 return_value=([success_result], [], False),
             ),
         ):
-            successes, failures, active_dir, summary = (
+            _successes, _failures, active_dir, _summary = (
                 downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
             )
         assert active_dir == "firmware-2.7.23.4ee9598"
@@ -4514,7 +4513,7 @@ class TestPrereleaseAvailabilityVerification:
     def test_select_latest_prerelease_dir_mixed_history_and_no_history(
         self, downloader, tmp_path
     ):
-        """History-backed candidate beats non-history candidate even if non-history sorts higher."""
+        """Timestamped history beats a repo-only candidate without commit chronology."""
         downloader.download_dir = str(tmp_path)
         history_entries = [
             {
@@ -4533,6 +4532,27 @@ class TestPrereleaseAvailabilityVerification:
         )
         assert result == "firmware-2.7.23.7be5426"
 
+    def test_select_latest_prerelease_dir_repo_only_beats_untimestamped_history(
+        self, downloader, tmp_path
+    ):
+        """Repo-only candidates can win when history has no timestamp to compare."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.24.aaaaaa"
+
     # =========================================================================
     # Tests for expected-symlink warning suppression in cleanup
     # =========================================================================
@@ -4550,17 +4570,18 @@ class TestPrereleaseAvailabilityVerification:
         latest_link = prerelease_dir / LATEST_POINTER_NAME
         latest_link.symlink_to(old_prerelease)
 
-        with patch.object(
-            downloader,
-            "_get_release_storage_tag",
-            return_value="v2.7.22",
-            create=True,
+        with (
+            patch.object(
+                downloader,
+                "_get_release_storage_tag",
+                return_value="v2.7.22",
+                create=True,
+            ),
+            patch.object(log_utils, "logger") as mock_logger,
         ):
-            with patch.object(log_utils, "logger") as mock_logger:
-                downloader.cleanup_superseded_prereleases("v2.7.22")
+            downloader.cleanup_superseded_prereleases("v2.7.22")
 
-        warning_calls = [call for call in mock_logger.warning.call_args_list]
-        for call in warning_calls:
+        for call in mock_logger.warning.call_args_list:
             assert (
                 LATEST_POINTER_NAME not in str(call) or "expected" in str(call).lower()
             )

@@ -498,6 +498,7 @@ class TestDownloadOrchestrator:
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
             "APP_VERSIONS_TO_KEEP": 1,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         release = Release(tag_name="v1.0.0", prerelease=False)
@@ -1502,6 +1503,8 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "AUTO_EXTRACT": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         payload = Mock()
@@ -1544,6 +1547,8 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "AUTO_EXTRACT": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         payload = Mock()
@@ -1595,6 +1600,8 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "AUTO_EXTRACT": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         payload = Mock()
@@ -4402,6 +4409,8 @@ class TestDownloadOrchestrator:
             "FIRMWARE_VERSIONS_TO_KEEP": 2,
             "KEEP_LAST_BETA": False,
             "FILTER_REVOKED_RELEASES": False,
+            "AUTO_EXTRACT": False,
+            "CREATE_LATEST_SYMLINKS": True,
         }
         orch = DownloadOrchestrator(config)
         payload = Mock()
@@ -4418,23 +4427,23 @@ class TestDownloadOrchestrator:
             return_value=([newer, older], [newer, older], 8)
         )
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.firmware_downloader.download_manifests = Mock(return_value=[])
 
-        side_effects = {id(newer): False, id(older): True}
+        def _download_firmware_side_effect(release, _asset):
+            result = Mock(spec=DownloadResult)
+            result.success = release is older
+            result.was_skipped = False
+            return result
 
-        def _download_firmware_side_effect(release):
-            return side_effects.get(id(release), False)
+        orch.firmware_downloader.download_firmware = Mock(
+            side_effect=_download_firmware_side_effect
+        )
+        orch._handle_download_result = Mock()
 
-        with (
-            patch.object(
-                orch,
-                "_download_firmware_release",
-                side_effect=_download_firmware_side_effect,
-            ),
-            patch.object(
-                orch.firmware_downloader,
-                "update_latest_pointer_for_release",
-            ) as mock_pointer,
-        ):
+        with patch.object(
+            orch.firmware_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
             orch._process_firmware_downloads()
 
         # newest_successful should be older (newer partially failed)

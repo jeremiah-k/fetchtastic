@@ -2156,11 +2156,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
         ordering or VersionManager.get_release_tuple.
 
         Ranking (higher wins):
-          1. has_history – entry present in history_entries as active
-          2. has_timestamp – entry carries an added_at value
-          3. timestamp – parsed added_at datetime
-          4. history_index – position in history_entries (oldest→newest)
-          5. fallback_key – deterministic sort via _sort_prerelease_dirs
+          1. has_timestamp – entry carries an added_at value
+          2. timestamp – parsed added_at datetime
+          3. history_index – position in history_entries, or a repo-only sentinel
+          4. fallback_key – deterministic sort via _sort_prerelease_dirs
 
         Deleted/removed entries and entries whose directory is not in
         candidate_dirs are excluded.
@@ -2190,7 +2189,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             timestamp = parse_iso_datetime_utc(added_at_raw) if added_at_raw else None
 
             history_rank_by_dir[directory] = {
-                "has_history": True,
                 "has_timestamp": timestamp is not None,
                 "timestamp": timestamp,
                 "history_index": idx,
@@ -2201,25 +2199,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         best_dir: Optional[str] = None
         best_key: Optional[tuple] = None
+        repo_only_history_index = len(history_entries) + len(candidate_dirs) + 1
 
         for candidate in candidate_dirs:
             info = history_rank_by_dir.get(candidate)
-            if info is not None:
-                sort_key = (
-                    1,  # has_history
-                    1 if info["has_timestamp"] else 0,
-                    info["timestamp"] or datetime.min.replace(tzinfo=timezone.utc),
-                    info["history_index"],
-                    fallback_index.get(candidate, 0),
-                )
-            else:
-                sort_key = (
-                    0,  # no history
-                    0,
-                    datetime.min.replace(tzinfo=timezone.utc),
-                    -1,
-                    fallback_index.get(candidate, 0),
-                )
+            timestamp = info.get("timestamp") if info is not None else None
+            history_index = (
+                info["history_index"] if info is not None else repo_only_history_index
+            )
+            sort_key = (
+                1 if timestamp is not None else 0,
+                timestamp or datetime.min.replace(tzinfo=timezone.utc),
+                history_index,
+                fallback_index.get(candidate, 0),
+            )
 
             if best_key is None or sort_key > best_key:
                 best_key = sort_key

@@ -327,6 +327,19 @@ def _normalize_latest_symlink_config(config: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
+def _get_config_download_dir(config: Dict[str, Any]) -> str:
+    """Return the canonical download directory, falling back to legacy BASE_DIR."""
+    return str(config.get("DOWNLOAD_DIR") or config.get("BASE_DIR") or DEFAULT_BASE_DIR)
+
+
+def _store_download_dir_config(config: Dict[str, Any], directory: str) -> None:
+    """Write DOWNLOAD_DIR canonically while keeping legacy BASE_DIR in sync if present."""
+    config["DOWNLOAD_DIR"] = directory
+    # Migration compatibility: preserve BASE_DIR only for configs that already use it.
+    if "BASE_DIR" in config:
+        config["BASE_DIR"] = directory
+
+
 def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
     """
     Load a YAML mapping from the given file path.
@@ -2048,7 +2061,7 @@ def _setup_base(
             print(
                 "Existing configuration found. You can keep current settings or change them."
             )
-            current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+            current_base_dir = _get_config_download_dir(config)
         base_dir_prompt = (
             f"Enter the base directory for Fetchtastic (current: {current_base_dir}): "
         )
@@ -2085,7 +2098,7 @@ def _setup_base(
             if is_first_run:
                 base_dir = DEFAULT_BASE_DIR
             else:
-                base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+                base_dir = _get_config_download_dir(config)
 
             # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
             base_dir = os.path.expanduser(base_dir)
@@ -2096,10 +2109,10 @@ def _setup_base(
             # CONFIG_FILE should not be changed here
     else:
         # Partial run retaining the existing base directory
-        BASE_DIR = os.path.expanduser(config.get("BASE_DIR", DEFAULT_BASE_DIR))
+        BASE_DIR = os.path.expanduser(_get_config_download_dir(config))
 
-    # Store the base directory in the config
-    config["BASE_DIR"] = BASE_DIR
+    # Store the canonical download directory; keep legacy BASE_DIR only if present.
+    _store_download_dir_config(config, BASE_DIR)
 
     # Create the base directory if it doesn't exist
     if not os.path.exists(BASE_DIR):
@@ -2257,9 +2270,8 @@ def run_setup(
             # For non-Termux environments, remove WIFI_ONLY from config if it exists
             config.pop("WIFI_ONLY", None)
 
-    # Set the download directory to the same as the base directory
-    download_dir = BASE_DIR
-    config["DOWNLOAD_DIR"] = download_dir
+    # Store DOWNLOAD_DIR as canonical; keep legacy BASE_DIR only if the config had it.
+    _store_download_dir_config(config, BASE_DIR)
 
     # Record the version at which setup was last run
     try:
@@ -2511,6 +2523,9 @@ def migrate_config() -> bool:
     config = _load_yaml_mapping(OLD_CONFIG_FILE)
     if config is None:
         return False
+    _store_download_dir_config(
+        config, os.path.expanduser(_get_config_download_dir(config))
+    )
 
     # Save to new location
     try:
@@ -3552,9 +3567,8 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             config = normalize_client_app_config(config)
             config = _normalize_latest_symlink_config(config)
 
-            # Update BASE_DIR from config
-            if "BASE_DIR" in config:
-                BASE_DIR = config["BASE_DIR"]
+            # Prefer canonical DOWNLOAD_DIR; fall back to legacy BASE_DIR.
+            BASE_DIR = _get_config_download_dir(config)
 
             return config
 
@@ -3567,9 +3581,8 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             config = normalize_client_app_config(config)
             config = _normalize_latest_symlink_config(config)
 
-            # Update BASE_DIR from config
-            if "BASE_DIR" in config:
-                BASE_DIR = config["BASE_DIR"]
+            # Prefer canonical DOWNLOAD_DIR; fall back to legacy BASE_DIR.
+            BASE_DIR = _get_config_download_dir(config)
 
             # Suggest migration
             print(f"Using configuration from old location: {OLD_CONFIG_FILE}")
