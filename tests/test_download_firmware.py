@@ -4591,7 +4591,10 @@ class TestPrereleaseAvailabilityVerification:
         old_prerelease = prerelease_dir / "firmware-2.7.20.aaaaaa"
         old_prerelease.mkdir()
         latest_link = prerelease_dir / LATEST_POINTER_NAME
-        latest_link.symlink_to(old_prerelease)
+        try:
+            latest_link.symlink_to(old_prerelease, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
 
         with (
             patch.object(
@@ -4604,10 +4607,10 @@ class TestPrereleaseAvailabilityVerification:
         ):
             downloader.cleanup_superseded_prereleases("v2.7.22")
 
-        for call in mock_logger.warning.call_args_list:
-            assert (
-                LATEST_POINTER_NAME not in str(call) or "expected" in str(call).lower()
-            )
+        assert not any(
+            LATEST_POINTER_NAME in str(call)
+            for call in mock_logger.warning.call_args_list
+        )
 
     # =========================================================================
     # Tests for summary/latest consistency (log_prerelease_summary chronology)

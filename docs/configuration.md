@@ -11,15 +11,15 @@ Boolean values accept normal YAML booleans and common strings such as `true`, `f
 
 ## Common Options
 
-| Key                      | Default                  | Description                                                                                                                                                                   |
-| ------------------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DOWNLOAD_DIR`           | `~/Downloads/Meshtastic` | Base directory for all downloaded files.                                                                                                                                      |
-| `GITHUB_TOKEN`           | unset                    | Optional GitHub token. Helps avoid unauthenticated API rate limits.                                                                                                           |
-| `ALLOW_ENV_TOKEN`        | unset                    | Allows token lookup from environment-driven flows when supported by the caller.                                                                                               |
-| `LOG_LEVEL`              | `INFO`                   | Log verbosity. Can also be overridden with `FETCHTASTIC_LOG_LEVEL`.                                                                                                           |
-| `CREATE_LATEST_SYMLINKS` | `true`                   | Creates best-effort `latest` symlinks for completed firmware, repo-prerelease firmware, stable client app releases, and client app prereleases under `app/prerelease/latest`. |
-| `WIFI_ONLY`              | platform-dependent       | On Termux, skip downloads unless connected to Wi-Fi.                                                                                                                          |
-| `DEVICE_HARDWARE_API`    | unset                    | Optional override for device hardware metadata lookups.                                                                                                                       |
+| Key                      | Default                  | Description                                                                                                                                                                                                            |
+| ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DOWNLOAD_DIR`           | `~/Downloads/Meshtastic` | Base directory for all downloaded files.                                                                                                                                                                               |
+| `GITHUB_TOKEN`           | unset                    | Optional GitHub token. Helps avoid unauthenticated API rate limits.                                                                                                                                                    |
+| `ALLOW_ENV_TOKEN`        | unset                    | Allows token lookup from environment-driven flows when supported by the caller.                                                                                                                                        |
+| `LOG_LEVEL`              | `INFO`                   | Log verbosity. Can also be overridden with `FETCHTASTIC_LOG_LEVEL`.                                                                                                                                                    |
+| `CREATE_LATEST_SYMLINKS` | `true`                   | Creates best-effort `latest` symlinks for completed firmware, repo-prerelease firmware, stable client app releases, and client app prereleases. Client app prerelease pointers are written as `app/prerelease/latest`. |
+| `WIFI_ONLY`              | platform-dependent       | On Termux, skip downloads unless connected to Wi-Fi.                                                                                                                                                                   |
+| `DEVICE_HARDWARE_API`    | unset                    | Optional override for device hardware metadata lookups.                                                                                                                                                                |
 
 `latest` symlinks are convenience pointers only. If the platform or filesystem cannot create or update them safely, downloads still continue.
 
@@ -88,7 +88,7 @@ There are two prerelease paths:
 | `FIRMWARE_PRERELEASE_INCLUDE_PATTERNS` | unset               | Optional include filter for firmware repo-prerelease directory names. |
 | `FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS` | unset               | Optional exclude filter for firmware repo-prerelease directory names. |
 
-Repo-prerelease latest uses the newest successful prerelease directory according to Fetchtastic's deterministic prerelease directory ordering, independent of tracking-list update order.
+Repo-prerelease latest is chronology-first. Fetchtastic prefers prerelease history `added_at` / commit chronology for real active history entries, and falls back to deterministic prerelease directory ordering only when chronology is unavailable.
 
 ## Download Reliability
 

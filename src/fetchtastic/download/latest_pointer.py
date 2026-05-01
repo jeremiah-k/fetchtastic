@@ -9,6 +9,10 @@ from fetchtastic.log_utils import logger
 
 from .files import _sanitize_path_component
 
+# TODO: Parent and ancestor symlinks are rejected before mutation. Future
+# hardening could anchor operations to a verified directory fd on platforms that
+# support O_DIRECTORY, O_NOFOLLOW, and dir_fd.
+
 
 def _is_valid_latest_target(parent_dir: Path, target_name: str) -> bool:
     safe_target = _sanitize_path_component(target_name)

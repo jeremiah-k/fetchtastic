@@ -679,10 +679,14 @@ def test_load_config_prefers_download_dir_over_legacy_base_dir(tmp_path, mocker)
     with open(config_path, "w") as f:
         yaml.safe_dump(config_data, f)
 
-    config = setup_config.load_config()
+    original_base_dir = setup_config.BASE_DIR
+    try:
+        config = setup_config.load_config()
 
-    assert config is not None
-    assert setup_config.BASE_DIR == config_data["DOWNLOAD_DIR"]
+        assert config is not None
+        assert setup_config.BASE_DIR == config_data["DOWNLOAD_DIR"]
+    finally:
+        setup_config.BASE_DIR = original_base_dir
 
 
 @pytest.mark.configuration

@@ -333,9 +333,8 @@ def _get_config_download_dir(config: Dict[str, Any]) -> str:
 
 
 def _store_download_dir_config(config: Dict[str, Any], directory: str) -> None:
-    """Write DOWNLOAD_DIR canonically while keeping legacy BASE_DIR in sync if present."""
+    """Write DOWNLOAD_DIR canonically and always mirror to legacy BASE_DIR for backward compatibility."""
     config["DOWNLOAD_DIR"] = directory
-    # Migration compatibility: always set BASE_DIR for backward compatibility
     config["BASE_DIR"] = directory
 
 
@@ -2110,7 +2109,7 @@ def _setup_base(
         # Partial run retaining the existing base directory
         BASE_DIR = os.path.expanduser(_get_config_download_dir(config))
 
-    # Store the canonical download directory; keep legacy BASE_DIR only if present.
+    # Store canonical DOWNLOAD_DIR and mirror to legacy BASE_DIR for backward compatibility.
     _store_download_dir_config(config, BASE_DIR)
 
     # Create the base directory if it doesn't exist
@@ -2269,7 +2268,7 @@ def run_setup(
             # For non-Termux environments, remove WIFI_ONLY from config if it exists
             config.pop("WIFI_ONLY", None)
 
-    # Store DOWNLOAD_DIR as canonical; keep legacy BASE_DIR only if the config had it.
+    # Store canonical DOWNLOAD_DIR and mirror to legacy BASE_DIR for backward compatibility.
     _store_download_dir_config(config, BASE_DIR)
 
     # Record the version at which setup was last run
