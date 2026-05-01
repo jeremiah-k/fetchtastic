@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
+from fetchtastic.constants import LATEST_POINTER_NAME
 from fetchtastic.download.latest_pointer import (
     remove_latest_pointer,
     update_latest_pointer,
@@ -35,7 +36,7 @@ def test_update_latest_pointer_creates_relative_same_dir_symlink(
     result = update_latest_pointer(tmp_path, target.name)
 
     assert result is True
-    latest = tmp_path / "latest"
+    latest = tmp_path / LATEST_POINTER_NAME
     assert latest.is_symlink()
     assert os.readlink(latest) == "v2.7.0"
 
@@ -46,7 +47,7 @@ def test_update_latest_pointer_rejects_traversal_target(tmp_path):
     result = update_latest_pointer(tmp_path, "../v2.7.0")
 
     assert result is False
-    assert not (tmp_path / "latest").exists()
+    assert not (tmp_path / LATEST_POINTER_NAME).exists()
 
 
 def test_update_latest_pointer_replaces_existing_symlink_without_following(
@@ -60,7 +61,7 @@ def test_update_latest_pointer_replaces_existing_symlink_without_following(
     old_target.mkdir()
     new_target.mkdir()
     outside.mkdir(exist_ok=True)
-    latest = tmp_path / "latest"
+    latest = tmp_path / LATEST_POINTER_NAME
     latest.symlink_to(outside)
 
     result = update_latest_pointer(tmp_path, new_target.name)
@@ -82,12 +83,12 @@ def test_update_latest_pointer_rejects_symlink_target(tmp_path, symlinks_support
     result = update_latest_pointer(tmp_path, linked_target.name)
 
     assert result is False
-    assert not (tmp_path / "latest").exists()
+    assert not (tmp_path / LATEST_POINTER_NAME).exists()
 
 
 def test_update_latest_pointer_does_not_replace_regular_file(tmp_path):
     target = tmp_path / "v2.7.0"
-    latest = tmp_path / "latest"
+    latest = tmp_path / LATEST_POINTER_NAME
     target.mkdir()
     latest.write_text("user content", encoding="utf-8")
 
@@ -104,7 +105,7 @@ def test_remove_latest_pointer_removes_managed_symlink_and_leaves_target(
         pytest.skip("os.symlink not supported on this platform")
     target = tmp_path / "v2.7.0"
     target.mkdir()
-    latest = tmp_path / "latest"
+    latest = tmp_path / LATEST_POINTER_NAME
     latest.symlink_to(target.name)
 
     assert remove_latest_pointer(tmp_path) is True
@@ -115,7 +116,7 @@ def test_remove_latest_pointer_removes_managed_symlink_and_leaves_target(
 def test_remove_latest_pointer_refuses_to_remove_regular_file(tmp_path):
     target = tmp_path / "v2.7.0"
     target.mkdir()
-    latest = tmp_path / "latest"
+    latest = tmp_path / LATEST_POINTER_NAME
     latest.write_text("not a symlink", encoding="utf-8")
 
     assert remove_latest_pointer(tmp_path) is False
@@ -134,5 +135,5 @@ def test_update_latest_pointer_calls_symlink_with_target_is_directory_for_dir_ta
         update_latest_pointer(tmp_path, target.name)
 
     mock_symlink.assert_called()
-    args, kwargs = mock_symlink.call_args
+    _, kwargs = mock_symlink.call_args
     assert kwargs.get("target_is_directory") is True

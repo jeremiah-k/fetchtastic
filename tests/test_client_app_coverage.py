@@ -14,6 +14,7 @@ from fetchtastic.constants import (
     ERROR_TYPE_VALIDATION,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
+    LATEST_POINTER_NAME,
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.client_app import (
@@ -1237,29 +1238,29 @@ def test_remove_unexpected_entries_preserves_latest_symlink(downloader, tmp_path
     real = tmp_path / "real_target"
     real.mkdir()
     try:
-        (base / "latest").symlink_to(real, target_is_directory=True)
+        (base / LATEST_POINTER_NAME).symlink_to(real, target_is_directory=True)
     except (OSError, NotImplementedError):
         pytest.skip("Symlinks not supported")
     (base / "v2.7.14").mkdir()
     with patch("fetchtastic.download.client_app.logger.warning") as mock_warning:
         downloader._remove_unexpected_entries(str(base), {"v2.7.14"})
     mock_warning.assert_not_called()
-    assert (base / "latest").is_symlink()
+    assert (base / LATEST_POINTER_NAME).is_symlink()
     assert (base / "v2.7.14").exists()
 
 
 def test_remove_unexpected_entries_preserves_latest_non_symlink(downloader, tmp_path):
     base = tmp_path / "dir"
     base.mkdir()
-    (base / "latest").mkdir()
+    (base / LATEST_POINTER_NAME).mkdir()
     (base / "v2.7.14").mkdir()
     with patch("fetchtastic.download.client_app.logger.debug") as mock_debug:
         downloader._remove_unexpected_entries(str(base), {"v2.7.14"})
     mock_debug.assert_any_call(
         "Preserving non-symlink latest entry that may block latest pointer creation: %s",
-        str(base / "latest"),
+        str(base / LATEST_POINTER_NAME),
     )
-    assert (base / "latest").exists()
+    assert (base / LATEST_POINTER_NAME).exists()
     assert (base / "v2.7.14").exists()
 
 

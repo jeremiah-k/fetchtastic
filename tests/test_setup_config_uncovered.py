@@ -10,6 +10,7 @@ import requests
 
 import fetchtastic.setup_config as setup_config
 from fetchtastic.client_app_config import DEFAULT_APP_VERSIONS_TO_KEEP
+from fetchtastic.constants import DEFAULT_CREATE_LATEST_SYMLINKS
 
 # Tests for uncovered lines 112, 153-156: cron command decorator edge cases
 
@@ -2489,7 +2490,7 @@ def test_load_config_normalizes_empty_dict(tmp_path, mocker):
 
     assert result is not None
     assert isinstance(result, dict)
-    assert result["CREATE_LATEST_SYMLINKS"] is True
+    assert result["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
 
 
 @pytest.mark.configuration
@@ -2510,4 +2511,4 @@ def test_load_config_empty_dict_directory_mode(tmp_path, mocker):
 
     assert result is not None
     assert isinstance(result, dict)
-    assert result["CREATE_LATEST_SYMLINKS"] is True
+    assert result["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS

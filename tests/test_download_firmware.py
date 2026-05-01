@@ -1621,7 +1621,8 @@ class TestFirmwareReleaseDownloader:
         mock_warning.assert_not_called()
         debug_messages = [c[0][0] for c in mock_debug.call_args_list]
         assert not any(
-            "latest" in msg and "pointer" in msg.lower() for msg in debug_messages
+            LATEST_POINTER_NAME in msg and "pointer" in msg.lower()
+            for msg in debug_messages
         )
 
     @patch("os.path.exists")

@@ -45,6 +45,19 @@ def update_latest_pointer(
 
     link_path = parent / link_name
     tmp_path = parent / f".{link_name}.tmp"
+    if parent.is_symlink():
+        logger.debug(
+            "Skipping latest pointer because parent dir is symlinked: %s",
+            parent,
+        )
+        return False
+    for ancestor in parent.parents:
+        if ancestor.exists() and ancestor.is_symlink():
+            logger.debug(
+                "Skipping latest pointer because ancestor is symlinked: %s",
+                ancestor,
+            )
+            return False
     try:
         parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() and not link_path.is_symlink():

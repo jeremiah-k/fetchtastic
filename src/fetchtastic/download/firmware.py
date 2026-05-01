@@ -230,12 +230,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
         ):
             return False
         try:
-            if release.prerelease:
-                parent_dir = self._get_prerelease_base_dir()
-                target_name = f"{FIRMWARE_DIR_PREFIX}{self._sanitize_required(release.tag_name, 'release tag')}"
-            else:
-                parent_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
-                target_name = self._get_release_storage_tag(release)
+            parent_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+            target_name = self._get_release_storage_tag(release)
             return update_latest_pointer(parent_dir, target_name, LATEST_POINTER_NAME)
         except (OSError, ValueError, TypeError) as exc:
             logger.debug(
@@ -2083,11 +2079,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if dirs_to_track and self.config.get(
             "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
         ):
-            update_latest_pointer(
-                prerelease_base_dir,
-                dirs_to_track[-1],
-                LATEST_POINTER_NAME,
-            )
+            try:
+                update_latest_pointer(
+                    prerelease_base_dir,
+                    dirs_to_track[-1],
+                    LATEST_POINTER_NAME,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Skipping firmware prerelease latest pointer for %s: %s",
+                    dirs_to_track[-1],
+                    exc,
+                )
 
         # Consolidate skipped messages
         skipped_count = sum(1 for result in successes if result.was_skipped)
