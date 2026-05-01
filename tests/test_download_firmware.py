@@ -2982,8 +2982,8 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        # Repo-only candidates can become latest when history has no timestamp.
-        assert result[2] == "firmware-2.7.23.2a858be"
+        # History-backed entries beat repo-only candidates even without added_at.
+        assert result[2] == "firmware-2.7.23.7be5426"
         assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
             "firmware-2.7.23.7be5426",
