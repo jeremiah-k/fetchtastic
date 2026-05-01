@@ -4564,3 +4564,142 @@ class TestPrereleaseAvailabilityVerification:
             assert (
                 LATEST_POINTER_NAME not in str(call) or "expected" in str(call).lower()
             )
+
+    # =========================================================================
+    # Tests for summary/latest consistency (log_prerelease_summary chronology)
+    # =========================================================================
+
+    def test_log_prerelease_summary_history_backed_beats_repo_scan_synthetic(
+        self, downloader, tmp_path
+    ):
+        """A real history-backed active entry should be logged as latest over a synthetic repo_scan entry."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "source": "repo_scan",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+        assert "2.7.23.4ee9598" not in latest_calls[0]
+
+    def test_log_prerelease_summary_chronology_beats_hash_order(
+        self, downloader, tmp_path
+    ):
+        """The entry with newer added_at should be logged as latest, regardless of hash string order."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.4ee9598" in latest_calls[0]
+        assert "2.7.23.7be5426" not in latest_calls[0]
+
+    def test_log_prerelease_summary_deleted_newer_does_not_win(
+        self, downloader, tmp_path
+    ):
+        """A newer entry marked deleted should not be logged as latest."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "deleted",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+
+    def test_log_prerelease_summary_removed_at_excluded(self, downloader, tmp_path):
+        """An entry with removed_at should not be logged as latest."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+                "removed_at": "2024-01-03T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+
+    def test_log_prerelease_summary_only_repo_scan_synthetic_entries(
+        self, downloader, tmp_path
+    ):
+        """When only repo_scan synthetic entries exist, one should be marked latest deterministically."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "source": "repo_scan",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "source": "repo_scan",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1

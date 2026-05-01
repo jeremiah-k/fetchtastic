@@ -2305,10 +2305,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
             else:
                 deleted_commits.append(f"[red][strike]{identifier}[/strike][/red]")
 
-        active_entries = [e for e in history_entries if e.get("status") == "active"]
-        latest_active_identifier = (
-            active_entries[-1].get("identifier") if active_entries else None
+        active_candidate_dirs = [
+            entry.get("directory")
+            for entry in history_entries
+            if isinstance(entry.get("directory"), str)
+            and (entry.get("status") == "active" or entry.get("active") is True)
+            and entry.get("status") != "deleted"
+            and not entry.get("removed_at")
+        ]
+        latest_active_dir = self._select_latest_prerelease_dir(
+            active_candidate_dirs, history_entries
         )
+        latest_active_identifier = None
+        if latest_active_dir:
+            for entry in history_entries:
+                if entry.get("directory") == latest_active_dir:
+                    latest_active_identifier = entry.get("identifier")
+                    break
+            if latest_active_identifier is None:
+                latest_active_identifier = latest_active_dir.removeprefix(
+                    FIRMWARE_DIR_PREFIX
+                )
 
         if history_entries:
             logger.info("Prerelease commits for %s:", expected_version)
