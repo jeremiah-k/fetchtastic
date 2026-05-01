@@ -1417,16 +1417,16 @@ class TestDownloadOrchestrator:
         assert mock_pointer.call_count == 1
         mock_pointer.assert_called_once_with(newer)
 
-    def test_select_latest_successful_release_parseable_beats_unparseable_timestamp(
+    def test_select_latest_successful_release_parseable_beats_unparsable_timestamp(
         self, orchestrator
     ):
-        """A parsed release version outranks an unparseable newer timestamp."""
+        """A parsed release version outranks an unparsable newer timestamp."""
         parseable = Release(
             tag_name="v1.0.0",
             prerelease=False,
             published_at="2025-01-01T00:00:00Z",
         )
-        unparseable = Release(
+        unparsable = Release(
             tag_name="nightly",
             prerelease=False,
             published_at="2026-01-01T00:00:00Z",
@@ -1437,7 +1437,7 @@ class TestDownloadOrchestrator:
         }[tag]
 
         selected = orchestrator._select_latest_successful_release(
-            [unparseable, parseable]
+            [unparsable, parseable]
         )
 
         assert selected is parseable
@@ -3256,7 +3256,7 @@ class TestDownloadOrchestrator:
 
         orchestrator.client_app_downloader.download_app.assert_called_once()
 
-    def test_select_latest_release_all_unparseable_with_revoked(self, orchestrator):
+    def test_select_latest_release_all_unparsable_with_revoked(self, orchestrator):
         """Test selecting latest when all versions unparsable but some revoked."""
         orchestrator.version_manager.get_release_tuple.return_value = None
         orchestrator.firmware_downloader.is_release_revoked.return_value = True
