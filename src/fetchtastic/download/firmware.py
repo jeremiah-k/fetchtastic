@@ -17,6 +17,7 @@ import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    DEFAULT_CREATE_LATEST_SYMLINKS,
     DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
     DEVICE_HARDWARE_API_URL,
@@ -24,6 +25,7 @@ from fetchtastic.constants import (
     ERROR_TYPE_EXTRACTION,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
+    ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_VALIDATION,
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_FIRMWARE,
@@ -36,6 +38,7 @@ from fetchtastic.constants import (
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
+    LATEST_POINTER_NAME,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
@@ -44,6 +47,7 @@ from fetchtastic.constants import (
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
+    coerce_bool,
     download_file_with_retry,
     load_file_hash,
     matches_extract_patterns,
@@ -52,10 +56,11 @@ from fetchtastic.utils import (
 )
 
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .github_source import GithubReleaseSource, create_release_from_github_data
 from .interfaces import Asset, DownloadResult, FirmwareManifest, Release
+from .latest_pointer import update_latest_pointer
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
@@ -219,6 +224,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
         version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
+
+    def update_latest_pointer_for_release(self, release: Release) -> bool:
+        """Best-effort update of firmware latest pointer for a completed release."""
+        if not coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
+        ):
+            return False
+        try:
+            parent_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+            target_name = self._get_release_storage_tag(release)
+            return update_latest_pointer(parent_dir, target_name, LATEST_POINTER_NAME)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug(
+                "Skipping firmware latest pointer for %s: %s",
+                release.tag_name,
+                exc,
+            )
+            return False
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
@@ -527,7 +551,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 file_size=asset.size,
                 file_type=FILE_TYPE_FIRMWARE,
                 was_skipped=True,
-                error_type="revoked_release",
+                error_type=ERROR_TYPE_REVOKED_RELEASE,
                 error_details={
                     "revoked": True,
                     "filter_revoked_releases": True,
@@ -1375,6 +1399,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     and entry.name
                     not in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
+                        LATEST_POINTER_NAME,
                         REPO_DOWNLOADS_DIR,
                     }
                 }
@@ -1408,6 +1433,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         FIRMWARE_PRERELEASES_DIR_NAME,
                         REPO_DOWNLOADS_DIR,
                     }:
+                        continue
+                    if entry.name == LATEST_POINTER_NAME:
+                        if entry.is_symlink():
+                            continue
+                        logger.debug(
+                            "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+                            entry.path,
+                        )
                         continue
                     if entry.is_symlink():
                         logger.warning(
@@ -1821,6 +1854,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if latest_active_dir and latest_active_dir not in active_dirs:
             active_dirs.append(latest_active_dir)
 
+        fallback_repo_dirs = None
         if active_dirs:
             logger.info("Using commit history for prerelease detection")
         else:
@@ -1838,6 +1872,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         type(dirs).__name__,
                     )
                     dirs = []
+                else:
+                    fallback_repo_dirs = [d for d in dirs if isinstance(d, str)]
                 matches = prerelease_manager.scan_prerelease_directories(
                     [d for d in dirs if isinstance(d, str)], expected_version
                 )
@@ -1860,33 +1896,42 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         if active_dirs:
             repo_availability_verified = False
-            try:
-                repo_dirs = self.cache_manager.get_repo_directories(
-                    "",
-                    force_refresh=True,
-                    github_token=self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
-                )
-                if not isinstance(repo_dirs, list):
-                    logger.debug(
-                        "Expected list of repo directories from cache manager, got %s",
-                        type(repo_dirs).__name__,
+            if fallback_repo_dirs is not None:
+                repo_dirs = fallback_repo_dirs
+            else:
+                try:
+                    repo_dirs = self.cache_manager.get_repo_directories(
+                        "",
+                        force_refresh=force_refresh,
+                        github_token=self.config.get("GITHUB_TOKEN"),
+                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                     )
-                else:
-                    repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
-                    if repo_dirs:
-                        repo_availability_verified = True
-                    else:
-                        logger.debug(
-                            "Repo availability scan returned no directories; "
-                            "cannot verify availability of history-derived prereleases"
-                        )
-            except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+                except (
+                    requests.RequestException,
+                    OSError,
+                    ValueError,
+                    TypeError,
+                ) as exc:
+                    logger.debug(
+                        "Repo availability scan failed; continuing with best history-derived active dirs: %s",
+                        exc,
+                    )
+                    repo_dirs = []
+            if not isinstance(repo_dirs, list):
                 logger.debug(
-                    "Repo availability scan failed; continuing with best history-derived active dirs: %s",
-                    exc,
+                    "Expected list of repo directories from cache manager, got %s",
+                    type(repo_dirs).__name__,
                 )
                 repo_dirs = []
+            else:
+                repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
+                if repo_dirs:
+                    repo_availability_verified = True
+                else:
+                    logger.debug(
+                        "Repo availability scan returned no directories; "
+                        "cannot verify availability of history-derived prereleases"
+                    )
             deleted_dirs = self._get_deleted_prerelease_dirs_from_history(
                 history_entries
             )
@@ -1966,6 +2011,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                 "base_version": base_version,
                                 "status": "active",
                                 "active": True,
+                                "source": "repo_scan",
                             }
                         )
                 prerelease_summary["available_history_entries"] = (
@@ -2000,6 +2046,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         failures: list[DownloadResult] = []
         any_downloaded = False
         downloaded_dirs: list[str] = []
+        successful_dirs: list[str] = []
         for active_dir in active_dirs:
             (
                 prerelease_successes,
@@ -2013,6 +2060,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
             successes.extend(prerelease_successes)
             failures.extend(prerelease_failures)
+            if (
+                prerelease_successes
+                and not prerelease_failures
+                and all(result.success for result in prerelease_successes)
+            ):
+                successful_dirs.append(active_dir)
             if prerelease_downloaded:
                 any_downloaded = True
                 downloaded_dirs.append(active_dir)
@@ -2035,13 +2088,41 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_manager.update_prerelease_tracking(
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
             )
+        latest_successful_dir = self._select_latest_prerelease_dir(
+            successful_dirs, history_entries
+        ) or (
+            self._sort_prerelease_dirs(successful_dirs)[-1] if successful_dirs else None
+        )
+        if latest_successful_dir and coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
+        ):
+            if not update_latest_pointer(
+                prerelease_base_dir,
+                latest_successful_dir,
+                LATEST_POINTER_NAME,
+            ):
+                logger.debug(
+                    "Skipping firmware prerelease latest pointer for %s",
+                    latest_successful_dir,
+                )
 
         # Consolidate skipped messages
         skipped_count = sum(1 for result in successes if result.was_skipped)
         if skipped_count > 0:
             logger.debug(f"Skipped {skipped_count} existing pre-release files.")
 
-        return successes, failures, active_dirs[-1], prerelease_summary
+        return (
+            successes,
+            failures,
+            (
+                self._select_latest_prerelease_dir(active_dirs, history_entries)
+                or (
+                    self._sort_prerelease_dirs(active_dirs)[-1] if active_dirs else None
+                )
+            ),
+            prerelease_summary,
+        )
 
     @staticmethod
     def _sort_prerelease_dirs(dirs: List[str]) -> List[str]:
@@ -2061,6 +2142,95 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 unique_dirs.append(d)
         unique_dirs.sort(key=sort_key)
         return unique_dirs
+
+    def _select_latest_prerelease_dir(
+        self,
+        candidate_dirs: list[str],
+        history_entries: list[dict[str, Any]],
+    ) -> Optional[str]:
+        """Select the latest prerelease directory using commit-history chronology.
+
+        Firmware repo prereleases are distinguished by a commit-hash suffix, not
+        by semver prerelease components.  Therefore the "latest" prerelease must
+        be chosen by repository commit chronology (added_at), not by hash-string
+        ordering or VersionManager.get_release_tuple.
+
+        Ranking (higher wins):
+          1. has_history – real history entry exists (source != "repo_scan")
+          2. has_timestamp – entry carries an added_at value
+          3. timestamp – parsed added_at datetime
+          4. history_index – position in history_entries, or a repo-only sentinel
+          5. fallback_key – deterministic sort via _sort_prerelease_dirs
+
+        Synthetic source="repo_scan" entries are fallback-only and do not count
+        as real history-backed entries.
+        Deleted/removed entries and entries whose directory is not in
+        candidate_dirs are excluded.
+
+        Returns:
+            The directory string of the newest active prerelease, or None when
+            no candidate qualifies.
+        """
+        if not candidate_dirs:
+            return None
+
+        deleted_dirs = self._get_deleted_prerelease_dirs_from_history(history_entries)
+        history_rank_by_dir: dict[str, dict[str, Any]] = {}
+        for idx, entry in enumerate(history_entries):
+            directory = entry.get("directory")
+            if not isinstance(directory, str):
+                continue
+            if directory in deleted_dirs:
+                continue
+            is_deleted = entry.get("status") == "deleted" or bool(
+                entry.get("removed_at")
+            )
+            if is_deleted:
+                continue
+            is_active = entry.get("status") == "active" or entry.get("active") is True
+            if not is_active:
+                continue
+            if entry.get("source") == "repo_scan":
+                continue
+
+            added_at_raw = entry.get("added_at")
+            timestamp = parse_iso_datetime_utc(added_at_raw) if added_at_raw else None
+
+            history_rank_by_dir[directory] = {
+                "has_timestamp": timestamp is not None,
+                "timestamp": timestamp,
+                "history_index": idx,
+            }
+
+        sorted_dirs = self._sort_prerelease_dirs(candidate_dirs)
+        fallback_index = {d: i for i, d in enumerate(sorted_dirs)}
+
+        best_dir: Optional[str] = None
+        best_key: Optional[tuple] = None
+        repo_only_history_index = len(history_entries) + len(candidate_dirs) + 1
+
+        for candidate in candidate_dirs:
+            if candidate in deleted_dirs:
+                continue
+            info = history_rank_by_dir.get(candidate)
+            has_history = info is not None
+            timestamp = info.get("timestamp") if info is not None else None
+            history_index = (
+                info["history_index"] if info is not None else repo_only_history_index
+            )
+            sort_key = (
+                1 if has_history else 0,
+                1 if timestamp is not None else 0,
+                timestamp or datetime.min.replace(tzinfo=timezone.utc),
+                history_index,
+                fallback_index.get(candidate, 0),
+            )
+
+            if best_key is None or sort_key > best_key:
+                best_key = sort_key
+                best_dir = candidate
+
+        return best_dir
 
     def _get_active_prerelease_dirs_from_history(
         self, history_entries: List[Dict[str, Any]]
@@ -2130,21 +2300,29 @@ class FirmwareReleaseDownloader(BaseDownloader):
             summary["active"],
         )
 
-        active_commits = []
-        deleted_commits = []
-        for entry in history_entries:
-            identifier = entry.get("identifier")
-            if not identifier:
-                continue
-            if entry.get("status") == "active":
-                active_commits.append(f"[green]{identifier}[/green]")
-            else:
-                deleted_commits.append(f"[red][strike]{identifier}[/strike][/red]")
-
-        active_entries = [e for e in history_entries if e.get("status") == "active"]
-        latest_active_identifier = (
-            active_entries[-1].get("identifier") if active_entries else None
+        deleted_dirs = self._get_deleted_prerelease_dirs_from_history(history_entries)
+        active_candidate_dirs = [
+            entry.get("directory")
+            for entry in history_entries
+            if isinstance(entry.get("directory"), str)
+            and entry.get("directory") not in deleted_dirs
+            and (entry.get("status") == "active" or entry.get("active") is True)
+            and entry.get("status") != "deleted"
+            and not entry.get("removed_at")
+        ]
+        latest_active_dir = self._select_latest_prerelease_dir(
+            active_candidate_dirs, history_entries
         )
+        latest_active_identifier = None
+        if latest_active_dir:
+            for entry in history_entries:
+                if entry.get("directory") == latest_active_dir:
+                    latest_active_identifier = entry.get("identifier")
+                    break
+            if latest_active_identifier is None:
+                latest_active_identifier = latest_active_dir.removeprefix(
+                    FIRMWARE_DIR_PREFIX
+                )
 
         if history_entries:
             logger.info("Prerelease commits for %s:", expected_version)
@@ -2402,10 +2580,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 with os.scandir(prerelease_dir) as it:
                     for entry in it:
                         if entry.is_symlink():
-                            logger.warning(
-                                "Skipping symlink in prerelease folder: %s",
-                                entry.name,
-                            )
+                            if entry.name == LATEST_POINTER_NAME:
+                                logger.debug(
+                                    "Skipping expected symlink in prerelease folder: %s",
+                                    entry.name,
+                                )
+                            else:
+                                logger.warning(
+                                    "Skipping symlink in prerelease folder: %s",
+                                    entry.name,
+                                )
                             continue
                         if not entry.is_dir():
                             continue

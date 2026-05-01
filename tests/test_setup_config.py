@@ -9,6 +9,7 @@ import yaml
 
 # Import package module (matches real usage)
 import fetchtastic.setup_config as setup_config
+from fetchtastic.constants import DEFAULT_CREATE_LATEST_SYMLINKS
 from tests.test_constants import TEST_CONFIG
 
 
@@ -659,6 +660,58 @@ def test_load_config_new_location(tmp_path, mocker):
     config = setup_config.load_config()
     assert config is not None
     assert config["SAVE_APKS"] is True
+    assert config["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_prefers_download_dir_over_legacy_base_dir(tmp_path, mocker):
+    """DOWNLOAD_DIR is canonical when both it and legacy BASE_DIR are present."""
+    config_path = tmp_path / "fetchtastic.yaml"
+    old_config_path = tmp_path / "old_fetchtastic.yaml"
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
+
+    config_data = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "BASE_DIR": str(tmp_path / "legacy"),
+    }
+    with open(config_path, "w") as f:
+        yaml.safe_dump(config_data, f)
+
+    original_base_dir = setup_config.BASE_DIR
+    try:
+        config = setup_config.load_config()
+
+        assert config is not None
+        assert setup_config.BASE_DIR == config_data["DOWNLOAD_DIR"]
+    finally:
+        setup_config.BASE_DIR = original_base_dir
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config_expands_download_dir_user_home(tmp_path, mocker):
+    """DOWNLOAD_DIR values with ~ are expanded when loaded."""
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    config_path = tmp_path / "fetchtastic.yaml"
+    old_config_path = tmp_path / "old_fetchtastic.yaml"
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
+
+    with open(config_path, "w") as f:
+        yaml.safe_dump({"DOWNLOAD_DIR": "~/Downloads/Meshtastic"}, f)
+
+    original_base_dir = setup_config.BASE_DIR
+    try:
+        with patch.dict(os.environ, {"HOME": str(home_dir)}):
+            config = setup_config.load_config()
+
+        assert config is not None
+        assert setup_config.BASE_DIR == str(home_dir / "Downloads" / "Meshtastic")
+    finally:
+        setup_config.BASE_DIR = original_base_dir
 
 
 @pytest.mark.configuration
@@ -1579,6 +1632,7 @@ def test_run_setup_first_run_linux_simple(
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
         assert saved_config["CHECK_PRERELEASES"] is False
         assert saved_config["CHECK_APK_PRERELEASES"] is True
+        assert saved_config["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
         assert saved_config["AUTO_EXTRACT"] is False
         assert saved_config["EXTRACT_PATTERNS"] == []
         assert saved_config["EXCLUDE_PATTERNS"] == []
@@ -1856,6 +1910,7 @@ def test_run_setup_existing_config(
         assert saved_config["AUTO_EXTRACT"] is True
         assert saved_config["EXTRACT_PATTERNS"] == ["rak4631-", "tbeam"]
         assert saved_config["CHECK_PRERELEASES"] is True
+        assert saved_config["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
         assert saved_config["SELECTED_FIRMWARE_ASSETS"] == ["new-firmware"]
         assert saved_config["SELECTED_PRERELEASE_ASSETS"] == ["rak4631-", "tbeam"]
         assert "SELECTED_APK_ASSETS" not in saved_config

@@ -46,6 +46,7 @@ FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
+LATEST_POINTER_NAME = "latest"
 # Compatibility-only aliases: legacy Android/Desktop references map to unified
 # app storage. They are NOT used to drive new storage logic. The primary
 # client-app storage layout is app/<version>/ and app/prerelease/<version>/
@@ -92,6 +93,7 @@ DEFAULT_DESKTOP_VERSIONS_TO_KEEP = 2
 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES = True
 DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS = True
 DEFAULT_FILTER_REVOKED_RELEASES = True
+DEFAULT_CREATE_LATEST_SYMLINKS = True
 STORAGE_CHANNEL_SUFFIXES = frozenset({"alpha", "beta", "rc"})
 MAX_RETRY_DELAY = 60  # Cap exponential backoff at 60 seconds
 EXECUTABLE_PERMISSIONS = 0o755
@@ -247,6 +249,7 @@ ERROR_TYPE_FILESYSTEM = "filesystem_error"
 ERROR_TYPE_EXTRACTION = "extraction_error"
 ERROR_TYPE_RETRY_FAILURE = "retry_failure"
 ERROR_TYPE_UNKNOWN = "unknown_error"
+ERROR_TYPE_REVOKED_RELEASE = "revoked_release"
 
 # File type sets for efficient categorization (defined once for performance)
 FIRMWARE_FILE_TYPES = {

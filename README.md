@@ -68,6 +68,7 @@ fetchtastic repo browse
 ### Usage
 
 - **[Usage Guide](docs/usage-guide.md)** - Complete guide to using Fetchtastic
+- **[Configuration Reference](docs/configuration.md)** - YAML settings, advanced options, and latest symlink behavior
 
 ## 🔧 Commands
 

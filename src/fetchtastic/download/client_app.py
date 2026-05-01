@@ -33,6 +33,7 @@ from fetchtastic.constants import (
     APP_DIR_NAME,
     CLIENT_APP_RELEASE_HISTORY_JSON_FILE,
     DEFAULT_APP_VERSIONS_TO_KEEP,
+    DEFAULT_CREATE_LATEST_SYMLINKS,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_VALIDATION,
@@ -41,17 +42,23 @@ from fetchtastic.constants import (
     GITHUB_MAX_PER_PAGE,
     LATEST_CLIENT_APP_PRERELEASE_JSON_FILE,
     LATEST_CLIENT_APP_RELEASE_JSON_FILE,
+    LATEST_POINTER_NAME,
     MESHTASTIC_CLIENT_APP_RELEASES_URL,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import expand_apk_selected_patterns, matches_selected_patterns
+from fetchtastic.utils import (
+    coerce_bool,
+    expand_apk_selected_patterns,
+    matches_selected_patterns,
+)
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
 from .files import _safe_rmtree, _sanitize_path_component
 from .github_source import GithubReleaseSource, create_asset_from_github_data
 from .interfaces import Asset, DownloadResult, Release
+from .latest_pointer import update_latest_pointer
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
@@ -118,6 +125,33 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def _get_app_base_dir(self) -> str:
         return os.path.join(self.download_dir, APP_DIR_NAME)
+
+    def update_latest_pointer_for_release(self, release: Release) -> bool:
+        """Best-effort update of app latest pointer for a completed release."""
+        if not coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
+        ):
+            return False
+        try:
+            safe_release = self._get_storage_tag_for_release(release)
+            parent_dir = (
+                self._ensure_prerelease_base_dir()
+                if self._is_client_app_prerelease(release)
+                else self._get_app_base_dir()
+            )
+            return update_latest_pointer(
+                parent_dir,
+                safe_release,
+                LATEST_POINTER_NAME,
+            )
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug(
+                "Skipping client app latest pointer for %s: %s",
+                release.tag_name,
+                exc,
+            )
+            return False
 
     def _ensure_prerelease_base_dir(self) -> str:
         """Return the client app prerelease directory, creating it when needed."""
@@ -975,10 +1009,18 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         except FileNotFoundError:
             return
         for entry in entries:
+            if entry.name in allowed:
+                continue
+            if entry.name == LATEST_POINTER_NAME:
+                if entry.is_symlink():
+                    continue
+                logger.debug(
+                    "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+                    entry.path,
+                )
+                continue
             if entry.is_symlink():
                 logger.warning("Skipping symlink in client app cleanup: %s", entry.name)
-                continue
-            if entry.name in allowed:
                 continue
             is_recognized_version = (
                 entry.is_dir()

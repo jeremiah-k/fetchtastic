@@ -16,11 +16,14 @@ from fetchtastic import log_utils
 from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_MANIFEST,
     FIRMWARE_DIR_NAME,
+    FIRMWARE_DIR_PREFIX,
+    FIRMWARE_PRERELEASES_DIR_NAME,
+    LATEST_POINTER_NAME,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.version import VersionManager
 
 
@@ -1594,6 +1597,123 @@ class TestFirmwareReleaseDownloader:
             entry_symlink.name,
         )
 
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_preserves_latest_pointer_symlink(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Firmware cleanup silently skips managed latest symlink."""
+        mock_exists.return_value = True
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
+        mock_latest = Mock()
+        mock_latest.name = LATEST_POINTER_NAME
+        mock_latest.is_symlink.return_value = True
+        mock_latest.is_dir.return_value = False
+        mock_latest.path = "/mock/firmware/latest"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_latest]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        with (
+            patch("fetchtastic.download.firmware.logger.warning") as mock_warning,
+            patch("fetchtastic.download.firmware.logger.debug") as mock_debug,
+            patch("fetchtastic.download.firmware.shutil.rmtree") as mock_rmtree,
+        ):
+            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+
+        mock_warning.assert_not_called()
+        assert not any(
+            call.args and call.args[0] == mock_latest.path
+            for call in mock_rmtree.call_args_list
+        )
+        debug_messages = [c[0][0] for c in mock_debug.call_args_list]
+        assert not any(
+            LATEST_POINTER_NAME in msg and "pointer" in msg.lower()
+            for msg in debug_messages
+        )
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_preserves_latest_pointer_non_symlink(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Firmware cleanup preserves non-symlink latest entry and logs a debug message."""
+        mock_exists.return_value = True
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
+        mock_latest = Mock()
+        mock_latest.name = LATEST_POINTER_NAME
+        mock_latest.is_symlink.return_value = False
+        mock_latest.is_dir.return_value = True
+        mock_latest.path = "/mock/firmware/latest"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_latest]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        with patch("fetchtastic.download.firmware.logger.debug") as mock_debug:
+            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+
+        mock_debug.assert_any_call(
+            "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+            mock_latest.path,
+        )
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_latest_dir_does_not_trip_mismatch_guard(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """A non-symlink latest directory is ignored by the mismatch guard and preserved."""
+        mock_exists.return_value = True
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        mock_latest = Mock()
+        mock_latest.name = LATEST_POINTER_NAME
+        mock_latest.is_symlink.return_value = False
+        mock_latest.is_dir.return_value = True
+        mock_latest.path = "/mock/firmware/latest"
+
+        mock_keep = Mock()
+        mock_keep.name = "v2.0.0"
+        mock_keep.is_symlink.return_value = False
+        mock_keep.is_dir.return_value = True
+        mock_keep.path = "/mock/firmware/v2.0.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_latest, mock_keep]
+        mock_scandir.return_value.__exit__.return_value = None
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v2.0.0")])
+
+        with (
+            patch("fetchtastic.download.firmware.logger.warning") as mock_warning,
+            patch("fetchtastic.download.firmware.logger.debug") as mock_debug,
+        ):
+            downloader.cleanup_old_versions(keep_limit=1)
+
+        assert not any(
+            call.args
+            == (
+                "Skipping firmware cleanup: keep set does not match existing directories.",
+            )
+            for call in mock_warning.call_args_list
+        )
+        mock_debug.assert_any_call(
+            "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+            mock_latest.path,
+        )
+        mock_rmtree.assert_not_called()
+
+    def test_update_latest_pointer_for_release_coerces_false_string(self, downloader):
+        downloader.config["CREATE_LATEST_SYMLINKS"] = "false"
+        release = Release(tag_name="v2.0.0", prerelease=False)
+
+        with patch(
+            "fetchtastic.download.firmware.update_latest_pointer"
+        ) as mock_latest:
+            assert downloader.update_latest_pointer_for_release(release) is False
+
+        mock_latest.assert_not_called()
+
     @pytest.mark.unit
     def test_get_expiry_timestamp_format(self, downloader):
         """Expiry timestamp is returned as an ISO 8601 UTC string."""
@@ -2786,14 +2906,16 @@ class TestFirmwareUncoveredBranches:
         downloader.download_dir = str(tmp_path)
         history_entries = [
             {
-                "identifier": "7be5426",
-                "directory": "firmware-2.7.23.7be5426",
-                "status": "active",
-            },
-            {
                 "identifier": "2a858be",
                 "directory": "firmware-2.7.23.2a858be",
                 "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "identifier": "7be5426",
+                "directory": "firmware-2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
             },
         ]
 
@@ -2818,7 +2940,6 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        # After deterministic sorting, newest by dir string tiebreaker
         assert result[2] == "firmware-2.7.23.7be5426"
         assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
@@ -2866,7 +2987,7 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        # After deterministic sorting, newest by dir string tiebreaker
+        # History-backed entries beat repo-only candidates even without added_at.
         assert result[2] == "firmware-2.7.23.7be5426"
         assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
@@ -3772,7 +3893,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
             ),
             patch(
                 "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
-                return_value=(newer_dir, history_entries),
+                return_value=(older_dir, history_entries),
             ),
             patch(
                 "fetchtastic.download.firmware.PrereleaseHistoryManager.update_prerelease_tracking"
@@ -3832,3 +3953,1005 @@ class TestFirmwarePrereleaseBaselineDerivation:
         # Only the successfully downloaded dir should be tracked
         assert mock_track.call_count == 1
         assert mock_track.call_args.args[1] == success_dir
+
+    def test_download_repo_prerelease_latest_uses_successful_dir_despite_older_failure(
+        self, downloader, tmp_path
+    ):
+        """A newer skipped/successful prerelease can update latest even when tracking is empty."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = True
+        downloader.download_dir = str(tmp_path)
+
+        older_dir = "firmware-2.7.23.aaaaaa"
+        newer_dir = "firmware-2.7.23.bbbbbb"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": older_dir, "status": "active"},
+            {"identifier": "bbbbbb", "directory": newer_dir, "status": "active"},
+        ]
+        skipped_success = DownloadResult(success=True, was_skipped=True)
+        failure = DownloadResult(success=False)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[older_dir, newer_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                side_effect=[
+                    ([], [failure], False),
+                    ([skipped_success], [], False),
+                ],
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(newer_dir, history_entries),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.update_prerelease_tracking"
+            ) as mock_track,
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_track.assert_not_called()
+        mock_latest.assert_called_once_with(
+            str(tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME),
+            newer_dir,
+            LATEST_POINTER_NAME,
+        )
+
+    def test_download_repo_prerelease_latest_uses_newest_successful_dir(
+        self, downloader, tmp_path
+    ):
+        """Latest pointer chooses the chronologically newest successful prerelease dir."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = True
+        downloader.download_dir = str(tmp_path)
+
+        older_dir = "firmware-2.7.23.aaaaaa"
+        newer_dir = "firmware-2.7.23.bbbbbb"
+        history_entries = [
+            {
+                "identifier": "aaaaaa",
+                "directory": older_dir,
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "identifier": "bbbbbb",
+                "directory": newer_dir,
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        success = DownloadResult(success=True)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[older_dir, newer_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(newer_dir, history_entries),
+            ),
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_latest.assert_called_once_with(
+            str(tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME),
+            newer_dir,
+            LATEST_POINTER_NAME,
+        )
+
+    def test_download_repo_prerelease_latest_coerces_false_string(
+        self, downloader, tmp_path
+    ):
+        """String false disables repo-prerelease latest pointer updates."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = "false"
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": active_dir, "status": "active"}
+        ]
+        success = DownloadResult(success=True)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_latest.assert_not_called()
+
+    def test_download_repo_prerelease_latest_not_updated_without_successful_dir(
+        self, downloader, tmp_path
+    ):
+        """No successful prerelease result means no latest pointer update."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": active_dir, "status": "active"}
+        ]
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_latest.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+class TestPrereleaseAvailabilityVerification:
+    """Tests for prerelease repo availability verification (force_refresh and fallback reuse)."""
+
+    def test_second_scan_uses_force_refresh_false_by_default(
+        self, downloader, tmp_path
+    ):
+        """When history provides active_dirs and force_refresh=False, second scan calls get_repo_directories with force_refresh=False."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir, "other-dir"],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        # Should call get_repo_directories once (availability scan) with force_refresh=False
+        assert mock_get_dirs.call_count == 1
+        assert mock_get_dirs.call_args[1].get("force_refresh") is False
+
+    def test_second_scan_uses_force_refresh_true_when_requested(
+        self, downloader, tmp_path
+    ):
+        """When force_refresh=True, the repo directory call still receives force_refresh=True."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir, "other-dir"],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            downloader.download_repo_prerelease_firmware(
+                "v2.7.22.96dd647", force_refresh=True
+            )
+
+        # Should call get_repo_directories with force_refresh=True
+        assert mock_get_dirs.call_count == 1
+        assert mock_get_dirs.call_args[1].get("force_refresh") is True
+
+    def test_fallback_reuses_repo_dirs_for_availability_scan(
+        self, downloader, tmp_path
+    ):
+        """When fallback scan already fetched repo dirs, the availability scan reuses them."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.aaaaaa",
+                    "firmware-2.7.23.bbbbbb",
+                ],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        # Should call get_repo_directories exactly once (fallback scan reused for availability)
+        assert mock_get_dirs.call_count == 1
+
+    # =========================================================================
+    # Regression tests for repo-prerelease chronology selection (maint-430-1)
+    # =========================================================================
+
+    def test_select_latest_prerelease_dir_history_chronology_beats_hash_order(
+        self, downloader, tmp_path
+    ):
+        """History chronology (added_at) should beat hash/string ordering."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_returns_newest_active_dir(
+        self, downloader, tmp_path
+    ):
+        """The returned active_dir from download_repo_prerelease_firmware uses chronology."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        success_result = DownloadResult(
+            success=True,
+            release_tag="firmware-2.7.23.4ee9598",
+            file_path=str(tmp_path / "test"),
+            was_skipped=True,
+        )
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.4ee9598", history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.7be5426",
+                    "firmware-2.7.23.4ee9598",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success_result], [], False),
+            ),
+        ):
+            _successes, _failures, active_dir, _summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+        assert active_dir == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_update_pointer_uses_chronology(
+        self, downloader, tmp_path
+    ):
+        """update_latest_pointer should be called with the chronologically newest dir."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        success_result = DownloadResult(
+            success=True,
+            release_tag="firmware-2.7.23.4ee9598",
+            file_path=str(tmp_path / "test"),
+            was_skipped=True,
+        )
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.4ee9598", history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.7be5426",
+                    "firmware-2.7.23.4ee9598",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success_result], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.update_latest_pointer"
+            ) as mock_pointer,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_pointer.assert_called_once_with(
+            ANY, "firmware-2.7.23.4ee9598", LATEST_POINTER_NAME
+        )
+
+    def test_select_latest_prerelease_dir_deleted_newer_does_not_win(
+        self, downloader, tmp_path
+    ):
+        """A newer history entry marked deleted should not win over an older active one."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "deleted",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_deleted_via_removed_at(
+        self, downloader, tmp_path
+    ):
+        """An entry with removed_at should be excluded even if status is active."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+                "removed_at": "2024-01-03T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_active_then_deleted_excludes_directory(
+        self, downloader, tmp_path
+    ):
+        """A directory later marked deleted should not remain eligible via an older active row."""
+        downloader.download_dir = str(tmp_path)
+        stale_dir = "firmware-2.7.23.abc123"
+        valid_dir = "firmware-2.7.23.def456"
+        history_entries = [
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "deleted",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+            {
+                "directory": valid_dir,
+                "identifier": "2.7.23.def456",
+                "status": "active",
+                "added_at": "2026-04-28T00:00:00Z",
+            },
+        ]
+
+        result = downloader._select_latest_prerelease_dir(
+            [stale_dir, valid_dir], history_entries
+        )
+
+        assert result == valid_dir
+
+    def test_select_latest_prerelease_dir_only_later_deleted_returns_none(
+        self, downloader, tmp_path
+    ):
+        """A candidate with any later deleted row should not fall back to repo-only ranking."""
+        downloader.download_dir = str(tmp_path)
+        stale_dir = "firmware-2.7.23.abc123"
+        history_entries = [
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "deleted",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+        ]
+
+        result = downloader._select_latest_prerelease_dir([stale_dir], history_entries)
+
+        assert result is None
+
+    def test_select_latest_prerelease_dir_removed_at_excludes_stale_active(
+        self, downloader, tmp_path
+    ):
+        """A later removed_at row should exclude older active rows for the same directory."""
+        downloader.download_dir = str(tmp_path)
+        stale_dir = "firmware-2.7.23.abc123"
+        valid_dir = "firmware-2.7.23.def456"
+        history_entries = [
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": stale_dir,
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+            {
+                "directory": valid_dir,
+                "identifier": "2.7.23.def456",
+                "status": "active",
+                "added_at": "2026-04-28T00:00:00Z",
+            },
+        ]
+
+        result = downloader._select_latest_prerelease_dir(
+            [stale_dir, valid_dir], history_entries
+        )
+
+        assert result == valid_dir
+
+    def test_select_latest_prerelease_dir_repo_scan_does_not_outrank_history(
+        self, downloader, tmp_path
+    ):
+        """Repo-discovered synthetic dirs should not outrank real history-backed dirs."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_untimestamped_history_beats_repo_scan_entry(
+        self, downloader, tmp_path
+    ):
+        """A source=repo_scan entry in history should remain fallback-only."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "active": True,
+                "source": "repo_scan",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_fallback_deterministic_without_history(
+        self, downloader, tmp_path
+    ):
+        """When no history exists, fallback to deterministic sort."""
+        downloader.download_dir = str(tmp_path)
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(candidate_dirs, [])
+        sorted_dirs = downloader._sort_prerelease_dirs(candidate_dirs)
+        assert result == sorted_dirs[-1]
+
+    def test_select_latest_prerelease_dir_history_order_without_added_at(
+        self, downloader, tmp_path
+    ):
+        """When added_at is missing, history list order (oldest-to-newest) should decide."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_empty_candidates(self, downloader, tmp_path):
+        """Returns None when candidate_dirs is empty."""
+        downloader.download_dir = str(tmp_path)
+        result = downloader._select_latest_prerelease_dir([], [])
+        assert result is None
+
+    def test_select_latest_prerelease_dir_candidate_not_in_history(
+        self, downloader, tmp_path
+    ):
+        """A candidate not in history should still be considered with fallback ranking."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_mixed_history_and_no_history(
+        self, downloader, tmp_path
+    ):
+        """Timestamped history beats a repo-only candidate without commit chronology."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_untimestamped_history_beats_repo_only(
+        self, downloader, tmp_path
+    ):
+        """Untimestamped history-backed entries should beat repo-only synthetic entries."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_repo_only_fallback_when_no_history(
+        self, downloader, tmp_path
+    ):
+        """When no history-backed candidates exist, repo-only entries use deterministic fallback."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "deleted",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        sorted_dirs = downloader._sort_prerelease_dirs(candidate_dirs)
+        assert result == sorted_dirs[-1]
+
+    # =========================================================================
+    # Tests for expected-symlink warning suppression in cleanup
+    # =========================================================================
+
+    def test_cleanup_superseded_prereleases_silently_skips_latest_symlink(
+        self, downloader, tmp_path
+    ):
+        """The expected 'latest' symlink in prerelease folder should not produce a warning."""
+        downloader.download_dir = str(tmp_path)
+        prerelease_dir = tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME
+        prerelease_dir.mkdir(parents=True)
+
+        old_prerelease = prerelease_dir / "firmware-2.7.20.aaaaaa"
+        old_prerelease.mkdir()
+        latest_link = prerelease_dir / LATEST_POINTER_NAME
+        try:
+            latest_link.symlink_to(old_prerelease, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+        original_target = latest_link.readlink()
+
+        with (
+            patch.object(
+                downloader,
+                "_get_release_storage_tag",
+                return_value="v2.7.22",
+                create=True,
+            ),
+            patch.object(log_utils, "logger") as mock_logger,
+        ):
+            downloader.cleanup_superseded_prereleases("v2.7.22")
+
+        assert not any(
+            LATEST_POINTER_NAME in str(call)
+            for call in mock_logger.warning.call_args_list
+        )
+        assert latest_link.is_symlink()
+        assert latest_link.readlink() == original_target
+
+    # =========================================================================
+    # Tests for summary/latest consistency (log_prerelease_summary chronology)
+    # =========================================================================
+
+    def test_log_prerelease_summary_history_backed_beats_repo_scan_synthetic(
+        self, downloader, tmp_path
+    ):
+        """A real history-backed active entry should be logged as latest over a synthetic repo_scan entry."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "source": "repo_scan",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+        assert "2.7.23.4ee9598" not in latest_calls[0]
+
+    def test_log_prerelease_summary_untimestamped_history_beats_repo_scan_entry(
+        self, downloader, tmp_path
+    ):
+        """Summary should mark real untimestamped history latest over source=repo_scan."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "active": True,
+                "source": "repo_scan",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+        assert "2.7.23.4ee9598" not in latest_calls[0]
+
+    def test_log_prerelease_summary_chronology_beats_hash_order(
+        self, downloader, tmp_path
+    ):
+        """The entry with newer added_at should be logged as latest, regardless of hash string order."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.4ee9598" in latest_calls[0]
+        assert "2.7.23.7be5426" not in latest_calls[0]
+
+    def test_log_prerelease_summary_deleted_newer_does_not_win(
+        self, downloader, tmp_path
+    ):
+        """A newer entry marked deleted should not be logged as latest."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "deleted",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+
+    def test_log_prerelease_summary_removed_at_excluded(self, downloader, tmp_path):
+        """An entry with removed_at should not be logged as latest."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+                "removed_at": "2024-01-03T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+
+    def test_log_prerelease_summary_active_then_deleted_not_latest(
+        self, downloader, tmp_path
+    ):
+        """Summary latest marker should ignore active rows for later-deleted directories."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.abc123",
+                "identifier": "2.7.23.abc123",
+                "status": "active",
+                "added_at": "2026-04-29T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.abc123",
+                "identifier": "2.7.23.abc123",
+                "status": "deleted",
+                "removed_at": "2026-04-30T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.def456",
+                "identifier": "2.7.23.def456",
+                "status": "active",
+                "added_at": "2026-04-28T00:00:00Z",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.def456" in latest_calls[0]
+        assert "2.7.23.abc123" not in latest_calls[0]
+
+    def test_log_prerelease_summary_only_repo_scan_synthetic_entries(
+        self, downloader, tmp_path
+    ):
+        """When only repo_scan synthetic entries exist, one should be marked latest deterministically."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "source": "repo_scan",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "source": "repo_scan",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+
+        active_candidate_dirs = [
+            entry.get("directory")
+            for entry in history_entries
+            if isinstance(entry.get("directory"), str)
+            and (entry.get("status") == "active" or entry.get("active") is True)
+            and entry.get("status") != "deleted"
+            and not entry.get("removed_at")
+        ]
+        expected_latest_dir = downloader._select_latest_prerelease_dir(
+            active_candidate_dirs, history_entries
+        )
+        expected_identifier = expected_latest_dir.removeprefix(FIRMWARE_DIR_PREFIX)
+        assert any(expected_identifier in call for call in latest_calls)

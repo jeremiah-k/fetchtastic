@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests  # type: ignore[import-untyped]
+from packaging.version import Version
 
 from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.client_release_discovery import (
@@ -30,6 +31,7 @@ from fetchtastic.constants import (
     DEFAULT_KEEP_LAST_BETA,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     ERROR_TYPE_RETRY_FAILURE,
+    ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_UNKNOWN,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
@@ -45,6 +47,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_MANIFEST_EXTENSION,
     FIRMWARE_PRERELEASES_DIR_NAME,
+    LATEST_POINTER_NAME,
     MAX_RETRY_DELAY,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
@@ -54,7 +57,7 @@ from fetchtastic.setup_config import is_termux
 from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .client_app import (
     MeshtasticClientAppDownloader,
     _is_apk_prerelease_by_name,
@@ -406,10 +409,12 @@ class DownloadOrchestrator:
                 releases_to_process, self.client_app_downloader.is_release_complete
             )
             releases_to_download = []
+            successful_stable_releases: list[Release] = []
             for release, is_complete in zip(
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
+                    successful_stable_releases.append(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -422,13 +427,37 @@ class DownloadOrchestrator:
                     logger.info(f"Downloading client app release {release.tag_name}")
                     if self._download_client_app_release(release):
                         any_app_downloaded = True
+                        successful_stable_releases.append(release)
+
+            update_pointer = getattr(
+                self.client_app_downloader,
+                "update_latest_pointer_for_release",
+                None,
+            )
+            latest_successful_stable = self._select_latest_successful_release(
+                successful_stable_releases
+            )
+            if latest_successful_stable is not None and callable(update_pointer):
+                update_pointer(latest_successful_stable)
 
             logger.info("Checking for client app prereleases...")
             prereleases = self.client_app_downloader.handle_prereleases(app_releases)
+            successful_prereleases: list[Release] = []
             for prerelease in prereleases:
                 is_newer = self.client_app_downloader.should_download_prerelease(
                     prerelease.tag_name
                 )
+                selected_assets = [
+                    asset
+                    for asset in self.client_app_downloader.get_assets(prerelease)
+                    if self.client_app_downloader.should_download_asset(asset.name)
+                ]
+                if not selected_assets:
+                    logger.debug(
+                        "Skipping client app prerelease %s because no selected assets matched",
+                        prerelease.tag_name,
+                    )
+                    continue
                 if not is_newer:
                     needs_backfill = not self.client_app_downloader.is_release_complete(
                         prerelease
@@ -443,29 +472,13 @@ class DownloadOrchestrator:
                             "Client app prerelease %s is retained and already tracked; no download needed",
                             prerelease.tag_name,
                         )
+                        successful_prereleases.append(prerelease)
                         continue
-
-                selected_assets = [
-                    asset
-                    for asset in self.client_app_downloader.get_assets(prerelease)
-                    if self.client_app_downloader.should_download_asset(asset.name)
-                ]
-                if not selected_assets:
-                    logger.debug(
-                        "Skipping client app prerelease %s because no selected assets matched",
-                        prerelease.tag_name,
-                    )
-                    continue
 
                 self.client_app_downloader.ensure_release_notes(prerelease)
                 prerelease_results: list[DownloadResult] = []
                 for asset in selected_assets:
-                    download_asset = getattr(
-                        self,
-                        "_client_app_download_asset",
-                        self.client_app_downloader.download_app,
-                    )
-                    result = download_asset(prerelease, asset)
+                    result = self.client_app_downloader.download_app(prerelease, asset)
                     if result.success and not result.was_skipped:
                         any_app_downloaded = True
                     prerelease_results.append(result)
@@ -480,6 +493,7 @@ class DownloadOrchestrator:
                 if prerelease_results and all(
                     result.success for result in prerelease_results
                 ):
+                    successful_prereleases.append(prerelease)
                     if not self.client_app_downloader.update_prerelease_tracking(
                         prerelease.tag_name
                     ):
@@ -487,6 +501,17 @@ class DownloadOrchestrator:
                             "Failed to update client app prerelease tracking for %s",
                             prerelease.tag_name,
                         )
+
+            update_pointer = getattr(
+                self.client_app_downloader,
+                "update_latest_pointer_for_release",
+                None,
+            )
+            latest_successful_prerelease = self._select_latest_successful_release(
+                successful_prereleases
+            )
+            if latest_successful_prerelease is not None and callable(update_pointer):
+                update_pointer(latest_successful_prerelease)
 
             if (
                 self.config.get(
@@ -565,6 +590,9 @@ class DownloadOrchestrator:
             limit=limit,
         )
 
+    # TODO: Multiple code paths request releases with increasing limits (e.g. 10→20→40),
+    # causing redundant API fetches within a single run.  Consider fetching at the largest
+    # needed limit once and sharing the result across cleanup/tracking/summary paths.
     def _ensure_releases(
         self,
         downloader: Union[
@@ -765,11 +793,19 @@ class DownloadOrchestrator:
                 releases_to_process, self.firmware_downloader.is_release_complete
             )
             releases_to_download = []
+            successful_firmware_releases: list[Release] = []
             for release, is_complete in zip(
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
                     self.firmware_downloader.ensure_release_notes(release)
+                    if self._has_selected_non_manifest_firmware_asset(release):
+                        successful_firmware_releases.append(release)
+                    else:
+                        logger.debug(
+                            "Skipping firmware release %s as latest candidate because no selected non-manifest firmware assets matched",
+                            release.tag_name,
+                        )
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -783,6 +819,19 @@ class DownloadOrchestrator:
                     self.firmware_downloader.ensure_release_notes(release)
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
+                        if self._has_selected_non_manifest_firmware_asset(release):
+                            successful_firmware_releases.append(release)
+
+            update_pointer = getattr(
+                self.firmware_downloader,
+                "update_latest_pointer_for_release",
+                None,
+            )
+            latest_successful_firmware = self._select_latest_successful_release(
+                successful_firmware_releases
+            )
+            if latest_successful_firmware is not None and callable(update_pointer):
+                update_pointer(latest_successful_firmware)
 
             if latest_release:
                 (
@@ -825,11 +874,16 @@ class DownloadOrchestrator:
             )
             if prerelease_dir.exists():
                 for item in prerelease_dir.iterdir():
-                    # Skip symlinks to prevent path traversal attacks
                     if item.is_symlink():
-                        logger.warning(
-                            f"Skipping symlink in prerelease folder: {item.name}"
-                        )
+                        if item.name == LATEST_POINTER_NAME:
+                            logger.debug(
+                                "Skipping expected symlink in prerelease folder: %s",
+                                item.name,
+                            )
+                        else:
+                            logger.warning(
+                                "Skipping symlink in prerelease folder: %s", item.name
+                            )
                         continue
                     if not item.is_dir():
                         continue
@@ -899,16 +953,95 @@ class DownloadOrchestrator:
             best_release or best_revoked_release or (releases[0] if releases else None)
         )
 
-    def _download_client_app_release(self, release: Release) -> bool:
-        """Download all selected client app assets for a release."""
-        any_downloaded = False
+    def _select_latest_successful_release(
+        self, releases: List[Release]
+    ) -> Optional[Release]:
+        """
+        Select the latest completed release by release identity.
+
+        Completed releases can be a mix of already-present releases and releases
+        downloaded during this run. The latest pointer must be based on version
+        and release metadata, not the order in which those outcomes were found.
+        """
+        if not releases:
+            return None
+
+        return max(releases, key=self._successful_release_sort_key)
+
+    @staticmethod
+    def _counts_as_completed_result(result: DownloadResult) -> bool:
+        """Return whether a result materialized or verified a usable artifact."""
+        return bool(getattr(result, "success", False)) and not (
+            bool(getattr(result, "was_skipped", False))
+            and getattr(result, "error_type", None) == ERROR_TYPE_REVOKED_RELEASE
+        )
+
+    def _successful_release_sort_key(self, release: Release) -> tuple[Any, ...]:
         try:
-            for asset in self.client_app_downloader.get_assets(release):
-                if not self.client_app_downloader.should_download_asset(asset.name):
-                    continue
+            parsed_version = self.version_manager.normalize_version(release.tag_name)
+        except (AttributeError, TypeError, ValueError):
+            parsed_version = None
+
+        release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+        version_parts: tuple[int, ...] = ()
+        if isinstance(release_tuple, tuple) and all(
+            isinstance(part, int) for part in release_tuple
+        ):
+            version_parts = release_tuple
+        elif isinstance(release_tuple, list) and all(
+            isinstance(part, int) for part in release_tuple
+        ):
+            version_parts = tuple(release_tuple)
+
+        max_components = 8
+        normalized_version = version_parts[:max_components] + (0,) * (
+            max_components - len(version_parts[:max_components])
+        )
+        published_dt = parse_iso_datetime_utc(getattr(release, "published_at", None))
+        created_dt = parse_iso_datetime_utc(getattr(release, "created_at", None))
+        timestamp_dt = published_dt or created_dt
+        timestamp = timestamp_dt.timestamp() if timestamp_dt is not None else 0.0
+        tag_name = str(release.tag_name or "")
+        release_name = str(release.name or "")
+        if isinstance(parsed_version, Version):
+            return (
+                2,
+                parsed_version,
+                timestamp,
+                tag_name,
+                release_name,
+            )
+        return (
+            1 if version_parts else 0,
+            *normalized_version,
+            timestamp,
+            tag_name,
+            release_name,
+        )
+
+    def _download_client_app_release(self, release: Release) -> bool:
+        """Download all selected client app assets for a release.
+
+        Returns:
+            bool: True only when at least one asset was attempted and every attempted result succeeded.
+        """
+        attempted_results: list[DownloadResult] = []
+        try:
+            selected_assets = [
+                asset
+                for asset in self.client_app_downloader.get_assets(release)
+                if self.client_app_downloader.should_download_asset(asset.name)
+            ]
+            if not selected_assets:
+                logger.debug(
+                    "Skipping client app release %s because no selected assets matched",
+                    release.tag_name,
+                )
+                return False
+
+            for asset in selected_assets:
                 result = self.client_app_downloader.download_app(release, asset)
-                if result.success and not result.was_skipped:
-                    any_downloaded = True
+                attempted_results.append(result)
                 self._handle_download_result(result, FILE_TYPE_CLIENT_APP)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             failure = DownloadResult(
@@ -923,7 +1056,9 @@ class DownloadOrchestrator:
             )
             return False
         else:
-            return any_downloaded
+            return bool(attempted_results) and all(
+                self._counts_as_completed_result(result) for result in attempted_results
+            )
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
@@ -936,9 +1071,9 @@ class DownloadOrchestrator:
             release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
 
         Returns:
-            bool: `True` if at least one asset was downloaded, `False` otherwise.
+            bool: `True` only when at least one firmware payload result was attempted and every payload result succeeded.
         """
-        any_downloaded = False
+        payload_results: list[DownloadResult] = []
         try:
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
@@ -951,8 +1086,6 @@ class DownloadOrchestrator:
                 raw_manifest_results if isinstance(raw_manifest_results, list) else []
             )
             for result in manifest_results:
-                if result.success and not result.was_skipped:
-                    any_downloaded = True
                 self._handle_download_result(result, FILE_TYPE_FIRMWARE_MANIFEST)
 
             # Filter binary assets based on selection/exclude rules.
@@ -968,11 +1101,17 @@ class DownloadOrchestrator:
                 )
             ]
 
-            if not assets_to_download and not manifest_results:
-                logger.info(
-                    "Release %s found, but no assets matched current selection/exclude filters",
-                    release.tag_name,
-                )
+            if not assets_to_download:
+                if manifest_results:
+                    logger.info(
+                        "Release %s has manifests but no firmware assets matched current selection/exclude filters",
+                        release.tag_name,
+                    )
+                else:
+                    logger.info(
+                        "Release %s found, but no assets matched current selection/exclude filters",
+                        release.tag_name,
+                    )
                 return False
 
             # Download each asset in the release
@@ -981,8 +1120,7 @@ class DownloadOrchestrator:
                 download_result = self.firmware_downloader.download_firmware(
                     release, asset
                 )
-                if download_result.success and not download_result.was_skipped:
-                    any_downloaded = True
+                payload_results.append(download_result)
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
                 # If download succeeded, extract files if AUTO_EXTRACT is enabled.
@@ -992,15 +1130,20 @@ class DownloadOrchestrator:
                     and self.config.get("AUTO_EXTRACT", False)
                     and asset.name.lower().endswith(".zip")
                     and not (
-                        download_result.was_skipped
-                        and download_result.error_type == "revoked_release"
+                        getattr(download_result, "was_skipped", False)
+                        and getattr(download_result, "error_type", None)
+                        == ERROR_TYPE_REVOKED_RELEASE
                     )
                 ):
                     extract_result = self.firmware_downloader.extract_firmware(
                         release, asset, extract_patterns, exclude_patterns
                     )
+                    payload_results.append(extract_result)
                     self._handle_download_result(extract_result, "firmware_extraction")
-            return any_downloaded
+
+            return bool(payload_results) and all(
+                self._counts_as_completed_result(result) for result in payload_results
+            )
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")
             return False
@@ -1017,6 +1160,28 @@ class DownloadOrchestrator:
             asset_name_lower.startswith(FIRMWARE_DIR_PREFIX)
             and asset_name_lower.endswith(".json")
             and not asset_name_lower.endswith(FIRMWARE_MANIFEST_EXTENSION)
+        )
+
+    def _has_selected_non_manifest_firmware_asset(self, release: Release) -> bool:
+        """Check whether a firmware release has at least one selected non-manifest asset.
+
+        Releases with no assets or only manifest assets are excluded from latest
+        eligibility. A release qualifies only when at least one non-manifest
+        payload asset matches the configured firmware selection.
+        """
+        assets = getattr(release, "assets", None) or []
+        if not assets:
+            return False
+        non_manifest = [
+            a
+            for a in assets
+            if getattr(a, "name", None) and not self._is_firmware_manifest_asset(a.name)
+        ]
+        if not non_manifest:
+            return False
+        return any(
+            self.firmware_downloader.should_download_release(release.tag_name, a.name)
+            for a in non_manifest
         )
 
     def _get_extraction_patterns(self) -> List[str]:
