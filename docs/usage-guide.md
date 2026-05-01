@@ -246,6 +246,8 @@ You can manually edit the configuration file or re-run setup:
 fetchtastic setup
 ```
 
+For settings that are not covered by setup prompts, see the [Configuration Reference](configuration.md).
+
 ## Advanced Usage
 
 ### Custom Extraction Patterns
