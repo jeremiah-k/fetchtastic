@@ -3887,3 +3887,108 @@ class TestFirmwarePrereleaseBaselineDerivation:
         # Only the successfully downloaded dir should be tracked
         assert mock_track.call_count == 1
         assert mock_track.call_args.args[1] == success_dir
+
+
+class TestPrereleaseAvailabilityVerification:
+    """Tests for prerelease repo availability verification (force_refresh and fallback reuse)."""
+
+    def test_second_scan_uses_force_refresh_false_by_default(
+        self, downloader, tmp_path
+    ):
+        """When history provides active_dirs and force_refresh=False, second scan calls get_repo_directories with force_refresh=False."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir, "other-dir"],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        # Should call get_repo_directories once (availability scan) with force_refresh=False
+        assert mock_get_dirs.call_count == 1
+        assert mock_get_dirs.call_args[1].get("force_refresh") is False
+
+    def test_second_scan_uses_force_refresh_true_when_requested(
+        self, downloader, tmp_path
+    ):
+        """When force_refresh=True, the repo directory call still receives force_refresh=True."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "status": "active", "directory": active_dir}
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir, "other-dir"],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            downloader.download_repo_prerelease_firmware(
+                "v2.7.22.96dd647", force_refresh=True
+            )
+
+        # Should call get_repo_directories with force_refresh=True
+        assert mock_get_dirs.call_count == 1
+        assert mock_get_dirs.call_args[1].get("force_refresh") is True
+
+    def test_fallback_reuses_repo_dirs_for_availability_scan(
+        self, downloader, tmp_path
+    ):
+        """When fallback scan already fetched repo dirs, the availability scan reuses them."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.aaaaaa",
+                    "firmware-2.7.23.bbbbbb",
+                ],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        # Should call get_repo_directories exactly once (fallback scan reused for availability)
+        assert mock_get_dirs.call_count == 1

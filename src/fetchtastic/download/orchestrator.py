@@ -937,8 +937,11 @@ class DownloadOrchestrator:
         )
 
     def _download_client_app_release(self, release: Release) -> bool:
-        """Download all selected client app assets for a release."""
-        any_downloaded = False
+        """Download all selected client app assets for a release.
+
+        Returns:
+            bool: True only when at least one asset was attempted and every attempted result succeeded.
+        """
         attempted_results: list[DownloadResult] = []
         try:
             for asset in self.client_app_downloader.get_assets(release):
@@ -946,8 +949,6 @@ class DownloadOrchestrator:
                     continue
                 result = self.client_app_downloader.download_app(release, asset)
                 attempted_results.append(result)
-                if result.success and not result.was_skipped:
-                    any_downloaded = True
                 self._handle_download_result(result, FILE_TYPE_CLIENT_APP)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             failure = DownloadResult(
@@ -962,7 +963,7 @@ class DownloadOrchestrator:
             )
             return False
         else:
-            return any_downloaded
+            return bool(attempted_results) and all(r.success for r in attempted_results)
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
@@ -975,9 +976,8 @@ class DownloadOrchestrator:
             release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
 
         Returns:
-            bool: `True` if at least one asset was downloaded, `False` otherwise.
+            bool: `True` only when at least one result was attempted and every attempted result succeeded.
         """
-        any_downloaded = False
         attempted_results: list[DownloadResult] = []
         try:
             # Get extraction patterns from configuration
@@ -992,8 +992,6 @@ class DownloadOrchestrator:
             )
             for result in manifest_results:
                 attempted_results.append(result)
-                if result.success and not result.was_skipped:
-                    any_downloaded = True
                 self._handle_download_result(result, FILE_TYPE_FIRMWARE_MANIFEST)
 
             # Filter binary assets based on selection/exclude rules.
@@ -1023,8 +1021,6 @@ class DownloadOrchestrator:
                     release, asset
                 )
                 attempted_results.append(download_result)
-                if download_result.success and not download_result.was_skipped:
-                    any_downloaded = True
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
                 # If download succeeded, extract files if AUTO_EXTRACT is enabled.
@@ -1043,7 +1039,7 @@ class DownloadOrchestrator:
                     )
                     attempted_results.append(extract_result)
                     self._handle_download_result(extract_result, "firmware_extraction")
-            return any_downloaded
+            return bool(attempted_results) and all(r.success for r in attempted_results)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")
             return False

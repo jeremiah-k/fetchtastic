@@ -1856,6 +1856,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if latest_active_dir and latest_active_dir not in active_dirs:
             active_dirs.append(latest_active_dir)
 
+        fallback_repo_dirs = None
         if active_dirs:
             logger.info("Using commit history for prerelease detection")
         else:
@@ -1873,6 +1874,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         type(dirs).__name__,
                     )
                     dirs = []
+                else:
+                    fallback_repo_dirs = [d for d in dirs if isinstance(d, str)]
                 matches = prerelease_manager.scan_prerelease_directories(
                     [d for d in dirs if isinstance(d, str)], expected_version
                 )
@@ -1895,33 +1898,42 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         if active_dirs:
             repo_availability_verified = False
-            try:
-                repo_dirs = self.cache_manager.get_repo_directories(
-                    "",
-                    force_refresh=True,
-                    github_token=self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
-                )
-                if not isinstance(repo_dirs, list):
-                    logger.debug(
-                        "Expected list of repo directories from cache manager, got %s",
-                        type(repo_dirs).__name__,
+            if fallback_repo_dirs is not None:
+                repo_dirs = fallback_repo_dirs
+            else:
+                try:
+                    repo_dirs = self.cache_manager.get_repo_directories(
+                        "",
+                        force_refresh=force_refresh,
+                        github_token=self.config.get("GITHUB_TOKEN"),
+                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                     )
-                else:
-                    repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
-                    if repo_dirs:
-                        repo_availability_verified = True
-                    else:
-                        logger.debug(
-                            "Repo availability scan returned no directories; "
-                            "cannot verify availability of history-derived prereleases"
-                        )
-            except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+                except (
+                    requests.RequestException,
+                    OSError,
+                    ValueError,
+                    TypeError,
+                ) as exc:
+                    logger.debug(
+                        "Repo availability scan failed; continuing with best history-derived active dirs: %s",
+                        exc,
+                    )
+                    repo_dirs = []
+            if not isinstance(repo_dirs, list):
                 logger.debug(
-                    "Repo availability scan failed; continuing with best history-derived active dirs: %s",
-                    exc,
+                    "Expected list of repo directories from cache manager, got %s",
+                    type(repo_dirs).__name__,
                 )
                 repo_dirs = []
+            else:
+                repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
+                if repo_dirs:
+                    repo_availability_verified = True
+                else:
+                    logger.debug(
+                        "Repo availability scan returned no directories; "
+                        "cannot verify availability of history-derived prereleases"
+                    )
             deleted_dirs = self._get_deleted_prerelease_dirs_from_history(
                 history_entries
             )

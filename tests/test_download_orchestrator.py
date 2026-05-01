@@ -902,7 +902,7 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.download_app.assert_called_once()
 
     def test_download_client_app_release_skipped(self, orchestrator):
-        """Test client app release download when skipped."""
+        """Test client app release download when skipped (clean skip remains eligible)."""
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
         asset = Mock()
@@ -917,7 +917,7 @@ class TestDownloadOrchestrator:
 
         result = orchestrator._download_client_app_release(release)
 
-        assert result is False
+        assert result is True
 
     def test_download_client_app_release_error(self, orchestrator):
         """Test client app release download with error."""
@@ -1291,10 +1291,10 @@ class TestDownloadOrchestrator:
 
         orchestrator.firmware_downloader.extract_firmware.assert_called_once()
 
-    def test_download_firmware_release_returns_true_when_download_succeeds_even_if_extraction_fails(
+    def test_download_firmware_release_returns_false_when_extraction_fails(
         self, orchestrator
     ):
-        """_download_firmware_release returns True when download succeeds, even if extraction fails."""
+        """_download_firmware_release returns False when extraction is attempted but fails."""
         release = Mock(spec=Release)
         release.tag_name = "v2.0.0"
         asset = Mock()
@@ -1315,7 +1315,7 @@ class TestDownloadOrchestrator:
 
         result = orchestrator._download_firmware_release(release)
 
-        assert result is True
+        assert result is False
 
     def test_download_firmware_release_returns_true_when_extraction_succeeds(
         self, orchestrator
@@ -3488,6 +3488,107 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.cleanup_superseded_prereleases.assert_called_once_with(
             "v2.7.22"
         )
+
+    def test_download_client_app_release_partial_failure_returns_false(
+        self, orchestrator
+    ):
+        """Client app release with one successful asset and one failed asset returns False."""
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+        asset1 = Mock()
+        asset1.name = "app.apk"
+        asset2 = Mock()
+        asset2.name = "app.dmg"
+        release.assets = [asset1, asset2]
+        orchestrator.client_app_downloader.get_assets.return_value = [asset1, asset2]
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        mock_success = Mock(spec=DownloadResult)
+        mock_success.success = True
+        mock_failure = Mock(spec=DownloadResult)
+        mock_failure.success = False
+        orchestrator.client_app_downloader.download_app.side_effect = [
+            mock_success,
+            mock_failure,
+        ]
+        orchestrator._handle_download_result = Mock()
+
+        result = orchestrator._download_client_app_release(release)
+
+        assert result is False
+
+    def test_download_firmware_release_full_success_returns_true(self, orchestrator):
+        """Firmware release with successful download and successful extraction returns True."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware.zip"
+        release.assets = [asset]
+        orchestrator.config["AUTO_EXTRACT"] = True
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        mock_dl = Mock(spec=DownloadResult)
+        mock_dl.success = True
+        mock_dl.was_skipped = False
+        orchestrator.firmware_downloader.download_firmware.return_value = mock_dl
+        mock_extract = Mock(spec=DownloadResult)
+        mock_extract.success = True
+        orchestrator.firmware_downloader.extract_firmware.return_value = mock_extract
+        orchestrator._handle_download_result = Mock()
+
+        result = orchestrator._download_firmware_release(release)
+
+        assert result is True
+
+    def test_process_firmware_downloads_partial_failure_cascades_to_next(
+        self, tmp_path
+    ):
+        """Partial failure in a newer release allows next newest fully successful release to win latest."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
+            "CHECK_FIRMWARE_PRERELEASES": False,
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+            "FIRMWARE_VERSIONS_TO_KEEP": 2,
+            "KEEP_LAST_BETA": False,
+            "FILTER_REVOKED_RELEASES": False,
+        }
+        orch = DownloadOrchestrator(config)
+        newer = Release(tag_name="v2.0.0", prerelease=False)
+        older = Release(tag_name="v1.0.0", prerelease=False)
+        orch.firmware_downloader.get_releases = Mock(return_value=[newer, older])
+        orch.firmware_downloader.is_release_complete = Mock(return_value=False)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None, None)
+        )
+        orch.firmware_downloader.collect_non_revoked_releases = Mock(
+            return_value=([newer, older], [newer, older], 8)
+        )
+        orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+
+        side_effects = {id(newer): False, id(older): True}
+
+        def _download_firmware_side_effect(release):
+            return side_effects.get(id(release), False)
+
+        with (
+            patch.object(
+                orch,
+                "_download_firmware_release",
+                side_effect=_download_firmware_side_effect,
+            ) as mock_dl,
+            patch.object(
+                orch.firmware_downloader,
+                "update_latest_pointer_for_release",
+            ) as mock_pointer,
+        ):
+            orch._process_firmware_downloads()
+
+        # newest_successful should be older (newer partially failed)
+        assert mock_pointer.call_count == 1
+        mock_pointer.assert_called_once_with(older)
 
 
 class TestFirmwarePrereleaseBaselineRegression:
