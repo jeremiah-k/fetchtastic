@@ -25,6 +25,7 @@ from fetchtastic.constants import (
     ERROR_TYPE_EXTRACTION,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
+    ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_VALIDATION,
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_FIRMWARE,
@@ -550,7 +551,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 file_size=asset.size,
                 file_type=FILE_TYPE_FIRMWARE,
                 was_skipped=True,
-                error_type="revoked_release",
+                error_type=ERROR_TYPE_REVOKED_RELEASE,
                 error_details={
                     "revoked": True,
                     "filter_revoked_releases": True,

@@ -31,6 +31,7 @@ from fetchtastic.constants import (
     DEFAULT_KEEP_LAST_BETA,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     ERROR_TYPE_RETRY_FAILURE,
+    ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_UNKNOWN,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
@@ -972,7 +973,7 @@ class DownloadOrchestrator:
         """Return whether a result materialized or verified a usable artifact."""
         return bool(getattr(result, "success", False)) and not (
             bool(getattr(result, "was_skipped", False))
-            and getattr(result, "error_type", None) == "revoked_release"
+            and getattr(result, "error_type", None) == ERROR_TYPE_REVOKED_RELEASE
         )
 
     def _successful_release_sort_key(self, release: Release) -> tuple[Any, ...]:
@@ -1131,7 +1132,7 @@ class DownloadOrchestrator:
                     and not (
                         getattr(download_result, "was_skipped", False)
                         and getattr(download_result, "error_type", None)
-                        == "revoked_release"
+                        == ERROR_TYPE_REVOKED_RELEASE
                     )
                 ):
                     extract_result = self.firmware_downloader.extract_firmware(

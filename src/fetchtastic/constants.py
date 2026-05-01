@@ -249,6 +249,7 @@ ERROR_TYPE_FILESYSTEM = "filesystem_error"
 ERROR_TYPE_EXTRACTION = "extraction_error"
 ERROR_TYPE_RETRY_FAILURE = "retry_failure"
 ERROR_TYPE_UNKNOWN = "unknown_error"
+ERROR_TYPE_REVOKED_RELEASE = "revoked_release"
 
 # File type sets for efficient categorization (defined once for performance)
 FIRMWARE_FILE_TYPES = {
