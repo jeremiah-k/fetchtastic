@@ -459,7 +459,22 @@ class DownloadOrchestrator:
                             "Client app prerelease %s is retained and already tracked; no download needed",
                             prerelease.tag_name,
                         )
-                        successful_prereleases.append(prerelease)
+                        selected_assets = [
+                            asset
+                            for asset in self.client_app_downloader.get_assets(
+                                prerelease
+                            )
+                            if self.client_app_downloader.should_download_asset(
+                                asset.name
+                            )
+                        ]
+                        if selected_assets:
+                            successful_prereleases.append(prerelease)
+                        else:
+                            logger.debug(
+                                "Skipping client app prerelease %s as latest candidate because no selected assets matched",
+                                prerelease.tag_name,
+                            )
                         continue
 
                 selected_assets = [
@@ -1047,9 +1062,9 @@ class DownloadOrchestrator:
             release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
 
         Returns:
-            bool: `True` only when at least one result was attempted and every attempted result succeeded.
+            bool: `True` only when at least one firmware payload result was attempted and every payload result succeeded.
         """
-        attempted_results: list[DownloadResult] = []
+        payload_results: list[DownloadResult] = []
         try:
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
@@ -1062,7 +1077,6 @@ class DownloadOrchestrator:
                 raw_manifest_results if isinstance(raw_manifest_results, list) else []
             )
             for result in manifest_results:
-                attempted_results.append(result)
                 self._handle_download_result(result, FILE_TYPE_FIRMWARE_MANIFEST)
 
             # Filter binary assets based on selection/exclude rules.
@@ -1078,11 +1092,17 @@ class DownloadOrchestrator:
                 )
             ]
 
-            if not assets_to_download and not manifest_results:
-                logger.info(
-                    "Release %s found, but no assets matched current selection/exclude filters",
-                    release.tag_name,
-                )
+            if not assets_to_download:
+                if manifest_results:
+                    logger.info(
+                        "Release %s has manifests but no firmware assets matched current selection/exclude filters",
+                        release.tag_name,
+                    )
+                else:
+                    logger.info(
+                        "Release %s found, but no assets matched current selection/exclude filters",
+                        release.tag_name,
+                    )
                 return False
 
             # Download each asset in the release
@@ -1091,7 +1111,7 @@ class DownloadOrchestrator:
                 download_result = self.firmware_downloader.download_firmware(
                     release, asset
                 )
-                attempted_results.append(download_result)
+                payload_results.append(download_result)
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
                 # If download succeeded, extract files if AUTO_EXTRACT is enabled.
@@ -1108,9 +1128,9 @@ class DownloadOrchestrator:
                     extract_result = self.firmware_downloader.extract_firmware(
                         release, asset, extract_patterns, exclude_patterns
                     )
-                    attempted_results.append(extract_result)
+                    payload_results.append(extract_result)
                     self._handle_download_result(extract_result, "firmware_extraction")
-            return bool(attempted_results) and all(r.success for r in attempted_results)
+            return bool(payload_results) and all(r.success for r in payload_results)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")
             return False

@@ -1077,13 +1077,19 @@ class TestDownloadOrchestrator:
             "APP_VERSIONS_TO_KEEP": 2,
         }
         orch = DownloadOrchestrator(config)
+        asset = Mock()
+        asset.name = "app.apk"
         stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
-        prerelease = Release(tag_name="v2.0.0-beta.1", prerelease=True, assets=[])
+        prerelease = Release(tag_name="v2.0.0-beta.1", prerelease=True, assets=[asset])
         orch.client_app_downloader.get_releases = Mock(return_value=[stable])
         orch.client_app_downloader.update_release_history = Mock(return_value={})
         orch.client_app_downloader.handle_prereleases = Mock(return_value=[prerelease])
         orch.client_app_downloader.should_download_prerelease = Mock(return_value=False)
         orch.client_app_downloader.is_release_complete = Mock(return_value=True)
+        orch.client_app_downloader.get_assets = Mock(
+            side_effect=lambda release: release.assets
+        )
+        orch.client_app_downloader.should_download_asset = Mock(return_value=True)
         orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
 
         with (
@@ -1101,10 +1107,39 @@ class TestDownloadOrchestrator:
         orch.client_app_downloader.update_prerelease_tracking.assert_not_called()
         mock_pointer.assert_called_once_with(prerelease)
 
+    def test_process_client_app_retained_complete_prerelease_no_selected_assets_not_latest(
+        self, tmp_path
+    ):
+        """A retained complete prerelease without selected assets cannot repair latest."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "APP_VERSIONS_TO_KEEP": 2,
+        }
+        orch = DownloadOrchestrator(config)
+        stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        prerelease = Release(tag_name="v2.0.0-beta.1", prerelease=True, assets=[])
+        orch.client_app_downloader.get_releases = Mock(return_value=[stable])
+        orch.client_app_downloader.update_release_history = Mock(return_value={})
+        orch.client_app_downloader.handle_prereleases = Mock(return_value=[prerelease])
+        orch.client_app_downloader.should_download_prerelease = Mock(return_value=False)
+        orch.client_app_downloader.is_release_complete = Mock(return_value=True)
+        orch.client_app_downloader.get_assets = Mock(return_value=[])
+        orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
+
+        with patch.object(
+            orch.client_app_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_client_app_downloads()
+
+        orch.client_app_downloader.update_prerelease_tracking.assert_not_called()
+        mock_pointer.assert_not_called()
+
     def test_process_client_app_newer_retained_prerelease_beats_older_processed(
         self, tmp_path
     ):
-        """Retained complete prereleases participate in identity-based selection."""
+        """A newer retained prerelease without selected assets cannot beat a valid older one."""
         config = {
             "DOWNLOAD_DIR": str(tmp_path),
             "SAVE_CLIENT_APPS": True,
@@ -1154,7 +1189,7 @@ class TestDownloadOrchestrator:
         orch.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
             older.tag_name
         )
-        mock_pointer.assert_called_once_with(newer)
+        mock_pointer.assert_called_once_with(older)
 
     def test_process_client_app_incomplete_retained_prerelease_does_not_qualify(
         self, tmp_path
@@ -1687,14 +1722,17 @@ class TestDownloadOrchestrator:
             return_value=([release], [release], 8)
         )
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        manifest_result = Mock(spec=DownloadResult)
+        manifest_result.success = True
+        manifest_result.was_skipped = False
+        orch.firmware_downloader.download_manifests = Mock(
+            return_value=[manifest_result]
+        )
 
-        with (
-            patch.object(orch, "_download_firmware_release", return_value=True),
-            patch.object(
-                orch.firmware_downloader,
-                "update_latest_pointer_for_release",
-            ) as mock_pointer,
-        ):
+        with patch.object(
+            orch.firmware_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
             orch._process_firmware_downloads()
 
         mock_pointer.assert_not_called()
@@ -1945,6 +1983,57 @@ class TestDownloadOrchestrator:
         result = orchestrator._download_firmware_release(release)
 
         assert result is False
+
+    def test_download_firmware_release_manifest_only_success_returns_false(
+        self, orchestrator
+    ):
+        """Successful manifest-only work does not count as firmware release success."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        manifest = Mock()
+        manifest.name = "firmware-2.0.0.json"
+        release.assets = [manifest]
+        manifest_result = Mock(spec=DownloadResult)
+        manifest_result.success = True
+        manifest_result.was_skipped = False
+        orchestrator.firmware_downloader.download_manifests.return_value = [
+            manifest_result
+        ]
+        orchestrator.firmware_downloader.should_download_release.return_value = False
+        orchestrator._handle_download_result = Mock()
+
+        result = orchestrator._download_firmware_release(release)
+
+        assert result is False
+        orchestrator.firmware_downloader.download_firmware.assert_not_called()
+        orchestrator._handle_download_result.assert_called_once_with(
+            manifest_result, "firmware_manifest"
+        )
+
+    def test_download_firmware_release_manifest_success_no_matching_payload_returns_false(
+        self, orchestrator
+    ):
+        """Manifest success is non-fatal but cannot make an unselected payload release succeed."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        manifest = Mock()
+        manifest.name = "firmware-2.0.0.json"
+        payload = Mock()
+        payload.name = "firmware-rak4631.zip"
+        release.assets = [manifest, payload]
+        manifest_result = Mock(spec=DownloadResult)
+        manifest_result.success = True
+        manifest_result.was_skipped = False
+        orchestrator.firmware_downloader.download_manifests.return_value = [
+            manifest_result
+        ]
+        orchestrator.firmware_downloader.should_download_release.return_value = False
+        orchestrator._handle_download_result = Mock()
+
+        result = orchestrator._download_firmware_release(release)
+
+        assert result is False
+        orchestrator.firmware_downloader.download_firmware.assert_not_called()
 
     def test_download_firmware_release_with_extraction(self, orchestrator):
         """Firmware download should extract when AUTO_EXTRACT is enabled."""
