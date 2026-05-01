@@ -79,7 +79,7 @@ def update_latest_pointer(
         return True
     except (AttributeError, NotImplementedError, OSError) as exc:
         try:
-            if tmp_created and (tmp_path.exists() or tmp_path.is_symlink()):
+            if tmp_created and (tmp_path.is_symlink() or tmp_path.exists()):
                 tmp_path.unlink()
             if link_path.exists() and not link_path.is_symlink():
                 return False

@@ -958,6 +958,14 @@ class DownloadOrchestrator:
 
         return max(releases, key=self._successful_release_sort_key)
 
+    @staticmethod
+    def _counts_as_completed_result(result: DownloadResult) -> bool:
+        """Return whether a result materialized or verified a usable artifact."""
+        return bool(getattr(result, "success", False)) and not (
+            bool(getattr(result, "was_skipped", False))
+            and getattr(result, "error_type", None) == "revoked_release"
+        )
+
     def _successful_release_sort_key(self, release: Release) -> tuple[Any, ...]:
         try:
             parsed_version = self.version_manager.normalize_version(release.tag_name)
@@ -1009,9 +1017,19 @@ class DownloadOrchestrator:
         """
         attempted_results: list[DownloadResult] = []
         try:
-            for asset in self.client_app_downloader.get_assets(release):
-                if not self.client_app_downloader.should_download_asset(asset.name):
-                    continue
+            selected_assets = [
+                asset
+                for asset in self.client_app_downloader.get_assets(release)
+                if self.client_app_downloader.should_download_asset(asset.name)
+            ]
+            if not selected_assets:
+                logger.debug(
+                    "Skipping client app release %s because no selected assets matched",
+                    release.tag_name,
+                )
+                return False
+
+            for asset in selected_assets:
                 result = self.client_app_downloader.download_app(release, asset)
                 attempted_results.append(result)
                 self._handle_download_result(result, FILE_TYPE_CLIENT_APP)
@@ -1028,7 +1046,9 @@ class DownloadOrchestrator:
             )
             return False
         else:
-            return bool(attempted_results) and all(r.success for r in attempted_results)
+            return bool(attempted_results) and all(
+                self._counts_as_completed_result(result) for result in attempted_results
+            )
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
@@ -1111,14 +1131,8 @@ class DownloadOrchestrator:
                     payload_results.append(extract_result)
                     self._handle_download_result(extract_result, "firmware_extraction")
 
-            def _counts_as_completed(result: DownloadResult) -> bool:
-                return bool(getattr(result, "success", False)) and not (
-                    bool(getattr(result, "was_skipped", False))
-                    and getattr(result, "error_type", None) == "revoked_release"
-                )
-
             return bool(payload_results) and all(
-                _counts_as_completed(result) for result in payload_results
+                self._counts_as_completed_result(result) for result in payload_results
             )
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")

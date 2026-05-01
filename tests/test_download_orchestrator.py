@@ -473,6 +473,52 @@ class TestDownloadOrchestrator:
             mock_result, "client_app"
         )
 
+    def test_download_client_app_release_no_selected_assets_returns_false(
+        self, orchestrator
+    ):
+        """Client app releases without selected assets cannot qualify as complete."""
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+        asset = Mock()
+        asset.name = "app.apk"
+        orchestrator.client_app_downloader.get_assets.return_value = [asset]
+        orchestrator.client_app_downloader.should_download_asset.return_value = False
+        orchestrator.client_app_downloader.download_app = Mock()
+        orchestrator._handle_download_result = Mock()
+
+        result = orchestrator._download_client_app_release(release)
+
+        assert result is False
+        orchestrator.client_app_downloader.download_app.assert_not_called()
+        orchestrator._handle_download_result.assert_not_called()
+
+    def test_process_client_app_stable_no_selected_assets_not_latest(self, tmp_path):
+        """Stable client app latest is not updated for releases with no selected assets."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "APP_VERSIONS_TO_KEEP": 1,
+        }
+        orch = DownloadOrchestrator(config)
+        release = Release(tag_name="v1.0.0", prerelease=False)
+        asset = Mock()
+        asset.name = "app.apk"
+        orch.client_app_downloader.get_releases = Mock(return_value=[release])
+        orch.client_app_downloader.update_release_history = Mock(return_value={})
+        orch.client_app_downloader.get_assets = Mock(return_value=[asset])
+        orch.client_app_downloader.should_download_asset = Mock(return_value=False)
+        orch.client_app_downloader.download_app = Mock()
+        orch.client_app_downloader.handle_prereleases = Mock(return_value=[])
+
+        with patch.object(
+            orch.client_app_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_client_app_downloads()
+
+        orch.client_app_downloader.download_app.assert_not_called()
+        mock_pointer.assert_not_called()
+
     def test_download_firmware_release_success(self, orchestrator):
         """Test successful firmware release download."""
         release = Mock(spec=Release)
