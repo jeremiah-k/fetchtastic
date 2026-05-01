@@ -35,16 +35,6 @@ def update_latest_pointer(
     if safe_link is None or safe_link != link_name:
         logger.debug("Skipping latest pointer with unsafe link name: %s", link_name)
         return False
-    if not _is_valid_latest_target(parent, target_name):
-        logger.debug(
-            "Skipping latest pointer because target is invalid: %s/%s",
-            parent,
-            target_name,
-        )
-        return False
-
-    link_path = parent / link_name
-    tmp_path = parent / f".{link_name}.tmp"
     if parent.is_symlink():
         logger.debug(
             "Skipping latest pointer because parent dir is symlinked: %s",
@@ -58,6 +48,16 @@ def update_latest_pointer(
                 ancestor,
             )
             return False
+    if not _is_valid_latest_target(parent, target_name):
+        logger.debug(
+            "Skipping latest pointer because target is invalid: %s/%s",
+            parent,
+            target_name,
+        )
+        return False
+
+    link_path = parent / link_name
+    tmp_path = parent / f".{link_name}.tmp"
     try:
         parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() and not link_path.is_symlink():

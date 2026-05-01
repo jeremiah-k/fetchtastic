@@ -86,6 +86,58 @@ def test_update_latest_pointer_rejects_symlink_target(tmp_path, symlinks_support
     assert not (tmp_path / LATEST_POINTER_NAME).exists()
 
 
+def test_update_latest_pointer_rejects_symlink_parent_before_mutation(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    real_parent = tmp_path / "real"
+    symlink_parent = tmp_path / "linked"
+    real_parent.mkdir()
+    (real_parent / "v2.7.0").mkdir()
+    symlink_parent.symlink_to(real_parent, target_is_directory=True)
+
+    with (
+        patch("os.symlink", wraps=os.symlink) as mock_symlink,
+        patch(
+            "fetchtastic.download.latest_pointer._is_valid_latest_target"
+        ) as mock_target_check,
+    ):
+        result = update_latest_pointer(symlink_parent, "v2.7.0")
+
+    assert result is False
+    mock_symlink.assert_not_called()
+    mock_target_check.assert_not_called()
+    assert not (real_parent / LATEST_POINTER_NAME).exists()
+    assert not (symlink_parent / LATEST_POINTER_NAME).exists()
+
+
+def test_update_latest_pointer_rejects_symlink_ancestor_before_mutation(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    real_ancestor = tmp_path / "real"
+    symlink_ancestor = tmp_path / "linked"
+    real_ancestor.mkdir()
+    symlink_ancestor.symlink_to(real_ancestor, target_is_directory=True)
+    parent = symlink_ancestor / "downloads"
+
+    with (
+        patch("os.symlink", wraps=os.symlink) as mock_symlink,
+        patch(
+            "fetchtastic.download.latest_pointer._is_valid_latest_target"
+        ) as mock_target_check,
+    ):
+        result = update_latest_pointer(parent, "v2.7.0")
+
+    assert result is False
+    mock_symlink.assert_not_called()
+    mock_target_check.assert_not_called()
+    assert not parent.exists()
+    assert not (real_ancestor / "downloads").exists()
+
+
 def test_update_latest_pointer_does_not_replace_regular_file(tmp_path):
     target = tmp_path / "v2.7.0"
     latest = tmp_path / LATEST_POINTER_NAME

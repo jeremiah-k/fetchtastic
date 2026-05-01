@@ -439,7 +439,7 @@ class DownloadOrchestrator:
 
             logger.info("Checking for client app prereleases...")
             prereleases = self.client_app_downloader.handle_prereleases(app_releases)
-            newest_successful_prerelease: Release | None = None
+            successful_prereleases: list[Release] = []
             for prerelease in prereleases:
                 is_newer = self.client_app_downloader.should_download_prerelease(
                     prerelease.tag_name
@@ -495,8 +495,7 @@ class DownloadOrchestrator:
                 if prerelease_results and all(
                     result.success for result in prerelease_results
                 ):
-                    if newest_successful_prerelease is None:
-                        newest_successful_prerelease = prerelease
+                    successful_prereleases.append(prerelease)
                     if not self.client_app_downloader.update_prerelease_tracking(
                         prerelease.tag_name
                     ):
@@ -510,8 +509,11 @@ class DownloadOrchestrator:
                 "update_latest_pointer_for_release",
                 None,
             )
-            if newest_successful_prerelease is not None and update_pointer is not None:
-                update_pointer(newest_successful_prerelease)
+            latest_successful_prerelease = self._select_latest_successful_release(
+                successful_prereleases
+            )
+            if latest_successful_prerelease is not None and update_pointer is not None:
+                update_pointer(latest_successful_prerelease)
 
             if (
                 self.config.get(
@@ -973,8 +975,8 @@ class DownloadOrchestrator:
         created_dt = parse_iso_datetime_utc(getattr(release, "created_at", None))
         timestamp_dt = published_dt or created_dt
         timestamp = timestamp_dt.timestamp() if timestamp_dt is not None else 0.0
-        tag_name = release.tag_name or ""
-        release_name = release.name or ""
+        tag_name = str(release.tag_name or "")
+        release_name = str(release.name or "")
         return (
             1 if version_parts else 0,
             *normalized_version,

@@ -973,6 +973,99 @@ class TestDownloadOrchestrator:
 
         mock_pointer.assert_called_once_with(newer)
 
+    def test_process_client_app_prerelease_latest_uses_release_identity(self, tmp_path):
+        """Prerelease latest pointer is based on version/timestamp identity."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "APP_VERSIONS_TO_KEEP": 2,
+        }
+        orch = DownloadOrchestrator(config)
+        asset = Mock()
+        asset.name = "app.apk"
+        stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        older = Release(
+            tag_name="v2.0.0-beta.1",
+            prerelease=True,
+            published_at="2025-01-01T00:00:00Z",
+            assets=[asset],
+        )
+        newer = Release(
+            tag_name="v2.0.0-beta.2",
+            prerelease=True,
+            published_at="2025-01-02T00:00:00Z",
+            assets=[asset],
+        )
+        orch.client_app_downloader.get_releases = Mock(return_value=[stable])
+        orch.client_app_downloader.update_release_history = Mock(return_value={})
+        orch.client_app_downloader.get_assets = Mock(
+            side_effect=lambda release: release.assets
+        )
+        orch.client_app_downloader.should_download_asset = Mock(return_value=True)
+        orch.client_app_downloader.handle_prereleases = Mock(
+            return_value=[older, newer]
+        )
+        orch.client_app_downloader.should_download_prerelease = Mock(return_value=True)
+        orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
+
+        success = Mock(spec=DownloadResult)
+        success.success = True
+        success.was_skipped = False
+        orch.client_app_downloader.download_app = Mock(return_value=success)
+
+        with patch.object(
+            orch.client_app_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_client_app_downloads()
+
+        assert orch.client_app_downloader.update_prerelease_tracking.call_count == 2
+        mock_pointer.assert_called_once_with(newer)
+
+    def test_process_client_app_prerelease_newest_fails_older_wins(self, tmp_path):
+        """Failed prereleases do not qualify for the prerelease latest pointer."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "APP_VERSIONS_TO_KEEP": 2,
+        }
+        orch = DownloadOrchestrator(config)
+        asset = Mock()
+        asset.name = "app.apk"
+        stable = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        older = Release(tag_name="v2.0.0-beta.1", prerelease=True, assets=[asset])
+        newer = Release(tag_name="v2.0.0-beta.2", prerelease=True, assets=[asset])
+        orch.client_app_downloader.get_releases = Mock(return_value=[stable])
+        orch.client_app_downloader.update_release_history = Mock(return_value={})
+        orch.client_app_downloader.get_assets = Mock(
+            side_effect=lambda release: release.assets
+        )
+        orch.client_app_downloader.should_download_asset = Mock(return_value=True)
+        orch.client_app_downloader.handle_prereleases = Mock(
+            return_value=[newer, older]
+        )
+        orch.client_app_downloader.should_download_prerelease = Mock(return_value=True)
+        orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
+
+        def _download_app(release, _asset):
+            result = Mock(spec=DownloadResult)
+            result.success = release is older
+            result.was_skipped = False
+            return result
+
+        orch.client_app_downloader.download_app = Mock(side_effect=_download_app)
+
+        with patch.object(
+            orch.client_app_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
+            orch._process_client_app_downloads()
+
+        orch.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
+            older.tag_name
+        )
+        mock_pointer.assert_called_once_with(older)
+
     def test_download_client_app_release_skipped(self, orchestrator):
         """Test client app release download when skipped (clean skip remains eligible)."""
         release = Mock(spec=Release)
@@ -1323,6 +1416,87 @@ class TestDownloadOrchestrator:
 
         assert mock_pointer.call_count == 1
         mock_pointer.assert_called_once_with(newer)
+
+    def test_select_latest_successful_release_parseable_beats_unparseable_timestamp(
+        self, orchestrator
+    ):
+        """A parsed release version outranks an unparseable newer timestamp."""
+        parseable = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            published_at="2025-01-01T00:00:00Z",
+        )
+        unparseable = Release(
+            tag_name="nightly",
+            prerelease=False,
+            published_at="2026-01-01T00:00:00Z",
+        )
+        orchestrator.version_manager.get_release_tuple.side_effect = lambda tag: {
+            "v1.0.0": (1, 0, 0),
+            "nightly": None,
+        }[tag]
+
+        selected = orchestrator._select_latest_successful_release(
+            [unparseable, parseable]
+        )
+
+        assert selected is parseable
+
+    def test_select_latest_successful_release_equal_version_uses_published_at(
+        self, orchestrator
+    ):
+        """Equal parsed versions are ordered by published_at timestamp."""
+        older = Release(
+            tag_name="v1.0.0-old",
+            prerelease=False,
+            published_at="2025-01-01T00:00:00Z",
+        )
+        newer = Release(
+            tag_name="v1.0.0-new",
+            prerelease=False,
+            published_at="2025-01-02T00:00:00Z",
+        )
+        orchestrator.version_manager.get_release_tuple.return_value = (1, 0, 0)
+
+        selected = orchestrator._select_latest_successful_release([newer, older])
+
+        assert selected is newer
+
+    def test_select_latest_successful_release_falls_back_to_created_at(
+        self, orchestrator
+    ):
+        """created_at is used when published_at is missing."""
+        older = Release(tag_name="v1.0.0-old", prerelease=False)
+        newer = Release(tag_name="v1.0.0-new", prerelease=False)
+        older.created_at = "2025-01-01T00:00:00Z"
+        newer.created_at = "2025-01-02T00:00:00Z"
+        orchestrator.version_manager.get_release_tuple.return_value = (1, 0, 0)
+
+        selected = orchestrator._select_latest_successful_release([older, newer])
+
+        assert selected is newer
+
+    def test_select_latest_successful_release_final_tie_breaker_is_deterministic(
+        self, orchestrator
+    ):
+        """Equal version and timestamp fall back to string tag/name ordering."""
+        lower = Release(
+            tag_name=123,
+            name=456,
+            prerelease=False,
+            published_at="2025-01-01T00:00:00Z",
+        )
+        higher = Release(
+            tag_name="v1.0.0-z",
+            name="release-z",
+            prerelease=False,
+            published_at="2025-01-01T00:00:00Z",
+        )
+        orchestrator.version_manager.get_release_tuple.return_value = (1, 0, 0)
+
+        selected = orchestrator._select_latest_successful_release([higher, lower])
+
+        assert selected is higher
 
     def test_process_firmware_downloads_newer_download_beats_older_complete(
         self, tmp_path
