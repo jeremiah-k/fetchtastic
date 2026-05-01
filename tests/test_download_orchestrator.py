@@ -4756,3 +4756,53 @@ class TestFirmwareSummaryUsesSelectedReleases:
 
         # Keep limit should reflect actual count
         assert passed_keep_limit == 2
+
+    # =========================================================================
+    # Regression test for repo-prerelease chronology in orchestrator summary
+    # =========================================================================
+
+    def test_firmware_prerelease_chronology_in_orchestrator_summary(self, orchestrator):
+        """Orchestrator should report chronologically newest prerelease, not hash-sorted newest."""
+        orchestrator.android_releases = []
+        orchestrator.desktop_releases = []
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v2.7.22.96dd647"
+        )
+        orchestrator.latest_available_firmware_prerelease_dir = (
+            "firmware-2.7.23.4ee9598"
+        )
+
+        versions = orchestrator.get_latest_versions()
+
+        assert versions["firmware_prerelease"] == "2.7.23.4ee9598"
+
+    def test_firmware_prerelease_chronology_overrides_stale_history(self, orchestrator):
+        """Run-scoped prerelease dir should override stale history returning older hash."""
+        orchestrator.android_releases = []
+        orchestrator.desktop_releases = []
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v2.7.22.96dd647"
+        )
+        orchestrator.latest_available_firmware_prerelease_dir = (
+            "firmware-2.7.23.4ee9598"
+        )
+        orchestrator.version_manager.extract_clean_version = Mock(
+            return_value="2.7.22.96dd647"
+        )
+        orchestrator.version_manager.calculate_expected_prerelease_version = Mock(
+            return_value="2.7.23"
+        )
+        orchestrator.prerelease_manager.get_latest_active_prerelease_from_history = (
+            Mock(return_value=("firmware-2.7.23.7be5426", []))
+        )
+        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
+            return_value=None
+        )
+        orchestrator.desktop_downloader.get_latest_prerelease_tag = Mock(
+            return_value=None
+        )
+
+        versions = orchestrator.get_latest_versions()
+
+        assert versions["firmware_prerelease"] == "2.7.23.4ee9598"
+        orchestrator.prerelease_manager.get_latest_active_prerelease_from_history.assert_not_called()

@@ -46,6 +46,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_MANIFEST_EXTENSION,
     FIRMWARE_PRERELEASES_DIR_NAME,
+    LATEST_POINTER_NAME,
     MAX_RETRY_DELAY,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
@@ -588,6 +589,9 @@ class DownloadOrchestrator:
             limit=limit,
         )
 
+    # TODO: Multiple code paths request releases with increasing limits (e.g. 10→20→40),
+    # causing redundant API fetches within a single run.  Consider fetching at the largest
+    # needed limit once and sharing the result across cleanup/tracking/summary paths.
     def _ensure_releases(
         self,
         downloader: Union[
@@ -869,11 +873,16 @@ class DownloadOrchestrator:
             )
             if prerelease_dir.exists():
                 for item in prerelease_dir.iterdir():
-                    # Skip symlinks to prevent path traversal attacks
                     if item.is_symlink():
-                        logger.warning(
-                            f"Skipping symlink in prerelease folder: {item.name}"
-                        )
+                        if item.name == LATEST_POINTER_NAME:
+                            logger.debug(
+                                "Skipping expected symlink in prerelease folder: %s",
+                                item.name,
+                            )
+                        else:
+                            logger.warning(
+                                "Skipping symlink in prerelease folder: %s", item.name
+                            )
                         continue
                     if not item.is_dir():
                         continue

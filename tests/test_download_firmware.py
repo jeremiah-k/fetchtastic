@@ -2900,14 +2900,16 @@ class TestFirmwareUncoveredBranches:
         downloader.download_dir = str(tmp_path)
         history_entries = [
             {
-                "identifier": "7be5426",
-                "directory": "firmware-2.7.23.7be5426",
-                "status": "active",
-            },
-            {
                 "identifier": "2a858be",
                 "directory": "firmware-2.7.23.2a858be",
                 "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "identifier": "7be5426",
+                "directory": "firmware-2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
             },
         ]
 
@@ -3999,7 +4001,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
     def test_download_repo_prerelease_latest_uses_newest_successful_dir(
         self, downloader, tmp_path
     ):
-        """Latest pointer chooses the newest successful prerelease dir deterministically."""
+        """Latest pointer chooses the chronologically newest successful prerelease dir."""
         downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
         downloader.config["CREATE_LATEST_SYMLINKS"] = True
         downloader.download_dir = str(tmp_path)
@@ -4007,8 +4009,18 @@ class TestFirmwarePrereleaseBaselineDerivation:
         older_dir = "firmware-2.7.23.aaaaaa"
         newer_dir = "firmware-2.7.23.bbbbbb"
         history_entries = [
-            {"identifier": "bbbbbb", "directory": newer_dir, "status": "active"},
-            {"identifier": "aaaaaa", "directory": older_dir, "status": "active"},
+            {
+                "identifier": "aaaaaa",
+                "directory": older_dir,
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "identifier": "bbbbbb",
+                "directory": newer_dir,
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
         ]
         success = DownloadResult(success=True)
 
@@ -4212,3 +4224,343 @@ class TestPrereleaseAvailabilityVerification:
 
         # Should call get_repo_directories exactly once (fallback scan reused for availability)
         assert mock_get_dirs.call_count == 1
+
+    # =========================================================================
+    # Regression tests for repo-prerelease chronology selection (maint-430-1)
+    # =========================================================================
+
+    def test_select_latest_prerelease_dir_history_chronology_beats_hash_order(
+        self, downloader, tmp_path
+    ):
+        """History chronology (added_at) should beat hash/string ordering."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_returns_newest_active_dir(
+        self, downloader, tmp_path
+    ):
+        """The returned active_dir from download_repo_prerelease_firmware uses chronology."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        success_result = DownloadResult(
+            success=True,
+            release_tag="firmware-2.7.23.4ee9598",
+            file_path=str(tmp_path / "test"),
+            was_skipped=True,
+        )
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.4ee9598", history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.7be5426",
+                    "firmware-2.7.23.4ee9598",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success_result], [], False),
+            ),
+        ):
+            successes, failures, active_dir, summary = (
+                downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+            )
+        assert active_dir == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_update_pointer_uses_chronology(
+        self, downloader, tmp_path
+    ):
+        """update_latest_pointer should be called with the chronologically newest dir."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        success_result = DownloadResult(
+            success=True,
+            release_tag="firmware-2.7.23.4ee9598",
+            file_path=str(tmp_path / "test"),
+            was_skipped=True,
+        )
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=("firmware-2.7.23.4ee9598", history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[
+                    "firmware-2.7.23.7be5426",
+                    "firmware-2.7.23.4ee9598",
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success_result], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.update_latest_pointer"
+            ) as mock_pointer,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_pointer.assert_called_once_with(
+            ANY, "firmware-2.7.23.4ee9598", LATEST_POINTER_NAME
+        )
+
+    def test_select_latest_prerelease_dir_deleted_newer_does_not_win(
+        self, downloader, tmp_path
+    ):
+        """A newer history entry marked deleted should not win over an older active one."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "deleted",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_deleted_via_removed_at(
+        self, downloader, tmp_path
+    ):
+        """An entry with removed_at should be excluded even if status is active."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+                "removed_at": "2024-01-03T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_repo_scan_does_not_outrank_history(
+        self, downloader, tmp_path
+    ):
+        """Repo-discovered synthetic dirs should not outrank real history-backed dirs."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    def test_select_latest_prerelease_dir_fallback_deterministic_without_history(
+        self, downloader, tmp_path
+    ):
+        """When no history exists, fallback to deterministic sort."""
+        downloader.download_dir = str(tmp_path)
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(candidate_dirs, [])
+        sorted_dirs = downloader._sort_prerelease_dirs(candidate_dirs)
+        assert result == sorted_dirs[-1]
+
+    def test_select_latest_prerelease_dir_history_order_without_added_at(
+        self, downloader, tmp_path
+    ):
+        """When added_at is missing, history list order (oldest-to-newest) should decide."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_empty_candidates(self, downloader, tmp_path):
+        """Returns None when candidate_dirs is empty."""
+        downloader.download_dir = str(tmp_path)
+        result = downloader._select_latest_prerelease_dir([], [])
+        assert result is None
+
+    def test_select_latest_prerelease_dir_candidate_not_in_history(
+        self, downloader, tmp_path
+    ):
+        """A candidate not in history should still be considered with fallback ranking."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.4ee9598"
+
+    def test_select_latest_prerelease_dir_mixed_history_and_no_history(
+        self, downloader, tmp_path
+    ):
+        """History-backed candidate beats non-history candidate even if non-history sorts higher."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.24.aaaaaa",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
+    # =========================================================================
+    # Tests for expected-symlink warning suppression in cleanup
+    # =========================================================================
+
+    def test_cleanup_superseded_prereleases_silently_skips_latest_symlink(
+        self, downloader, tmp_path
+    ):
+        """The expected 'latest' symlink in prerelease folder should not produce a warning."""
+        downloader.download_dir = str(tmp_path)
+        prerelease_dir = tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME
+        prerelease_dir.mkdir(parents=True)
+
+        old_prerelease = prerelease_dir / "firmware-2.7.20.aaaaaa"
+        old_prerelease.mkdir()
+        latest_link = prerelease_dir / LATEST_POINTER_NAME
+        latest_link.symlink_to(old_prerelease)
+
+        with patch.object(
+            downloader,
+            "_get_release_storage_tag",
+            return_value="v2.7.22",
+            create=True,
+        ):
+            with patch.object(log_utils, "logger") as mock_logger:
+                downloader.cleanup_superseded_prereleases("v2.7.22")
+
+        warning_calls = [call for call in mock_logger.warning.call_args_list]
+        for call in warning_calls:
+            assert (
+                LATEST_POINTER_NAME not in str(call) or "expected" in str(call).lower()
+            )

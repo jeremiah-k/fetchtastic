@@ -55,7 +55,7 @@ from fetchtastic.utils import (
 )
 
 from .base import BaseDownloader
-from .cache import CacheManager
+from .cache import CacheManager, parse_iso_datetime_utc
 from .files import build_storage_tag_with_channel, get_channel_suffix
 from .github_source import GithubReleaseSource, create_release_from_github_data
 from .interfaces import Asset, DownloadResult, FirmwareManifest, Release
@@ -2010,6 +2010,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                 "base_version": base_version,
                                 "status": "active",
                                 "active": True,
+                                "source": "repo_scan",
                             }
                         )
                 prerelease_summary["available_history_entries"] = (
@@ -2086,7 +2087,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_manager.update_prerelease_tracking(
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
             )
-        latest_successful_dir = (
+        latest_successful_dir = self._select_latest_prerelease_dir(
+            successful_dirs, history_entries
+        ) or (
             self._sort_prerelease_dirs(successful_dirs)[-1] if successful_dirs else None
         )
         if latest_successful_dir and coerce_bool(
@@ -2108,7 +2111,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if skipped_count > 0:
             logger.debug(f"Skipped {skipped_count} existing pre-release files.")
 
-        return successes, failures, active_dirs[-1], prerelease_summary
+        return (
+            successes,
+            failures,
+            (
+                self._select_latest_prerelease_dir(active_dirs, history_entries)
+                or (
+                    self._sort_prerelease_dirs(active_dirs)[-1] if active_dirs else None
+                )
+            ),
+            prerelease_summary,
+        )
 
     @staticmethod
     def _sort_prerelease_dirs(dirs: List[str]) -> List[str]:
@@ -2128,6 +2141,90 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 unique_dirs.append(d)
         unique_dirs.sort(key=sort_key)
         return unique_dirs
+
+    def _select_latest_prerelease_dir(
+        self,
+        candidate_dirs: list[str],
+        history_entries: list[dict[str, Any]],
+    ) -> Optional[str]:
+        """Select the latest prerelease directory using commit-history chronology.
+
+        Firmware repo prereleases are distinguished by a commit-hash suffix, not
+        by semver prerelease components.  Therefore the "latest" prerelease must
+        be chosen by repository commit chronology (added_at), not by hash-string
+        ordering or VersionManager.get_release_tuple.
+
+        Ranking (higher wins):
+          1. has_history – entry present in history_entries as active
+          2. has_timestamp – entry carries an added_at value
+          3. timestamp – parsed added_at datetime
+          4. history_index – position in history_entries (oldest→newest)
+          5. fallback_key – deterministic sort via _sort_prerelease_dirs
+
+        Deleted/removed entries and entries whose directory is not in
+        candidate_dirs are excluded.
+
+        Returns:
+            The directory string of the newest active prerelease, or None when
+            no candidate qualifies.
+        """
+        if not candidate_dirs:
+            return None
+
+        history_rank_by_dir: dict[str, dict[str, Any]] = {}
+        for idx, entry in enumerate(history_entries):
+            directory = entry.get("directory")
+            if not isinstance(directory, str):
+                continue
+            is_deleted = entry.get("status") == "deleted" or bool(
+                entry.get("removed_at")
+            )
+            if is_deleted:
+                continue
+            is_active = entry.get("status") == "active" or entry.get("active") is True
+            if not is_active:
+                continue
+
+            added_at_raw = entry.get("added_at")
+            timestamp = parse_iso_datetime_utc(added_at_raw) if added_at_raw else None
+
+            history_rank_by_dir[directory] = {
+                "has_history": True,
+                "has_timestamp": timestamp is not None,
+                "timestamp": timestamp,
+                "history_index": idx,
+            }
+
+        sorted_dirs = self._sort_prerelease_dirs(candidate_dirs)
+        fallback_index = {d: i for i, d in enumerate(sorted_dirs)}
+
+        best_dir: Optional[str] = None
+        best_key: Optional[tuple] = None
+
+        for candidate in candidate_dirs:
+            info = history_rank_by_dir.get(candidate)
+            if info is not None:
+                sort_key = (
+                    1,  # has_history
+                    1 if info["has_timestamp"] else 0,
+                    info["timestamp"] or datetime.min.replace(tzinfo=timezone.utc),
+                    info["history_index"],
+                    fallback_index.get(candidate, 0),
+                )
+            else:
+                sort_key = (
+                    0,  # no history
+                    0,
+                    datetime.min.replace(tzinfo=timezone.utc),
+                    -1,
+                    fallback_index.get(candidate, 0),
+                )
+
+            if best_key is None or sort_key > best_key:
+                best_key = sort_key
+                best_dir = candidate
+
+        return best_dir
 
     def _get_active_prerelease_dirs_from_history(
         self, history_entries: List[Dict[str, Any]]
@@ -2469,10 +2566,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 with os.scandir(prerelease_dir) as it:
                     for entry in it:
                         if entry.is_symlink():
-                            logger.warning(
-                                "Skipping symlink in prerelease folder: %s",
-                                entry.name,
-                            )
+                            if entry.name == LATEST_POINTER_NAME:
+                                logger.debug(
+                                    "Skipping expected symlink in prerelease folder: %s",
+                                    entry.name,
+                                )
+                            else:
+                                logger.warning(
+                                    "Skipping symlink in prerelease folder: %s",
+                                    entry.name,
+                                )
                             continue
                         if not entry.is_dir():
                             continue
