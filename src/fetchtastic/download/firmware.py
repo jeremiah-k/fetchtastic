@@ -1429,8 +1429,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     if entry.name in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
                         REPO_DOWNLOADS_DIR,
-                        LATEST_POINTER_NAME,
                     }:
+                        continue
+                    if entry.name == LATEST_POINTER_NAME:
+                        if entry.is_symlink():
+                            continue
+                        logger.debug(
+                            "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+                            entry.path,
+                        )
                         continue
                     if entry.is_symlink():
                         logger.warning(

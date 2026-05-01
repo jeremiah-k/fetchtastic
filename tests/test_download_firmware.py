@@ -16,6 +16,7 @@ from fetchtastic import log_utils
 from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_MANIFEST,
     FIRMWARE_DIR_NAME,
+    LATEST_POINTER_NAME,
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
@@ -1592,6 +1593,60 @@ class TestFirmwareReleaseDownloader:
         mock_warning.assert_any_call(
             "Skipping symlink in firmware directory during cleanup: %s",
             entry_symlink.name,
+        )
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_preserves_latest_pointer_symlink(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Firmware cleanup silently skips managed latest symlink."""
+        mock_exists.return_value = True
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
+        mock_latest = Mock()
+        mock_latest.name = LATEST_POINTER_NAME
+        mock_latest.is_symlink.return_value = True
+        mock_latest.is_dir.return_value = False
+        mock_latest.path = "/mock/firmware/latest"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_latest]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        with (
+            patch("fetchtastic.download.firmware.logger.warning") as mock_warning,
+            patch("fetchtastic.download.firmware.logger.debug") as mock_debug,
+        ):
+            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+
+        mock_warning.assert_not_called()
+        debug_messages = [c[0][0] for c in mock_debug.call_args_list]
+        assert not any(
+            "latest" in msg and "pointer" in msg.lower() for msg in debug_messages
+        )
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    def test_cleanup_old_versions_preserves_latest_pointer_non_symlink(
+        self, mock_scandir, mock_exists, downloader
+    ):
+        """Firmware cleanup preserves non-symlink latest entry and logs a debug message."""
+        mock_exists.return_value = True
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
+        mock_latest = Mock()
+        mock_latest.name = LATEST_POINTER_NAME
+        mock_latest.is_symlink.return_value = False
+        mock_latest.is_dir.return_value = True
+        mock_latest.path = "/mock/firmware/latest"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_latest]
+        mock_scandir.return_value.__exit__.return_value = None
+
+        with patch("fetchtastic.download.firmware.logger.debug") as mock_debug:
+            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+
+        mock_debug.assert_any_call(
+            "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+            mock_latest.path,
         )
 
     @pytest.mark.unit

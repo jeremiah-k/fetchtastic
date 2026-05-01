@@ -10,7 +10,24 @@ from fetchtastic.download.latest_pointer import (
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
-def test_update_latest_pointer_creates_relative_same_dir_symlink(tmp_path):
+@pytest.fixture(scope="module")
+def symlinks_supported(tmp_path_factory):
+    """Check whether os.symlink works in the temp directory."""
+    tmp = tmp_path_factory.mktemp("symlink_check")
+    probe = tmp / ".probe"
+    try:
+        os.symlink(tmp.name, probe)
+        probe.unlink()
+        return True
+    except (AttributeError, NotImplementedError, OSError):
+        return False
+
+
+def test_update_latest_pointer_creates_relative_same_dir_symlink(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
     target = tmp_path / "v2.7.0"
     target.mkdir()
 
@@ -31,7 +48,11 @@ def test_update_latest_pointer_rejects_traversal_target(tmp_path):
     assert not (tmp_path / "latest").exists()
 
 
-def test_update_latest_pointer_replaces_existing_symlink_without_following(tmp_path):
+def test_update_latest_pointer_replaces_existing_symlink_without_following(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
     old_target = tmp_path / "v2.6.0"
     new_target = tmp_path / "v2.7.0"
     outside = tmp_path.parent / "outside-latest-target"
@@ -49,7 +70,9 @@ def test_update_latest_pointer_replaces_existing_symlink_without_following(tmp_p
     assert outside.exists()
 
 
-def test_update_latest_pointer_rejects_symlink_target(tmp_path):
+def test_update_latest_pointer_rejects_symlink_target(tmp_path, symlinks_supported):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
     real_target = tmp_path / "v2.7.0"
     linked_target = tmp_path / "linked"
     real_target.mkdir()
@@ -73,7 +96,9 @@ def test_update_latest_pointer_does_not_replace_regular_file(tmp_path):
     assert latest.read_text(encoding="utf-8") == "user content"
 
 
-def test_remove_latest_pointer_only_removes_symlink(tmp_path):
+def test_remove_latest_pointer_only_removes_symlink(tmp_path, symlinks_supported):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
     target = tmp_path / "v2.7.0"
     target.mkdir()
     latest = tmp_path / "latest"

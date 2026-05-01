@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
@@ -1229,6 +1229,38 @@ def test_remove_unexpected_entries_removes_stale(downloader, tmp_path):
     downloader._remove_unexpected_entries(str(base), {"v2.7.14"})
     assert (base / "v2.7.14").exists()
     assert not (base / "v2.7.13").exists()
+
+
+def test_remove_unexpected_entries_preserves_latest_symlink(downloader, tmp_path):
+    base = tmp_path / "dir"
+    base.mkdir()
+    real = tmp_path / "real_target"
+    real.mkdir()
+    try:
+        (base / "latest").symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks not supported")
+    (base / "v2.7.14").mkdir()
+    with patch("fetchtastic.download.client_app.logger.warning") as mock_warning:
+        downloader._remove_unexpected_entries(str(base), {"v2.7.14"})
+    mock_warning.assert_not_called()
+    assert (base / "latest").is_symlink()
+    assert (base / "v2.7.14").exists()
+
+
+def test_remove_unexpected_entries_preserves_latest_non_symlink(downloader, tmp_path):
+    base = tmp_path / "dir"
+    base.mkdir()
+    (base / "latest").mkdir()
+    (base / "v2.7.14").mkdir()
+    with patch("fetchtastic.download.client_app.logger.debug") as mock_debug:
+        downloader._remove_unexpected_entries(str(base), {"v2.7.14"})
+    mock_debug.assert_any_call(
+        "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+        str(base / "latest"),
+    )
+    assert (base / "latest").exists()
+    assert (base / "v2.7.14").exists()
 
 
 def test_get_latest_release_tag_no_file(downloader, tmp_path):

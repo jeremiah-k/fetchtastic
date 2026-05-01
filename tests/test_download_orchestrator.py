@@ -1154,6 +1154,7 @@ class TestDownloadOrchestrator:
         mock_result.was_skipped = False
         orchestrator.firmware_downloader.download_firmware.return_value = mock_result
         mock_extract_result = Mock(spec=DownloadResult)
+        mock_extract_result.success = True
         orchestrator.firmware_downloader.extract_firmware.return_value = (
             mock_extract_result
         )
@@ -1162,6 +1163,92 @@ class TestDownloadOrchestrator:
         orchestrator._download_firmware_release(release)
 
         orchestrator.firmware_downloader.extract_firmware.assert_called_once()
+
+    def test_download_firmware_release_does_not_update_latest_pointer_when_extraction_fails(
+        self, orchestrator
+    ):
+        """Latest pointer is not updated when firmware extraction fails."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware.zip"
+        release.assets = [asset]
+        orchestrator.config["AUTO_EXTRACT"] = True
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        mock_dl = Mock(spec=DownloadResult)
+        mock_dl.success = True
+        mock_dl.was_skipped = False
+        orchestrator.firmware_downloader.download_firmware.return_value = mock_dl
+        mock_extract = Mock(spec=DownloadResult)
+        mock_extract.success = False
+        mock_extract.was_skipped = False
+        orchestrator.firmware_downloader.extract_firmware.return_value = mock_extract
+        orchestrator._handle_download_result = Mock()
+
+        orchestrator._download_firmware_release(release)
+
+        assert (
+            orchestrator.firmware_downloader.update_latest_pointer_for_release.call_count
+            == 0
+        )
+
+    def test_download_firmware_release_updates_latest_pointer_when_extraction_succeeds(
+        self, orchestrator
+    ):
+        """Latest pointer is updated when firmware extraction succeeds."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware.zip"
+        release.assets = [asset]
+        orchestrator.config["AUTO_EXTRACT"] = True
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        mock_dl = Mock(spec=DownloadResult)
+        mock_dl.success = True
+        mock_dl.was_skipped = False
+        orchestrator.firmware_downloader.download_firmware.return_value = mock_dl
+        mock_extract = Mock(spec=DownloadResult)
+        mock_extract.success = True
+        orchestrator.firmware_downloader.extract_firmware.return_value = mock_extract
+        orchestrator._handle_download_result = Mock()
+
+        orchestrator._download_firmware_release(release)
+
+        assert (
+            orchestrator.firmware_downloader.update_latest_pointer_for_release.call_count
+            == 1
+        )
+
+    def test_download_firmware_release_updates_latest_pointer_when_extraction_cleanly_skipped(
+        self, orchestrator
+    ):
+        """Latest pointer is updated when extraction is cleanly skipped (success=True with was_skipped=True)."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware.zip"
+        release.assets = [asset]
+        orchestrator.config["AUTO_EXTRACT"] = True
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        mock_dl = Mock(spec=DownloadResult)
+        mock_dl.success = True
+        mock_dl.was_skipped = False
+        orchestrator.firmware_downloader.download_firmware.return_value = mock_dl
+        mock_extract = Mock(spec=DownloadResult)
+        mock_extract.success = True
+        mock_extract.was_skipped = True
+        orchestrator.firmware_downloader.extract_firmware.return_value = mock_extract
+        orchestrator._handle_download_result = Mock()
+
+        orchestrator._download_firmware_release(release)
+
+        assert (
+            orchestrator.firmware_downloader.update_latest_pointer_for_release.call_count
+            == 1
+        )
 
     def test_download_firmware_release_error(self, orchestrator):
         """Firmware download should handle exceptions gracefully."""

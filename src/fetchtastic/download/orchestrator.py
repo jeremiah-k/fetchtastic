@@ -1021,6 +1021,7 @@ class DownloadOrchestrator:
                     extract_result = self.firmware_downloader.extract_firmware(
                         release, asset, extract_patterns, exclude_patterns
                     )
+                    attempted_results.append(extract_result)
                     self._handle_download_result(extract_result, "firmware_extraction")
             if attempted_results and all(
                 result.success for result in attempted_results

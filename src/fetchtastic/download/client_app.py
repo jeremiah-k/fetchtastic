@@ -1001,7 +1001,15 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         except FileNotFoundError:
             return
         for entry in entries:
-            if entry.name in allowed or entry.name == LATEST_POINTER_NAME:
+            if entry.name in allowed:
+                continue
+            if entry.name == LATEST_POINTER_NAME:
+                if entry.is_symlink():
+                    continue
+                logger.debug(
+                    "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+                    entry.path,
+                )
                 continue
             if entry.is_symlink():
                 logger.warning("Skipping symlink in client app cleanup: %s", entry.name)
