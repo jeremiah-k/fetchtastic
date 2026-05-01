@@ -2156,12 +2156,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
         ordering or VersionManager.get_release_tuple.
 
         Ranking (higher wins):
-          1. has_history – entry is present in history_entries (real beats synthetic)
+          1. has_history – real history entry exists (source != "repo_scan")
           2. has_timestamp – entry carries an added_at value
           3. timestamp – parsed added_at datetime
           4. history_index – position in history_entries, or a repo-only sentinel
           5. fallback_key – deterministic sort via _sort_prerelease_dirs
 
+        Synthetic source="repo_scan" entries are fallback-only and do not count
+        as real history-backed entries.
         Deleted/removed entries and entries whose directory is not in
         candidate_dirs are excluded.
 
@@ -2187,6 +2189,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 continue
             is_active = entry.get("status") == "active" or entry.get("active") is True
             if not is_active:
+                continue
+            if entry.get("source") == "repo_scan":
                 continue
 
             added_at_raw = entry.get("added_at")

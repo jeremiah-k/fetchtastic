@@ -4542,6 +4542,34 @@ class TestPrereleaseAvailabilityVerification:
         )
         assert result == "firmware-2.7.23.7be5426"
 
+    def test_select_latest_prerelease_dir_untimestamped_history_beats_repo_scan_entry(
+        self, downloader, tmp_path
+    ):
+        """A source=repo_scan entry in history should remain fallback-only."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "active": True,
+                "source": "repo_scan",
+            },
+        ]
+        candidate_dirs = [
+            "firmware-2.7.23.7be5426",
+            "firmware-2.7.23.4ee9598",
+        ]
+        result = downloader._select_latest_prerelease_dir(
+            candidate_dirs, history_entries
+        )
+        assert result == "firmware-2.7.23.7be5426"
+
     def test_select_latest_prerelease_dir_fallback_deterministic_without_history(
         self, downloader, tmp_path
     ):
@@ -4733,6 +4761,34 @@ class TestPrereleaseAvailabilityVerification:
                 "directory": "firmware-2.7.23.4ee9598",
                 "identifier": "2.7.23.4ee9598",
                 "status": "active",
+                "source": "repo_scan",
+            },
+        ]
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            downloader.log_prerelease_summary(history_entries, "2.7.22", "2.7.23")
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        latest_calls = [c for c in info_calls if "(latest)" in c]
+        assert len(latest_calls) == 1
+        assert "2.7.23.7be5426" in latest_calls[0]
+        assert "2.7.23.4ee9598" not in latest_calls[0]
+
+    def test_log_prerelease_summary_untimestamped_history_beats_repo_scan_entry(
+        self, downloader, tmp_path
+    ):
+        """Summary should mark real untimestamped history latest over source=repo_scan."""
+        downloader.download_dir = str(tmp_path)
+        history_entries = [
+            {
+                "directory": "firmware-2.7.23.7be5426",
+                "identifier": "2.7.23.7be5426",
+                "status": "active",
+            },
+            {
+                "directory": "firmware-2.7.23.4ee9598",
+                "identifier": "2.7.23.4ee9598",
+                "status": "active",
+                "active": True,
                 "source": "repo_scan",
             },
         ]
