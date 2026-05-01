@@ -33,6 +33,9 @@ from fetchtastic.constants import (
     APP_DIR_NAME,
     CLIENT_APP_RELEASE_HISTORY_JSON_FILE,
     DEFAULT_APP_VERSIONS_TO_KEEP,
+    DEFAULT_CHECK_APP_PRERELEASES,
+    DEFAULT_CREATE_LATEST_SYMLINKS,
+    DEFAULT_KEEP_LAST_BETA,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_VALIDATION,
@@ -123,7 +126,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def update_latest_pointer_for_release(self, release: Release) -> bool:
         """Best-effort update of app latest pointer for a completed release."""
-        if not self.config.get("CREATE_LATEST_SYMLINKS", True):
+        if not self.config.get(
+            "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
+        ):
             return False
         try:
             safe_release = self._get_storage_tag_for_release(release)

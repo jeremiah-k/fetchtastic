@@ -1,4 +1,5 @@
 import os
+from unittest.mock import patch
 
 import pytest
 
@@ -96,7 +97,9 @@ def test_update_latest_pointer_does_not_replace_regular_file(tmp_path):
     assert latest.read_text(encoding="utf-8") == "user content"
 
 
-def test_remove_latest_pointer_only_removes_symlink(tmp_path, symlinks_supported):
+def test_remove_latest_pointer_removes_managed_symlink_and_leaves_target(
+    tmp_path, symlinks_supported
+):
     if not symlinks_supported:
         pytest.skip("os.symlink not supported on this platform")
     target = tmp_path / "v2.7.0"
@@ -108,6 +111,28 @@ def test_remove_latest_pointer_only_removes_symlink(tmp_path, symlinks_supported
     assert not latest.exists()
     assert target.exists()
 
+
+def test_remove_latest_pointer_refuses_to_remove_regular_file(tmp_path):
+    target = tmp_path / "v2.7.0"
+    target.mkdir()
+    latest = tmp_path / "latest"
     latest.write_text("not a symlink", encoding="utf-8")
+
     assert remove_latest_pointer(tmp_path) is False
     assert latest.exists()
+
+
+def test_update_latest_pointer_calls_symlink_with_target_is_directory_for_dir_target(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    target = tmp_path / "v2.7.0"
+    target.mkdir()
+
+    with patch("os.symlink", wraps=os.symlink) as mock_symlink:
+        update_latest_pointer(tmp_path, target.name)
+
+    mock_symlink.assert_called()
+    args, kwargs = mock_symlink.call_args
+    assert kwargs.get("target_is_directory") is True

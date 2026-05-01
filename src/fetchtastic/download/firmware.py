@@ -17,7 +17,10 @@ import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    DEFAULT_CREATE_LATEST_SYMLINKS,
     DEFAULT_FILTER_REVOKED_RELEASES,
+    DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEFAULT_KEEP_LAST_BETA,
     DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
@@ -224,7 +227,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def update_latest_pointer_for_release(self, release: Release) -> bool:
         """Best-effort update of firmware latest pointer for a completed release."""
-        if not self.config.get("CREATE_LATEST_SYMLINKS", True):
+        if not self.config.get(
+            "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
+        ):
             return False
         try:
             if release.prerelease:
@@ -2065,7 +2070,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_manager.update_prerelease_tracking(
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
             )
-        if dirs_to_track and self.config.get("CREATE_LATEST_SYMLINKS", True):
+        if dirs_to_track and self.config.get(
+            "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
+        ):
             update_latest_pointer(
                 prerelease_base_dir,
                 dirs_to_track[-1],

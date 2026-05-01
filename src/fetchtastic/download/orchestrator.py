@@ -406,10 +406,13 @@ class DownloadOrchestrator:
                 releases_to_process, self.client_app_downloader.is_release_complete
             )
             releases_to_download = []
+            newest_successful_stable: Release | None = None
             for release, is_complete in zip(
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
+                    if newest_successful_stable is None:
+                        newest_successful_stable = release
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -422,9 +425,20 @@ class DownloadOrchestrator:
                     logger.info(f"Downloading client app release {release.tag_name}")
                     if self._download_client_app_release(release):
                         any_app_downloaded = True
+                        if newest_successful_stable is None:
+                            newest_successful_stable = release
+
+            update_pointer = getattr(
+                self.client_app_downloader,
+                "update_latest_pointer_for_release",
+                None,
+            )
+            if newest_successful_stable is not None and update_pointer is not None:
+                update_pointer(newest_successful_stable)
 
             logger.info("Checking for client app prereleases...")
             prereleases = self.client_app_downloader.handle_prereleases(app_releases)
+            newest_successful_prerelease: Release | None = None
             for prerelease in prereleases:
                 is_newer = self.client_app_downloader.should_download_prerelease(
                     prerelease.tag_name
@@ -480,13 +494,8 @@ class DownloadOrchestrator:
                 if prerelease_results and all(
                     result.success for result in prerelease_results
                 ):
-                    update_pointer = getattr(
-                        self.client_app_downloader,
-                        "update_latest_pointer_for_release",
-                        None,
-                    )
-                    if update_pointer is not None:
-                        update_pointer(prerelease)
+                    if newest_successful_prerelease is None:
+                        newest_successful_prerelease = prerelease
                     if not self.client_app_downloader.update_prerelease_tracking(
                         prerelease.tag_name
                     ):
@@ -494,6 +503,14 @@ class DownloadOrchestrator:
                             "Failed to update client app prerelease tracking for %s",
                             prerelease.tag_name,
                         )
+
+            update_pointer = getattr(
+                self.client_app_downloader,
+                "update_latest_pointer_for_release",
+                None,
+            )
+            if newest_successful_prerelease is not None and update_pointer is not None:
+                update_pointer(newest_successful_prerelease)
 
             if (
                 self.config.get(
@@ -772,10 +789,13 @@ class DownloadOrchestrator:
                 releases_to_process, self.firmware_downloader.is_release_complete
             )
             releases_to_download = []
+            newest_successful_firmware: Release | None = None
             for release, is_complete in zip(
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
+                    if newest_successful_firmware is None:
+                        newest_successful_firmware = release
                     self.firmware_downloader.ensure_release_notes(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
@@ -790,6 +810,16 @@ class DownloadOrchestrator:
                     self.firmware_downloader.ensure_release_notes(release)
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
+                        if newest_successful_firmware is None:
+                            newest_successful_firmware = release
+
+            update_pointer = getattr(
+                self.firmware_downloader,
+                "update_latest_pointer_for_release",
+                None,
+            )
+            if newest_successful_firmware is not None and update_pointer is not None:
+                update_pointer(newest_successful_firmware)
 
             if latest_release:
                 (
@@ -932,16 +962,6 @@ class DownloadOrchestrator:
             )
             return False
         else:
-            if attempted_results and all(
-                result.success for result in attempted_results
-            ):
-                update_pointer = getattr(
-                    self.client_app_downloader,
-                    "update_latest_pointer_for_release",
-                    None,
-                )
-                if update_pointer is not None:
-                    update_pointer(release)
             return any_downloaded
 
     def _download_firmware_release(self, release: Release) -> bool:
@@ -1023,16 +1043,6 @@ class DownloadOrchestrator:
                     )
                     attempted_results.append(extract_result)
                     self._handle_download_result(extract_result, "firmware_extraction")
-            if attempted_results and all(
-                result.success for result in attempted_results
-            ):
-                update_pointer = getattr(
-                    self.firmware_downloader,
-                    "update_latest_pointer_for_release",
-                    None,
-                )
-                if update_pointer is not None:
-                    update_pointer(release)
             return any_downloaded
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")

@@ -54,7 +54,11 @@ def update_latest_pointer(
             return False
         if tmp_path.exists() or tmp_path.is_symlink():
             tmp_path.unlink()
-        os.symlink(target_name, tmp_path)
+        os.symlink(
+            target_name,
+            tmp_path,
+            target_is_directory=(parent / target_name).is_dir(),
+        )
         os.replace(tmp_path, link_path)
         logger.debug("Updated latest pointer: %s -> %s", link_path, target_name)
         return True
@@ -66,7 +70,11 @@ def update_latest_pointer(
                 return False
             if link_path.is_symlink():
                 link_path.unlink()
-            os.symlink(target_name, link_path)
+            os.symlink(
+                target_name,
+                link_path,
+                target_is_directory=(parent / target_name).is_dir(),
+            )
             logger.debug("Updated latest pointer: %s -> %s", link_path, target_name)
             return True
         except (AttributeError, NotImplementedError, OSError) as fallback_exc:
