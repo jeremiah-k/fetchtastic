@@ -445,6 +445,17 @@ class DownloadOrchestrator:
                 is_newer = self.client_app_downloader.should_download_prerelease(
                     prerelease.tag_name
                 )
+                selected_assets = [
+                    asset
+                    for asset in self.client_app_downloader.get_assets(prerelease)
+                    if self.client_app_downloader.should_download_asset(asset.name)
+                ]
+                if not selected_assets:
+                    logger.debug(
+                        "Skipping client app prerelease %s because no selected assets matched",
+                        prerelease.tag_name,
+                    )
+                    continue
                 if not is_newer:
                     needs_backfill = not self.client_app_downloader.is_release_complete(
                         prerelease
@@ -459,45 +470,13 @@ class DownloadOrchestrator:
                             "Client app prerelease %s is retained and already tracked; no download needed",
                             prerelease.tag_name,
                         )
-                        selected_assets = [
-                            asset
-                            for asset in self.client_app_downloader.get_assets(
-                                prerelease
-                            )
-                            if self.client_app_downloader.should_download_asset(
-                                asset.name
-                            )
-                        ]
-                        if selected_assets:
-                            successful_prereleases.append(prerelease)
-                        else:
-                            logger.debug(
-                                "Skipping client app prerelease %s as latest candidate because no selected assets matched",
-                                prerelease.tag_name,
-                            )
+                        successful_prereleases.append(prerelease)
                         continue
-
-                selected_assets = [
-                    asset
-                    for asset in self.client_app_downloader.get_assets(prerelease)
-                    if self.client_app_downloader.should_download_asset(asset.name)
-                ]
-                if not selected_assets:
-                    logger.debug(
-                        "Skipping client app prerelease %s because no selected assets matched",
-                        prerelease.tag_name,
-                    )
-                    continue
 
                 self.client_app_downloader.ensure_release_notes(prerelease)
                 prerelease_results: list[DownloadResult] = []
                 for asset in selected_assets:
-                    download_asset = getattr(
-                        self,
-                        "_client_app_download_asset",
-                        self.client_app_downloader.download_app,
-                    )
-                    result = download_asset(prerelease, asset)
+                    result = self.client_app_downloader.download_app(prerelease, asset)
                     if result.success and not result.was_skipped:
                         any_app_downloaded = True
                     prerelease_results.append(result)
@@ -1121,8 +1100,9 @@ class DownloadOrchestrator:
                     and self.config.get("AUTO_EXTRACT", False)
                     and asset.name.lower().endswith(".zip")
                     and not (
-                        download_result.was_skipped
-                        and download_result.error_type == "revoked_release"
+                        getattr(download_result, "was_skipped", False)
+                        and getattr(download_result, "error_type", None)
+                        == "revoked_release"
                     )
                 ):
                     extract_result = self.firmware_downloader.extract_firmware(
@@ -1130,7 +1110,16 @@ class DownloadOrchestrator:
                     )
                     payload_results.append(extract_result)
                     self._handle_download_result(extract_result, "firmware_extraction")
-            return bool(payload_results) and all(r.success for r in payload_results)
+
+            def _counts_as_completed(result: DownloadResult) -> bool:
+                return bool(getattr(result, "success", False)) and not (
+                    bool(getattr(result, "was_skipped", False))
+                    and getattr(result, "error_type", None) == "revoked_release"
+                )
+
+            return bool(payload_results) and all(
+                _counts_as_completed(result) for result in payload_results
+            )
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")
             return False

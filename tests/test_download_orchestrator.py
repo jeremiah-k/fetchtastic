@@ -9,7 +9,7 @@ import pytest
 import requests
 from packaging.version import Version
 
-from fetchtastic.constants import FILE_TYPE_CLIENT_APP
+from fetchtastic.constants import FILE_TYPE_CLIENT_APP, FILE_TYPE_FIRMWARE
 from fetchtastic.download.interfaces import DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -1091,19 +1091,15 @@ class TestDownloadOrchestrator:
         )
         orch.client_app_downloader.should_download_asset = Mock(return_value=True)
         orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
+        orch.client_app_downloader.download_app = Mock()
 
-        with (
-            patch.object(
-                orch, "_client_app_download_asset", create=True
-            ) as mock_download_asset,
-            patch.object(
-                orch.client_app_downloader,
-                "update_latest_pointer_for_release",
-            ) as mock_pointer,
-        ):
+        with patch.object(
+            orch.client_app_downloader,
+            "update_latest_pointer_for_release",
+        ) as mock_pointer:
             orch._process_client_app_downloads()
 
-        mock_download_asset.assert_not_called()
+        orch.client_app_downloader.download_app.assert_not_called()
         orch.client_app_downloader.update_prerelease_tracking.assert_not_called()
         mock_pointer.assert_called_once_with(prerelease)
 
@@ -1125,6 +1121,7 @@ class TestDownloadOrchestrator:
         orch.client_app_downloader.should_download_prerelease = Mock(return_value=False)
         orch.client_app_downloader.is_release_complete = Mock(return_value=True)
         orch.client_app_downloader.get_assets = Mock(return_value=[])
+        orch.client_app_downloader.download_app = Mock()
         orch.client_app_downloader.update_prerelease_tracking = Mock(return_value=True)
 
         with patch.object(
@@ -1133,6 +1130,7 @@ class TestDownloadOrchestrator:
         ) as mock_pointer:
             orch._process_client_app_downloads()
 
+        orch.client_app_downloader.download_app.assert_not_called()
         orch.client_app_downloader.update_prerelease_tracking.assert_not_called()
         mock_pointer.assert_not_called()
 
@@ -2006,8 +2004,43 @@ class TestDownloadOrchestrator:
 
         assert result is False
         orchestrator.firmware_downloader.download_firmware.assert_not_called()
+
+    def test_download_firmware_release_revoked_skip_returns_false(self, orchestrator):
+        """Revoked-release skipped payloads do not count as completed firmware releases."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware-rak4631.zip"
+        release.assets = [asset]
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.was_skipped = True
+        result.error_type = "revoked_release"
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        orchestrator.firmware_downloader.download_firmware.return_value = result
+
+        assert orchestrator._download_firmware_release(release) is False
+
+    def test_download_firmware_release_clean_skip_returns_true(self, orchestrator):
+        """Already-present payload skips still count as completed firmware releases."""
+        release = Mock(spec=Release)
+        release.tag_name = "v2.0.0"
+        asset = Mock()
+        asset.name = "firmware-rak4631.zip"
+        release.assets = [asset]
+        result = Mock(spec=DownloadResult)
+        result.success = True
+        result.was_skipped = True
+        result.error_type = None
+        orchestrator.firmware_downloader.download_manifests.return_value = []
+        orchestrator.firmware_downloader.should_download_release.return_value = True
+        orchestrator.firmware_downloader.download_firmware.return_value = result
+        orchestrator._handle_download_result = Mock()
+
+        assert orchestrator._download_firmware_release(release) is True
         orchestrator._handle_download_result.assert_called_once_with(
-            manifest_result, "firmware_manifest"
+            result, FILE_TYPE_FIRMWARE
         )
 
     def test_download_firmware_release_manifest_success_no_matching_payload_returns_false(

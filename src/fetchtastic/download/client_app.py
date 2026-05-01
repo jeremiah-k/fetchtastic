@@ -47,7 +47,11 @@ from fetchtastic.constants import (
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import expand_apk_selected_patterns, matches_selected_patterns
+from fetchtastic.utils import (
+    coerce_bool,
+    expand_apk_selected_patterns,
+    matches_selected_patterns,
+)
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
@@ -124,8 +128,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def update_latest_pointer_for_release(self, release: Release) -> bool:
         """Best-effort update of app latest pointer for a completed release."""
-        if not self.config.get(
-            "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
+        if not coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
         ):
             return False
         try:

@@ -46,6 +46,7 @@ from fetchtastic.constants import (
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
+    coerce_bool,
     download_file_with_retry,
     load_file_hash,
     matches_extract_patterns,
@@ -225,8 +226,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def update_latest_pointer_for_release(self, release: Release) -> bool:
         """Best-effort update of firmware latest pointer for a completed release."""
-        if not self.config.get(
-            "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
+        if not coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
         ):
             return False
         try:
@@ -1396,6 +1398,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     and entry.name
                     not in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
+                        LATEST_POINTER_NAME,
                         REPO_DOWNLOADS_DIR,
                     }
                 }
@@ -2086,8 +2089,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         latest_successful_dir = (
             self._sort_prerelease_dirs(successful_dirs)[-1] if successful_dirs else None
         )
-        if latest_successful_dir and self.config.get(
-            "CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS
+        if latest_successful_dir and coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
         ):
             if not update_latest_pointer(
                 prerelease_base_dir,

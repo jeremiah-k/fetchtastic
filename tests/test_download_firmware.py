@@ -1651,6 +1651,63 @@ class TestFirmwareReleaseDownloader:
             mock_latest.path,
         )
 
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_latest_dir_does_not_trip_mismatch_guard(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """A non-symlink latest directory is ignored by the mismatch guard and preserved."""
+        mock_exists.return_value = True
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+
+        mock_latest = Mock()
+        mock_latest.name = LATEST_POINTER_NAME
+        mock_latest.is_symlink.return_value = False
+        mock_latest.is_dir.return_value = True
+        mock_latest.path = "/mock/firmware/latest"
+
+        mock_keep = Mock()
+        mock_keep.name = "v2.0.0"
+        mock_keep.is_symlink.return_value = False
+        mock_keep.is_dir.return_value = True
+        mock_keep.path = "/mock/firmware/v2.0.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_latest, mock_keep]
+        mock_scandir.return_value.__exit__.return_value = None
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v2.0.0")])
+
+        with (
+            patch("fetchtastic.download.firmware.logger.warning") as mock_warning,
+            patch("fetchtastic.download.firmware.logger.debug") as mock_debug,
+        ):
+            downloader.cleanup_old_versions(keep_limit=1)
+
+        assert not any(
+            call.args
+            == (
+                "Skipping firmware cleanup: keep set does not match existing directories.",
+            )
+            for call in mock_warning.call_args_list
+        )
+        mock_debug.assert_any_call(
+            "Preserving non-symlink latest entry that may block latest pointer creation: %s",
+            mock_latest.path,
+        )
+        mock_rmtree.assert_not_called()
+
+    def test_update_latest_pointer_for_release_coerces_false_string(self, downloader):
+        downloader.config["CREATE_LATEST_SYMLINKS"] = "false"
+        release = Release(tag_name="v2.0.0", prerelease=False)
+
+        with patch(
+            "fetchtastic.download.firmware.update_latest_pointer"
+        ) as mock_latest:
+            assert downloader.update_latest_pointer_for_release(release) is False
+
+        mock_latest.assert_not_called()
+
     @pytest.mark.unit
     def test_get_expiry_timestamp_format(self, downloader):
         """Expiry timestamp is returned as an ISO 8601 UTC string."""
@@ -3979,6 +4036,41 @@ class TestFirmwarePrereleaseBaselineDerivation:
             newer_dir,
             LATEST_POINTER_NAME,
         )
+
+    def test_download_repo_prerelease_latest_coerces_false_string(
+        self, downloader, tmp_path
+    ):
+        """String false disables repo-prerelease latest pointer updates."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.config["CREATE_LATEST_SYMLINKS"] = "false"
+        downloader.download_dir = str(tmp_path)
+
+        active_dir = "firmware-2.7.23.aaaaaa"
+        history_entries = [
+            {"identifier": "aaaaaa", "directory": active_dir, "status": "active"}
+        ]
+        success = DownloadResult(success=True)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[active_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([success], [], False),
+            ),
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch("fetchtastic.download.firmware.update_latest_pointer") as mock_latest,
+        ):
+            downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
+
+        mock_latest.assert_not_called()
 
     def test_download_repo_prerelease_latest_not_updated_without_successful_dir(
         self, downloader, tmp_path

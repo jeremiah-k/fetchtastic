@@ -18,7 +18,7 @@ def symlinks_supported(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("symlink_check")
     probe = tmp / ".probe"
     try:
-        os.symlink(tmp.name, probe)
+        os.symlink(tmp, probe, target_is_directory=True)
         probe.unlink()
         return True
     except (AttributeError, NotImplementedError, OSError):
@@ -237,3 +237,34 @@ def test_update_latest_pointer_calls_symlink_with_target_is_directory_for_dir_ta
     mock_symlink.assert_called()
     _, kwargs = mock_symlink.call_args
     assert kwargs.get("target_is_directory") is True
+
+
+def test_update_latest_pointer_uses_unique_temp_and_preserves_fixed_tmp(
+    tmp_path, symlinks_supported
+):
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    target = tmp_path / "v2.7.0"
+    target.mkdir()
+    fixed_tmp = tmp_path / f".{LATEST_POINTER_NAME}.tmp"
+    fixed_tmp.write_text("user temp", encoding="utf-8")
+
+    with patch(
+        "fetchtastic.download.latest_pointer.os.symlink", wraps=os.symlink
+    ) as mock_symlink:
+        assert update_latest_pointer(tmp_path, target.name) is True
+
+    symlink_path = mock_symlink.call_args.args[1]
+    assert symlink_path != fixed_tmp
+    assert symlink_path.name.startswith(f".{LATEST_POINTER_NAME}.")
+    assert symlink_path.name.endswith(".tmp")
+    assert fixed_tmp.read_text(encoding="utf-8") == "user temp"
+
+
+def test_remove_latest_pointer_logs_unsafe_link_name(tmp_path):
+    with patch("fetchtastic.download.latest_pointer.logger.debug") as mock_debug:
+        assert remove_latest_pointer(tmp_path, "../latest") is False
+
+    mock_debug.assert_called_once_with(
+        "Skipping latest pointer removal with unsafe link name: %s", "../latest"
+    )

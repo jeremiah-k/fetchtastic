@@ -1,6 +1,7 @@
 """Best-effort latest symlink management for downloaded artifacts."""
 
 import os
+import uuid
 from pathlib import Path
 
 from fetchtastic.constants import LATEST_POINTER_NAME
@@ -57,7 +58,8 @@ def update_latest_pointer(
         return False
 
     link_path = parent / link_name
-    tmp_path = parent / f".{link_name}.tmp"
+    tmp_path = parent / f".{link_name}.{uuid.uuid4().hex}.tmp"
+    tmp_created = False
     try:
         parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() and not link_path.is_symlink():
@@ -65,19 +67,19 @@ def update_latest_pointer(
                 "Skipping latest pointer because path is not a symlink: %s", link_path
             )
             return False
-        if tmp_path.exists() or tmp_path.is_symlink():
-            tmp_path.unlink()
         os.symlink(
             target_name,
             tmp_path,
             target_is_directory=(parent / target_name).is_dir(),
         )
+        tmp_created = True
         os.replace(tmp_path, link_path)
+        tmp_created = False
         logger.debug("Updated latest pointer: %s -> %s", link_path, target_name)
         return True
     except (AttributeError, NotImplementedError, OSError) as exc:
         try:
-            if tmp_path.exists() or tmp_path.is_symlink():
+            if tmp_created and (tmp_path.exists() or tmp_path.is_symlink()):
                 tmp_path.unlink()
             if link_path.exists() and not link_path.is_symlink():
                 return False
@@ -108,6 +110,9 @@ def remove_latest_pointer(
     """Remove a managed latest symlink without following it."""
     safe_link = _sanitize_path_component(link_name)
     if safe_link is None or safe_link != link_name:
+        logger.debug(
+            "Skipping latest pointer removal with unsafe link name: %s", link_name
+        )
         return False
     parent = Path(parent_dir)
     if parent.is_symlink():

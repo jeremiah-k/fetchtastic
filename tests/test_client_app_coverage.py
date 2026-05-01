@@ -84,6 +84,16 @@ def test_get_prerelease_base_dir_is_compatibility_alias(downloader, tmp_path):
     assert os.path.isdir(result)
 
 
+def test_update_latest_pointer_for_release_coerces_false_string(downloader):
+    downloader.config["CREATE_LATEST_SYMLINKS"] = "false"
+    release = Release(tag_name="v1.0.0", prerelease=False)
+
+    with patch("fetchtastic.download.client_app.update_latest_pointer") as mock_latest:
+        assert downloader.update_latest_pointer_for_release(release) is False
+
+    mock_latest.assert_not_called()
+
+
 def test_is_within_download_tree_value_error_branch(downloader, mocker):
     mocker.patch("os.path.commonpath", side_effect=ValueError("different drives"))
     assert downloader._is_within_download_tree("C:\\some\\path") is False
