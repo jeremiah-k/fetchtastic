@@ -1114,6 +1114,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         exclude_patterns = self._get_exclude_patterns()
         selected_patterns = self.config.get("SELECTED_FIRMWARE_ASSETS", [])
+        if isinstance(selected_patterns, str):
+            selected_patterns = [selected_patterns]
 
         result: List[Asset] = []
         for asset in release.assets:
