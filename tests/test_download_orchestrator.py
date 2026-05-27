@@ -77,6 +77,7 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.firmware_downloader.get_zips_needing_extraction = Mock(return_value=[])
 
         def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
             return initial_releases, initial_releases, current_fetch_limit
@@ -4620,6 +4621,7 @@ class TestFirmwareSummaryUsesSelectedReleases:
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
+        orch.firmware_downloader.get_zips_needing_extraction = Mock(return_value=[])
         orch.desktop_downloader = Mock()
         orch.desktop_downloader.download_dir = "/tmp/test"
 
