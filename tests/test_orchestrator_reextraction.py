@@ -44,7 +44,9 @@ def orch(tmp_path):
     }
     orch = DownloadOrchestrator(config)
 
-    # --- firmware downloader mocks ---
+    # Replace firmware_downloader entirely with a Mock so no real methods
+    # leak through.  This matches the pattern in test_download_orchestrator.py.
+    orch.firmware_downloader = Mock()
     orch.firmware_downloader.download_dir = str(tmp_path / "firmware")
     orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
     orch.firmware_downloader.format_release_log_suffix = Mock(return_value="")
@@ -53,11 +55,15 @@ def orch(tmp_path):
         return_value=([], [], None, None)
     )
     orch.firmware_downloader.cleanup_superseded_prereleases = Mock()
-    orch.firmware_downloader.update_manifest_baseline_if_needed = Mock()
-    orch.firmware_downloader.should_download_release = Mock(return_value=True)
     orch.firmware_downloader.is_release_complete = Mock(return_value=True)
     orch.firmware_downloader.download_manifests = Mock(return_value=[])
-    orch.firmware_downloader.download_firmware = Mock()
+
+    def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
+        return initial_releases, initial_releases, current_fetch_limit
+
+    orch.firmware_downloader.collect_non_revoked_releases = Mock(
+        side_effect=_collect_non_revoked
+    )
 
     # --- orchestrator-level mocks ---
     orch._has_selected_non_manifest_firmware_asset = Mock(return_value=True)
