@@ -794,11 +794,38 @@ class DownloadOrchestrator:
             )
             releases_to_download = []
             successful_firmware_releases: list[Release] = []
+            any_firmware_downloaded = False
             for release, is_complete in zip(
                 releases_to_process, completion_states, strict=True
             ):
                 if is_complete:
                     self.firmware_downloader.ensure_release_notes(release)
+
+                    # Re-check extraction for complete releases: the user may have changed
+                    # EXTRACT_PATTERNS, or previously extracted files may be missing.
+                    zips_needing_extraction = (
+                        self.firmware_downloader.get_zips_needing_extraction(release)
+                    )
+                    if zips_needing_extraction:
+                        extract_patterns = self._get_extraction_patterns()
+                        exclude_patterns = self._get_exclude_patterns()
+                        for asset in zips_needing_extraction:
+                            logger.info(
+                                "Re-extracting %s from %s (patterns changed or files missing)",
+                                asset.name,
+                                release.tag_name,
+                            )
+                            extract_result = self.firmware_downloader.extract_firmware(
+                                release, asset, extract_patterns, exclude_patterns
+                            )
+                            self._handle_download_result(
+                                extract_result, "firmware_extraction"
+                            )
+                            if extract_result.success and not getattr(
+                                extract_result, "was_skipped", False
+                            ):
+                                any_firmware_downloaded = True
+
                     if self._has_selected_non_manifest_firmware_asset(release):
                         successful_firmware_releases.append(release)
                     else:
@@ -812,7 +839,6 @@ class DownloadOrchestrator:
                 else:
                     releases_to_download.append(release)
 
-            any_firmware_downloaded = False
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading firmware release {release.tag_name}")

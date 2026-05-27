@@ -1074,6 +1074,81 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return True
 
+    def get_zips_needing_extraction(self, release: Release) -> List[Asset]:
+        """
+        Return the list of .zip assets from a release whose extracted contents
+        do not match the current EXTRACT_PATTERNS / EXCLUDE_PATTERNS configuration.
+
+        This enables re-extraction when the user changes extraction patterns or
+        when previously extracted files are missing or have incorrect sizes.
+
+        Parameters:
+            release (Release): Release whose .zip assets to inspect.
+
+        Returns:
+            List[Asset]: .zip assets that need extraction. Empty list if
+                AUTO_EXTRACT is disabled, no extract patterns are configured,
+                the version directory does not exist, or all files are already
+                extracted correctly.
+        """
+        if not self.config.get("AUTO_EXTRACT", False):
+            return []
+
+        extract_patterns = self.config.get("EXTRACT_PATTERNS", [])
+        if isinstance(extract_patterns, str):
+            extract_patterns = [extract_patterns]
+        if not extract_patterns:
+            return []
+
+        try:
+            storage_tag = self._get_release_storage_tag(release)
+        except ValueError:
+            logger.warning(
+                "Skipping extraction check for unsafe firmware tag: %s",
+                release.tag_name,
+            )
+            return []
+        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
+        if not os.path.isdir(version_dir):
+            return []
+
+        exclude_patterns = self._get_exclude_patterns()
+        selected_patterns = self.config.get("SELECTED_FIRMWARE_ASSETS", [])
+        if isinstance(selected_patterns, str):
+            selected_patterns = [selected_patterns]
+
+        result: List[Asset] = []
+        for asset in release.assets:
+            if not asset.name:
+                continue
+
+            if not asset.name.lower().endswith(".zip"):
+                continue
+
+            if selected_patterns and not matches_selected_patterns(
+                asset.name, selected_patterns
+            ):
+                continue
+
+            if self._matches_exclude_patterns(asset.name, exclude_patterns):
+                continue
+
+            zip_path = os.path.join(version_dir, asset.name)
+            if not os.path.exists(zip_path):
+                continue
+
+            if self.file_operations.check_extraction_needed(
+                zip_path, version_dir, extract_patterns, exclude_patterns
+            ):
+                result.append(asset)
+
+        logger.debug(
+            "Found %d zip(s) needing extraction for release %s",
+            len(result),
+            release.tag_name,
+        )
+        return result
+
     def validate_extraction_patterns(
         self, patterns: List[str], exclude_patterns: List[str]
     ) -> bool:
