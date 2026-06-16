@@ -17,6 +17,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Operating System :: Android",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
@@ -38,7 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 win = ["pywin32", "winshell"]
 test = [
-  "pytest==9.0.3",
+  "pytest==9.1.0",
   "pytest-mock==3.15.1",
   "pytest-cov==7.1.0",
   "pytest-asyncio==1.4.0",
