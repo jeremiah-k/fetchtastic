@@ -12,7 +12,7 @@ from fetchtastic import log_utils
 pytestmark = [pytest.mark.unit, pytest.mark.infrastructure]
 
 
-def _app_handlers():
+def _app_handlers() -> list[logging.Handler]:
     """Return the logger's own handlers, excluding pytest's caplog capture handlers.
 
     pytest 9+ attaches ``LogCaptureHandler`` instances directly to the logger under
@@ -31,9 +31,16 @@ class TestLogUtils:
     """Test suite for log_utils module."""
 
     def setup_method(self):
-        """Reset logger state before each test."""
-        # Clear all handlers
-        for handler in log_utils.logger.handlers[:]:
+        """Reset logger state before each test.
+
+        Only application handlers are removed and closed; pytest's
+        ``LogCaptureHandler`` (caplog) is preserved so log capture stays intact
+        across the test session.
+        """
+        # Clear only application handlers, preserving pytest's LogCaptureHandler
+        for handler in list(log_utils.logger.handlers):
+            if handler.__class__.__name__ == "LogCaptureHandler":
+                continue
             log_utils.logger.removeHandler(handler)
             handler.close()
 
@@ -47,15 +54,18 @@ class TestLogUtils:
         """Test that logger is properly initialized."""
         assert log_utils.logger.name == "fetchtastic"
         assert not log_utils.logger.propagate
-        assert len(_app_handlers()) == 1
-        assert isinstance(_app_handlers()[0], RichHandler)
+        handlers = _app_handlers()
+        assert len(handlers) == 1
+        assert isinstance(handlers[0], RichHandler)
 
     def test_logger_initialization_with_env_var(self):
         """Test logger initialization with environment variable."""
         with patch.dict(os.environ, {"FETCHTASTIC_LOG_LEVEL": "DEBUG"}):
             log_utils._initialize_logger()
             assert log_utils.logger.level == logging.DEBUG
-            assert _app_handlers()[0].level == logging.DEBUG
+            handlers = _app_handlers()
+            assert len(handlers) == 1
+            assert handlers[0].level == logging.DEBUG
 
     def test_logger_initialization_with_invalid_env_var(self):
         """Test logger initialization with invalid environment variable."""
