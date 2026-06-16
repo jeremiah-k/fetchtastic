@@ -12,13 +12,35 @@ from fetchtastic import log_utils
 pytestmark = [pytest.mark.unit, pytest.mark.infrastructure]
 
 
+def _app_handlers() -> list[logging.Handler]:
+    """Return the logger's own handlers, excluding pytest's caplog capture handlers.
+
+    pytest 9+ attaches ``LogCaptureHandler`` instances directly to the logger under
+    test (8.x only attached them to root). Filter by class name so assertions
+    describe the module's configuration, not the test harness. Duck-typed to avoid
+    importing the private ``_pytest.logging`` module.
+    """
+    return [
+        h
+        for h in log_utils.logger.handlers
+        if h.__class__.__name__ != "LogCaptureHandler"
+    ]
+
+
 class TestLogUtils:
     """Test suite for log_utils module."""
 
     def setup_method(self):
-        """Reset logger state before each test."""
-        # Clear all handlers
-        for handler in log_utils.logger.handlers[:]:
+        """Reset logger state before each test.
+
+        Only application handlers are removed and closed; pytest's
+        ``LogCaptureHandler`` (caplog) is preserved so log capture stays intact
+        across the test session.
+        """
+        # Clear only application handlers, preserving pytest's LogCaptureHandler
+        for handler in list(log_utils.logger.handlers):
+            if handler.__class__.__name__ == "LogCaptureHandler":
+                continue
             log_utils.logger.removeHandler(handler)
             handler.close()
 
@@ -32,15 +54,18 @@ class TestLogUtils:
         """Test that logger is properly initialized."""
         assert log_utils.logger.name == "fetchtastic"
         assert not log_utils.logger.propagate
-        assert len(log_utils.logger.handlers) == 1
-        assert isinstance(log_utils.logger.handlers[0], RichHandler)
+        handlers = _app_handlers()
+        assert len(handlers) == 1
+        assert isinstance(handlers[0], RichHandler)
 
     def test_logger_initialization_with_env_var(self):
         """Test logger initialization with environment variable."""
         with patch.dict(os.environ, {"FETCHTASTIC_LOG_LEVEL": "DEBUG"}):
             log_utils._initialize_logger()
             assert log_utils.logger.level == logging.DEBUG
-            assert log_utils.logger.handlers[0].level == logging.DEBUG
+            handlers = _app_handlers()
+            assert len(handlers) == 1
+            assert handlers[0].level == logging.DEBUG
 
     def test_logger_initialization_with_invalid_env_var(self):
         """Test logger initialization with invalid environment variable."""
@@ -68,7 +93,7 @@ class TestLogUtils:
         """Test that setting log level updates formatters appropriately."""
         # Set to DEBUG level
         log_utils.set_log_level("DEBUG")
-        handler = log_utils.logger.handlers[0]
+        handler = _app_handlers()[0]
         formatter = handler.formatter
 
         # DEBUG formatter should be clean and simple
@@ -77,7 +102,7 @@ class TestLogUtils:
 
         # Set to INFO level
         log_utils.set_log_level("INFO")
-        handler = log_utils.logger.handlers[0]
+        handler = _app_handlers()[0]
         formatter = handler.formatter
 
         # INFO formatter should be simpler
@@ -91,7 +116,7 @@ class TestLogUtils:
             log_utils.add_file_logging(log_dir, "INFO")
 
             # Check that file handler was added
-            assert len(log_utils.logger.handlers) == 2  # Console + File
+            assert len(_app_handlers()) == 2  # Console + File
             assert log_utils._file_handler is not None
             assert log_utils._file_handler in log_utils.logger.handlers
 
@@ -114,7 +139,7 @@ class TestLogUtils:
 
             # Should have replaced the first handler
             assert first_handler != second_handler
-            assert len(log_utils.logger.handlers) == 2  # Still just console + file
+            assert len(_app_handlers()) == 2  # Still just console + file
 
     def test_add_file_logging_different_levels(self):
         """Test file logging with different log levels."""
@@ -281,8 +306,8 @@ class TestLogUtils:
         """Test that _initialize_logger can be called multiple times safely."""
         # Should not raise any errors
         log_utils._initialize_logger()
-        initial_handlers = len(log_utils.logger.handlers)
+        initial_handlers = len(_app_handlers())
 
         log_utils._initialize_logger()
         # Should still have same number of handlers (replaces them)
-        assert len(log_utils.logger.handlers) == initial_handlers
+        assert len(_app_handlers()) == initial_handlers
