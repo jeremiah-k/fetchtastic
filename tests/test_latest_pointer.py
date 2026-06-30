@@ -155,6 +155,67 @@ def test_update_latest_pointer_does_not_replace_regular_file(tmp_path):
     assert latest.read_text(encoding="utf-8") == "user content"
 
 
+def test_update_latest_pointer_already_current_is_noop(tmp_path, symlinks_supported):
+    """When `latest` already points at the desired target, the call must not
+    replace the symlink and must not log "Updated latest pointer".
+
+    This is the same class of no-op cleanup as zero-match extraction: the
+    operation is currently idempotent in result but noisy in operation,
+    logging "Updated" on every run.
+    """
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    target = tmp_path / "v2.7.0"
+    target.mkdir()
+    latest = tmp_path / LATEST_POINTER_NAME
+    latest.symlink_to("v2.7.0")
+
+    with (
+        patch("fetchtastic.download.latest_pointer.logger") as mock_logger,
+        patch("fetchtastic.download.latest_pointer.os.replace") as mock_replace,
+        patch("fetchtastic.download.latest_pointer.os.symlink") as mock_symlink,
+    ):
+        result = update_latest_pointer(tmp_path, target.name)
+
+    assert result is True
+    # Symlink is unchanged.
+    assert os.readlink(latest) == "v2.7.0"
+    # No filesystem mutation happened.
+    mock_replace.assert_not_called()
+    mock_symlink.assert_not_called()
+    # The "already current" debug line fired.
+    debug_messages = [
+        call.args[0] if call.args else "" for call in mock_logger.debug.call_args_list
+    ]
+    assert any(
+        "Latest pointer already current" in msg for msg in debug_messages
+    ), debug_messages
+    # And the misleading "Updated latest pointer" line did NOT.
+    assert not any(
+        "Updated latest pointer" in msg for msg in debug_messages
+    ), debug_messages
+
+
+def test_update_latest_pointer_replaces_when_target_differs(
+    tmp_path, symlinks_supported
+):
+    """If the existing symlink points at a different target, the call must
+    still replace it (the no-op fast-path only matches identical targets)."""
+    if not symlinks_supported:
+        pytest.skip("os.symlink not supported on this platform")
+    new_target = tmp_path / "v2.7.0"
+    old_target = tmp_path / "v2.6.0"
+    new_target.mkdir()
+    old_target.mkdir()
+    latest = tmp_path / LATEST_POINTER_NAME
+    latest.symlink_to("v2.6.0")
+
+    result = update_latest_pointer(tmp_path, new_target.name)
+
+    assert result is True
+    assert os.readlink(latest) == "v2.7.0"
+
+
 def test_remove_latest_pointer_removes_managed_symlink_and_leaves_target(
     tmp_path, symlinks_supported
 ):

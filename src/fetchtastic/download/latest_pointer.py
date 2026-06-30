@@ -71,6 +71,25 @@ def update_latest_pointer(
                 "Skipping latest pointer because path is not a symlink: %s", link_path
             )
             return False
+        # Idempotent fast-path: if the existing symlink already points at
+        # the desired target, do nothing. Avoids replace + "Updated" log
+        # noise on every run when the pointer is already current.
+        if link_path.is_symlink():
+            try:
+                if os.readlink(link_path) == target_name:
+                    logger.debug(
+                        "Latest pointer already current: %s -> %s",
+                        link_path,
+                        target_name,
+                    )
+                    return True
+            except OSError as exc:
+                # Could not read the existing link; fall through to replacement.
+                logger.debug(
+                    "Could not read existing latest pointer %s: %s; recreating",
+                    link_path,
+                    exc,
+                )
         os.symlink(
             target_name,
             tmp_path,
