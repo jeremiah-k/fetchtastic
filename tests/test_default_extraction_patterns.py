@@ -91,16 +91,13 @@ class TestDefaultExtractionPatterns:
         assert matches_extract_patterns(filename, ["mt-"])
 
     @pytest.mark.parametrize(
-        [
-            "filename",
-            "should_match",
-        ],
+        ("filename", "should_match"),
         [
             ("Meshtastic_nRF52_factory_erase_v3_S140_6.1.0.uf2", True),
             ("Meshtastic_nRF52_factory_erase_v3_S140_7.3.0.uf2", True),
-            # Substring match must not over-match: an update image whose
-            # name merely contains "erase" should not be picked up.
-            ("Meshtastic_nRF52_tft_feather_sense_update_v3.uf2", False),
+            # Substring match must not over-match: a file whose name merely
+            # contains "erase" (but not "factory_erase") is not picked up.
+            ("Meshtastic_nRF52_tft_feather_sense_erase_v3.uf2", False),
         ],
     )
     def test_factory_erase_targets_recovery_files_only(self, filename, should_match):
