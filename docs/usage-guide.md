@@ -282,6 +282,8 @@ A few real-world tokens you might use:
 - `tlora-v2-1-1_6-` for the TLORA V2.1.1_6 line
 - `t-deck-` for the T-Deck line
 - `meshtasticd_` for desktop packages like `meshtasticd_...deb`
+- `mt-` for ESP32 OTA helper binaries (`mt-esp32-ota.bin`, `mt-esp32s3-ota.bin`, `mt-esp32c3-ota.bin`, `mt-esp32c6-ota.bin`)
+- `factory_erase` for nRF52 factory erase / recovery UF2 files (`Meshtastic_nRF52_factory_erase_*.uf2`); these are recovery artifacts, not normal firmware update files
 
 Tips:
 
