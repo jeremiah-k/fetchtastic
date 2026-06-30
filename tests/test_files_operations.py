@@ -14,6 +14,7 @@ import hashlib
 import os
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import platformdirs
 import pytest
@@ -499,6 +500,125 @@ class TestFileOperations:
             str(zip_path), str(tmp_path / "extract"), [], []
         )
         assert result is False
+
+    def test_check_extraction_needed_zero_matching_members(self, tmp_path):
+        """Archive whose members do not match extraction patterns is a no-op.
+
+        This is the regression test for the bug that caused rp2040/rp2350/stm32
+        zips to be queued for extraction and then warn "no files extracted".
+        Zero matching members must mean extraction is not needed.
+        """
+        file_ops = FileOperations()
+        zip_path = tmp_path / "firmware.zip"
+        extract_dir = tmp_path / "extract"
+
+        # Archive members that no realistic default pattern matches.
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("firmware-heltec-v3-2.7.6.uf2", b"heltec")
+            zf.writestr(
+                "Meshtastic_nRF52_tft_feather_sense_update_v3_S140_6.1.0.uf2",
+                b"update",
+            )
+            zf.writestr("readme.txt", b"docs")
+
+        result = file_ops.check_extraction_needed(
+            str(zip_path), str(extract_dir), ["rak4631-"], []
+        )
+
+        assert result is False
+
+    def test_check_extraction_needed_zero_match_emits_debug_not_warning(self, tmp_path):
+        """Zero-match skip must be a DEBUG message, never a WARNING.
+
+        Warnings are reserved for actionable anomalies; "this archive has no
+        selected members" is an expected no-op.
+        """
+        file_ops = FileOperations()
+        zip_path = tmp_path / "firmware.zip"
+        extract_dir = tmp_path / "extract"
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("firmware-heltec-v3-2.7.6.uf2", b"heltec")
+
+        with patch("fetchtastic.download.files.logger") as mock_logger:
+            result = file_ops.check_extraction_needed(
+                str(zip_path), str(extract_dir), ["rak4631-"], []
+            )
+
+        assert result is False
+        # The DEBUG skip line is present.
+        debug_messages = [
+            call.args[0] if call.args else ""
+            for call in mock_logger.debug.call_args_list
+        ]
+        assert any(
+            "matched extraction patterns" in msg for msg in debug_messages
+        ), debug_messages
+        # No warning was emitted.
+        mock_logger.warning.assert_not_called()
+
+    def test_check_extraction_needed_matching_member_missing(self, tmp_path):
+        """Matching member that has not been extracted yet -> extraction needed."""
+        file_ops = FileOperations()
+        zip_path = tmp_path / "firmware.zip"
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("firmware-rak4631-2.7.6.uf2", b"rak")
+
+        result = file_ops.check_extraction_needed(
+            str(zip_path), str(extract_dir), ["rak4631-"], []
+        )
+        assert result is True
+
+    def test_check_extraction_needed_matching_member_already_extracted(self, tmp_path):
+        """All matching members present with matching sizes -> not needed."""
+        file_ops = FileOperations()
+        zip_path = tmp_path / "firmware.zip"
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        payload = b"rak payload bytes"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("firmware-rak4631-2.7.6.uf2", payload)
+
+        # Pre-place the extracted file at the exact size.
+        (extract_dir / "firmware-rak4631-2.7.6.uf2").write_bytes(payload)
+
+        result = file_ops.check_extraction_needed(
+            str(zip_path), str(extract_dir), ["rak4631-"], []
+        )
+        assert result is False
+
+    def test_check_extraction_needed_matching_member_excluded(self, tmp_path):
+        """Matching member that an exclude pattern removes -> zero candidates -> not needed."""
+        file_ops = FileOperations()
+        zip_path = tmp_path / "firmware.zip"
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("firmware-rak4631-2.7.6.uf2", b"rak")
+
+        # Pattern matches, but exclude pattern removes the only candidate.
+        # (_matches_exclude is glob-based, so a wildcard is required.)
+        result = file_ops.check_extraction_needed(
+            str(zip_path), str(extract_dir), ["rak4631-"], ["*rak4631*"]
+        )
+        assert result is False
+
+    def test_check_extraction_needed_bad_zip_preserves_defensive_true(self, tmp_path):
+        """Unreadable ZIP must keep returning True so extraction is attempted/error-visible."""
+        file_ops = FileOperations()
+        zip_path = tmp_path / "broken.zip"
+        # Not a real zip: ZipFile will raise BadZipFile on open.
+        zip_path.write_bytes(b"definitely not a zip")
+
+        result = file_ops.check_extraction_needed(
+            str(zip_path), str(tmp_path / "extract"), ["rak4631-"], []
+        )
+        assert result is True
 
     def test_extract_with_validation_success(self, tmp_path):
         """Test successful extraction with validation."""

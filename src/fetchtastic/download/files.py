@@ -738,7 +738,13 @@ class FileOperations:
         """
         Determine whether the ZIP archive requires extraction by comparing candidate members against existing files in extract_dir.
 
-        This checks archive members that match the given filename patterns (applied to the base filename) and are not excluded, verifies each candidate would be safely extracted, and compares existing extracted file sizes to the archive entry sizes. If all matching candidates already exist with matching sizes, extraction is not needed.
+        Selection rules:
+        - Missing ZIP path -> extraction not needed.
+        - No extraction patterns -> extraction not needed.
+        - No safe, non-excluded archive members match the patterns -> extraction not needed (this is the normal no-op case, not a warning).
+        - One or more matching members, all already extracted with matching sizes -> extraction not needed.
+        - One or more matching members, at least one missing or size-stale -> extraction needed.
+        - Bad or unreadable ZIP -> returns True to preserve defensive behavior (assume extraction is needed, surface the error).
 
         Parameters:
             zip_path (str): Path to the ZIP archive.
@@ -747,7 +753,7 @@ class FileOperations:
             exclude_patterns (list[str]): Filename patterns to exclude (matched against the base filename).
 
         Returns:
-            bool: `True` if extraction should be performed, `False` if extraction can be skipped. If the ZIP file is missing, returns `False`. On any error while checking, returns `True` (assumes extraction is needed).
+            bool: `True` if extraction should be performed, `False` if extraction can be skipped.
         """
         try:
             # If the ZIP file doesn't exist, extraction is not needed
@@ -789,9 +795,20 @@ class FileOperations:
                             if os.path.getsize(extract_path) == file_info.file_size:
                                 files_existing += 1
 
+                # No archive members matched the extraction patterns: this is
+                # an expected no-op (e.g. an rp2040/rp2350/stm32 zip when the
+                # user's patterns only target other boards). Skip extraction
+                # quietly.
+                if files_to_extract == 0:
+                    logger.debug(
+                        f"No archive members matched extraction patterns in"
+                        f" {os.path.basename(zip_path)} - skipping extraction"
+                    )
+                    return False
+
                 # If all files that would be extracted already exist with correct sizes,
                 # extraction is not needed
-                if files_to_extract > 0 and files_existing == files_to_extract:
+                if files_existing == files_to_extract:
                     logger.debug(
                         f"All {files_to_extract} files already extracted - skipping extraction"
                     )

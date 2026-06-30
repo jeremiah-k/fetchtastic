@@ -753,24 +753,52 @@ class TestDownloadOrchestrator:
         )
 
     @patch("fetchtastic.download.orchestrator.logger")
-    def test_log_download_summary(self, mock_logger, orchestrator):
-        """Test download summary logging."""
-        start_time = 1000.0
+    def test_log_download_summary_demotes_completion_lines_to_debug(
+        self, mock_logger, orchestrator
+    ):
+        """Test download summary logging.
 
-        # Mock statistics
-        orchestrator.get_download_statistics = Mock(
-            return_value={
-                "total_downloads": 5,
-                "successful_downloads": 4,
-                "failed_downloads": 1,
-                "success_rate": 80.0,
-            }
-        )
+        With empty results the pipeline-completion lines ("Download pipeline
+        completed", "Time taken", "All assets are up to date.") are emitted
+        at DEBUG, not INFO, because the human-facing final summary is owned
+        by DownloadCLIIntegration. The DEBUG lines must still be emitted so
+        library users of the orchestrator can see them at DEBUG level.
+        """
+        start_time = 1000.0
 
         orchestrator._log_download_summary(start_time)
 
-        # Should log summary information
-        mock_logger.info.assert_called()
+        # Lock the three specific demoted messages, not just "some DEBUG fired".
+        # logger.debug is called with pre-formatted f-strings, so args[0] holds
+        # the final message text.
+        debug_messages = [
+            call.args[0] if call.args else ""
+            for call in mock_logger.debug.call_args_list
+        ]
+        assert any(
+            "Download pipeline completed" in msg for msg in debug_messages
+        ), debug_messages
+        assert any("Time taken" in msg for msg in debug_messages), debug_messages
+        assert any(
+            "All assets are up to date" in msg for msg in debug_messages
+        ), debug_messages
+
+        # No INFO duplicate of the demoted completion lines should fire
+        # from the orchestrator now that the CLI integration owns the
+        # human-facing summary. All three lines were demoted together;
+        # a regression that re-introduces any one of them at INFO must
+        # fail this test.
+        info_messages = [
+            call.args[0] if call.args else ""
+            for call in mock_logger.info.call_args_list
+        ]
+        assert not any(
+            "Download pipeline completed" in msg for msg in info_messages
+        ), info_messages
+        assert not any("Time taken" in msg for msg in info_messages), info_messages
+        assert not any(
+            "All assets are up to date" in msg for msg in info_messages
+        ), info_messages
 
     def test_enhance_download_results_with_metadata(self, orchestrator):
         """Test enhancing results with metadata."""
@@ -3323,8 +3351,13 @@ class TestDownloadOrchestrator:
             "v1.0.1-beta"
         )
 
-    def test_process_client_app_downloads_no_prereleases_log(self, orchestrator):
-        """Test client app processing logs 'No client app prereleases available'."""
+    def test_process_client_app_downloads_no_new_prereleases_log(self, orchestrator):
+        """Test client app processing logs the no-new-prereleases wording.
+
+        The pipeline message must reflect that no *new* prerelease downloads
+        are needed (not that no prereleases exist at all), since the final
+        summary may still report the latest known prerelease tag.
+        """
         orchestrator.config["CHECK_APP_PRERELEASES"] = True
         mock_asset = Mock()
         mock_asset.name = "app.apk"
@@ -3339,9 +3372,24 @@ class TestDownloadOrchestrator:
         orchestrator.client_app_downloader.should_download_asset.return_value = True
         orchestrator.client_app_downloader.get_assets.return_value = [mock_asset]
 
-        orchestrator._process_client_app_downloads()
+        with patch("fetchtastic.download.orchestrator.logger") as mock_logger:
+            orchestrator._process_client_app_downloads()
 
         orchestrator.client_app_downloader.handle_prereleases.assert_called_once()
+
+        info_messages = [
+            call.args[0] if call.args else ""
+            for call in mock_logger.info.call_args_list
+        ]
+        # Lock the new wording.
+        assert any(
+            "No new client app prereleases to download" in msg for msg in info_messages
+        ), info_messages
+        # And confirm the old contradictory wording is gone — a regression
+        # that reintroduces it alongside the new line would otherwise pass.
+        assert not any(
+            "No client app prereleases available" in msg for msg in info_messages
+        ), info_messages
 
     @patch.object(
         DownloadOrchestrator, "_download_client_app_release", return_value=False

@@ -521,7 +521,7 @@ class DownloadOrchestrator:
                 and app_releases
                 and not prereleases
             ):
-                logger.info("No client app prereleases available")
+                logger.info("No new client app prereleases to download")
 
             if not any_app_downloaded and not releases_to_download:
                 logger.info("All client app assets are up to date.")
@@ -1756,10 +1756,10 @@ class DownloadOrchestrator:
         ]
         total_failures = len(self.failed_downloads)
 
-        logger.info("Download pipeline completed")
-        logger.info(f"Time taken: {elapsed_time:.2f} seconds")
+        logger.debug("Download pipeline completed")
+        logger.debug(f"Time taken: {elapsed_time:.2f} seconds")
         if not downloaded and total_failures == 0:
-            logger.info("All assets are up to date.")
+            logger.debug("All assets are up to date.")
         else:
             # Group results by product category
             client_app_downloads = [

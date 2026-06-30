@@ -352,3 +352,50 @@ class TestGetZipsNeedingExtraction:
         assert result[1] is asset2
         # matches_selected_patterns must never be called (short-circuited)
         mock_matches.assert_not_called()
+
+    # --- Regression: zero-match zips must NOT be queued for extraction ---
+    #
+    # Reproduces the user-visible noise from a real download run where
+    # rp2040/rp2350/stm32 archives were repeatedly queued, re-extracted,
+    # and then warned "no files extracted ... no matches for patterns".
+    # The fix lives in FileOperations.check_extraction_needed(); this test
+    # drives it through the public FirmwareReleaseDownloader queue builder
+    # so the whole "decide what to extract" path is covered.
+
+    def test_zero_match_zip_not_queued_for_extraction(self, downloader):
+        """A firmware zip whose contents do not match EXTRACT_PATTERNS
+        must not appear in the extraction queue."""
+        import zipfile
+
+        from fetchtastic.download.files import FileOperations
+
+        # Use the REAL FileOperations so the zero-match fix is exercised.
+        downloader.file_operations = FileOperations()
+        downloader._get_exclude_patterns = Mock(return_value=[])
+
+        # EXTRACT_PATTERNS targets a family the archive does not contain.
+        downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+
+        # Build a real zip on disk in the version dir, containing members
+        # that no realistic pattern in EXTRACT_PATTERNS will match.
+        version_dir = _setup_version_dir(downloader, "v2.3.2")
+        zip_path = os.path.join(version_dir, "firmware-rp2040-2.3.2.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("firmware-heltec-v3-2.3.2.uf2", b"heltec")
+            zf.writestr(
+                "Meshtastic_nRF52_tft_feather_sense_update_v3_S140_6.1.0.uf2",
+                b"update",
+            )
+            zf.writestr("readme.txt", b"docs")
+
+        asset = Asset(
+            name="firmware-rp2040-2.3.2.zip",
+            download_url="https://example.com/rp2040.zip",
+            size=100,
+        )
+        release = _make_release(assets=[asset])
+
+        result = downloader.get_zips_needing_extraction(release)
+
+        # The zero-match zip must NOT be queued.
+        assert result == [], "zero-match zip should not be queued for extraction"
