@@ -796,11 +796,12 @@ class FileOperations:
                                 files_existing += 1
 
                 # No archive members matched the extraction patterns: this is
-                # an expected no-op (e.g. an rp2040/stm32 zip when the user's
-                # patterns only target other boards). Skip extraction quietly.
+                # an expected no-op (e.g. an rp2040/rp2350/stm32 zip when the
+                # user's patterns only target other boards). Skip extraction
+                # quietly.
                 if files_to_extract == 0:
                     logger.debug(
-                        "No archive members matched extraction patterns in"
+                        f"No archive members matched extraction patterns in"
                         f" {os.path.basename(zip_path)} - skipping extraction"
                     )
                     return False

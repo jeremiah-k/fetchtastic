@@ -11,10 +11,10 @@ Comprehensive tests for the files.py module covering:
 """
 
 import hashlib
-import logging
 import os
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import platformdirs
 import pytest
@@ -527,9 +527,7 @@ class TestFileOperations:
 
         assert result is False
 
-    def test_check_extraction_needed_zero_match_emits_debug_not_warning(
-        self, tmp_path, caplog
-    ):
+    def test_check_extraction_needed_zero_match_emits_debug_not_warning(self, tmp_path):
         """Zero-match skip must be a DEBUG message, never a WARNING.
 
         Warnings are reserved for actionable anomalies; "this archive has no
@@ -542,21 +540,22 @@ class TestFileOperations:
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("firmware-heltec-v3-2.7.6.uf2", b"heltec")
 
-        with caplog.at_level(logging.DEBUG, logger="fetchtastic"):
+        with patch("fetchtastic.download.files.logger") as mock_logger:
             result = file_ops.check_extraction_needed(
                 str(zip_path), str(extract_dir), ["rak4631-"], []
             )
 
         assert result is False
-        messages = [(r.levelname, r.getMessage()) for r in caplog.records]
-        assert "WARNING" not in [
-            level for level, _ in messages
-        ], f"unexpected WARNING records: {messages}"
-        # Sanity: the DEBUG skip line is present.
+        # The DEBUG skip line is present.
+        debug_messages = [
+            call.args[0] if call.args else ""
+            for call in mock_logger.debug.call_args_list
+        ]
         assert any(
-            level == "DEBUG" and "matched extraction patterns" in msg
-            for level, msg in messages
-        ), f"expected DEBUG skip message, got: {messages}"
+            "matched extraction patterns" in msg for msg in debug_messages
+        ), debug_messages
+        # No warning was emitted.
+        mock_logger.warning.assert_not_called()
 
     def test_check_extraction_needed_matching_member_missing(self, tmp_path):
         """Matching member that has not been extracted yet -> extraction needed."""
