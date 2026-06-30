@@ -163,13 +163,19 @@ VERSION_REGEX_PATTERN = (
 
 # Default extraction patterns (examples for documentation)
 DEFAULT_EXTRACTION_PATTERNS = [
-    "rak4631-",
-    "tbeam",
-    "t1000-e-",
-    "tlora-v2-1-1_6-",
-    "device-",
-    "littlefs-",
-    "bleota",
+    # Device families: each token matches firmware images for that board.
+    "rak4631-",  # RAK4631 base family (hyphen form)
+    "tbeam",  # T-Beam family
+    "t1000-e-",  # T1000-E family
+    "tlora-v2-1-1_6-",  # TLORA V2.1.1_6 variant line
+    # Non-device artifacts bundled with firmware releases.
+    "device-",  # device-install.sh / device-update.sh setup scripts
+    "littlefs-",  # LittleFS filesystem images
+    "bleota",  # BLE OTA blobs (bleota.bin, bleota-c3.bin, bleota-s3.bin)
+    # ESP32 OTA helper binaries (covers esp32, esp32s3, esp32c3, esp32c6).
+    "mt-",
+    # nRF52 factory erase / recovery UF2 files (not normal update images).
+    "factory_erase",
 ]
 
 # Configuration file names
