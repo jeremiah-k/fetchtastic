@@ -1183,7 +1183,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             exclude_patterns (List[str]): Glob patterns of files to exclude.
 
         Returns:
-            bool: `True` if extraction is needed (files are missing, outdated, or do not match the patterns), `False` otherwise.
+            bool: `True` if extraction is needed (matching members are missing or size-stale, or the archive could not be inspected). `False` if extraction can be skipped, including when the archive has no members matching the patterns (the normal no-op case).
         """
         return self.file_operations.check_extraction_needed(
             file_path, extract_dir, patterns, exclude_patterns
