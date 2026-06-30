@@ -783,12 +783,19 @@ class TestDownloadOrchestrator:
             "All assets are up to date" in msg for msg in debug_messages
         ), debug_messages
 
-        # No INFO duplicate of the up-to-date line should fire from the
-        # orchestrator now that the CLI integration owns that message.
+        # No INFO duplicate of the demoted completion lines should fire
+        # from the orchestrator now that the CLI integration owns the
+        # human-facing summary. All three lines were demoted together;
+        # a regression that re-introduces any one of them at INFO must
+        # fail this test.
         info_messages = [
             call.args[0] if call.args else ""
             for call in mock_logger.info.call_args_list
         ]
+        assert not any(
+            "Download pipeline completed" in msg for msg in info_messages
+        ), info_messages
+        assert not any("Time taken" in msg for msg in info_messages), info_messages
         assert not any(
             "All assets are up to date" in msg for msg in info_messages
         ), info_messages
