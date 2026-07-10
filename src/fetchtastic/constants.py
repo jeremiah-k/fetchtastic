@@ -13,6 +13,11 @@ MESHTASTIC_ANDROID_RELEASES_URL = (
 # Client app assets (Android APKs and Desktop installers) are published in the
 # Meshtastic-Android release feed.
 MESHTASTIC_CLIENT_APP_RELEASES_URL = MESHTASTIC_ANDROID_RELEASES_URL
+# Rolling snapshot debug-build release (tag "snapshot"), rebuilt on every push to main.
+MESHTASTIC_ANDROID_SNAPSHOT_TAG = "snapshot"
+MESHTASTIC_ANDROID_SNAPSHOT_RELEASE_URL = (
+    f"{MESHTASTIC_ANDROID_RELEASES_URL}/tags/{MESHTASTIC_ANDROID_SNAPSHOT_TAG}"
+)
 MESHTASTIC_FIRMWARE_RELEASES_URL = f"{GITHUB_API_BASE}/meshtastic/firmware/releases"
 # Desktop assets are currently published in the Android releases feed.
 MESHTASTIC_DESKTOP_RELEASES_URL = MESHTASTIC_ANDROID_RELEASES_URL
@@ -42,6 +47,7 @@ REPO_DOWNLOADS_DIR = "repo-dls"
 FIRMWARE_PRERELEASES_DIR_NAME = "prerelease"
 APK_PRERELEASES_DIR_NAME = "prerelease"
 DESKTOP_PRERELEASES_DIR_NAME = "prerelease"
+APP_SNAPSHOTS_DIR_NAME = "snapshots"
 FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
@@ -61,6 +67,7 @@ LATEST_DESKTOP_RELEASE_JSON_FILE = "latest_desktop_release.json"
 LATEST_DESKTOP_PRERELEASE_JSON_FILE = "latest_desktop_prerelease.json"
 LATEST_CLIENT_APP_RELEASE_JSON_FILE = "latest_client_app_release.json"
 LATEST_CLIENT_APP_PRERELEASE_JSON_FILE = "latest_client_app_prerelease.json"
+LATEST_APP_SNAPSHOT_JSON_FILE = "latest_app_snapshot.json"
 DESKTOP_RELEASE_HISTORY_JSON_FILE = "desktop_release_history.json"
 ANDROID_RELEASE_HISTORY_JSON_FILE = "android_release_history.json"
 CLIENT_APP_RELEASE_HISTORY_JSON_FILE = "client_app_release_history.json"
@@ -89,6 +96,7 @@ DEFAULT_KEEP_LAST_BETA = False
 DEFAULT_CHECK_APK_PRERELEASES = True
 DEFAULT_CHECK_DESKTOP_PRERELEASES = True
 DEFAULT_CHECK_APP_PRERELEASES = True
+DEFAULT_CHECK_APP_SNAPSHOTS = False
 DEFAULT_DESKTOP_VERSIONS_TO_KEEP = 2
 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES = True
 DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS = True
@@ -239,6 +247,7 @@ FILE_TYPE_ANDROID = "android"
 FILE_TYPE_ANDROID_PRERELEASE = "android_prerelease"
 FILE_TYPE_CLIENT_APP = "client_app"
 FILE_TYPE_CLIENT_APP_PRERELEASE = "client_app_prerelease"
+FILE_TYPE_APP_SNAPSHOT = "app_snapshot"
 FILE_TYPE_FIRMWARE = "firmware"
 FILE_TYPE_FIRMWARE_PRERELEASE = "firmware_prerelease"
 FILE_TYPE_FIRMWARE_PRERELEASE_REPO = "firmware_prerelease_repo"

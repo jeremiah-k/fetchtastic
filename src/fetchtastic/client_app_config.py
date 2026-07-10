@@ -21,6 +21,7 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
+    DEFAULT_CHECK_APP_SNAPSHOTS,
 )
 from fetchtastic.utils import coerce_bool, expand_apk_selected_patterns
 
@@ -214,6 +215,11 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
         "SELECTED_DESKTOP_ASSETS"
     ):
         config["CHECK_DESKTOP_PRERELEASES"] = False
+
+    config["CHECK_APP_SNAPSHOTS"] = coerce_bool(
+        config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS),
+        default=DEFAULT_CHECK_APP_SNAPSHOTS,
+    )
     return config
 
 
