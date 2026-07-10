@@ -33,6 +33,7 @@ from fetchtastic.constants import (
     ERROR_TYPE_RETRY_FAILURE,
     ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_UNKNOWN,
+    FILE_TYPE_APP_SNAPSHOT,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
     FILE_TYPE_DESKTOP,
@@ -54,7 +55,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import is_termux
-from fetchtastic.utils import cleanup_legacy_hash_sidecars
+from fetchtastic.utils import cleanup_legacy_hash_sidecars, coerce_bool
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
@@ -522,6 +523,65 @@ class DownloadOrchestrator:
                 and not prereleases
             ):
                 logger.info("No new client app prereleases to download")
+
+            # --- Snapshot Debug Builds (rolling "snapshot" tag) ---
+            if coerce_bool(self.config.get("CHECK_APP_SNAPSHOTS", False)):
+                logger.info("Checking for Android snapshot debug builds...")
+                snapshot_release = self.client_app_downloader.fetch_snapshot_release()
+                handled_snapshot = self.client_app_downloader.handle_snapshots(
+                    snapshot_release
+                )
+                if handled_snapshot is not None:
+                    snapshot_vc = self.client_app_downloader.get_snapshot_version_code(
+                        handled_snapshot
+                    )
+                    if snapshot_vc is not None and (
+                        self.client_app_downloader.should_download_snapshot(snapshot_vc)
+                    ):
+                        logger.info("Downloading snapshot debug build %s", snapshot_vc)
+                        for asset in self.client_app_downloader.get_assets(
+                            handled_snapshot
+                        ):
+                            if (
+                                self.client_app_downloader.parse_snapshot_version_code(
+                                    asset.name
+                                )
+                                is None
+                            ):
+                                continue
+                            snapshot_result = (
+                                self.client_app_downloader.download_snapshot_asset(
+                                    handled_snapshot, asset, snapshot_vc
+                                )
+                            )
+                            if (
+                                snapshot_result.success
+                                and not snapshot_result.was_skipped
+                            ):
+                                any_app_downloaded = True
+                            self._handle_download_result(
+                                snapshot_result, FILE_TYPE_APP_SNAPSHOT
+                            )
+                        if not self.client_app_downloader.update_snapshot_tracking(
+                            snapshot_vc,
+                            self.client_app_downloader.extract_snapshot_commit_sha(
+                                handled_snapshot
+                            ),
+                        ):
+                            logger.warning(
+                                "Failed to update snapshot tracking for %s",
+                                snapshot_vc,
+                            )
+                        else:
+                            self.client_app_downloader.cleanup_superseded_snapshots()
+                    else:
+                        logger.debug(
+                            "Snapshot debug build %s is up to date", snapshot_vc
+                        )
+                elif snapshot_release is not None:
+                    logger.debug("Snapshot release has no debug APK assets")
+                else:
+                    logger.debug("No snapshot release found")
 
             if not any_app_downloaded and not releases_to_download:
                 logger.info("All client app assets are up to date.")

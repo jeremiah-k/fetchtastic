@@ -23,6 +23,7 @@ from fetchtastic.constants import (
     DESKTOP_FILE_TYPES,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_APP_SNAPSHOT,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
     FILE_TYPE_DESKTOP,
@@ -401,6 +402,21 @@ class DownloadCLIIntegration:
         downloaded_apk_prereleases = downloaded_apk_prereleases or []
         downloaded_desktop = downloaded_desktop or []
         downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
+
+        # Snapshot debug builds are categorized directly from orchestrator
+        # results to avoid extending the legacy result tuple contract.
+        downloaded_app_snapshots: list[str] = []
+        if self.orchestrator:
+            for result in self.orchestrator.download_results:
+                if getattr(
+                    result, "file_type", ""
+                ) == FILE_TYPE_APP_SNAPSHOT and not getattr(
+                    result, "was_skipped", False
+                ):
+                    tag = result.release_tag
+                    if tag and tag not in downloaded_app_snapshots:
+                        downloaded_app_snapshots.append(tag)
+
         downloaded_count = (
             len(downloaded_firmwares)
             + len(downloaded_apks)
@@ -408,6 +424,7 @@ class DownloadCLIIntegration:
             + len(downloaded_firmware_prereleases)
             + len(downloaded_apk_prereleases)
             + len(downloaded_desktop_prereleases)
+            + len(downloaded_app_snapshots)
         )
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
@@ -444,6 +461,12 @@ class DownloadCLIIntegration:
             )
         else:
             log.info("Latest Meshtastic Client prerelease: none")
+
+        if downloaded_app_snapshots:
+            log.info(
+                "Downloaded Android snapshot debug builds: %s",
+                ", ".join(downloaded_app_snapshots),
+            )
 
         if failed_downloads:
             log.info(f"{len(failed_downloads)} downloads failed:")
@@ -483,6 +506,7 @@ class DownloadCLIIntegration:
                     downloaded_apk_prereleases,
                     downloaded_desktop,
                     downloaded_desktop_prereleases,
+                    downloaded_app_snapshots=downloaded_app_snapshots,
                 )
             elif self.orchestrator and self.orchestrator.wifi_skipped:
                 send_new_releases_available_notification(

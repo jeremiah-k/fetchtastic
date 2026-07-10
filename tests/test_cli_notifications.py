@@ -89,6 +89,7 @@ def test_summary_sends_completion_notification(integration):
             [],
             [],
             [],
+            downloaded_app_snapshots=[],
         )
         mock_up_to_date.assert_not_called()
 
