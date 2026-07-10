@@ -398,7 +398,7 @@ def test_setup_downloads_partial_keeps_existing_apk_patterns_with_fdroid_compat(
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n"],
+        side_effect=["y", "n", "n", "n"],
     )
     mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
@@ -429,7 +429,7 @@ def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "y", "n"],
+        side_effect=["y", "y", "n", "n"],
     )
     mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -1604,6 +1604,7 @@ def test_run_setup_first_run_linux_simple(
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Check for app snapshots
         "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
@@ -1690,6 +1691,7 @@ def test_run_setup_first_run_windows(
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Check for app snapshots
         "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
@@ -1784,6 +1786,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Check for app snapshots
         "n",  # Add channel suffixes
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware

@@ -101,7 +101,7 @@ def test_setup_downloads_full_run_desktop_only(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["d", "n"],  # desktop choice, no prerelease
+        side_effect=["d", "n", "n"],  # desktop choice, no prerelease, no snapshots
     )
     mock_menu = mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -136,7 +136,8 @@ def test_setup_downloads_full_run_reprompts_invalid_choice(mocker, capsys):
             "invalid-choice",
             "d",
             "n",
-        ],  # invalid, desktop choice, no prerelease
+            "n",
+        ],  # invalid, desktop choice, no prerelease, no snapshots
     )
     mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -269,7 +270,12 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n"],  # Keep desktop, don't re-run menu, no prerelease
+        side_effect=[
+            "y",
+            "n",
+            "n",
+            "n",
+        ],  # Keep desktop, don't re-run menu, no prerelease, no snapshots
     )
     mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
@@ -420,7 +426,12 @@ def test_setup_downloads_backward_compat_old_key(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n"],  # Keep desktop, don't re-run menu, no prerelease
+        side_effect=[
+            "y",
+            "n",
+            "n",
+            "n",
+        ],  # Keep desktop, don't re-run menu, no prerelease, no snapshots
     )
     mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
@@ -1246,6 +1257,7 @@ def test_run_setup_windows_cmd_environment(
                 "b",  # Both client apps and firmware
                 "n",  # No firmware prereleases
                 "n",  # No client app prereleases
+                "n",  # No app snapshots
                 "n",  # No channel suffixes
                 "2",  # Keep 2 versions
                 "2",  # Keep 2 versions
@@ -1507,6 +1519,7 @@ def test_run_setup_desktop_invalid_version_input(
             "",  # Use default base directory
             "d",  # Desktop/client app choice
             "n",  # No prereleases
+            "n",  # No app snapshots
             "invalid",  # Invalid version input
             "y",  # Wi-Fi only
             "n",  # No cron
@@ -1588,6 +1601,7 @@ def test_run_setup_version_package_not_found(
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
             "n",  # No client app prereleases
+            "n",  # No app snapshots
             "n",  # No channel suffixes
             "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware
@@ -1672,6 +1686,7 @@ def test_run_setup_version_other_error(
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
             "n",  # No client app prereleases
+            "n",  # No app snapshots
             "n",  # No channel suffixes
             "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware
@@ -1757,6 +1772,7 @@ def test_run_setup_config_dir_creation_error(
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
             "n",  # No client app prereleases
+            "n",  # No app snapshots
             "n",  # No channel suffixes
             "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware

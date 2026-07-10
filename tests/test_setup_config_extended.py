@@ -277,6 +277,7 @@ def test_setup_downloads_both_selected(mocker, capsys):
             "n",
             "y",
             "n",
+            "n",
         ],
     )
 

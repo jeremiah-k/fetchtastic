@@ -24,6 +24,7 @@ from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_CHECK_APP_PRERELEASES,
+    DEFAULT_CHECK_APP_SNAPSHOTS,
     DEFAULT_CREATE_LATEST_SYMLINKS,
 )
 from fetchtastic.constants import (
@@ -1074,6 +1075,21 @@ def _setup_downloads(
             default=check_app_prereleases_current,
         )
         normalize_client_app_config(config)
+
+    # --- Client App Snapshot (Debug Build) Configuration ---
+    if save_client_apps and app_section_requested:
+        check_app_snapshots_current = _coerce_bool(
+            config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
+        )
+        check_app_snapshots_default = "yes" if check_app_snapshots_current else "no"
+        check_app_snapshots_input = _safe_input(
+            f"\nWould you like to check for and download Android snapshot debug builds from GitHub? [y/n] (default: {check_app_snapshots_default}): ",
+            default=check_app_snapshots_default,
+        )
+        config["CHECK_APP_SNAPSHOTS"] = _coerce_bool(
+            check_app_snapshots_input,
+            default=check_app_snapshots_current,
+        )
 
     # --- Client App Compatibility Normalization ---
     normalize_client_app_config(config)
