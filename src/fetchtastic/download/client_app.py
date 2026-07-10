@@ -12,6 +12,7 @@ import filecmp
 import fnmatch
 import json
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,18 +32,23 @@ from fetchtastic.constants import (
     APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
     APP_DIR_NAME,
+    APP_SNAPSHOTS_DIR_NAME,
     CLIENT_APP_RELEASE_HISTORY_JSON_FILE,
     DEFAULT_APP_VERSIONS_TO_KEEP,
+    DEFAULT_CHECK_APP_SNAPSHOTS,
     DEFAULT_CREATE_LATEST_SYMLINKS,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_VALIDATION,
+    FILE_TYPE_APP_SNAPSHOT,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
     GITHUB_MAX_PER_PAGE,
+    LATEST_APP_SNAPSHOT_JSON_FILE,
     LATEST_CLIENT_APP_PRERELEASE_JSON_FILE,
     LATEST_CLIENT_APP_RELEASE_JSON_FILE,
     LATEST_POINTER_NAME,
+    MESHTASTIC_ANDROID_SNAPSHOT_RELEASE_URL,
     MESHTASTIC_CLIENT_APP_RELEASES_URL,
     RELEASE_SCAN_COUNT,
 )
@@ -50,13 +56,18 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     coerce_bool,
     expand_apk_selected_patterns,
+    make_github_api_request,
     matches_selected_patterns,
 )
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
 from .files import _safe_rmtree, _sanitize_path_component
-from .github_source import GithubReleaseSource, create_asset_from_github_data
+from .github_source import (
+    GithubReleaseSource,
+    create_asset_from_github_data,
+    create_release_from_github_data,
+)
 from .interfaces import Asset, DownloadResult, Release
 from .latest_pointer import update_latest_pointer
 from .prerelease_history import PrereleaseHistoryManager
@@ -64,6 +75,11 @@ from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
 MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
+
+# Snapshot debug-build asset names: androidApp-{flavor}-{abi}-debug-{versionCode}.apk
+_SNAPSHOT_VERSION_CODE_RE = re.compile(r"-debug-(\d+)\.apk$")
+# Release title: "Snapshot {versionCode} ({commit_sha})"
+_SNAPSHOT_COMMIT_SHA_RE = re.compile(r"\(([0-9a-f]{7,40})\)")
 
 
 def is_client_app_asset_name(asset_name: str) -> bool:
@@ -113,6 +129,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         )
         self.latest_release_file = LATEST_CLIENT_APP_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_CLIENT_APP_PRERELEASE_JSON_FILE
+        self.latest_snapshot_file = LATEST_APP_SNAPSHOT_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
         )
@@ -1219,6 +1236,243 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         """No-op: client app assets are downloaded as standalone files and do not support extraction."""
         del file_path, extract_dir, patterns, exclude_patterns
         return False
+
+    # ------------------------------------------------------------------
+    # Snapshot debug builds (rolling "snapshot" tag on Meshtastic-Android)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def parse_snapshot_version_code(asset_name: str) -> int | None:
+        """Extract the integer versionCode from a snapshot asset name."""
+        match = _SNAPSHOT_VERSION_CODE_RE.search(asset_name)
+        return int(match.group(1)) if match else None
+
+    @staticmethod
+    def extract_snapshot_commit_sha(release: Release) -> str | None:
+        """Extract the commit SHA from a snapshot release title/body/tag."""
+        for source in (release.name, release.body, release.tag_name):
+            if not source:
+                continue
+            match = _SNAPSHOT_COMMIT_SHA_RE.search(source)
+            if match:
+                return match.group(1)
+        return None
+
+    def _ensure_snapshot_base_dir(self) -> str:
+        """Return the snapshot base dir (app/snapshots/), creating it when needed."""
+        app_dir = os.path.join(self.download_dir, APP_DIR_NAME)
+        snapshot_dir = os.path.join(app_dir, APP_SNAPSHOTS_DIR_NAME)
+        if os.path.islink(app_dir):
+            raise ValueError(f"Refusing symlinked client app dir: {app_dir}")
+        if os.path.islink(snapshot_dir):
+            raise ValueError(f"Refusing symlinked snapshot dir: {snapshot_dir}")
+        download_root = os.path.realpath(self.download_dir)
+        snapshot_real = os.path.realpath(snapshot_dir)
+        try:
+            if os.path.commonpath([download_root, snapshot_real]) != download_root:
+                raise ValueError(
+                    f"Refusing snapshot dir outside download tree: {snapshot_dir}"
+                )
+        except ValueError as exc:
+            raise ValueError(f"Refusing unsafe snapshot dir: {snapshot_dir}") from exc
+        os.makedirs(snapshot_dir, exist_ok=True)
+        return snapshot_dir
+
+    def _resolve_snapshot_dir(self, version_code: int) -> str:
+        """Return app/snapshots/<version_code>/, creating it when needed."""
+        base_dir = self._ensure_snapshot_base_dir()
+        release_dir = os.path.join(
+            base_dir,
+            self._sanitize_required(str(version_code), "snapshot version code"),
+        )
+        if os.path.islink(release_dir):
+            raise ValueError(f"Refusing symlinked snapshot release dir: {release_dir}")
+        os.makedirs(release_dir, exist_ok=True)
+        return release_dir
+
+    def fetch_snapshot_release(self) -> Release | None:
+        """Fetch the rolling snapshot release from GitHub by tag. Returns None on 404/error."""
+        try:
+            response = make_github_api_request(
+                MESHTASTIC_ANDROID_SNAPSHOT_RELEASE_URL,
+                github_token=self.config.get("GITHUB_TOKEN"),
+            )
+            return create_release_from_github_data(response.json())
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                logger.debug("Snapshot release tag not found (may not exist yet)")
+            else:
+                logger.warning("Failed to fetch snapshot release: %s", exc)
+            return None
+        except (requests.RequestException, OSError, ValueError) as exc:
+            logger.warning("Failed to fetch snapshot release: %s", exc)
+            return None
+
+    def handle_snapshots(self, snapshot_release: Release | None) -> Release | None:
+        """Return the snapshot release if snapshots are enabled and it has APK assets."""
+        if not coerce_bool(
+            self.config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
+        ):
+            return None
+        if snapshot_release is None:
+            return None
+        has_snapshot_apk = any(
+            self.parse_snapshot_version_code(asset.name) is not None
+            for asset in self.get_assets(snapshot_release)
+        )
+        return snapshot_release if has_snapshot_apk else None
+
+    def get_snapshot_version_code(self, release: Release) -> int | None:
+        """Return the versionCode from the first matching snapshot asset."""
+        for asset in self.get_assets(release):
+            vc = self.parse_snapshot_version_code(asset.name)
+            if vc is not None:
+                return vc
+        return None
+
+    def should_download_snapshot(self, version_code: int) -> bool:
+        """Return True when version_code is newer than the tracked snapshot."""
+        if not coerce_bool(
+            self.config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
+        ):
+            return False
+        tracking_file = self.cache_manager.get_cache_file_path(
+            self.latest_snapshot_file
+        )
+        if os.path.exists(tracking_file):
+            try:
+                data = self.cache_manager.read_json(tracking_file) or {}
+                stored = data.get("version_code")
+                if stored is not None:
+                    return int(version_code) > int(stored)
+            except (OSError, ValueError, json.JSONDecodeError, TypeError):
+                return True
+        return True
+
+    def update_snapshot_tracking(
+        self, version_code: int, commit_sha: str | None = None
+    ) -> bool:
+        """Record the downloaded snapshot versionCode (and optional SHA) to tracking JSON."""
+        tracking_file = self.cache_manager.get_cache_file_path(
+            self.latest_snapshot_file
+        )
+        return self.cache_manager.atomic_write_json(
+            tracking_file,
+            {
+                "version_code": version_code,
+                "commit_sha": commit_sha or "",
+                "file_type": FILE_TYPE_APP_SNAPSHOT,
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    def download_snapshot_asset(
+        self, release: Release, asset: Asset, version_code: int
+    ) -> DownloadResult:
+        """Download a snapshot asset into app/snapshots/<version_code>/."""
+        target_path: str | None = None
+        try:
+            snapshot_dir = self._resolve_snapshot_dir(version_code)
+            target_path = os.path.join(
+                snapshot_dir, self._sanitize_required(asset.name, "snapshot asset name")
+            )
+            if os.path.islink(target_path):
+                raise ValueError(f"Refusing symlinked snapshot target: {target_path}")
+            if self._is_asset_complete_for_target(target_path, asset):
+                logger.debug(
+                    "Snapshot asset %s already exists and is complete", asset.name
+                )
+                return self.create_download_result(
+                    success=True,
+                    release_tag=release.tag_name,
+                    file_path=target_path,
+                    download_url=asset.download_url,
+                    file_size=asset.size,
+                    file_type=FILE_TYPE_APP_SNAPSHOT,
+                    was_skipped=True,
+                )
+            success = self.download(asset.download_url, target_path)
+            if success and self._is_asset_complete_for_target(target_path, asset):
+                logger.info("Successfully downloaded and verified %s", asset.name)
+                return self.create_download_result(
+                    success=True,
+                    release_tag=release.tag_name,
+                    file_path=target_path,
+                    download_url=asset.download_url,
+                    file_size=asset.size,
+                    file_type=FILE_TYPE_APP_SNAPSHOT,
+                )
+            if success:
+                self.cleanup_file(target_path)
+                message, error_type = "Validation failed", ERROR_TYPE_VALIDATION
+            else:
+                message, error_type = (
+                    "download_file_with_retry returned False",
+                    ERROR_TYPE_NETWORK,
+                )
+            return self.create_download_result(
+                success=False,
+                release_tag=release.tag_name,
+                file_path=target_path,
+                error_message=message,
+                download_url=asset.download_url,
+                file_size=asset.size,
+                file_type=FILE_TYPE_APP_SNAPSHOT,
+                is_retryable=True,
+                error_type=error_type,
+            )
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+            logger.exception("Error downloading snapshot asset %s: %s", asset.name, exc)
+            safe_path = target_path or os.path.join(
+                self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME
+            )
+            if isinstance(exc, requests.RequestException):
+                error_type, is_retryable = ERROR_TYPE_NETWORK, True
+            elif isinstance(exc, OSError):
+                error_type, is_retryable = ERROR_TYPE_FILESYSTEM, False
+            else:
+                error_type, is_retryable = ERROR_TYPE_VALIDATION, False
+            return self.create_download_result(
+                success=False,
+                release_tag=release.tag_name,
+                file_path=str(Path(safe_path)),
+                error_message=str(exc),
+                download_url=getattr(asset, "download_url", None),
+                file_size=getattr(asset, "size", None),
+                file_type=FILE_TYPE_APP_SNAPSHOT,
+                is_retryable=is_retryable,
+                error_type=error_type,
+            )
+
+    def cleanup_superseded_snapshots(self) -> int:
+        """Remove old snapshot dirs beyond APP_VERSIONS_TO_KEEP. Returns count deleted."""
+        base_dir = os.path.join(self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
+        if not os.path.isdir(base_dir):
+            return 0
+        raw_keep = self.config.get("APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP)
+        try:
+            keep_count = max(0, int(raw_keep))
+        except (TypeError, ValueError):
+            keep_count = DEFAULT_APP_VERSIONS_TO_KEEP
+        entries: list[tuple[int, str]] = []
+        try:
+            with os.scandir(base_dir) as it:
+                for entry in it:
+                    if not entry.is_dir() or entry.is_symlink():
+                        continue
+                    try:
+                        vc = int(entry.name)
+                    except ValueError:
+                        continue
+                    entries.append((vc, entry.path))
+        except FileNotFoundError:
+            return 0
+        entries.sort(key=lambda x: x[0], reverse=True)
+        deleted = 0
+        for vc, path in entries[keep_count:]:
+            _safe_rmtree(path, base_dir=base_dir, item_name=f"snapshot {vc}")
+            deleted += 1
+        return deleted
 
 
 def _is_supported_client_app_release(
