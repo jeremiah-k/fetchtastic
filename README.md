@@ -102,6 +102,7 @@ Downloads are organized in a clean structure:
 │   │   ├── Meshtastic-2.7.14.dmg
 │   │   └── release_notes-v2.7.14.md
 │   └── prerelease/   # Pre-release client app builds (optional)
+│   └── snapshots/     # Rolling snapshot debug builds (opt-in)
 ├── firmware/
 │   ├── v2.3.2/
 │   ├── v2.3.1/

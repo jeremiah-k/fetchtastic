@@ -27,12 +27,18 @@ Boolean values accept normal YAML booleans and common strings such as `true`, `f
 
 Client app assets include Android APKs and desktop installers from the Meshtastic Android release feed. They are stored together under `app/<version>/`.
 
-| Key                     | Default      | Description                                                                                  |
-| ----------------------- | ------------ | -------------------------------------------------------------------------------------------- |
-| `SAVE_CLIENT_APPS`      | setup choice | Enables unified client app downloads.                                                        |
-| `SELECTED_APP_ASSETS`   | setup choice | Preferred selection list for APKs and desktop installers. Supports exact names and patterns. |
-| `APP_VERSIONS_TO_KEEP`  | `2`          | Number of stable client app releases to retain.                                              |
-| `CHECK_APP_PRERELEASES` | `true`       | Enables client app prerelease processing when client app downloads are enabled.              |
+| Key                             | Default      | Description                                                                                        |
+| ------------------------------- | ------------ | -------------------------------------------------------------------------------------------------- |
+| `SAVE_CLIENT_APPS`              | setup choice | Enables unified client app downloads.                                                              |
+| `SELECTED_APP_ASSETS`           | setup choice | Preferred selection list for APKs and desktop installers. Supports exact names and patterns.       |
+| `APP_VERSIONS_TO_KEEP`          | `2`          | Number of stable client app releases to retain.                                                    |
+| `CHECK_APP_PRERELEASES`         | `true`       | Enables client app prerelease processing when client app downloads are enabled.                    |
+| `CHECK_APP_SNAPSHOTS`           | `false`      | Opt-in for Android snapshot debug builds. These are non-production builds signed with a debug key. |
+| `APP_SNAPSHOT_VERSIONS_TO_KEEP` | `1`          | Number of snapshot build directories to retain.                                                    |
+
+### Snapshot Debug Builds
+
+When `CHECK_APP_SNAPSHOTS` is enabled, Fetchtastic downloads rolling Android snapshot debug builds. These are not release builds: they are signed with a debug key and intended for testing only. Snapshot assets are stored under `app/snapshots/<versionCode>/` and follow the same `SELECTED_APP_ASSETS` filtering as stable and prerelease downloads.
 
 Legacy keys are still accepted and normalized:
 
