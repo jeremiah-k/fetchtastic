@@ -223,13 +223,12 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
         default=DEFAULT_CHECK_APP_SNAPSHOTS,
     )
     snapshots_need_apks = config["CHECK_APP_SNAPSHOTS"]
-    if snapshots_need_apks:
-        if not coerce_bool(config.get("SAVE_CLIENT_APPS", False)):
-            config["CHECK_APP_SNAPSHOTS"] = False
-        elif not config.get("SELECTED_APP_ASSETS"):
-            config["CHECK_APP_SNAPSHOTS"] = False
-        elif not (bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets):
-            config["CHECK_APP_SNAPSHOTS"] = False
+    if snapshots_need_apks and (
+        not coerce_bool(config.get("SAVE_CLIENT_APPS", False))
+        or not config.get("SELECTED_APP_ASSETS")
+        or not (bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets)
+    ):
+        config["CHECK_APP_SNAPSHOTS"] = False
     if (
         config.get("APP_SNAPSHOT_VERSIONS_TO_KEEP") is not None
         or config["CHECK_APP_SNAPSHOTS"]

@@ -411,13 +411,14 @@ class DownloadCLIIntegration:
         # Snapshot debug builds are categorized directly from orchestrator
         # results to avoid extending the legacy result tuple contract.
         # Display versionCode (parsed from path) rather than the constant "snapshot" tag.
+        # Only collect successful, non-skipped results.
         downloaded_app_snapshots: list[str] = []
         if self.orchestrator:
             for result in self.orchestrator.download_results:
-                if getattr(
-                    result, "file_type", ""
-                ) == FILE_TYPE_APP_SNAPSHOT and not getattr(
-                    result, "was_skipped", False
+                if (
+                    getattr(result, "file_type", "") == FILE_TYPE_APP_SNAPSHOT
+                    and getattr(result, "success", False)
+                    and not getattr(result, "was_skipped", False)
                 ):
                     vc = self._extract_snapshot_version_code(result)
                     if vc and vc not in downloaded_app_snapshots:

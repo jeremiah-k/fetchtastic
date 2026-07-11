@@ -133,20 +133,9 @@ def _parse_apk_identity(name: str) -> ApkIdentity | None:
     abi = next((a for a in _SNAPSHOT_APK_ABIS if a in lower), None)
     if abi is not None:
         return ApkIdentity(flavor=flavor, abi=abi)
-    if "*" in lower or "?" in lower:
+    if any(c in lower for c in "*?["):
         return ApkIdentity(flavor=flavor, abi=_ABI_WILDCARD)
     return ApkIdentity(flavor=flavor, abi=None)
-
-
-def _snapshot_identities_match(pat: ApkIdentity, asset: ApkIdentity) -> bool:
-    """Return True when a configured-pattern identity selects a snapshot asset identity."""
-    if pat.flavor != asset.flavor:
-        return False
-    if pat.abi == _ABI_WILDCARD:
-        return True
-    if pat.abi is not None:
-        return pat.abi == asset.abi
-    return asset.abi == "universal"
 
 
 def is_client_app_asset_name(asset_name: str) -> bool:
@@ -884,6 +873,25 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return matches_selected_patterns(asset_name, selected)
 
     def download_app(self, release: Release, asset: Asset) -> DownloadResult:
+        if is_snapshot_tag(release.tag_name):
+            logger.warning(
+                "Rejecting snapshot-tagged release %s through generic download_app; "
+                "use dedicated snapshot methods instead",
+                release.tag_name,
+            )
+            return self.create_download_result(
+                success=False,
+                release_tag=release.tag_name,
+                file_path=os.path.join(
+                    self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME
+                ),
+                error_message="Snapshot releases must use dedicated snapshot download methods",
+                download_url=getattr(asset, "download_url", None),
+                file_size=getattr(asset, "size", None),
+                file_type=FILE_TYPE_APP_SNAPSHOT,
+                is_retryable=False,
+                error_type=ERROR_TYPE_VALIDATION,
+            )
         target_path: str | None = None
         file_type = (
             FILE_TYPE_CLIENT_APP_PRERELEASE
@@ -1450,23 +1458,23 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         chosen_vc = self.get_snapshot_version_code(release)
         if chosen_vc is None:
             return []
-        semantically_matched = 0
-        excluded_count = 0
+        semantic_candidates = 0
+        excluded_candidates = 0
         selected: list[Asset] = []
         for asset in self.get_assets(release):
             vc = self.parse_snapshot_version_code(asset.name)
             if vc is None or vc != chosen_vc:
                 continue
-            # Check exclusion before semantic match so we can distinguish
-            # "no semantic match" from "matched but excluded."
-            if self._is_excluded(asset.name):
-                excluded_count += 1
+            # Check semantic match FIRST, then exclusion — so the exclusion
+            # warning only fires for assets that would actually have been selected.
+            if not self._matches_snapshot_semantically(asset.name):
                 continue
-            if self._matches_snapshot_semantically(asset.name):
-                semantically_matched += 1
-                selected.append(asset)
-        if not selected and semantically_matched == 0 and excluded_count > 0:
-            # All debug APKs may have been removed by a *debug* exclusion.
+            semantic_candidates += 1
+            if self._is_excluded(asset.name):
+                excluded_candidates += 1
+                continue
+            selected.append(asset)
+        if semantic_candidates > 0 and excluded_candidates == semantic_candidates:
             logger.warning(
                 "All snapshot assets for versionCode %s were removed by exclusion "
                 "patterns (e.g. EXCLUDE_PATTERNS contains '*debug*'). "
