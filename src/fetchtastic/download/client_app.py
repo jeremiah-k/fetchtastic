@@ -6,6 +6,7 @@ Meshtastic-Android release feed. Storage is intentionally platform-neutral:
 
 - app/<version>/
 - app/prerelease/<version>/
+- app/snapshots/<versionCode>/ (rolling snapshot debug builds)
 """
 
 import filecmp
@@ -34,6 +35,7 @@ from fetchtastic.constants import (
     APP_DIR_NAME,
     APP_SNAPSHOTS_DIR_NAME,
     CLIENT_APP_RELEASE_HISTORY_JSON_FILE,
+    DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
     DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_SNAPSHOTS,
     DEFAULT_CREATE_LATEST_SYMLINKS,
@@ -49,6 +51,7 @@ from fetchtastic.constants import (
     LATEST_CLIENT_APP_RELEASE_JSON_FILE,
     LATEST_POINTER_NAME,
     MESHTASTIC_ANDROID_SNAPSHOT_RELEASE_URL,
+    MESHTASTIC_ANDROID_SNAPSHOT_TAG,
     MESHTASTIC_CLIENT_APP_RELEASES_URL,
     RELEASE_SCAN_COUNT,
 )
@@ -96,6 +99,11 @@ def is_client_app_prerelease_tag(tag_name: str) -> bool:
     )
 
 
+def is_snapshot_tag(tag_name: str) -> bool:
+    """Return True when the tag is the rolling Android snapshot debug-build tag."""
+    return (tag_name or "").strip().lower() == MESHTASTIC_ANDROID_SNAPSHOT_TAG
+
+
 def _is_apk_prerelease_by_name(
     tag_name: str, version_manager: VersionManager | None = None
 ) -> bool:
@@ -114,8 +122,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     """
     Downloader for Meshtastic client app assets.
 
-    This is the primary lifecycle owner for app/<version>/ and
-    app/prerelease/<version>/.
+    This is the primary lifecycle owner for app/<version>/,
+    app/prerelease/<version>/, and app/snapshots/<versionCode>/.
     """
 
     def __init__(self, config: dict[str, Any], cache_manager: CacheManager):
@@ -597,6 +605,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return preferred_release_dir
 
     def _is_client_app_prerelease(self, release: Release) -> bool:
+        if is_snapshot_tag(release.tag_name):
+            return False
         return (
             release.prerelease
             or is_client_app_prerelease_tag(release.tag_name)
@@ -716,6 +726,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                         continue
                     tag_name = release_data.get("tag_name", "")
                     if not isinstance(tag_name, str) or not tag_name.strip():
+                        continue
+                    if is_snapshot_tag(tag_name):
                         continue
                     if not _is_supported_client_app_release(
                         tag_name, version_manager=self.version_manager
@@ -1309,12 +1321,14 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return None
 
     def handle_snapshots(self, snapshot_release: Release | None) -> Release | None:
-        """Return the snapshot release if snapshots are enabled and it has APK assets."""
+        """Return the snapshot release only when it has the exact snapshot tag and debug APK assets."""
         if not coerce_bool(
             self.config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
         ):
             return None
         if snapshot_release is None:
+            return None
+        if not is_snapshot_tag(snapshot_release.tag_name):
             return None
         has_snapshot_apk = any(
             self.parse_snapshot_version_code(asset.name) is not None
@@ -1329,6 +1343,58 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             if vc is not None:
                 return vc
         return None
+
+    def get_selected_snapshot_assets(self, release: Release) -> list[Asset]:
+        """Return snapshot assets matching user SELECTED_APP_ASSETS filters with consistent versionCode."""
+        if not is_snapshot_tag(release.tag_name):
+            return []
+        chosen_vc = self.get_snapshot_version_code(release)
+        if chosen_vc is None:
+            return []
+        selected: list[Asset] = []
+        for asset in self.get_assets(release):
+            vc = self.parse_snapshot_version_code(asset.name)
+            if vc is None or vc != chosen_vc:
+                continue
+            if self.should_download_asset(asset.name):
+                selected.append(asset)
+        return selected
+
+    def get_snapshot_target_path(
+        self, version_code: int, asset_name: str, *, create: bool = False
+    ) -> str:
+        """Return the canonical download path for a snapshot asset."""
+        if create:
+            release_dir = self._resolve_snapshot_dir(version_code)
+        else:
+            base_dir = os.path.join(
+                self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME
+            )
+            release_dir = os.path.join(base_dir, str(version_code))
+        return os.path.join(
+            release_dir, self._sanitize_required(asset_name, "snapshot asset name")
+        )
+
+    def is_snapshot_complete(self, release: Release, version_code: int) -> bool:
+        """Check whether all selected snapshot assets are present and complete on disk."""
+        selected = self.get_selected_snapshot_assets(release)
+        if not selected:
+            return False
+        for asset in selected:
+            target = self.get_snapshot_target_path(version_code, asset.name)
+            if not self._is_asset_complete_for_target(target, asset):
+                return False
+        return True
+
+    def should_process_snapshot(self, release: Release, version_code: int) -> bool:
+        """Return True when the snapshot is newer than tracked OR current selected assets are incomplete."""
+        if not coerce_bool(
+            self.config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
+        ):
+            return False
+        if self.should_download_snapshot(version_code):
+            return True
+        return not self.is_snapshot_complete(release, version_code)
 
     def should_download_snapshot(self, version_code: int) -> bool:
         """Return True when version_code is newer than the tracked snapshot."""
@@ -1445,15 +1511,20 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             )
 
     def cleanup_superseded_snapshots(self) -> int:
-        """Remove old snapshot dirs beyond APP_VERSIONS_TO_KEEP. Returns count deleted."""
+        """Remove old snapshot dirs beyond the retention limit. Returns count deleted."""
         base_dir = os.path.join(self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
-        if not os.path.isdir(base_dir):
+        if not self._is_safe_managed_dir(base_dir):
             return 0
-        raw_keep = self.config.get("APP_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP)
+        raw_keep = self.config.get(
+            "APP_SNAPSHOT_VERSIONS_TO_KEEP",
+            self.config.get(
+                "APP_VERSIONS_TO_KEEP", DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP
+            ),
+        )
         try:
-            keep_count = max(0, int(raw_keep))
+            keep_count = max(1, int(raw_keep))
         except (TypeError, ValueError):
-            keep_count = DEFAULT_APP_VERSIONS_TO_KEEP
+            keep_count = DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP
         entries: list[tuple[int, str]] = []
         try:
             with os.scandir(base_dir) as it:
@@ -1470,8 +1541,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         entries.sort(key=lambda x: x[0], reverse=True)
         deleted = 0
         for vc, path in entries[keep_count:]:
-            _safe_rmtree(path, base_dir=base_dir, item_name=f"snapshot {vc}")
-            deleted += 1
+            if _safe_rmtree(path, base_dir, f"snapshot {vc}"):
+                deleted += 1
         return deleted
 
 
@@ -1492,6 +1563,8 @@ def _is_supported_client_app_release(
 
 def _is_client_app_prerelease_payload(release: dict[str, Any]) -> bool:
     tag_name = (release or {}).get("tag_name", "")
+    if is_snapshot_tag(tag_name):
+        return False
     return is_release_prerelease(
         release,
         tag_prerelease_matcher=is_client_app_prerelease_tag,

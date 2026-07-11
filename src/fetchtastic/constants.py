@@ -55,8 +55,8 @@ APP_DIR_NAME = "app"
 LATEST_POINTER_NAME = "latest"
 # Compatibility-only aliases: legacy Android/Desktop references map to unified
 # app storage. They are NOT used to drive new storage logic. The primary
-# client-app storage layout is app/<version>/ and app/prerelease/<version>/
-# with no platform subdirectories.
+# client-app storage layout is app/<version>/, app/prerelease/<version>/, and
+# app/snapshots/<versionCode>/ with no platform subdirectories.
 ANDROID_DIR_NAME = APP_DIR_NAME
 DESKTOP_DIR_NAME = APP_DIR_NAME
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
@@ -97,6 +97,7 @@ DEFAULT_CHECK_APK_PRERELEASES = True
 DEFAULT_CHECK_DESKTOP_PRERELEASES = True
 DEFAULT_CHECK_APP_PRERELEASES = True
 DEFAULT_CHECK_APP_SNAPSHOTS = False
+DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP = 1
 DEFAULT_DESKTOP_VERSIONS_TO_KEEP = 2
 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES = True
 DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS = True
