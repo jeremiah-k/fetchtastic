@@ -592,13 +592,22 @@ def test_should_process_snapshot_newer(downloader):
     assert downloader.should_process_snapshot(release, 999) is True
 
 
-def test_should_process_snapshot_same_version_complete(downloader, cache_manager):
-    """When versionCode matches tracked and files are complete, should NOT process."""
-    # Track version 100
+def test_should_process_snapshot_same_version_incomplete(downloader, cache_manager):
+    """Same versionCode tracked, files missing → should process for backfill."""
     downloader.update_snapshot_tracking(100)
     release = _make_snapshot_release(vc=100)
-    # Files don't exist, so it's incomplete -> should process for backfill
     assert downloader.should_process_snapshot(release, 100) is True
+
+
+def test_should_process_snapshot_same_version_complete(downloader, cache_manager):
+    """Same versionCode tracked, all selected files present with correct size → should NOT process."""
+    downloader.update_snapshot_tracking(100)
+    release = _make_snapshot_release(vc=100)
+    # Create the selected asset file at the canonical path with matching size
+    for asset in downloader.get_selected_snapshot_assets(release):
+        target = downloader.get_snapshot_target_path(100, asset.name, create=True)
+        Path(target).write_bytes(b"x" * asset.size)
+    assert downloader.should_process_snapshot(release, 100) is False
 
 
 def test_should_process_snapshot_disabled(downloader_disabled):
@@ -634,29 +643,6 @@ def test_transactional_all_success_tracks(downloader, cache_manager):
     assert all(r.success for r in results)
     # Verify tracking was updated (manually call update to verify it works)
     assert downloader.update_snapshot_tracking(100) is True
-
-
-def test_transactional_partial_failure_no_track(downloader):
-    """When some selected assets fail, tracking must NOT be updated."""
-    results = [
-        DownloadResult(
-            success=True,
-            release_tag="snapshot",
-            file_path="/tmp/a.apk",
-            download_url="http://x",
-            file_size=1,
-            file_type=FILE_TYPE_APP_SNAPSHOT,
-        ),
-        DownloadResult(
-            success=False,
-            release_tag="snapshot",
-            file_path="/tmp/b.apk",
-            download_url="http://y",
-            file_size=1,
-            file_type=FILE_TYPE_APP_SNAPSHOT,
-        ),
-    ]
-    assert not all(r.success for r in results)  # Would NOT trigger tracking
 
 
 # ------------------------------------------------------------------
@@ -1366,3 +1352,83 @@ def test_debug_exclusion_warns_when_all_removed(downloader_stable_patterns, capl
         selected = downloader_stable_patterns.get_selected_snapshot_assets(release)
     assert selected == []
     assert any("exclusion" in r.message.lower() for r in caplog.records)
+
+
+def test_no_exclusion_warning_for_unrelated_excluded_flavor(
+    downloader_stable_patterns, caplog
+):
+    """Excluding an unrelated flavor must not warn when other flavors are still selected."""
+    import logging
+
+    # downloader_stable_patterns selects only fdroid-universal; google assets are
+    # not semantic matches, so excluding *google* must not trip the warning.
+    downloader_stable_patterns.config["EXCLUDE_PATTERNS"] = ["*google*"]
+    release = _make_snapshot_release(vc=100)
+    with caplog.at_level(logging.WARNING):
+        selected = downloader_stable_patterns.get_selected_snapshot_assets(release)
+    assert len(selected) >= 1
+    assert "fdroid" in selected[0].name
+    assert not any("exclusion" in r.message.lower() for r in caplog.records)
+
+
+# ------------------------------------------------------------------
+# Retry dispatch: snapshot routes through client_app_downloader (P2)
+# ------------------------------------------------------------------
+
+
+def test_retry_single_failure_routes_snapshot_through_client_app(tmp_path):
+    """_retry_single_failure with FILE_TYPE_APP_SNAPSHOT dispatches through client_app_downloader."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APP_ASSETS": ["app-fdroid-universal-release.apk"],
+        "APP_VERSIONS_TO_KEEP": 1,
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    orch = DownloadOrchestrator(config)
+
+    target = str(tmp_path / "test.apk")
+    Path(target).write_bytes(b"test data")
+
+    failed = DownloadResult(
+        success=False,
+        release_tag="snapshot",
+        file_path=target,
+        download_url="http://example.com/test.apk",
+        file_size=9,
+        file_type=FILE_TYPE_APP_SNAPSHOT,
+    )
+
+    with (
+        patch.object(
+            orch.client_app_downloader, "download", return_value=True
+        ) as mock_download,
+        patch.object(orch.client_app_downloader, "verify", return_value=True),
+    ):
+        result = orch._retry_single_failure(failed)
+
+    mock_download.assert_called_once_with("http://example.com/test.apk", target)
+    assert result.success is True
+    assert result.file_type == "app_snapshot"
+
+
+# ------------------------------------------------------------------
+# Generic download_app rejects snapshot tag (P3 defensive guard)
+# ------------------------------------------------------------------
+
+
+def test_download_app_rejects_snapshot_tag(downloader):
+    """download_app must reject a snapshot-tagged release through the generic path."""
+    release = Release(
+        tag_name="snapshot",
+        prerelease=True,
+        assets=[Asset(name="test.apk", download_url="http://x", size=1)],
+    )
+    result = downloader.download_app(release, release.assets[0])
+    assert result.success is False
+    assert "snapshot" in (result.error_message or "").lower()
