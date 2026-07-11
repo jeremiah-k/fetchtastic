@@ -63,6 +63,7 @@ from .client_app import (
     MeshtasticClientAppDownloader,
     _is_apk_prerelease_by_name,
     is_client_app_prerelease_tag,
+    is_snapshot_tag,
 )
 from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
@@ -193,12 +194,21 @@ class DownloadOrchestrator:
     def _is_client_app_prerelease_release(self, release: Release) -> bool:
         """Classify client app prereleases without depending on wrapper mocks."""
         tag_name = getattr(release, "tag_name", "")
+        if is_snapshot_tag(tag_name):
+            return False
         return (
             getattr(release, "prerelease", False) is True
             or is_client_app_prerelease_tag(tag_name)
             or self.version_manager.is_prerelease_version(tag_name) is True
             or _is_apk_prerelease_by_name(tag_name)
         )
+
+    def _is_client_app_stable_release(self, release: Release) -> bool:
+        """Return True only for genuine stable client app releases (not snapshot/prerelease)."""
+        tag_name = getattr(release, "tag_name", "")
+        if is_snapshot_tag(tag_name):
+            return False
+        return not self._is_client_app_prerelease_release(release)
 
     def run_download_pipeline(
         self,
@@ -327,7 +337,7 @@ class DownloadOrchestrator:
                 or self._ensure_android_releases()
             )
             stable_releases = [
-                r for r in app_releases if not self._is_client_app_prerelease_release(r)
+                r for r in app_releases if self._is_client_app_stable_release(r)
             ]
             keep_count = min(keep_count, len(stable_releases))
             releases_in_window = stable_releases[:keep_count]
@@ -389,7 +399,7 @@ class DownloadOrchestrator:
                 )
                 keep_count = int(DEFAULT_APP_VERSIONS_TO_KEEP)
             stable_releases = [
-                r for r in app_releases if not self._is_client_app_prerelease_release(r)
+                r for r in app_releases if self._is_client_app_stable_release(r)
             ]
             releases_to_process = stable_releases[:keep_count]
             releases_to_process = [
@@ -2430,7 +2440,7 @@ class DownloadOrchestrator:
             (
                 release.tag_name
                 for release in app_releases
-                if not self._is_client_app_prerelease_release(release)
+                if self._is_client_app_stable_release(release)
             ),
             None,
         )
@@ -2472,7 +2482,7 @@ class DownloadOrchestrator:
                 (
                     release
                     for release in app_releases
-                    if not self._is_client_app_prerelease_release(release)
+                    if self._is_client_app_stable_release(release)
                 ),
                 None,
             )
@@ -2495,7 +2505,7 @@ class DownloadOrchestrator:
                 (
                     release
                     for release in desktop_releases
-                    if not self._is_client_app_prerelease_release(release)
+                    if self._is_client_app_stable_release(release)
                 ),
                 None,
             )
@@ -2504,7 +2514,7 @@ class DownloadOrchestrator:
                     (
                         release
                         for release in self.client_app_releases
-                        if not self._is_client_app_prerelease_release(release)
+                        if self._is_client_app_stable_release(release)
                     ),
                     None,
                 )
