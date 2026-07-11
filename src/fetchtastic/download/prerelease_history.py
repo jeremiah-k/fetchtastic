@@ -762,7 +762,8 @@ class PrereleaseHistoryManager:
                 continue
             valid_current_prereleases.append(current)
             pv = current.get("prerelease_version")
-            current_prerelease_versions.add(pv)
+            if isinstance(pv, str):
+                current_prerelease_versions.add(pv)
 
         # Cleanup superseded/expired prereleases by comparing to current set.
         # Current prereleases are NEVER removed — their metadata is refreshed

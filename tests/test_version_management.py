@@ -252,6 +252,8 @@ class TestExpectedPrereleaseVersion:
         assert result is None
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 class TestPrereleaseBaseAdmission:
     """Test the single semantic admission rule: base strictly newer than stable."""
 

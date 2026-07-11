@@ -189,6 +189,12 @@ class DownloadOrchestrator:
         self.latest_available_firmware_prerelease_dir: Optional[str] = None
         # Run-scoped nightly build-id: set after successful nightly processing.
         self.latest_firmware_nightly_build_id: Optional[str] = None
+        # Run-scoped pending nightly transaction: populated when a nightly build
+        # downloads but cannot finalize (failure or tracking pending). The
+        # post-retry reconciliation finalizes it exactly once when every
+        # selected asset is successful and on-disk complete.
+        self._pending_nightly_build_id: Optional[str] = None
+        self._pending_nightly_entries: List[Dict[str, Any]] = []
         # Run-scoped selected set: reset at start of _process_firmware_downloads()
         self.firmware_releases_selected: Optional[List[Release]] = None
         self._client_app_downloads_processed = False
@@ -228,6 +234,8 @@ class DownloadOrchestrator:
         self.wifi_skipped = False
         self.latest_available_firmware_prerelease_dir = None
         self.latest_firmware_nightly_build_id = None
+        self._pending_nightly_build_id = None
+        self._pending_nightly_entries = []
         self.available_new_firmware_versions = []
         self.available_new_apk_versions = []
         self._client_app_downloads_processed = False
@@ -261,6 +269,10 @@ class DownloadOrchestrator:
 
         # Retry failed downloads
         self._retry_failed_downloads()
+
+        # Finalize any in-flight firmware-nightly transaction now that retries
+        # have run. No-op unless a nightly build is pending finalization.
+        self._finalize_nightly_transaction_if_complete()
 
         # Log summary
         self._log_download_summary(start_time)
@@ -1064,10 +1076,18 @@ class DownloadOrchestrator:
         When ``CHECK_FIRMWARE_NIGHTLIES`` is disabled (the default) this method
         returns without touching the network.  When enabled it fetches the
         firmware-nightly listing, parses the build-id, and — only when the
-        build should be processed — downloads every selected asset.  Tracking,
-        latest-pointer, and cleanup are advanced **only after all selected
-        assets succeed**; any failure defers all three so the next run can
-        retry the same build from a clean state.
+        build should be processed — downloads every selected asset.
+
+        Tracking, latest-pointer, cleanup, and the run-scoped build-id are
+        advanced **only after all selected assets download successfully AND
+        tracking is persisted**.  Any failure defers all four so the next run
+        can retry the same build from a clean state.
+
+        When assets fail but are eligible for retry, the pending build-id and
+        selected entries are stashed in ``_pending_nightly_*`` so that
+        :meth:`_finalize_nightly_transaction_if_complete` can finalize the
+        transaction exactly once after the retry phase, subject to the same
+        all-assets-complete + tracking-succeeded conditions.
         """
         if not coerce_bool(
             self.config.get(
@@ -1109,17 +1129,111 @@ class DownloadOrchestrator:
                     "tracking, latest pointer, and cleanup deferred",
                     build_id,
                 )
+                # Remember the in-flight transaction so the post-retry
+                # reconciliation can finalize it if every selected asset
+                # ultimately succeeds.
+                self._pending_nightly_build_id = build_id
+                self._pending_nightly_entries = list(selected)
                 return
 
-            if not self.firmware_downloader.update_nightly_tracking(build_id):
-                logger.warning(
-                    "Failed to update firmware-nightly tracking for %s", build_id
-                )
-            self.firmware_downloader.cleanup_superseded_nightlies(build_id)
-            self.firmware_downloader.update_latest_pointer_for_nightly(build_id)
-            self.latest_firmware_nightly_build_id = build_id
+            self._finalize_nightly_transaction(build_id, selected)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware nightlies: {e}", exc_info=True)
+
+    def _finalize_nightly_transaction(
+        self, build_id: str, selected: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Finalize a nightly transaction exactly once: every selected asset must
+        be successful and on-disk complete, tracking must succeed, then
+        retention cleanup, the latest pointer, and the run-scoped build-id are
+        advanced together. Returns True only when the whole transaction was
+        finalized.
+
+        On any failure (partial assets, wrong size, tracking failure) nothing
+        is finalized and the pending transaction is cleared so the next run
+        retries from a clean state.
+        """
+        # Every selected asset must be successful AND currently on-disk valid.
+        for entry in selected:
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            try:
+                target_path = self.firmware_downloader.get_nightly_target_path(
+                    build_id, name, create=False
+                )
+            except ValueError as exc:
+                logger.warning(
+                    "Firmware-nightly build %s cannot be finalized: %s", build_id, exc
+                )
+                self._pending_nightly_build_id = None
+                self._pending_nightly_entries = []
+                return False
+            ok, reason = self.firmware_downloader._validate_nightly_asset(
+                target_path, name, entry.get("size")
+            )
+            if not ok:
+                logger.warning(
+                    "Firmware-nightly build %s not complete (%s: %s); "
+                    "deferring tracking, latest pointer, and cleanup",
+                    build_id,
+                    name,
+                    reason,
+                )
+                self._pending_nightly_build_id = None
+                self._pending_nightly_entries = []
+                return False
+
+        if not self.firmware_downloader.update_nightly_tracking(build_id):
+            logger.warning(
+                "Failed to update firmware-nightly tracking for %s; "
+                "deferring latest pointer, cleanup, and run-scoped id",
+                build_id,
+            )
+            self._pending_nightly_build_id = None
+            self._pending_nightly_entries = []
+            return False
+
+        self.firmware_downloader.cleanup_superseded_nightlies(build_id)
+        self.firmware_downloader.update_latest_pointer_for_nightly(build_id)
+        self.latest_firmware_nightly_build_id = build_id
+        self._pending_nightly_build_id = None
+        self._pending_nightly_entries = []
+        return True
+
+    def _finalize_nightly_transaction_if_complete(self) -> None:
+        """
+        Post-retry reconciliation for the in-flight nightly transaction.
+
+        If a nightly build was downloaded but could not be finalized before the
+        retry phase, attempt finalization now. The transaction finalizes
+        exactly once, only when every selected asset is successful and on-disk
+        complete and tracking persists. Partial retries, wrong-size retries, or
+        tracking failures finalize nothing.
+        """
+        build_id = self._pending_nightly_build_id
+        selected = self._pending_nightly_entries
+        if not build_id or not selected:
+            return
+
+        # Confirm every selected asset is now in the success set.
+        successful_urls = {
+            str(r.download_url)
+            for r in self.download_results
+            if r.success and r.file_type == FILE_TYPE_FIRMWARE_NIGHTLY
+        }
+        all_selected_successful = True
+        for entry in selected:
+            url = entry.get("download_url") or entry.get("browser_download_url")
+            if not url or str(url) not in successful_urls:
+                all_selected_successful = False
+                break
+        if not all_selected_successful:
+            # Leave the pending state in place; nothing to finalize yet.
+            return
+
+        self._finalize_nightly_transaction(build_id, selected)
 
     def _select_latest_release_by_version(
         self, releases: List[Release]
@@ -1656,6 +1770,7 @@ class DownloadOrchestrator:
                 FILE_TYPE_FIRMWARE_PRERELEASE,
                 FILE_TYPE_FIRMWARE_MANIFEST,
                 FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                FILE_TYPE_FIRMWARE_NIGHTLY,
             ):
                 downloader = self.firmware_downloader
             if downloader:
@@ -1717,6 +1832,30 @@ class DownloadOrchestrator:
                                 file_type,
                                 "Retry attempt failed",
                                 "Downloaded manifest is not valid JSON",
+                                is_retryable_override=False,
+                            )
+                    if file_type == FILE_TYPE_FIRMWARE_NIGHTLY:
+                        # Apply the same focused validation the fresh-download
+                        # path uses (regular non-symlink file, exact positive
+                        # size, hash/integrity, ZIP integrity, manifest JSON).
+                        nightly_name = os.path.basename(target_path)
+                        ok, reason = self.firmware_downloader._validate_nightly_asset(
+                            target_path, nightly_name, failed_result.file_size
+                        )
+                        if not ok:
+                            # Remove the bad target plus its current and legacy
+                            # hash sidecars via the nightly-safe cleanup helper
+                            # (cleanup_file alone leaves stale hash metadata).
+                            self.firmware_downloader._remove_nightly_target_and_hash(
+                                target_path
+                            )
+                            return self._create_failure_result(
+                                failed_result,
+                                Path(target_path),
+                                url,
+                                file_type,
+                                "Retry attempt failed",
+                                f"Downloaded nightly asset failed validation: {reason}",
                                 is_retryable_override=False,
                             )
                     return DownloadResult(

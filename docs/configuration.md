@@ -95,7 +95,10 @@ Firmware `latest` points only to a complete release with at least one selected n
 
 When `CHECK_FIRMWARE_NIGHTLIES` is enabled, Fetchtastic checks a rolling experimental firmware source at `meshtastic.github.io/firmware-nightly`. This is a flat directory that is replaced on every push to the firmware `main` branch; it is not a GitHub Release, not a tagged release, and not a production release. Existing configurations remain disabled unless you opt in.
 
-Nightly builds are stored separately from stable and prerelease firmware under `firmware/nightlies/<build_id>/`, where `<build_id>` is the immutable build identity parsed from the single release-level manifest (`firmware-<version>.<hash>.json`, for example `firmware-2.8.0.f52e2ea.json` → `2.8.0.f52e2ea`). A best-effort `latest_firmware_nightly.json` pointer is written inside `firmware/nightlies/`.
+Nightly builds are stored separately from stable and prerelease firmware under `firmware/nightlies/<build_id>/`, where `<build_id>` is the immutable build identity parsed from the single release-level manifest (`firmware-<version>.<hash>.json`, for example `firmware-2.8.0.f52e2ea.json` → `2.8.0.f52e2ea`). Two distinct artifacts track the newest nightly, and they must not be confused:
+
+- **Cache tracking file** `latest_firmware_nightly.json` lives in the fetchtastic cache directory and records the build-id that has been fully downloaded and tracked. It is written only after every selected asset downloads and validates successfully.
+- **Filesystem `latest` pointer** is an optional relative symlink `firmware/nightlies/latest` pointing at the retained build directory. It is created only when `CREATE_LATEST_SYMLINKS` is enabled, and only after the same successful transaction that writes the cache tracking file.
 
 `FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP` (default `1`, minimum `1` when nightlies are enabled) controls how many nightly build directories are retained when cleanup runs. Because each push replaces the rolling build, older build directories are pruned as new builds arrive.
 

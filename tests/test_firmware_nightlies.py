@@ -39,7 +39,7 @@ from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import DownloadResult
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 
-pytestmark = [pytest.mark.core_downloads]
+pytestmark = [pytest.mark.core_downloads, pytest.mark.unit]
 
 # ------------------------------------------------------------------
 # Nightly API surface — constants (defined in fetchtastic.constants)
@@ -434,15 +434,15 @@ def test_get_selected_nightly_assets_respects_exclude_patterns(downloader):
 
 
 def test_get_selected_nightly_assets_empty_when_no_match(downloader):
-    """When no assets match the selection, return an empty list."""
+    """When no assets match the selection, return only the release manifest."""
     listing = _make_nightly_listing()
     downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["nonexistent-device"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
     selected = select(listing)
-    # The release manifest is always included, so this is just the manifest.
+    # The release manifest is always included, so this is exactly the manifest.
     names = [e["name"] for e in selected]
-    assert all(n == MANIFEST_2_8_0 for n in names)
+    assert names == [MANIFEST_2_8_0]
 
 
 def test_get_selected_nightly_assets_canonical_key_excludes_unrelated_devices(
@@ -723,6 +723,11 @@ def test_orch_nightly_all_success_tracks_and_updates_latest(tmp_path, cache_mana
             file_type=file_type,
         )
     )
+    # Finalization re-validates on disk before tracking. The validator is a
+    # firmware-level collaborator with its own tests; mock it here so this
+    # orchestrator-level contract test stays focused on finalization gating.
+    fd.get_nightly_target_path = Mock(return_value=str(tmp_path / "x.bin"))
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
     fd.update_nightly_tracking = Mock(return_value=True)
     fd.cleanup_superseded_nightlies = Mock(return_value=0)
     fd.update_latest_pointer_for_nightly = Mock(return_value=True)
@@ -737,6 +742,8 @@ def test_orch_nightly_all_success_tracks_and_updates_latest(tmp_path, cache_mana
     fd.update_nightly_tracking.assert_called_once_with(BUILD_2_8_0)
     fd.cleanup_superseded_nightlies.assert_called_once_with(BUILD_2_8_0)
     fd.update_latest_pointer_for_nightly.assert_called_once_with(BUILD_2_8_0)
+    # Run-scoped build-id must be set after a fully finalized transaction.
+    assert orch.latest_firmware_nightly_build_id == BUILD_2_8_0
 
 
 def test_orch_nightly_partial_failure_no_track_no_cleanup(tmp_path, cache_manager):
@@ -987,18 +994,17 @@ def test_cleanup_nightly_preserves_non_build_dirs(downloader, tmp_path):
 
 
 def test_cleanup_nightly_same_base_current_survives(downloader, tmp_path):
-    """current_build_id must survive even when same-base hashes sort it first.
+    """current_build_id occupies one slot under the exact-max retention limit.
 
     Three builds share base 2.8.0 but differ in hash suffix:
       - 2.8.0.aaaaaaa  (the just-downloaded current build)
       - 2.8.0.bbbbbbb  (an older build)
       - 2.8.0.f52e2ea  (the oldest build)
 
-    All have release_tuple (2, 8, 0), so sort falls through to the name
-    string.  'aaaaaaa' sorts first.  With keep_limit=1, the sort-only
-    keep window would be {f52e2ea} — deleting aaaaaaa (the current build)
-    and bbbbbbb.  The current_build_id pin must rescue aaaaaaa while
-    still allowing bbbbbbb to be removed.
+    With keep_limit=1 and current_build_id=2.8.0.aaaaaaa, the current build
+    consumes the only slot: both other builds are removed (exact maximum
+    including current). The deterministic mtime+name tiebreak — never hash
+    chronology — decides which other builds are removed when current is pinned.
     """
     nightly_dir_name = _require_constant("FIRMWARE_NIGHTLIES_DIR_NAME", "nightlies")
     base = tmp_path / "downloads" / FIRMWARE_DIR_NAME / nightly_dir_name
@@ -1014,23 +1020,19 @@ def test_cleanup_nightly_same_base_current_survives(downloader, tmp_path):
     cleanup = _require_method(downloader, "cleanup_superseded_nightlies")
     removed = cleanup(current_build_id=current)
 
-    # Current build must survive even though it sorts first.
+    # Current build must survive; it occupies the single retention slot.
     assert (base / current).is_dir()
-    # Oldest (in the keep window) also survives.
-    assert (base / oldest).is_dir()
-    # Middle build is removed.
+    # Both non-current builds are removed under the exact-max rule.
     assert not (base / middle).is_dir()
-    assert removed == 1
+    assert not (base / oldest).is_dir()
+    assert removed == 2
 
 
 def test_cleanup_nightly_same_base_current_survives_without_arg(downloader, tmp_path):
-    """Without current_build_id, the same-base sort order decides what lives.
+    """Without current_build_id, mtime+name tiebreak alone decides what lives.
 
-    This documents the pre-fix danger: with no current_build_id pin and
-    keep_limit=1, the alphabetically-first hash ('aaaaaaa') is deleted
-    even if it was the just-downloaded build.  The fix is for callers
-    to pass current_build_id; the primitive itself still respects sort
-    order when the pin is absent.
+    With no current pin and keep_limit=1, the deterministic ordering
+    (mtime descending, name descending tiebreak) retains exactly one build.
     """
     nightly_dir = _require_constant("FIRMWARE_NIGHTLIES_DIR_NAME", "nightlies")
     base = tmp_path / "downloads" / FIRMWARE_DIR_NAME / nightly_dir
@@ -1045,11 +1047,10 @@ def test_cleanup_nightly_same_base_current_survives_without_arg(downloader, tmp_
     cleanup = _require_method(downloader, "cleanup_superseded_nightlies")
     removed = cleanup()
 
-    # Without the pin, sort order alone decides: only f52e2ea survives.
+    # Exactly one build survives (exact maximum, no current pin).
     assert removed == 2
-    assert not (base / first).is_dir()
-    assert not (base / middle).is_dir()
-    assert (base / last).is_dir()
+    survivors = [p.name for p in base.iterdir() if p.is_dir() and not p.is_symlink()]
+    assert len(survivors) == 1
 
 
 # ==================================================================
@@ -1249,3 +1250,724 @@ def test_production_2_8_nightly_storage_path(downloader, tmp_path):
     )
     assert target == expected
     assert os.path.isdir(os.path.dirname(target))
+
+
+# ==================================================================
+# 14. PC Final Correctness Pass — Regression Coverage
+# Each test locks one of the five P1 blockers or a review-comment fix.
+# ==================================================================
+
+
+import io  # noqa: E402  (local import keeps the header block above clean)
+import zipfile  # noqa: E402
+
+from fetchtastic.utils import save_file_hash  # noqa: E402
+
+
+def _write_valid_nightly_asset(downloader, build_id, entry):
+    """Write a real, valid nightly asset on disk so the validator accepts it.
+
+    Creates a real ZIP for ``*.zip`` entries, valid JSON for the release
+    manifest, and raw bytes otherwise. The entry's ``size`` is normalized to
+    the actual on-disk byte count so the validator's exact-size check passes,
+    and the correct SHA-256 is persisted so ``verify_file_integrity`` passes.
+    """
+    from fetchtastic.utils import calculate_sha256
+
+    name = entry["name"]
+    target = downloader.get_nightly_target_path(build_id, name, create=True)
+    lower = name.lower()
+    if lower.endswith(".zip"):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("payload.bin", b"x" * max(1, int(entry.get("size", 1))))
+        data = buf.getvalue()
+    elif downloader.parse_nightly_build_id(name) is not None:
+        data = json.dumps({"build_id": build_id, "notes": "x" * 32}).encode("utf-8")
+    else:
+        size = int(entry.get("size", 1))
+        data = (b"x" * size)[:size] if size > 0 else b""
+    Path(target).write_bytes(data)
+    entry["size"] = len(data)  # exact-match the validator's size check
+    save_file_hash(target, calculate_sha256(target) or "0" * 64)
+    return target
+
+
+# --- B1: Tracking failure must stop finalization -------------------
+
+
+def test_orch_nightly_tracking_failure_no_cleanup_no_pointer(tmp_path, cache_manager):
+    """Tracking failure → no cleanup, no pointer, no run-scoped id (B1)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+
+    listing = _make_nightly_listing()
+    fd = orch.firmware_downloader
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    fd.should_process_nightly = Mock(return_value=True)
+    selected = [listing[0], listing[4]]
+    fd.get_selected_nightly_assets = Mock(return_value=selected)
+    file_type = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
+    fd.download_nightly_asset = Mock(
+        return_value=DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=str(tmp_path / "ok.bin"),
+            download_url="http://x",
+            file_size=1,
+            file_type=file_type,
+        )
+    )
+    fd.get_nightly_target_path = Mock(return_value=str(tmp_path / "ok.bin"))
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+    fd.update_nightly_tracking = Mock(return_value=False)  # tracking FAILS
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+    orch._handle_download_result = Mock()
+
+    orch._process_firmware_nightlies()
+
+    fd.update_nightly_tracking.assert_called_once_with(BUILD_2_8_0)
+    fd.cleanup_superseded_nightlies.assert_not_called()
+    fd.update_latest_pointer_for_nightly.assert_not_called()
+    assert orch.latest_firmware_nightly_build_id is None
+
+
+# --- B2: File validation — wrong size, bad zip, bad manifest -------
+
+
+def test_download_nightly_asset_wrong_size_fails_non_retryable(
+    downloader, mock_cache_manager
+):
+    """A downloaded file whose size does not match must fail non-retryably (B2)."""
+    entry = _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip", size=999_999)
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    # download_file_with_retry writes a valid zip but wrong size.
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("p", b"x")
+    Path(target).write_bytes(payload.getvalue())
+
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry", return_value=True
+    ):
+        # Force the download path by removing any pre-existing file first.
+        if os.path.exists(target):
+            os.remove(target)
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    assert result.success is False
+    assert result.is_retryable is False
+    from fetchtastic.constants import ERROR_TYPE_VALIDATION
+
+    assert result.error_type == ERROR_TYPE_VALIDATION
+    # Bad file + hash sidecar must have been removed.
+    assert not os.path.exists(target)
+
+
+def test_validate_nightly_asset_rejects_corrupt_zip(downloader):
+    """A corrupt ZIP must fail validation and be removed (B2)."""
+    entry = _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip", size=10)
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(b"not a zip" + b"\0" * 1)  # 10 bytes, not a zip
+
+    ok, reason = downloader._validate_nightly_asset(target, entry["name"], 10)
+    assert ok is False
+    assert "ZIP" in reason or "integrity" in reason.lower()
+
+
+def test_validate_nightly_asset_rejects_bad_manifest_json(downloader):
+    """An invalid release manifest JSON must fail validation (B2)."""
+    manifest_name = f"firmware-{BUILD_2_8_0}.json"
+    bad = b"not json!"  # 9 bytes; size matches so we reach the JSON check.
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, manifest_name, create=True)
+    Path(target).write_bytes(bad)
+
+    ok, reason = downloader._validate_nightly_asset(target, manifest_name, len(bad))
+    assert ok is False
+    assert "manifest" in reason.lower() or "json" in reason.lower()
+
+
+def test_validate_nightly_asset_rejects_symlink_target(downloader):
+    """A symlink target must be rejected outright (B2/B5)."""
+    entry = _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip", size=5)
+    real = downloader.get_nightly_target_path(BUILD_2_8_0, "real.zip", create=True)
+    Path(real).write_bytes(b"real")
+    link = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    if os.path.exists(link):
+        os.remove(link)
+    try:
+        os.symlink(real, link)
+    except OSError:
+        pytest.skip("Symlinks not supported on this platform")
+
+    ok, reason = downloader._validate_nightly_asset(link, entry["name"], 5)
+    assert ok is False
+    assert "symlink" in reason.lower() or "regular" in reason.lower()
+
+
+def test_download_nightly_asset_executable_only_after_validation(
+    downloader, mock_cache_manager
+):
+    """The executable bit must be set only after successful validation (B2)."""
+    from fetchtastic.utils import calculate_sha256
+
+    entry = _contents_entry("device-install.sh", size=4)
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+
+    def _fake_download(url, path):
+        Path(path).write_bytes(b"abcd")
+        save_file_hash(path, calculate_sha256(path) or "0" * 64)
+        return True
+
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry",
+        side_effect=_fake_download,
+    ):
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    assert result.success is True
+    assert os.path.exists(target)
+    import stat as _stat
+
+    mode = _stat.S_IMODE(os.stat(target).st_mode)
+    assert mode & 0o111, "executable bit should be set for *.sh after validation"
+
+
+# --- B3: Retry dispatch + reconciliation ---------------------------
+
+
+def test_retry_single_failure_dispatches_firmware_nightly(tmp_path):
+    """_retry_single_failure must dispatch FILE_TYPE_FIRMWARE_NIGHTLY (B3)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    target = str(tmp_path / "night.bin")
+    # Pre-place a valid file so download + validation succeed.
+    Path(target).write_bytes(b"payload")
+    save_file_hash(target, "2" * 64)
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=7,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+    )
+    with patch.object(fd, "download", return_value=True) as mock_download, patch.object(
+        fd, "verify", return_value=True
+    ):
+        result = orch._retry_single_failure(failed)
+
+    assert result.success is True
+    mock_download.assert_called_once()
+
+
+def test_retry_single_failure_nightly_bad_size_non_retryable(tmp_path):
+    """A retried nightly asset that fails validation must be non-retryable (B3)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    target = str(tmp_path / "night.bin")
+    Path(target).write_bytes(b"short")
+    save_file_hash(target, "3" * 64)
+    # Validation reports a size mismatch.
+    fd._validate_nightly_asset = Mock(
+        return_value=(False, "size mismatch: expected 100, got 5")
+    )
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=100,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+    )
+    with patch.object(fd, "download", return_value=True), patch.object(
+        fd, "verify", return_value=True
+    ):
+        result = orch._retry_single_failure(failed)
+
+    assert result.success is False
+    assert result.is_retryable is False
+
+
+def test_finalize_nightly_transaction_partial_retry_finalizes_nothing(tmp_path):
+    """Post-retry reconciliation must not finalize when an asset is still failing (B3)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    listing = _make_nightly_listing()
+    asset1, asset2 = listing[0], listing[4]
+    file_type = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
+    # Only asset1 succeeded; asset2 still failing after retries.
+    orch.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=str(tmp_path / "a"),
+            download_url=asset1["download_url"],
+            file_size=1,
+            file_type=file_type,
+        )
+    ]
+    orch._pending_nightly_build_id = BUILD_2_8_0
+    orch._pending_nightly_entries = [asset1, asset2]
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+
+    orch._finalize_nightly_transaction_if_complete()
+
+    fd.update_nightly_tracking.assert_not_called()
+    fd.cleanup_superseded_nightlies.assert_not_called()
+    fd.update_latest_pointer_for_nightly.assert_not_called()
+    assert orch.latest_firmware_nightly_build_id is None
+
+
+def test_finalize_nightly_transaction_all_success_finalizes_once(tmp_path):
+    """Post-retry reconciliation finalizes exactly once when all succeed (B3)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    listing = _make_nightly_listing()
+    asset1, asset2 = listing[0], listing[4]
+    file_type = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
+    orch.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=str(tmp_path / "a"),
+            download_url=asset1["download_url"],
+            file_size=1,
+            file_type=file_type,
+        ),
+        DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=str(tmp_path / "b"),
+            download_url=asset2["download_url"],
+            file_size=1,
+            file_type=file_type,
+        ),
+    ]
+    orch._pending_nightly_build_id = BUILD_2_8_0
+    orch._pending_nightly_entries = [asset1, asset2]
+    fd.get_nightly_target_path = Mock(return_value=str(tmp_path / "x"))
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+
+    orch._finalize_nightly_transaction_if_complete()
+
+    fd.update_nightly_tracking.assert_called_once_with(BUILD_2_8_0)
+    fd.cleanup_superseded_nightlies.assert_called_once_with(BUILD_2_8_0)
+    fd.update_latest_pointer_for_nightly.assert_called_once_with(BUILD_2_8_0)
+    assert orch.latest_firmware_nightly_build_id == BUILD_2_8_0
+
+
+def test_finalize_nightly_transaction_tracking_failure_finalizes_nothing(tmp_path):
+    """Tracking failure during reconciliation must not finalize (B1 + B3)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    listing = _make_nightly_listing()
+    asset1 = listing[0]
+    file_type = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
+    orch.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=str(tmp_path / "a"),
+            download_url=asset1["download_url"],
+            file_size=1,
+            file_type=file_type,
+        )
+    ]
+    orch._pending_nightly_build_id = BUILD_2_8_0
+    orch._pending_nightly_entries = [asset1]
+    fd.get_nightly_target_path = Mock(return_value=str(tmp_path / "x"))
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+    fd.update_nightly_tracking = Mock(return_value=False)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+
+    orch._finalize_nightly_transaction_if_complete()
+
+    fd.update_nightly_tracking.assert_called_once_with(BUILD_2_8_0)
+    fd.cleanup_superseded_nightlies.assert_not_called()
+    fd.update_latest_pointer_for_nightly.assert_not_called()
+    assert orch.latest_firmware_nightly_build_id is None
+
+
+# --- B4: Retention exact maximum including current -----------------
+
+
+def test_cleanup_nightly_current_occupies_one_slot(downloader, tmp_path):
+    """keep_limit=2 with current → current + exactly one other survive (B4)."""
+    nightly_dir_name = _require_constant("FIRMWARE_NIGHTLIES_DIR_NAME", "nightlies")
+    base = tmp_path / "downloads" / FIRMWARE_DIR_NAME / nightly_dir_name
+    current = "2.8.0.aaaaaaa"
+    other_a = "2.8.0.bbbbbbb"
+    other_b = "2.8.0.ccccccc"
+    for build in (current, other_a, other_b):
+        d = base / build
+        d.mkdir(parents=True)
+        (d / "firmware.zip").write_bytes(b"x")
+
+    downloader.config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = 2
+    cleanup = _require_method(downloader, "cleanup_superseded_nightlies")
+    removed = cleanup(current_build_id=current)
+
+    # Exactly two survive: current + one other. The third is removed.
+    assert removed == 1
+    assert (base / current).is_dir()
+    survivors = [p.name for p in base.iterdir() if p.is_dir() and not p.is_symlink()]
+    assert len(survivors) == 2
+    assert current in survivors
+
+
+def test_cleanup_nightly_uses_safe_rmtree_not_raw(tmp_path, monkeypatch):
+    """Nightly cleanup must route removals through _safe_rmtree (B4/B5).
+
+    _safe_rmtree internally calls shutil.rmtree, so we cannot block raw
+    rmtree globally; instead we spy on _safe_rmtree and confirm it is the
+    only removal path used by the nightly cleanup.
+    """
+    import fetchtastic.download.firmware as firmware_mod
+
+    nightly_dir_name = _require_constant("FIRMWARE_NIGHTLIES_DIR_NAME", "nightlies")
+    base = tmp_path / "downloads" / FIRMWARE_DIR_NAME / nightly_dir_name
+    for build in ("2.7.18.aaaaaaa", "2.8.0.f52e2ea"):
+        d = base / build
+        d.mkdir(parents=True)
+        (d / "firmware.zip").write_bytes(b"x")
+
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 1,
+    }
+    from fetchtastic.download.cache import CacheManager
+    from fetchtastic.download.files import _safe_rmtree as real_safe_rmtree
+
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+
+    safe_calls: list[str] = []
+
+    def _spy_safe_rmtree(path, base_dir, name):
+        safe_calls.append(name)
+        return real_safe_rmtree(path, base_dir, name)
+
+    monkeypatch.setattr(firmware_mod, "_safe_rmtree", _spy_safe_rmtree)
+
+    removed = dl.cleanup_superseded_nightlies(current_build_id="2.8.0.f52e2ea")
+    assert removed == 1
+    assert len(safe_calls) == 1
+
+
+# --- B5: Path safety — build-id, symlinks, traversal ---------------
+
+
+def test_resolve_nightly_dir_rejects_bad_build_id(downloader):
+    """A build-id that fails the strict regex must be rejected (B5)."""
+    resolve = _require_method(downloader, "_resolve_nightly_dir")
+    with pytest.raises(ValueError):
+        resolve("../../../etc/passwd")
+    with pytest.raises(ValueError):
+        resolve("not-a-build-id")
+
+
+def test_resolve_nightly_dir_rejects_symlinked_root(downloader, tmp_path):
+    """A symlinked nightly root must be rejected (B5)."""
+    nightly_dir_name = _require_constant("FIRMWARE_NIGHTLIES_DIR_NAME", "nightlies")
+    firmware_dir = tmp_path / "downloads" / FIRMWARE_DIR_NAME
+    firmware_dir.mkdir(parents=True)
+    real_target = tmp_path / "real_nightlies"
+    real_target.mkdir()
+    try:
+        os.symlink(str(real_target), str(firmware_dir / nightly_dir_name))
+    except OSError:
+        pytest.skip("Symlinks not supported on this platform")
+
+    resolve = _require_method(downloader, "_resolve_nightly_dir")
+    with pytest.raises(ValueError):
+        resolve(BUILD_2_8_0)
+    # The symlinked root must not be followed.
+    assert (firmware_dir / nightly_dir_name).is_symlink()
+
+
+def test_download_nightly_asset_rejects_symlink_target(downloader):
+    """A pre-existing symlink target must be refused and removed (B5)."""
+    entry = _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip", size=5)
+    real = downloader.get_nightly_target_path(BUILD_2_8_0, "real.zip", create=True)
+    Path(real).write_bytes(b"real")
+    link = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    if os.path.exists(link):
+        os.remove(link)
+    try:
+        os.symlink(real, link)
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+    assert result.success is False
+    from fetchtastic.constants import ERROR_TYPE_VALIDATION
+
+    assert result.error_type == ERROR_TYPE_VALIDATION
+    # The symlink must have been removed.
+    assert not os.path.islink(link)
+
+
+def test_cleanup_nightly_removes_invalid_latest_pointer(downloader, tmp_path):
+    """An invalid latest symlink (target removed) is cleaned up (B4)."""
+    nightly_dir_name = _require_constant("FIRMWARE_NIGHTLIES_DIR_NAME", "nightlies")
+    base = tmp_path / "downloads" / FIRMWARE_DIR_NAME / nightly_dir_name
+    keep = base / "2.8.0.aaaaaaa"
+    gone = base / "2.8.0.bbbbbbb"
+    keep.mkdir(parents=True)
+    gone.mkdir(parents=True)
+    (keep / "f.zip").write_bytes(b"x")
+    (gone / "f.zip").write_bytes(b"x")
+    # latest points at the directory that will be removed.
+    latest = base / LATEST_POINTER_NAME
+    try:
+        os.symlink("2.8.0.bbbbbbb", str(latest))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    downloader.config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = 1
+    cleanup = _require_method(downloader, "cleanup_superseded_nightlies")
+    cleanup(current_build_id="2.8.0.aaaaaaa")
+
+    # The invalid latest pointer (target removed) is gone.
+    assert not latest.is_symlink()
+
+
+# --- Existing-skip path now uses the validator ---------------------
+
+
+def test_download_nightly_asset_skip_validates_full(downloader):
+    """An existing valid asset is skipped; validation runs on the skip path (B2)."""
+    entry = _make_nightly_listing()[4]  # rak4631 zip
+    _write_valid_nightly_asset(downloader, BUILD_2_8_0, entry)
+
+    result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+    assert result.success is True
+    assert getattr(result, "was_skipped", False) is True
+
+
+def test_download_nightly_asset_skip_reDownloads_when_existing_invalid(downloader):
+    """An existing invalid (wrong-size) asset is re-downloaded rather than silently accepted (B2)."""
+    from fetchtastic.utils import calculate_sha256
+
+    # Use a non-zip entry so exact-size content is trivial to produce.
+    entry = _contents_entry("device-install.sh", size=5)
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    # Existing file is wrong size (4 bytes vs expected 5) → validator rejects.
+    Path(target).write_bytes(b"\0\0\0\0")
+
+    def _fake_download(url, path):
+        Path(path).write_bytes(b"abcde")
+        save_file_hash(path, calculate_sha256(path) or "0" * 64)
+        return True
+
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry",
+        side_effect=_fake_download,
+    ):
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    assert result.success is True
+    assert getattr(result, "was_skipped", False) is False
+
+
+# --- Network failure stays retryable -------------------------------
+
+
+def test_download_nightly_asset_network_failure_retryable(downloader):
+    """A network failure during download must remain retryable (B2)."""
+    import requests as _requests
+
+    entry = _make_nightly_listing()[4]
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry",
+        side_effect=_requests.RequestException("boom"),
+    ):
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    assert result.success is False
+    assert result.is_retryable is True
+    from fetchtastic.constants import ERROR_TYPE_NETWORK
+
+    assert result.error_type == ERROR_TYPE_NETWORK
+
+
+# --- Symlink cleanup: dangling links unlinked, external targets safe ---
+
+
+def test_download_nightly_asset_dangling_symlink_unlinked(downloader):
+    """A dangling symlink at the target is unlinked, never followed (cleanup gap 1)."""
+    entry = _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip", size=5)
+    link = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    # Dangling symlink: target path does not exist anywhere.
+    outside = str(Path(link).parent / "does_not_exist.bin")
+    if os.path.exists(link):
+        os.remove(link)
+    try:
+        os.symlink(outside, link)
+    except OSError:
+        pytest.skip("Symlinks not supported on this platform")
+    assert os.path.islink(link) and not os.path.exists(link)  # dangling
+
+    result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    # Rejected as validation failure; the dangling symlink is gone.
+    from fetchtastic.constants import ERROR_TYPE_VALIDATION
+
+    assert result.success is False
+    assert result.error_type == ERROR_TYPE_VALIDATION
+    assert not os.path.islink(link)
+    # No file was written at the (non-existent) external target.
+    assert not os.path.exists(outside)
+
+
+def test_download_nightly_asset_symlink_external_sentinel_untouched(
+    downloader, tmp_path
+):
+    """A symlink pointing outside the build tree is unlinked; the external file is untouched."""
+    entry = _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip", size=5)
+    # Sentinel lives OUTSIDE the build directory tree.
+    sentinel = tmp_path / "external_sentinel.bin"
+    sentinel.write_bytes(b"original-untouched")
+    link = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    if os.path.exists(link):
+        os.remove(link)
+    try:
+        os.symlink(str(sentinel), link)
+    except OSError:
+        pytest.skip("Symlinks not supported on this platform")
+
+    result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    from fetchtastic.constants import ERROR_TYPE_VALIDATION
+
+    assert result.success is False
+    assert result.error_type == ERROR_TYPE_VALIDATION
+    # The symlink (link only) is gone; the external sentinel is untouched.
+    assert not os.path.islink(link)
+    assert sentinel.read_bytes() == b"original-untouched"
+
+
+# --- Retry validation failure removes hash metadata (cleanup gap 2) ---
+
+
+def test_retry_nightly_wrong_size_removes_hash_and_legacy_sidecars(tmp_path):
+    """Retry post-validation failure must remove target + current + legacy hash sidecars (gap 2)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+    from fetchtastic.utils import get_hash_file_path, get_legacy_hash_file_path
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    target = str(tmp_path / "night.bin")
+    Path(target).write_bytes(b"wrong-size")
+    # Pre-create BOTH hash sidecars so we can assert they are removed.
+    current_hash = get_hash_file_path(target)
+    legacy_hash = get_legacy_hash_file_path(target)
+    Path(current_hash).parent.mkdir(parents=True, exist_ok=True)
+    Path(current_hash).write_text("aaaa  night.bin\n")
+    Path(legacy_hash).write_text("bbbb  night.bin\n")
+    assert os.path.exists(current_hash) and os.path.exists(legacy_hash)
+
+    # Validation reports a size mismatch.
+    fd._validate_nightly_asset = Mock(
+        return_value=(False, "size mismatch: expected 100, got 10")
+    )
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=100,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+    )
+    with patch.object(fd, "download", return_value=True), patch.object(
+        fd, "verify", return_value=True
+    ):
+        result = orch._retry_single_failure(failed)
+
+    assert result.success is False
+    assert result.is_retryable is False
+    # Target, current hash sidecar, and legacy hash sidecar all removed.
+    assert not os.path.exists(target)
+    assert not os.path.exists(current_hash)
+    assert not os.path.exists(legacy_hash)
+
+
+def test_retry_nightly_invalid_content_removes_hash_sidecars(tmp_path):
+    """Retry validation failure for invalid content removes hash metadata (gap 2)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+    from fetchtastic.utils import get_hash_file_path, get_legacy_hash_file_path
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    target = str(tmp_path / "night.bin")
+    Path(target).write_bytes(b"content")
+    current_hash = get_hash_file_path(target)
+    legacy_hash = get_legacy_hash_file_path(target)
+    Path(current_hash).parent.mkdir(parents=True, exist_ok=True)
+    Path(current_hash).write_text("cccc  night.bin\n")
+    Path(legacy_hash).write_text("dddd  night.bin\n")
+
+    fd._validate_nightly_asset = Mock(
+        return_value=(False, "hash/integrity verification failed")
+    )
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=7,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+    )
+    with patch.object(fd, "download", return_value=True), patch.object(
+        fd, "verify", return_value=True
+    ):
+        result = orch._retry_single_failure(failed)
+
+    assert result.success is False
+    assert result.is_retryable is False
+    assert not os.path.exists(target)
+    assert not os.path.exists(current_hash)
+    assert not os.path.exists(legacy_hash)
