@@ -529,3 +529,30 @@ def test_production_stable_with_higher_base_prerelease_retained_with_latest(tmp_
     assert prerelease_dir.exists()
     assert latest.is_symlink()
     assert (prerelease_base / os.readlink(latest)).exists()
+
+
+def test_latest_pointer_to_regular_file_is_removed(tmp_path):
+    """Case 20: a latest pointer at a retained name that is a file, not a dir.
+
+    ``os.path.exists`` returns True for a regular file named like a retained
+    tag, so the pre-fix check left ``latest`` pointing somewhere that cannot
+    serve as a release directory. Require a directory via ``os.path.isdir``
+    so the pointer is removed instead.
+    """
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    app_dir.mkdir(parents=True)
+    # Degenerate but possible: a regular file occupying a retained tag name.
+    file_target = app_dir / "v2.7.14"
+    file_target.write_text("not-a-directory")
+    latest = app_dir / LATEST_POINTER_NAME
+    try:
+        os.symlink("v2.7.14", latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[Release(tag_name="v2.7.14", prerelease=False)]
+    )
+
+    assert not latest.is_symlink()

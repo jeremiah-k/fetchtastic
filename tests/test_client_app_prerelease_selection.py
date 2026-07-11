@@ -266,15 +266,15 @@ def test_case7_no_stable_selects_highest_parseable_base(downloader):
 
 
 # ---------------------------------------------------------------------------
-# Case 8: all candidate bases unparseable -> preserve classified candidates
+# Case 8: all candidate bases unparsable -> preserve classified candidates
 # ---------------------------------------------------------------------------
 
 
-def test_case8_all_unparseable_bases_preserves_classified_candidates(downloader):
+def test_case8_all_unparsable_bases_preserves_classified_candidates(downloader):
     """
     Given a stable v2.7.14 and classified prereleases whose base versions
     cannot be parsed, When handle_prereleases selects the active set,
-    Then every classified candidate is preserved (fallback so unparseable
+    Then every classified candidate is preserved (fallback so unparsable
     prereleases are never silently dropped).
     """
     releases = [
@@ -485,3 +485,22 @@ def test_norm_production_v2_7_14_and_v2_8_0_closed_8_remains_selected(downloader
     selected = [r.tag_name for r in downloader.handle_prereleases(releases)]
 
     assert selected == ["v2.8.0-closed.8"]
+
+
+def test_norm_parseable_zero_tuple_outranks_newer_unparsable_stable(downloader):
+    """
+    Regression: ``normalized or (0,...)`` collapsed a parseable ``v0.0.0``
+    and an unparsable stable (e.g. ``edge``) to the same zero tuple, so a
+    newer unparsable tag could win the published_at tiebreak and make
+    ``_latest_stable_release_tuple`` return None, disabling the stable
+    cutoff. The leading ``normalized is not None`` key now ensures any
+    parseable base outranks an unparsable one.
+    """
+    parseable_zero = _stable("v0.0.0", "2024-01-01T00:00:00Z")
+    newer_unparsable = _stable("edge", "2024-02-01T00:00:00Z")
+
+    resolved = downloader._latest_stable_release_tuple(
+        [parseable_zero, newer_unparsable]
+    )
+
+    assert resolved == (0, 0, 0, 0, 0, 0)

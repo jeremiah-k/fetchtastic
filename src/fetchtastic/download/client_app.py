@@ -1199,9 +1199,10 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         """Validate a managed latest symlink after cleanup removals.
 
         Removes the latest pointer via ``remove_latest_pointer`` when its target
-        is missing, unsafe (absolute/traversal/nested), itself a symlink, or not
-        in the retained set. Never removes a non-symlink latest entry. Does not
-        follow symlinks. Parent/ancestor symlink protections are delegated to
+        is missing, unsafe (absolute/traversal/nested), itself a symlink, not a
+        directory (e.g. a regular file named like a retained tag), or not in the
+        retained set. Never removes a non-symlink latest entry. Does not follow
+        symlinks. Parent/ancestor symlink protections are delegated to
         ``remove_latest_pointer``.
         """
         link_path = os.path.join(parent_dir, LATEST_POINTER_NAME)
@@ -1220,7 +1221,10 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return
         target_path = os.path.join(parent_dir, safe_target)
         try:
-            if os.path.islink(target_path) or not os.path.exists(target_path):
+            # ``exists`` would accept a regular file named like a retained tag,
+            # leaving ``latest`` pointing somewhere that cannot serve as a
+            # release directory. Require a directory instead.
+            if os.path.islink(target_path) or not os.path.isdir(target_path):
                 remove_latest_pointer(parent_dir)
         except OSError:
             remove_latest_pointer(parent_dir)
@@ -1290,10 +1294,14 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             )
             published_dt = parse_iso_datetime_utc(release.published_at)
             published_ts = published_dt.timestamp() if published_dt else 0
-            # An unparseable stable normalizes to None; rank it below any
-            # parseable base via a zero width-6 tuple so it only wins when
-            # no parseable stable is present.
+            # ``normalized or (0,...)`` collapses an unparsable stable (None)
+            # and a parseable ``v0.0.0`` to the same zero tuple, so a newer
+            # unparsable tag could win on the published_at tiebreak and make
+            # this helper return None. Lead with ``normalized is not None`` so
+            # any parseable base outranks an unparsable one before the
+            # published_at tiebreak is consulted.
             return (
+                normalized is not None,
                 normalized or (0, 0, 0, 0, 0, 0),
                 published_ts,
                 release.tag_name or "",
@@ -1320,8 +1328,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         - When no stable release has a parseable tuple, the highest parseable
           normalized prerelease base wins.
         - When no candidate has a parseable base, all classified candidates are
-          preserved so unparseable prereleases are never silently dropped.
-          Unparseable candidates are never retained alongside a parseable winner
+          preserved so unparsable prereleases are never silently dropped.
+          Unparsable candidates are never retained alongside a parseable winner
           because they cannot be assigned to that stream.
         - Output is deterministic: published_at descending with a tag-name
           tiebreak, independent of input order.
