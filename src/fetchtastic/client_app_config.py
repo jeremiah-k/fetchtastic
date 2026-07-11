@@ -234,10 +234,15 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
         config.get("APP_SNAPSHOT_VERSIONS_TO_KEEP") is not None
         or config["CHECK_APP_SNAPSHOTS"]
     ):
-        config["APP_SNAPSHOT_VERSIONS_TO_KEEP"] = _coerce_keep_count(
+        snapshot_keep = _coerce_keep_count(
             config.get("APP_SNAPSHOT_VERSIONS_TO_KEEP"),
             DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
         )
+        # Enforce a floor of 1 when snapshots are enabled so the current
+        # build is never immediately deleted after tracking.
+        if config["CHECK_APP_SNAPSHOTS"]:
+            snapshot_keep = max(1, snapshot_keep)
+        config["APP_SNAPSHOT_VERSIONS_TO_KEEP"] = snapshot_keep
     return config
 
 

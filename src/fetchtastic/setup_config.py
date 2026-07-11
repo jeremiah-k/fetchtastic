@@ -1081,7 +1081,11 @@ def _setup_downloads(
         normalize_client_app_config(config)
 
     # --- Client App Snapshot (Debug Build) Configuration ---
-    if save_client_apps and app_section_requested:
+    if (
+        save_client_apps
+        and app_section_requested
+        and _coerce_bool(config.get("SAVE_APKS", False))
+    ):
         check_app_snapshots_current = _coerce_bool(
             config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
         )
@@ -1094,6 +1098,8 @@ def _setup_downloads(
             check_app_snapshots_input,
             default=check_app_snapshots_current,
         )
+    elif save_client_apps and app_section_requested:
+        config["CHECK_APP_SNAPSHOTS"] = False
 
     # --- Client App Compatibility Normalization ---
     normalize_client_app_config(config)
