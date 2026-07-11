@@ -534,6 +534,12 @@ class DownloadOrchestrator:
             ):
                 logger.info("No new client app prereleases to download")
 
+            # Prune old snapshot dirs when stable releases or prereleases are
+            # processed.  Multiple snapshots accumulate across commits; they
+            # are cleaned up once a real release/prerelease ships.
+            if releases_to_download or prereleases:
+                self.client_app_downloader.cleanup_superseded_snapshots()
+
             # --- Snapshot Debug Builds (rolling "snapshot" tag) ---
             if coerce_bool(self.config.get("CHECK_APP_SNAPSHOTS", False)):
                 logger.info("Checking for Android snapshot debug builds...")
