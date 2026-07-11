@@ -38,7 +38,22 @@ Client app assets include Android APKs and desktop installers from the Meshtasti
 
 ### Snapshot Debug Builds
 
-When `CHECK_APP_SNAPSHOTS` is enabled, Fetchtastic downloads rolling Android snapshot debug builds. These are not release builds: they are signed with a debug key and intended for testing only. Snapshot assets are stored under `app/snapshots/<versionCode>/` and follow the same `SELECTED_APP_ASSETS` filtering as stable and prerelease downloads.
+When `CHECK_APP_SNAPSHOTS` is enabled, Fetchtastic downloads rolling Android snapshot debug builds. These are not release builds: they are signed with a debug key and intended for testing only. Snapshot assets are stored under `app/snapshots/<versionCode>/`.
+
+**Asset selection:** Snapshot assets are matched semantically against `SELECTED_APP_ASSETS` patterns. A stable-release selection like `app-fdroid-universal-release.apk` automatically selects the corresponding snapshot build (`androidApp-fdroid-universal-debug-<vc>.apk`). Wildcard patterns like `*fdroid*.apk` select all ABIs for that flavor. Legacy generic names like `meshtastic.apk` map to Google universal. See the table below for examples.
+
+| Configured pattern                 | Snapshot assets selected                             |
+| ---------------------------------- | ---------------------------------------------------- |
+| `app-fdroid-universal-release.apk` | F-Droid universal only                               |
+| `app-fdroid-arm64-v8a-release.apk` | F-Droid arm64-v8a only                               |
+| `app-google-release.apk`           | Google universal only                                |
+| `*fdroid*.apk`                     | All F-Droid ABIs (universal, arm64-v8a, armeabi-v7a) |
+| `*google*.apk`                     | All Google ABIs                                      |
+| `*.apk` or `*`                     | All six snapshot APKs                                |
+| `meshtastic.apk` (legacy)          | Google universal                                     |
+| `meshtastic.dmg` (desktop)         | None (desktop-only)                                  |
+
+**Exclusions:** `EXCLUDE_PATTERNS` applies to snapshot assets. Note that `*debug*` in exclusion patterns will block all snapshot APKs since every snapshot filename contains "debug." A warning is logged when all otherwise-selected snapshot assets are removed by exclusions.
 
 Legacy keys are still accepted and normalized:
 

@@ -101,13 +101,13 @@ Downloads are organized in a clean structure:
 │   │   ├── app-fdroid-universal-release.apk
 │   │   ├── Meshtastic-2.7.14.dmg
 │   │   └── release_notes-v2.7.14.md
-│   └── prerelease/   # Pre-release client app builds (optional)
-│   └── snapshots/     # Rolling snapshot debug builds (opt-in)
+│   ├── prerelease/   # Prerelease client app builds (optional)
+│   └── snapshots/    # Rolling snapshot debug builds (opt-in)
 ├── firmware/
 │   ├── v2.3.2/
 │   ├── v2.3.1/
 │   ├── repo-dls/      # Repository browser downloads
-│   └── prerelease/    # Pre-release firmware (optional)
+│   └── prerelease/    # Prerelease firmware (optional)
 ```
 
 APKs and desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
