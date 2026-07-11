@@ -86,6 +86,17 @@ def _clear_desktop_assets(config: dict) -> None:
     config.pop("SELECTED_DESKTOP_PLATFORMS", None)
 
 
+def _clear_client_app_flags(config: Dict[str, Any]) -> None:
+    """Clear all client-app prerelease/snapshot/selection flags in one call."""
+    config["CHECK_APP_PRERELEASES"] = False
+    config["CHECK_APK_PRERELEASES"] = False
+    config["CHECK_DESKTOP_PRERELEASES"] = False
+    config["CHECK_APP_SNAPSHOTS"] = False
+    config["SELECTED_APP_ASSETS"] = []
+    config["SELECTED_APK_ASSETS"] = []
+    _clear_desktop_assets(config)
+
+
 def _migrate_desktop_asset_key(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Normalize legacy desktop asset selection key to SELECTED_DESKTOP_ASSETS.
@@ -923,14 +934,8 @@ def _setup_downloads(
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
     if save_client_apps_was_enabled and not save_client_apps:
-        config["CHECK_APP_PRERELEASES"] = False
-        config["CHECK_APK_PRERELEASES"] = False
-        config["CHECK_DESKTOP_PRERELEASES"] = False
-        config["CHECK_APP_SNAPSHOTS"] = False
+        _clear_client_app_flags(config)
         config["SAVE_DESKTOP_APP"] = False
-        config["SELECTED_APP_ASSETS"] = []
-        config["SELECTED_APK_ASSETS"] = []
-        _clear_desktop_assets(config)
         save_desktop = False
 
     if save_firmware and (not is_partial_run or wants("firmware")):
@@ -994,13 +999,7 @@ def _setup_downloads(
                 config["SAVE_CLIENT_APPS"] = False
                 config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False
-                config["CHECK_APP_PRERELEASES"] = False
-                config["CHECK_APK_PRERELEASES"] = False
-                config["CHECK_DESKTOP_PRERELEASES"] = False
-                config["CHECK_APP_SNAPSHOTS"] = False
-                config["SELECTED_APP_ASSETS"] = []
-                config["SELECTED_APK_ASSETS"] = []
-                _clear_desktop_assets(config)
+                _clear_client_app_flags(config)
                 save_client_apps = False
                 save_apks = False
                 save_desktop = False
@@ -1029,13 +1028,7 @@ def _setup_downloads(
                 config["SAVE_CLIENT_APPS"] = False
                 config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False
-                config["CHECK_APP_PRERELEASES"] = False
-                config["CHECK_APK_PRERELEASES"] = False
-                config["CHECK_DESKTOP_PRERELEASES"] = False
-                config["CHECK_APP_SNAPSHOTS"] = False
-                config["SELECTED_APP_ASSETS"] = []
-                config["SELECTED_APK_ASSETS"] = []
-                _clear_desktop_assets(config)
+                _clear_client_app_flags(config)
                 save_client_apps = False
                 save_apks = False
                 save_desktop = False
@@ -1051,13 +1044,7 @@ def _setup_downloads(
             config["SAVE_CLIENT_APPS"] = False
             config["SAVE_APKS"] = False
             config["SAVE_DESKTOP_APP"] = False
-            config["CHECK_APP_PRERELEASES"] = False
-            config["CHECK_APK_PRERELEASES"] = False
-            config["CHECK_DESKTOP_PRERELEASES"] = False
-            config["CHECK_APP_SNAPSHOTS"] = False
-            config["SELECTED_APP_ASSETS"] = []
-            config["SELECTED_APK_ASSETS"] = []
-            _clear_desktop_assets(config)
+            _clear_client_app_flags(config)
             save_client_apps = False
             save_apks = False
             save_desktop = False
