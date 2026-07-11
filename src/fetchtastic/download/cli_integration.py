@@ -7,6 +7,7 @@ This module provides integration between the new download subsystem and the exis
 import os
 import re
 import time
+import urllib.parse
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ from fetchtastic.constants import (
     FILE_TYPE_REPOSITORY,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_FILE_TYPES,
+    SNAPSHOT_VERSION_CODE_PATTERN,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
@@ -54,7 +56,7 @@ from .desktop import MeshtasticDesktopDownloader
 from .firmware import FirmwareReleaseDownloader
 from .orchestrator import DownloadOrchestrator
 
-_SNAPSHOT_VC_RE = re.compile(r"-debug-(\d+)\.apk$")
+_SNAPSHOT_VC_RE = re.compile(SNAPSHOT_VERSION_CODE_PATTERN)
 
 
 class DownloadCLIIntegration:
@@ -763,7 +765,9 @@ class DownloadCLIIntegration:
         # Fallback: parse from asset name in download_url
         url = getattr(result, "download_url", None)
         if url:
-            name = os.path.basename(str(url))
+            # Use only the URL path so query parameters/fragments don't interfere
+            parsed = urllib.parse.urlparse(str(url))
+            name = os.path.basename(parsed.path)
             match = _SNAPSHOT_VC_RE.search(name)
             if match:
                 return match.group(1)

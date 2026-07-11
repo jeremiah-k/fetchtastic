@@ -592,9 +592,14 @@ class DownloadOrchestrator:
                                     snapshot_vc,
                                 )
                     else:
-                        logger.debug(
-                            "Snapshot debug build %s is up to date", snapshot_vc
-                        )
+                        if snapshot_vc is not None:
+                            logger.debug(
+                                "Snapshot debug build %s is up to date", snapshot_vc
+                            )
+                        else:
+                            logger.debug(
+                                "Snapshot release has no parsable versionCode; skipping"
+                            )
                 elif snapshot_release is not None:
                     logger.debug("Snapshot release has no debug APK assets")
                 else:
