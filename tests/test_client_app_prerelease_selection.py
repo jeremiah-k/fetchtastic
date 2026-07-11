@@ -1,16 +1,18 @@
 """
-RED regression suite for the highest-active client-app prerelease policy.
+Regression suite for the highest-active client-app prerelease policy.
 
 These tests pin the intended selection behaviour for Android client-app
 prereleases (the legacy ``-open.N`` / ``-closed.N`` tag tracks) and the
 consistency invariant between ``MeshtasticClientAppDownloader.handle_prereleases``
 and ``MeshtasticClientAppDownloader.get_latest_prerelease_tag``.
 
-Intended policy (see task context):
+Intended policy:
 - Consider classified non-snapshot prereleases only.
+- Release tuples are compared by a shared width-6 normalized form so that
+  semantically equal bases (v2.7 == v2.7.0 == v2.7.0.0) compare equal.
 - When a parseable stable release exists, discard prerelease bases whose
-  parsed base is <= the stable base, then retain every tag on the single
-  highest newer parseable base.
+  normalized base is <= the normalized stable base, then retain every tag
+  on the single highest newer parseable base.
 - When no parseable stable exists, retain every tag on the highest
   parseable prerelease base.
 - When no candidate base parses, preserve every classified candidate.
@@ -19,9 +21,9 @@ Intended policy (see task context):
 - Recent SHA filtering is a later step inside handle_prereleases and does
   not affect the base-selection invariants pinned here.
 
-Each test names one of the eleven required cases and is written to fail
-against the current (pre-fix) implementation for a behaviour reason, not
-for a syntax, import, or fixture reason.
+The semantic normalization cases below pin width-6 base comparison via the
+shared helper in client_app.py; the production-shaped cases (Case 1, Case
+11) guard the ordinary higher-base selection path.
 """
 
 import pytest
@@ -361,3 +363,125 @@ def test_case11_production_scenario_no_empty_selection_with_reported_tag(downloa
 
     assert selected, "selection must not be empty when a prerelease is available"
     assert reported in selected
+
+
+# ---------------------------------------------------------------------------
+# Semantic release-tuple normalization (width-6 base comparison)
+#
+# These cases pin width-6 normalization of release tuples so that
+# semantically equal bases (v2.7 == v2.7.0 == v2.7.0.0) compare equal.
+# They exercise the shared width-6 normalization helper in client_app.py;
+# the production-shaped cases above guard the ordinary higher-base path.
+# ---------------------------------------------------------------------------
+
+
+def test_norm_stable_v2_7_excludes_prerelease_v2_7_0_open_1(downloader):
+    """
+    Given a parseable stable v2.7 and a classified prerelease v2.7.0-open.1
+    whose base 2.7.0 is semantically equal to the stable base 2.7,
+    When handle_prereleases selects the active set and
+    get_latest_prerelease_tag reports the leading tag,
+    Then the selection is empty and the reported tag is None (the
+    prerelease base is <= the stable base once widths are normalized).
+    """
+    releases = [
+        _stable("v2.7", "2024-01-15T00:00:00Z"),
+        _pre("v2.7.0-open.1", "2024-02-20T00:00:00Z"),
+    ]
+
+    selected = [r.tag_name for r in downloader.handle_prereleases(releases)]
+    reported = downloader.get_latest_prerelease_tag(releases)
+
+    assert selected == []
+    assert reported is None
+
+
+def test_norm_stable_v2_7_0_excludes_prerelease_v2_7_open_1(downloader):
+    """
+    Given a parseable stable v2.7.0 and a classified prerelease v2.7-open.1
+    whose base 2.7 is semantically equal to the stable base 2.7.0,
+    When handle_prereleases selects the active set,
+    Then the selection is empty (the prerelease base is <= the stable base
+    once widths are normalized).
+    """
+    releases = [
+        _stable("v2.7.0", "2024-01-15T00:00:00Z"),
+        _pre("v2.7-open.1", "2024-02-20T00:00:00Z"),
+    ]
+
+    selected = [r.tag_name for r in downloader.handle_prereleases(releases)]
+
+    assert selected == []
+
+
+def test_norm_open_and_closed_on_equal_semantic_base_retained(downloader):
+    """
+    Given an older stable v2.7.14 and two prereleases whose bases 2.8 and
+    2.8.0 are semantically equal, When handle_prereleases selects the active
+    set, Then both tags are retained on the single winning semantic base in
+    deterministic published_at-descending order (tag-name tiebreak).
+    """
+    releases = [
+        _stable("v2.7.14", "2024-01-15T00:00:00Z"),
+        _pre("v2.8-open.1", "2024-02-15T00:00:00Z"),
+        _pre("v2.8.0-closed.1", "2024-02-20T00:00:00Z"),
+    ]
+
+    selected = [r.tag_name for r in downloader.handle_prereleases(releases)]
+
+    assert selected == ["v2.8.0-closed.1", "v2.8-open.1"]
+
+
+def test_norm_bases_v2_8_v2_8_0_v2_8_0_0_grouped_as_one(downloader):
+    """
+    Given classified prereleases spelling the same semantic base as v2.8,
+    v2.8.0, and v2.8.0.0, When handle_prereleases selects the active set,
+    Then all three tags are retained on one semantic base (none is dropped
+    to a narrower-width sibling group).
+    """
+    releases = [
+        _pre("v2.8-open.1", "2024-02-01T00:00:00Z"),
+        _pre("v2.8.0-closed.2", "2024-02-10T00:00:00Z"),
+        _pre("v2.8.0.0-open.3", "2024-02-20T00:00:00Z"),
+    ]
+
+    selected = sorted(r.tag_name for r in downloader.handle_prereleases(releases))
+
+    assert selected == ["v2.8-open.1", "v2.8.0-closed.2", "v2.8.0.0-open.3"]
+
+
+def test_norm_private_stable_helper_returns_width_six_tuple(downloader):
+    """
+    Given stable candidates v2.7 and v2.7.0, When _latest_stable_release_tuple
+    resolves the latest stable, Then the returned tuple is the width-6
+    normalized form (2, 7, 0, 0, 0, 0) and the resolution is deterministic
+    across input permutations (publication and tag-name tiebreaks).
+    """
+    later_v2_7 = _stable("v2.7", "2024-02-20T00:00:00Z")
+    earlier_v2_7_0 = _stable("v2.7.0", "2024-01-15T00:00:00Z")
+    first_input = [later_v2_7, earlier_v2_7_0]
+    permuted_input = [earlier_v2_7_0, later_v2_7]
+
+    resolved_first = downloader._latest_stable_release_tuple(first_input)
+    resolved_permuted = downloader._latest_stable_release_tuple(permuted_input)
+
+    assert resolved_first == (2, 7, 0, 0, 0, 0)
+    assert resolved_permuted == (2, 7, 0, 0, 0, 0)
+
+
+def test_norm_production_v2_7_14_and_v2_8_0_closed_8_remains_selected(downloader):
+    """
+    Given the production-shaped stable v2.7.14 and a v2.8.0-closed.8
+    prerelease, When handle_prereleases selects the active set,
+    Then the v2.8.0-closed.8 prerelease remains selected (the newer
+    semantic base survives normalization). This is the green production
+    regression guard for the normalization change.
+    """
+    releases = [
+        _stable("v2.7.14", "2024-01-15T00:00:00Z"),
+        _pre("v2.8.0-closed.8", "2024-02-20T00:00:00Z"),
+    ]
+
+    selected = [r.tag_name for r in downloader.handle_prereleases(releases)]
+
+    assert selected == ["v2.8.0-closed.8"]

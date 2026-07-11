@@ -1250,39 +1250,75 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             },
         )
 
+    @staticmethod
+    def _normalize_release_tuple(
+        release_tuple: tuple[int, ...] | None, width: int = 6
+    ) -> tuple[int, ...] | None:
+        """Normalize a release tuple to a fixed-width semantic base.
+
+        Returns ``None`` for ``None`` or empty input. Longer tuples are
+        truncated to ``width`` and shorter tuples are zero-padded so that
+        semantically equivalent bases (e.g. ``(2, 7)``, ``(2, 7, 0)``,
+        ``(2, 7, 0, 0)``) collapse to a single comparable key. The default
+        ``width`` of 6 matches the existing cleanup retention policy.
+        """
+        if not release_tuple:
+            return None
+        truncated = tuple(release_tuple[:width])
+        return truncated + (0,) * (width - len(truncated))
+
     def _latest_stable_release_tuple(
         self, releases: list[Release]
     ) -> tuple[int, ...] | None:
-        """Return the release tuple of the latest genuine stable release.
+        """Return the latest genuine stable release's normalized semantic base.
 
-        Selection is deterministic and independent of input order: the stable
-        release with the highest version tuple wins, with published_at and tag
-        name as tie breakers. Returns None when no stable release is present.
+        Selection is deterministic and independent of input order: each
+        stable release tuple is normalized to a width-6 semantic base so
+        that tags like ``v2.7`` and ``v2.7.0`` compare equal. The stable
+        release with the highest normalized base wins, with published_at
+        and tag name as tie breakers. Returns the normalized width-6 tuple
+        for the selected release, or ``None`` when no stable release is
+        present.
         """
         stable_releases = [r for r in releases if self._is_client_app_stable(r)]
         if not stable_releases:
             return None
 
         def _key(release: Release) -> tuple[Any, ...]:
-            release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+            normalized = self._normalize_release_tuple(
+                self.version_manager.get_release_tuple(release.tag_name)
+            )
             published_dt = parse_iso_datetime_utc(release.published_at)
             published_ts = published_dt.timestamp() if published_dt else 0
-            return (release_tuple or (0,), published_ts, release.tag_name or "")
+            # An unparseable stable normalizes to None; rank it below any
+            # parseable base via a zero width-6 tuple so it only wins when
+            # no parseable stable is present.
+            return (
+                normalized or (0, 0, 0, 0, 0, 0),
+                published_ts,
+                release.tag_name or "",
+            )
 
         latest = max(stable_releases, key=_key)
-        return self.version_manager.get_release_tuple(latest.tag_name)
+        return self._normalize_release_tuple(
+            self.version_manager.get_release_tuple(latest.tag_name)
+        )
 
     def _select_active_prereleases(self, releases: list[Release]) -> list[Release]:
         """Select active client-app prereleases on the single highest eligible base.
 
         Policy:
         - Only classified non-snapshot prereleases are considered (snapshots excluded).
-        - When a parseable stable release exists, prerelease bases whose parsed
-          base is <= the stable base are discarded.
+        - Release tuples are compared by a shared width-6 normalized form so
+          that semantically equal bases (``v2.7`` == ``v2.7.0`` ==
+          ``v2.7.0.0``) collapse and compare equal.
+        - When a parseable stable release exists, prerelease bases whose
+          normalized base is <= the normalized stable base are discarded.
         - Every tag (open/closed/internal) on the single highest eligible
-          prerelease base is retained; superseded bases are dropped entirely.
+          normalized prerelease base is retained; superseded bases are
+          dropped entirely.
         - When no stable release has a parseable tuple, the highest parseable
-          prerelease base wins.
+          normalized prerelease base wins.
         - When no candidate has a parseable base, all classified candidates are
           preserved so unparseable prereleases are never silently dropped.
           Unparseable candidates are never retained alongside a parseable winner
@@ -1311,12 +1347,15 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             if candidate_base is None:
                 continue
             has_parseable = True
+            normalized_base = self._normalize_release_tuple(candidate_base)
+            if normalized_base is None:
+                continue
             if (
                 latest_stable_tuple is not None
-                and candidate_base <= latest_stable_tuple
+                and normalized_base <= latest_stable_tuple
             ):
                 continue
-            eligible_by_base.setdefault(candidate_base, []).append(candidate)
+            eligible_by_base.setdefault(normalized_base, []).append(candidate)
 
         if eligible_by_base:
             winning_base = max(eligible_by_base)

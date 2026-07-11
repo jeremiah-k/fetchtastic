@@ -409,3 +409,123 @@ def test_unsafe_latest_pointer_target_removed_without_following(tmp_path):
     assert outside_target.exists()
     assert outside_target.read_text() == "precious"
     assert retained.exists()
+
+
+# Regression coverage for cleanup/latest-pointer behavior when prerelease tags
+# spell the same semantic base at different component widths. v2.8-open.1 and
+# v2.8.0-closed.1 are both semantic base 2.8, and v2.7.0-open.1 shares base 2.7
+# with the stable v2.7 release. The selector normalizes release tuples to a
+# fixed width-6 form, so (2, 8) and (2, 8, 0) collapse into one stream and
+# (2, 7, 0) compares equal to the stable (2, 7); these equivalent bases are
+# treated as one. The cleanup guard locks the already-correct production path.
+
+
+def test_equivalent_semantic_base_prerelease_dir_removed_with_latest(tmp_path):
+    """Stable v2.7 supersedes local v2.7.0-open.1 on the same semantic base.
+
+    The prerelease directory and the latest pointer targeting it are removed
+    once the equivalent base (2.7) is recognized as covered by the stable
+    release: width-6 normalization makes (2, 7, 0) equal to the stable tuple
+    (2, 7), so the prerelease is superseded.
+    """
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    prerelease_base = app_dir / "prerelease"
+    stable_dir = app_dir / "v2.7"
+    stable_dir.mkdir(parents=True)
+    (stable_dir / "app-universal.apk").write_bytes(b"apk")
+    equivalent_prerelease = prerelease_base / "v2.7.0-open.1"
+    equivalent_prerelease.mkdir(parents=True)
+    (equivalent_prerelease / "app-universal.apk").write_bytes(b"apk")
+    latest = prerelease_base / LATEST_POINTER_NAME
+    try:
+        os.symlink("v2.7.0-open.1", latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[
+            Release(tag_name="v2.7", prerelease=False),
+            Release(tag_name="v2.7.0-open.1", prerelease=True),
+        ]
+    )
+
+    assert not equivalent_prerelease.exists()
+    assert not latest.is_symlink()
+    assert stable_dir.exists()
+
+
+def test_equivalent_semantic_base_prerelease_dirs_retained_with_latest(tmp_path):
+    """Equivalent winning spellings of semantic base 2.8 are all retained.
+
+    v2.8-open.1, v2.8.0-closed.1, and v2.8.0.0 all resolve to semantic base 2.8
+    and win over the older stable v2.7.14, so every equivalent-base directory
+    survives and the latest pointer targeting a retained directory stays valid:
+    width-6 normalization collapses (2, 8) and (2, 8, 0) into one stream so
+    every spelling is retained.
+    """
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    prerelease_base = app_dir / "prerelease"
+    stable_dir = app_dir / "v2.7.14"
+    stable_dir.mkdir(parents=True)
+    (stable_dir / "app-universal.apk").write_bytes(b"apk")
+    equivalent_tags = ["v2.8-open.1", "v2.8.0-closed.1", "v2.8.0.0"]
+    for tag in equivalent_tags:
+        version_dir = prerelease_base / tag
+        version_dir.mkdir(parents=True)
+        (version_dir / "app-universal.apk").write_bytes(b"apk")
+    latest = prerelease_base / LATEST_POINTER_NAME
+    try:
+        os.symlink("v2.8.0-closed.1", latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[
+            Release(tag_name="v2.7.14", prerelease=False),
+            *[Release(tag_name=tag, prerelease=True) for tag in equivalent_tags],
+        ]
+    )
+
+    for tag in equivalent_tags:
+        assert (prerelease_base / tag).exists()
+    assert latest.is_symlink()
+    assert (prerelease_base / os.readlink(latest)).exists()
+    assert stable_dir.exists()
+
+
+def test_production_stable_with_higher_base_prerelease_retained_with_latest(tmp_path):
+    """Cleanup guard: stable v2.7.14 + winning v2.8.0-closed.8 stay valid.
+
+    Locks the already-correct production path so the semantic-base
+    normalization fix cannot regress the ordinary higher-base prerelease
+    retention case. Both directories survive and the latest pointer targeting
+    the retained prerelease directory remains valid.
+    """
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    prerelease_base = app_dir / "prerelease"
+    stable_dir = app_dir / "v2.7.14"
+    stable_dir.mkdir(parents=True)
+    (stable_dir / "app-universal.apk").write_bytes(b"apk")
+    prerelease_dir = prerelease_base / "v2.8.0-closed.8"
+    prerelease_dir.mkdir(parents=True)
+    (prerelease_dir / "app-universal.apk").write_bytes(b"apk")
+    latest = prerelease_base / LATEST_POINTER_NAME
+    try:
+        os.symlink("v2.8.0-closed.8", latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[
+            Release(tag_name="v2.7.14", prerelease=False),
+            Release(tag_name="v2.8.0-closed.8", prerelease=True),
+        ]
+    )
+
+    assert stable_dir.exists()
+    assert prerelease_dir.exists()
+    assert latest.is_symlink()
+    assert (prerelease_base / os.readlink(latest)).exists()
