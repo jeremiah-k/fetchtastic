@@ -26,6 +26,7 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     APKS_DIR_NAME,
     DEFAULT_APP_VERSIONS_TO_KEEP,
+    DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
     DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_KEEP_LAST_BETA,
@@ -40,6 +41,7 @@ from fetchtastic.constants import (
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_NIGHTLY,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
@@ -48,6 +50,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_MANIFEST_EXTENSION,
     FIRMWARE_PRERELEASES_DIR_NAME,
+    LATEST_FIRMWARE_NIGHTLY_JSON_FILE,
     LATEST_POINTER_NAME,
     MAX_RETRY_DELAY,
     RELEASE_SCAN_COUNT,
@@ -184,6 +187,8 @@ class DownloadOrchestrator:
         # Single-run only: cleared after _log_prerelease_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
         self.latest_available_firmware_prerelease_dir: Optional[str] = None
+        # Run-scoped nightly build-id: set after successful nightly processing.
+        self.latest_firmware_nightly_build_id: Optional[str] = None
         # Run-scoped selected set: reset at start of _process_firmware_downloads()
         self.firmware_releases_selected: Optional[List[Release]] = None
         self._client_app_downloads_processed = False
@@ -222,6 +227,7 @@ class DownloadOrchestrator:
         start_time = time.time()
         self.wifi_skipped = False
         self.latest_available_firmware_prerelease_dir = None
+        self.latest_firmware_nightly_build_id = None
         self.available_new_firmware_versions = []
         self.available_new_apk_versions = []
         self._client_app_downloads_processed = False
@@ -985,6 +991,9 @@ class DownloadOrchestrator:
                         result, FILE_TYPE_FIRMWARE_PRERELEASE_REPO
                     )
 
+            # Opt-in rolling firmware-nightly builds (separate source, transactional).
+            self._process_firmware_nightlies()
+
             if not any_firmware_downloaded and not releases_to_download:
                 logger.info("All Firmware assets are up to date.")
 
@@ -1047,6 +1056,70 @@ class DownloadOrchestrator:
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
+
+    def _process_firmware_nightlies(self) -> None:
+        """
+        Process opt-in rolling firmware-nightly builds transactionally.
+
+        When ``CHECK_FIRMWARE_NIGHTLIES`` is disabled (the default) this method
+        returns without touching the network.  When enabled it fetches the
+        firmware-nightly listing, parses the build-id, and — only when the
+        build should be processed — downloads every selected asset.  Tracking,
+        latest-pointer, and cleanup are advanced **only after all selected
+        assets succeed**; any failure defers all three so the next run can
+        retry the same build from a clean state.
+        """
+        if not coerce_bool(
+            self.config.get(
+                "CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES
+            ),
+            DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
+        ):
+            return
+        try:
+            entries = self.firmware_downloader.fetch_firmware_nightlies()
+            if not entries:
+                return
+            build_id = self.firmware_downloader.get_nightly_build_id(entries)
+            if not build_id:
+                logger.debug(
+                    "No firmware-nightly release manifest in listing; skipping"
+                )
+                return
+            if not self.firmware_downloader.should_process_nightly(entries, build_id):
+                logger.debug("Firmware-nightly build %s already complete", build_id)
+                return
+            selected = self.firmware_downloader.get_selected_nightly_assets(entries)
+            if not selected:
+                return
+
+            logger.info("Downloading firmware-nightly build %s", build_id)
+            all_success = True
+            for entry in selected:
+                result = self.firmware_downloader.download_nightly_asset(
+                    entry, build_id
+                )
+                self._handle_download_result(result, FILE_TYPE_FIRMWARE_NIGHTLY)
+                if not result.success:
+                    all_success = False
+
+            if not all_success:
+                logger.warning(
+                    "Firmware-nightly build %s has failed assets; "
+                    "tracking, latest pointer, and cleanup deferred",
+                    build_id,
+                )
+                return
+
+            if not self.firmware_downloader.update_nightly_tracking(build_id):
+                logger.warning(
+                    "Failed to update firmware-nightly tracking for %s", build_id
+                )
+            self.firmware_downloader.cleanup_superseded_nightlies(build_id)
+            self.firmware_downloader.update_latest_pointer_for_nightly(build_id)
+            self.latest_firmware_nightly_build_id = build_id
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.error(f"Error processing firmware nightlies: {e}", exc_info=True)
 
     def _select_latest_release_by_version(
         self, releases: List[Release]
@@ -1886,6 +1959,7 @@ class DownloadOrchestrator:
                 if r.file_type
                 in (
                     FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_NIGHTLY,
                     FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                     FILE_TYPE_FIRMWARE_MANIFEST,
@@ -1909,6 +1983,7 @@ class DownloadOrchestrator:
                 if f.file_type
                 in (
                     FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_NIGHTLY,
                     FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                     FILE_TYPE_FIRMWARE_MANIFEST,
@@ -2339,16 +2414,22 @@ class DownloadOrchestrator:
             if not latest_firmware_release:
                 return
 
+            clean_latest_release = (
+                self.version_manager.extract_clean_version(latest_firmware_release)
+                or latest_firmware_release
+            )
+            # Retained as a parseability gate: if the next-patch derivation fails
+            # the tag is too malformed to admit any prerelease base.
             expected_version = (
                 self.version_manager.calculate_expected_prerelease_version(
-                    latest_firmware_release
+                    clean_latest_release
                 )
             )
             if not expected_version:
                 return
 
             history = self.prerelease_manager.get_prerelease_commit_history(
-                expected_version,
+                clean_latest_release,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
                 allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
@@ -2402,6 +2483,7 @@ class DownloadOrchestrator:
                 - "android": latest client app release tag (legacy compat key) or None
                 - "firmware": latest firmware release tag or None
                 - "firmware_prerelease": active firmware prerelease identifier (without "firmware-" prefix when applicable) or None
+                - "firmware_nightly": tracked firmware-nightly build-id or None
                 - "android_prerelease": latest client app prerelease tag (legacy compat key) or None
                 - "desktop": latest client app release tag (Desktop-classified, legacy compat key) or None
                 - "desktop_prerelease": latest client app prerelease tag (Desktop-classified, legacy compat key) or None
@@ -2429,7 +2511,7 @@ class DownloadOrchestrator:
                 # Do not force refresh here to avoid API calls just for status display
                 active_dir, _ = (
                     self.prerelease_manager.get_latest_active_prerelease_from_history(
-                        expected_version,
+                        clean_latest_release,
                         cache_manager=self.cache_manager,
                         github_token=self.config.get("GITHUB_TOKEN"),
                         allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
@@ -2440,6 +2522,8 @@ class DownloadOrchestrator:
                     firmware_prerelease = active_dir[len(FIRMWARE_DIR_PREFIX) :]
                 else:
                     firmware_prerelease = active_dir
+
+        firmware_nightly = self._get_latest_firmware_nightly_build_id()
 
         app_releases = (
             self.client_app_releases
@@ -2467,10 +2551,27 @@ class DownloadOrchestrator:
             "android": latest_app_release,
             "firmware": latest_firmware_release,
             "firmware_prerelease": firmware_prerelease,
+            "firmware_nightly": firmware_nightly,
             "android_prerelease": latest_app_prerelease,
             "desktop": latest_app_release,
             "desktop_prerelease": latest_app_prerelease,
         }
+
+    def _get_latest_firmware_nightly_build_id(self) -> Optional[str]:
+        """Return the tracked firmware-nightly build-id, preferring the run-scoped value."""
+        if self.latest_firmware_nightly_build_id:
+            return self.latest_firmware_nightly_build_id
+        try:
+            tracking_path = self.cache_manager.get_cache_file_path(
+                LATEST_FIRMWARE_NIGHTLY_JSON_FILE
+            )
+            data = self.cache_manager.read_json(tracking_path)
+        except (OSError, ValueError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        build_id = data.get("build_id")
+        return build_id if isinstance(build_id, str) and build_id else None
 
     def update_version_tracking(self) -> None:
         """

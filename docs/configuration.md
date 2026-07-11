@@ -85,8 +85,23 @@ Use `SELECTED_APP_ASSETS` for new configs. It is the authoritative client app se
 | `FILTER_REVOKED_RELEASES`             | `true`       | Excludes revoked firmware releases from normal selection and latest eligibility.             |
 | `ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES` | `true`       | Adds channel suffixes such as `-beta` or `-rc` to firmware directory names where needed.     |
 | `PRESERVE_LEGACY_FIRMWARE_BASE_DIRS`  | `true`       | Keeps legacy firmware base directories during cleanup when channel-suffixed storage is used. |
+| `CHECK_FIRMWARE_NIGHTLIES`            | `false`      | Opt-in for rolling experimental firmware nightly builds. Disabled unless explicitly enabled. |
+| `FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP`   | `1`          | Number of nightly build directories to retain when nightlies are enabled. Minimum 1.         |
+| `NOTIFY_ON_FIRMWARE_NIGHTLIES`        | `false`      | Include firmware nightly builds in NTFY notifications. Does not affect local logs or counts. |
 
 Firmware `latest` points only to a complete release with at least one selected non-manifest firmware payload asset. Manifest-only releases and revoked-release skips do not qualify.
+
+### Firmware Nightly Builds
+
+When `CHECK_FIRMWARE_NIGHTLIES` is enabled, Fetchtastic checks a rolling experimental firmware source at `meshtastic.github.io/firmware-nightly`. This is a flat directory that is replaced on every push to the firmware `main` branch; it is not a GitHub Release, not a tagged release, and not a production release. Existing configurations remain disabled unless you opt in.
+
+Nightly builds are stored separately from stable and prerelease firmware under `firmware/nightlies/<build_id>/`, where `<build_id>` is the immutable build identity parsed from the single release-level manifest (`firmware-<version>.<hash>.json`, for example `firmware-2.8.0.f52e2ea.json` → `2.8.0.f52e2ea`). A best-effort `latest_firmware_nightly.json` pointer is written inside `firmware/nightlies/`.
+
+`FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP` (default `1`, minimum `1` when nightlies are enabled) controls how many nightly build directories are retained when cleanup runs. Because each push replaces the rolling build, older build directories are pruned as new builds arrive.
+
+`NOTIFY_ON_FIRMWARE_NIGHTLIES` (default `false`) controls whether nightly downloads trigger NTFY notifications. When disabled, nightly downloads are still logged locally and counted in download summaries, but no push notification is sent.
+
+Nightly asset selection reuses `SELECTED_FIRMWARE_ASSETS` patterns; there is no separate selection key for nightlies.
 
 ## Firmware Extraction
 
@@ -115,6 +130,10 @@ There are two prerelease paths:
 | `FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS` | unset               | Optional exclude filter for firmware repo-prerelease directory names. |
 
 Repo-prerelease latest is chronology-first. Fetchtastic prefers prerelease history `added_at` / commit chronology for real active history entries, and falls back to deterministic prerelease directory ordering only when chronology is unavailable.
+
+### Prerelease Admission
+
+Firmware repo-prerelease selection admits any active prerelease base whose parsed release is strictly newer than the latest stable release. This includes higher minor versions: for example, when the latest stable firmware is `2.7.26`, an active `2.8.x` prerelease base is admitted. Bases equal to or older than stable, and bases that cannot be parsed, are rejected. The latest stable release is the admission floor; there is no separate higher-minor cutoff.
 
 ## Download Reliability
 
@@ -164,6 +183,11 @@ FIRMWARE_VERSIONS_TO_KEEP: 2
 KEEP_LAST_BETA: false
 FILTER_REVOKED_RELEASES: true
 CREATE_LATEST_SYMLINKS: true
+
+# Firmware nightly builds (opt-in, disabled by default)
+CHECK_FIRMWARE_NIGHTLIES: false
+FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP: 1
+NOTIFY_ON_FIRMWARE_NIGHTLIES: false
 
 AUTO_EXTRACT: true
 EXTRACT_PATTERNS:

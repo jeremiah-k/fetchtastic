@@ -2,6 +2,7 @@ import copy
 import importlib
 import os
 import subprocess
+from collections.abc import Callable
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -498,7 +499,7 @@ def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["", "2", "n", "n", "n", "n"],
+        side_effect=["", "2", "n", "n", "n", "n", "n"],
     )
     mocker.patch(
         "fetchtastic.menu_firmware.run_menu",
@@ -1604,6 +1605,7 @@ def test_run_setup_first_run_linux_simple(
         "",  # Use default base directory
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
+        "n",  # Check for firmware nightlies
         "2",  # Keep 2 versions of client app (now in _setup_downloads)
         "y",  # Check for APK prereleases
         "n",  # Check for app snapshots
@@ -1692,6 +1694,7 @@ def test_run_setup_first_run_windows(
         "y",  # create menu
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
+        "n",  # Check for firmware nightlies
         "2",  # Keep 2 versions of client app (now in _setup_downloads)
         "y",  # Check for APK prereleases
         "n",  # Check for app snapshots
@@ -1787,6 +1790,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "",  # Use default base directory
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
+        "n",  # Check for firmware nightlies
         "1",  # Keep 1 version of client app (now in _setup_downloads)
         "y",  # Check for APK prereleases
         "n",  # Check for app snapshots
@@ -1881,6 +1885,7 @@ def test_run_setup_existing_config(
         "/new/base/dir",  # New base directory
         "f",  # Only firmware
         "y",  # Check for pre-releases
+        "n",  # Check for firmware nightlies
         "n",  # Add channel suffixes
         "5",  # Keep 5 versions of firmware
         "y",  # Auto-extract
@@ -1998,6 +2003,7 @@ def test_run_setup_partial_firmware_section(
         "y",  # Download firmware releases
         "y",  # Re-run firmware menu
         "y",  # Check for firmware prereleases
+        "n",  # Check for firmware nightlies
         "n",  # Add channel suffixes
         "3",  # Keep 3 versions of firmware
         "y",  # Auto-extract
@@ -2979,3 +2985,218 @@ def test_should_recommend_setup_attribute_error(mock_load_config):
     assert "Could not determine setup status" == reason
     assert last_ver is None
     assert curr_ver is None
+
+
+# ---------------------------------------------------------------------------
+# Firmware nightly (rolling) opt-in setup tests
+#
+# These tests cover the CHECK_FIRMWARE_NIGHTLIES and
+# FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP config keys that gate opt-in firmware
+# nightly downloads.  The nightly question runs after the firmware
+# prerelease prompt.
+# Defaults: CHECK_FIRMWARE_NIGHTLIES=False,
+# FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP=1.
+# ---------------------------------------------------------------------------
+
+
+def _make_firmware_only_input_captor(
+    prerelease_answer: str = "n",
+    nightly_answer: str = "n",
+) -> tuple[list[str], Callable[..., str]]:
+    """Return (captured_prompts, fake_input) for a firmware-only _setup_downloads run.
+
+    fake_input inspects the prompt text so it is robust to the nightly
+    question wording.  When the nightly prompt is absent the
+    ``nightly_answer`` is simply never consumed.
+    """
+
+    captured: list[str] = []
+
+    def fake_input(prompt: str = "", **_kwargs: object) -> str:
+        captured.append(prompt)
+        lowered = prompt.lower()
+
+        # Download-type selection prompt
+        if "client app assets, firmware, both, or none" in lowered:
+            return "f"  # firmware only
+
+        # Firmware prerelease prompt
+        if "pre-release firmware" in lowered:
+            return prerelease_answer
+
+        # Firmware nightly prompt
+        if "nightly" in lowered:
+            return nightly_answer
+
+        # Channel suffix prompt
+        if "suffix" in lowered:
+            return "n"
+
+        # Versions-to-keep prompts
+        if "how many" in lowered and "version" in lowered:
+            return "2"
+
+        # Safe default for anything else
+        return "n"
+
+    return captured, fake_input
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_disables_firmware_nightlies_by_default(mocker):
+    """Default firmware setup must explicitly set CHECK_FIRMWARE_NIGHTLIES to False."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config: dict = {}
+    _captured, fake_input = _make_firmware_only_input_captor(
+        prerelease_answer="n", nightly_answer="n"
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["rak4631-"]},
+    )
+
+    result_config, _save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_firmware is True
+    assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
+    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_nightly_prompt_shown_when_firmware_enabled(mocker):
+    """Fresh setup with firmware enabled must ask an experimental rolling-nightly question."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config: dict = {}
+    captured, fake_input = _make_firmware_only_input_captor(
+        prerelease_answer="n", nightly_answer="n"
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["rak4631-"]},
+    )
+
+    _setup_downloads(config, is_partial_run=False, wants=lambda _: True)
+
+    nightly_prompts = [p for p in captured if "nightly" in p.lower()]
+    # A nightly opt-in prompt must appear during firmware setup.
+    assert (
+        len(nightly_prompts) >= 1
+    ), f"Expected a firmware nightly prompt; captured prompts: {captured}"
+    # The prompt must signal experimental/rolling status clearly
+    assert any(
+        "experimental" in p.lower() or "rolling" in p.lower() for p in nightly_prompts
+    ), f"Nightly prompt must clearly label itself experimental; got: {nightly_prompts}"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_nightly_yes_enables_flag_and_defaults_keep_count(mocker):
+    """Answering yes to the nightly prompt enables the flag and defaults keep-count to 1."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config: dict = {}
+    captured, fake_input = _make_firmware_only_input_captor(
+        prerelease_answer="n", nightly_answer="y"
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["rak4631-"]},
+    )
+
+    result_config, _save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_firmware is True
+    # Yes-answer must enable the nightly flag.
+    assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
+    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is True
+
+    # Keep-count must default to 1 silently.
+    assert "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP" in result_config
+    assert result_config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 1
+
+    # Guard: no separate "how many nightly versions to keep" prompt
+    nightly_keep_prompts = [
+        p for p in captured if "nightly" in p.lower() and "how many" in p.lower()
+    ]
+    assert nightly_keep_prompts == [], (
+        "Nightly keep-count should default silently, not via a separate prompt; "
+        f"got: {nightly_keep_prompts}"
+    )
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_nightly_no_preserves_disabled(mocker):
+    """Answering no to the nightly prompt preserves CHECK_FIRMWARE_NIGHTLIES as False."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config: dict = {}
+    _captured, fake_input = _make_firmware_only_input_captor(
+        prerelease_answer="n", nightly_answer="n"
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["rak4631-"]},
+    )
+
+    result_config, _save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_firmware is True
+    # No-answer must leave nightlies disabled.
+    assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
+    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_firmware_disabled_forces_nightlies_off(mocker):
+    """When firmware downloads are disabled, nightlies must be explicitly forced off."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config: dict = {}
+    captured: list[str] = []
+
+    def fake_input(prompt: str = "", **_kwargs: object) -> str:
+        captured.append(prompt)
+        lowered = prompt.lower()
+        # Select client-app-only to disable firmware
+        if "client app assets, firmware, both, or none" in lowered:
+            return "a"
+        if "how many" in lowered and "version" in lowered:
+            return "2"
+        return "n"
+
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch(
+        "fetchtastic.menu_app.run_menu",
+        return_value={"selected_assets": ["meshtastic.apk"]},
+    )
+
+    result_config, _save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_firmware is False
+    # Firmware disabled must force nightlies off.
+    assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
+    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is False
+
+    # Guard: no nightly prompt should appear when firmware is disabled
+    nightly_prompts = [p for p in captured if "nightly" in p.lower()]
+    assert (
+        nightly_prompts == []
+    ), f"Nightly prompt must not appear when firmware is disabled; got: {nightly_prompts}"

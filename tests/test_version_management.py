@@ -21,6 +21,7 @@ from fetchtastic.download.version import (
     _write_latest_release_tag,
     calculate_expected_prerelease_version,
     extract_version,
+    is_prerelease_base_newer_than_stable,
     is_prerelease_directory,
     normalize_commit_identifier,
 )
@@ -249,6 +250,55 @@ class TestExpectedPrereleaseVersion:
         vm = VersionManager()
         result = vm.calculate_expected_prerelease_version("")
         assert result is None
+
+
+class TestPrereleaseBaseAdmission:
+    """Test the single semantic admission rule: base strictly newer than stable."""
+
+    def test_admits_higher_patch(self):
+        """2.7.27 is strictly newer than stable 2.7.26."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7.27", "2.7.26") is True
+
+    def test_admits_higher_minor(self):
+        """2.8.0 is strictly newer than stable 2.7.26."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.8.0", "2.7.26") is True
+
+    def test_admits_higher_major(self):
+        """3.0.0 is strictly newer than stable 2.7.26."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("3.0.0", "2.7.26") is True
+
+    def test_rejects_equal_stable(self):
+        """A base equal to stable is not strictly newer."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7.26", "2.7.26") is False
+
+    def test_rejects_older_base(self):
+        """A base older than stable is rejected."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7.25", "2.7.26") is False
+
+    def test_accepts_v_prefixed_stable(self):
+        """A leading 'v' on the stable value is tolerated."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7.27", "v2.7.26") is True
+
+    def test_rejects_unparseable_base(self):
+        """An unparseable base is conservatively rejected."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("garbage", "2.7.26") is False
+
+    def test_rejects_unparseable_stable(self):
+        """An unparseable stable is conservatively rejected."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7.27", "garbage") is False
+
+    def test_module_helper_matches_method(self):
+        """The module-level helper delegates to the singleton consistently."""
+        assert is_prerelease_base_newer_than_stable("2.7.27", "2.7.26") is True
+        assert is_prerelease_base_newer_than_stable("2.7.26", "2.7.26") is False
 
 
 class TestPrereleaseVersionParsing:

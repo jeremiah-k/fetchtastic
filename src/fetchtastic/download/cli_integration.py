@@ -22,6 +22,7 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
     CLIENT_APP_FILE_TYPES,
+    DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES,
     DEFAULT_NOTIFY_ON_SNAPSHOTS,
     DESKTOP_FILE_TYPES,
     FILE_TYPE_ANDROID,
@@ -33,6 +34,7 @@ from fetchtastic.constants import (
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_NIGHTLY,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
@@ -437,7 +439,38 @@ class DownloadCLIIntegration:
             else []
         )
 
-        # Actual download count includes snapshots for local reporting.
+        # Firmware nightly builds — collected explicitly (kept out of
+        # FIRMWARE_FILE_TYPES) like app snapshots.  Always counted locally;
+        # NTFY inclusion is gated by NOTIFY_ON_FIRMWARE_NIGHTLIES (default
+        # False).
+        downloaded_firmware_nightlies: list[str] = []
+        if self.orchestrator:
+            for result in self.orchestrator.download_results:
+                if (
+                    getattr(result, "file_type", "") == FILE_TYPE_FIRMWARE_NIGHTLY
+                    and getattr(result, "success", False)
+                    and not getattr(result, "was_skipped", False)
+                ):
+                    tag = getattr(result, "release_tag", None)
+                    if tag and tag not in downloaded_firmware_nightlies:
+                        downloaded_firmware_nightlies.append(tag)
+
+        notified_firmware_nightlies = (
+            downloaded_firmware_nightlies
+            if (
+                self.config
+                and coerce_bool(
+                    self.config.get(
+                        "NOTIFY_ON_FIRMWARE_NIGHTLIES",
+                        DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES,
+                    )
+                )
+            )
+            else []
+        )
+
+        # Actual download count includes snapshots and firmware nightlies for
+        # local reporting.
         downloaded_count = (
             len(downloaded_firmwares)
             + len(downloaded_apks)
@@ -446,12 +479,15 @@ class DownloadCLIIntegration:
             + len(downloaded_apk_prereleases)
             + len(downloaded_desktop_prereleases)
             + len(downloaded_app_snapshots)
+            + len(downloaded_firmware_nightlies)
         )
-        # Notifiable count excludes snapshots when NOTIFY_ON_SNAPSHOTS is False.
+        # Notifiable count excludes snapshots/nightlies when their gates are False.
         notifiable_count = (
             downloaded_count
             - len(downloaded_app_snapshots)
             + len(notified_app_snapshots)
+            - len(downloaded_firmware_nightlies)
+            + len(notified_firmware_nightlies)
         )
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
@@ -495,6 +531,12 @@ class DownloadCLIIntegration:
                 ", ".join(downloaded_app_snapshots),
             )
 
+        if downloaded_firmware_nightlies:
+            log.info(
+                "Downloaded firmware nightly builds: %s",
+                ", ".join(downloaded_firmware_nightlies),
+            )
+
         if failed_downloads:
             log.info(f"{len(failed_downloads)} downloads failed:")
             for failure in failed_downloads:
@@ -534,6 +576,7 @@ class DownloadCLIIntegration:
                     downloaded_desktop,
                     downloaded_desktop_prereleases,
                     downloaded_app_snapshots=notified_app_snapshots,
+                    downloaded_firmware_nightlies=notified_firmware_nightlies,
                 )
             elif downloaded_count > 0:
                 # Downloads occurred (e.g. snapshot-only with notifications

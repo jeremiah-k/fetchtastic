@@ -50,6 +50,11 @@ DESKTOP_PRERELEASES_DIR_NAME = "prerelease"
 APP_SNAPSHOTS_DIR_NAME = "snapshots"
 FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
+# Opt-in rolling firmware-nightly source (meshtastic.github.io/firmware-nightly).
+# Separate from the CI workflow named "nightly", from stable firmware releases,
+# and from prerelease firmware directories.
+FIRMWARE_NIGHTLY_SOURCE_DIR = "firmware-nightly"
+FIRMWARE_NIGHTLIES_DIR_NAME = "nightlies"
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
 LATEST_POINTER_NAME = "latest"
@@ -62,6 +67,7 @@ DESKTOP_DIR_NAME = APP_DIR_NAME
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
 LATEST_ANDROID_PRERELEASE_JSON_FILE = "latest_android_prerelease.json"
 LATEST_FIRMWARE_PRERELEASE_JSON_FILE = "latest_firmware_prerelease.json"
+LATEST_FIRMWARE_NIGHTLY_JSON_FILE = "latest_firmware_nightly.json"
 LATEST_FIRMWARE_RELEASE_JSON_FILE = "latest_firmware_release.json"
 LATEST_DESKTOP_RELEASE_JSON_FILE = "latest_desktop_release.json"
 LATEST_DESKTOP_PRERELEASE_JSON_FILE = "latest_desktop_prerelease.json"
@@ -99,6 +105,10 @@ DEFAULT_CHECK_APP_PRERELEASES = True
 DEFAULT_CHECK_APP_SNAPSHOTS = False
 DEFAULT_NOTIFY_ON_SNAPSHOTS = False
 DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP = 1
+# Opt-in firmware-nightly defaults: disabled, non-notifying, keep latest build only.
+DEFAULT_CHECK_FIRMWARE_NIGHTLIES = False
+DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES = False
+DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP = 1
 DEFAULT_DESKTOP_VERSIONS_TO_KEEP = 2
 DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES = True
 DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS = True
@@ -110,6 +120,13 @@ EXECUTABLE_PERMISSIONS = 0o755
 
 # Snapshot debug-build versionCode pattern (shared to avoid divergence)
 SNAPSHOT_VERSION_CODE_PATTERN = r"-debug-(\d+)\.apk$"
+
+# Firmware-nightly release-manifest build-id pattern.
+# Matches only the single release-level manifest (firmware-<version>.<hash>.json)
+# and rejects per-device manifests (firmware-<device>-<version>.<hash>.mt.json),
+# firmware zips, and unrelated files.  The captured build-id (e.g. 2.8.0.f52e2ea)
+# is the immutable identity for the whole nightly build.  Apply with re.IGNORECASE.
+FIRMWARE_NIGHTLY_MANIFEST_PATTERN = r"^firmware-(\d+\.\d+\.\d+\.[a-f0-9]{6,})\.json$"
 
 # Download configuration defaults
 DEFAULT_CONNECT_RETRIES = 5
@@ -257,6 +274,14 @@ FILE_TYPE_FIRMWARE = "firmware"
 FILE_TYPE_FIRMWARE_PRERELEASE = "firmware_prerelease"
 FILE_TYPE_FIRMWARE_PRERELEASE_REPO = "firmware_prerelease_repo"
 FILE_TYPE_FIRMWARE_MANIFEST = "firmware_manifest"
+# Rolling firmware-nightly build (identity is the build-id, not a release tag).
+# Deliberately NOT a member of FIRMWARE_FILE_TYPES: that set drives the stable/
+# prerelease notification-summary path in cli_integration (the is_firmware
+# branch treats every member as a versioned firmware release).  Nightly builds
+# are a separate rolling identity and notify off by default, so they follow the
+# FILE_TYPE_APP_SNAPSHOT precedent: a standalone type handled by a dedicated
+# path rather than the generic firmware-summary bucket.
+FILE_TYPE_FIRMWARE_NIGHTLY = "firmware_nightly"
 FILE_TYPE_DESKTOP = "desktop"
 FILE_TYPE_DESKTOP_PRERELEASE = "desktop_prerelease"
 FILE_TYPE_REPOSITORY = "repository"

@@ -2997,7 +2997,12 @@ class TestFirmwareUncoveredBranches:
     def test_download_repo_prerelease_firmware_fallback_downloads_all_existing_dirs(
         self, downloader, tmp_path
     ):
-        """Fallback repo scanning should download every matching available prerelease dir."""
+        """Fallback repo scanning should download every dir whose base is strictly newer than stable.
+
+        Under the new admission rule, stable v2.7.22 admits 2.7.23.* AND 2.7.24.*
+        (any base strictly newer than the stable floor).  Returned latest is the
+        sorted-newest across all admitted bases.
+        """
         downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
         downloader.download_dir = str(tmp_path)
 
@@ -3023,11 +3028,13 @@ class TestFirmwareUncoveredBranches:
         ):
             result = downloader.download_repo_prerelease_firmware("v2.7.22.96dd647")
 
-        # After deterministic sorting, the newest (by directory string tiebreaker) is returned
-        assert result[2] == "firmware-2.7.23.7be5426"
+        # Newest admitted dir across bases: 2.7.24.bad9999 > 2.7.23.* > 2.7.22.
+        assert result[2] == "firmware-2.7.24.bad9999"
+        # Deterministic sort: by release tuple then directory string.
         assert [call.args[0] for call in download_assets.call_args_list] == [
             "firmware-2.7.23.2a858be",
             "firmware-2.7.23.7be5426",
+            "firmware-2.7.24.bad9999",
         ]
 
     # Lines 1797-1835: Release notes logging
@@ -4955,3 +4962,120 @@ class TestPrereleaseAvailabilityVerification:
         )
         expected_identifier = expected_latest_dir.removeprefix(FIRMWARE_DIR_PREFIX)
         assert any(expected_identifier in call for call in latest_calls)
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+class TestPrereleaseCrossBaseAdmission:
+    """RED tests: firmware downloader admits prereleases across higher minor/major bases.
+
+    Stable 2.7.26 should admit 2.8.0.<sha> prereleases. The current gate uses
+    exact equality (expected_version == next_patch "2.7.27") in
+    scan_prerelease_directories, filtering out firmware-2.8.0.abcdef1.
+    """
+
+    STABLE_TAG = "v2.7.26"
+    EXPECTED_NEXT_PATCH = "2.7.27"
+    HIGHER_MINOR_DIR = "firmware-2.8.0.abcdef1"
+
+    def test_download_repo_prerelease_firmware_admits_higher_minor_base(
+        self, downloader, tmp_path
+    ):
+        """Stable 2.7.26 downloads firmware-2.8.0.abcdef1 when no 2.7.27 prerelease exists."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(None, []),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[self.HIGHER_MINOR_DIR],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+        ):
+            _results, _failed, latest, _summary = (
+                downloader.download_repo_prerelease_firmware(self.STABLE_TAG)
+            )
+
+        download_assets.assert_called_once()
+        assert download_assets.call_args.args[0] == self.HIGHER_MINOR_DIR
+        assert latest == self.HIGHER_MINOR_DIR
+
+    def test_download_repo_prerelease_firmware_ranks_shas_across_bases_by_chronology(
+        self, downloader, tmp_path
+    ):
+        """When 2.7.27 and 2.8.0 prereleases both exist, added_at chronology ranks them."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+
+        older_dir = "firmware-2.7.27.aaaaaa"
+        newer_dir = "firmware-2.8.0.bbbbbb"
+        history_entries = [
+            {
+                "directory": older_dir,
+                "identifier": "2.7.27.aaaaaa",
+                "status": "active",
+                "added_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "directory": newer_dir,
+                "identifier": "2.8.0.bbbbbb",
+                "status": "active",
+                "added_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(older_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[older_dir, newer_dir],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ),
+        ):
+            _results, _failed, latest, _summary = (
+                downloader.download_repo_prerelease_firmware(self.STABLE_TAG)
+            )
+
+        assert latest == newer_dir
+
+    def test_download_repo_prerelease_firmware_disabled_leaves_install_untouched(
+        self, downloader, tmp_path
+    ):
+        """Prerelease-disabled installs never scan or download, even with 2.8.0 available."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = False
+        downloader.config["CHECK_PRERELEASES"] = False
+        downloader.download_dir = str(tmp_path)
+
+        with (
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                return_value=[self.HIGHER_MINOR_DIR],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+            ) as mock_download,
+        ):
+            result = downloader.download_repo_prerelease_firmware(self.STABLE_TAG)
+
+        assert result == ([], [], None, None)
+        mock_get_dirs.assert_not_called()
+        mock_download.assert_not_called()

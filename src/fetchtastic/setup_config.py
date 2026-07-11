@@ -26,6 +26,7 @@ from fetchtastic.constants import (
     DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
     DEFAULT_CHECK_APP_SNAPSHOTS,
+    DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
     DEFAULT_CREATE_LATEST_SYMLINKS,
 )
 from fetchtastic.constants import (
@@ -33,6 +34,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.constants import (
     DEFAULT_EXTRACTION_PATTERNS,
+    DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
     DEFAULT_KEEP_LAST_BETA,
     MESHTASTIC_DIR_NAME,
     NTFY_REQUEST_TIMEOUT,
@@ -834,7 +836,7 @@ def _setup_downloads(
     """
     Configure which asset types (client app assets and firmware) should be downloaded and update the provided configuration accordingly.
 
-    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, ``CHECK_APP_SNAPSHOTS``, ``APP_VERSIONS_TO_KEEP``, ``APP_SNAPSHOT_VERSIONS_TO_KEEP``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
+    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, ``CHECK_APP_SNAPSHOTS``, ``CHECK_FIRMWARE_NIGHTLIES``, ``APP_VERSIONS_TO_KEEP``, ``APP_SNAPSHOT_VERSIONS_TO_KEEP``, ``FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
 
     Parameters:
         config (dict): Mutable configuration dictionary to update.
@@ -934,6 +936,7 @@ def _setup_downloads(
     if not save_firmware and (not is_partial_run or wants("firmware")):
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
+        config["CHECK_FIRMWARE_NIGHTLIES"] = False
     if save_client_apps_was_enabled and not save_client_apps:
         _clear_client_app_flags(config)
         config["SAVE_DESKTOP_APP"] = False
@@ -976,6 +979,32 @@ def _setup_downloads(
             default=check_prereleases_default,
         )
         config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
+
+    # --- Firmware Nightly (Rolling Experimental) Configuration ---
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        check_nightlies_current = _coerce_bool(
+            config.get("CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES)
+        )
+        check_nightlies_default = "y" if check_nightlies_current else "n"
+        check_nightlies_input = _safe_input(
+            f"\nWould you like to check for and download rolling experimental firmware nightly builds? "
+            f"These are not production releases, are replaced on every push to firmware main, "
+            f"and are stored separately under firmware/nightlies/. [y/n] (default: {check_nightlies_default}): ",
+            default=check_nightlies_default,
+        )
+        config["CHECK_FIRMWARE_NIGHTLIES"] = _coerce_bool(
+            check_nightlies_input,
+            default=check_nightlies_current,
+        )
+        if config["CHECK_FIRMWARE_NIGHTLIES"]:
+            nightly_keep = config.get(
+                "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP",
+                DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
+            )
+            parsed_keep = _parse_non_negative_int(nightly_keep)
+            if parsed_keep is None or parsed_keep < 1:
+                parsed_keep = DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP
+            config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = parsed_keep
 
     app_section_requested = not is_partial_run or wants("app")
 

@@ -254,7 +254,7 @@ class PrereleaseHistoryManager:
         *,
         directory: str,
         identifier: str,
-        expected_version: str,
+        base_version: str,
         short_hash: str,
         timestamp: Optional[str],
         sha: Optional[str],
@@ -268,7 +268,7 @@ class PrereleaseHistoryManager:
             entries (Dict[str, Dict[str, Any]]): Mapping of directory names to prerelease entry dictionaries to update.
             directory (str): Directory key under which to record the prerelease.
             identifier (str): Identifier for the prerelease (e.g., directory suffix or version).
-            expected_version (str): Base version expected for this prerelease; used when creating a default entry.
+            base_version (str): Actual base version of this prerelease (parsed from the commit); recorded on the default entry.
             short_hash (str): Short commit hash or identifier to store on default entry creation.
             timestamp (Optional[str]): Timestamp string to set as `added_at` if the entry does not already have it.
             sha (Optional[str]): Full commit SHA to set as `added_sha` if the entry does not already have it.
@@ -278,7 +278,7 @@ class PrereleaseHistoryManager:
             self._create_default_prerelease_entry(
                 directory=directory,
                 identifier=identifier,
-                base_version=expected_version,
+                base_version=base_version,
                 commit_hash=short_hash,
             ),
         )
@@ -297,7 +297,7 @@ class PrereleaseHistoryManager:
         *,
         directory: str,
         identifier: str,
-        expected_version: str,
+        base_version: str,
         short_hash: str,
         timestamp: Optional[str],
         sha: Optional[str],
@@ -309,7 +309,7 @@ class PrereleaseHistoryManager:
             entries (Dict[str, Dict[str, Any]]): Mapping of directory names to prerelease history entries to update.
             directory (str): Directory key under which the prerelease entry is stored/created.
             identifier (str): Prerelease identifier (e.g., directory suffix or ID) to store on a new entry.
-            expected_version (str): Base version that the prerelease is associated with; used when creating a default entry.
+            base_version (str): Actual base version of this prerelease (parsed from the commit); recorded on the default entry.
             short_hash (str): Short commit hash to store in a newly created default entry.
             timestamp (Optional[str]): ISO-8601 timestamp when the deletion occurred; set to `removed_at` if not already present.
             sha (Optional[str]): Full commit SHA associated with the deletion; set to `removed_sha` if not already present.
@@ -319,7 +319,7 @@ class PrereleaseHistoryManager:
             self._create_default_prerelease_entry(
                 directory=directory,
                 identifier=identifier,
-                base_version=expected_version,
+                base_version=base_version,
                 commit_hash=short_hash,
             ),
         )
@@ -331,15 +331,15 @@ class PrereleaseHistoryManager:
         entry["status"] = "deleted"
 
     def build_simplified_prerelease_history(
-        self, expected_version: str, commits: List[Dict[str, Any]]
+        self, stable_version: str, commits: List[Dict[str, Any]]
     ) -> Tuple[List[Dict[str, Any]], set[str]]:
         """
-        Construct a simplified prerelease history for a given base version by parsing commit messages.
+        Construct a simplified prerelease history for prereleases strictly newer than a stable release by parsing commit messages.
 
-        Scans commits from oldest to newest and records prerelease addition and deletion events that match expected_version; entries are merged per directory and sorted by added timestamp then directory.
+        Scans commits from oldest to newest and records prerelease addition and deletion events whose base version is strictly newer than stable_version; entries are merged per directory and sorted by added timestamp then directory.
 
         Parameters:
-            expected_version (str): Base firmware version to filter prerelease events (e.g., "1.2.3").
+            stable_version (str): Latest stable release used as the admission floor (e.g., "2.7.26"); prerelease events with a base strictly newer than this are recorded.
             commits (List[Dict[str, Any]]): List of commit objects to scan for prerelease add/remove messages.
 
         Returns:
@@ -368,7 +368,9 @@ class PrereleaseHistoryManager:
                 m_add = self._PRERELEASE_ADD_RX.match(line)
                 if m_add:
                     base_version, short_hash = m_add.group(1), m_add.group(2)
-                    if base_version != expected_version:
+                    if not self.version_manager.is_prerelease_base_newer_than_stable(
+                        base_version, stable_version
+                    ):
                         continue
                     identifier = f"{base_version}.{short_hash}".lower()
                     directory = f"{FIRMWARE_DIR_PREFIX}{identifier}"
@@ -376,7 +378,7 @@ class PrereleaseHistoryManager:
                         entries_by_dir,
                         directory=directory,
                         identifier=identifier,
-                        expected_version=expected_version,
+                        base_version=base_version,
                         short_hash=short_hash,
                         timestamp=timestamp,
                         sha=str(sha) if sha else None,
@@ -386,7 +388,9 @@ class PrereleaseHistoryManager:
                 m_del = self._PRERELEASE_DELETE_RX.match(line)
                 if m_del:
                     base_version, short_hash = m_del.group(1), m_del.group(2)
-                    if base_version != expected_version:
+                    if not self.version_manager.is_prerelease_base_newer_than_stable(
+                        base_version, stable_version
+                    ):
                         continue
                     identifier = f"{base_version}.{short_hash}".lower()
                     directory = f"{FIRMWARE_DIR_PREFIX}{identifier}"
@@ -394,7 +398,7 @@ class PrereleaseHistoryManager:
                         entries_by_dir,
                         directory=directory,
                         identifier=identifier,
-                        expected_version=expected_version,
+                        base_version=base_version,
                         short_hash=short_hash,
                         timestamp=timestamp,
                         sha=str(sha) if sha else None,
@@ -411,7 +415,7 @@ class PrereleaseHistoryManager:
 
     def get_prerelease_commit_history(
         self,
-        expected_version: str,
+        stable_version: str,
         *,
         cache_manager: Any,
         github_token: Optional[str] = None,
@@ -420,10 +424,10 @@ class PrereleaseHistoryManager:
         max_commits: int = DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve simplified prerelease history for a given base version, using a cached value when it is fresh.
+        Retrieve simplified prerelease history for bases strictly newer than a stable release, using a cached value when it is fresh.
 
         Parameters:
-            expected_version (str): Base firmware version to build history for.
+            stable_version (str): Latest stable release used as the admission floor; prereleases with base strictly newer than this are included.
             cache_manager (Any): Cache manager providing `cache_dir`, `read_json(path)` and `atomic_write_json(path, obj)` used to load and persist history.
             github_token (Optional[str]): GitHub token to use for API requests, if any.
             allow_env_token (bool): Whether to allow a token sourced from the environment when `github_token` is not provided.
@@ -431,7 +435,7 @@ class PrereleaseHistoryManager:
             max_commits (int): Maximum number of recent repository commits to fetch when rebuilding history.
 
         Returns:
-            List[Dict[str, Any]]: Simplified prerelease history entries for the specified base version.
+            List[Dict[str, Any]]: Simplified prerelease history entries admitted for the given stable release.
         """
         history_file = os.path.join(
             cache_manager.cache_dir, PRERELEASE_COMMIT_HISTORY_FILE
@@ -442,7 +446,7 @@ class PrereleaseHistoryManager:
         if not isinstance(cache, dict):
             cache = {}
 
-        cached_entry = cache.get(expected_version) if not force_refresh else None
+        cached_entry = cache.get(stable_version) if not force_refresh else None
         cache_was_stale = False
         if isinstance(cached_entry, dict) and not force_refresh:
             entries = cached_entry.get("entries")
@@ -456,14 +460,14 @@ class PrereleaseHistoryManager:
                     if age_s < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                         logger.debug(
                             "Using cached prerelease history for %s (cached %.0fs ago)",
-                            expected_version,
+                            stable_version,
                             age_s,
                         )
                         return entries
                     cache_was_stale = True
                     logger.debug(
                         "Prerelease history cache stale for %s (age %.0fs >= %ss); extending cache",
-                        expected_version,
+                        stable_version,
                         age_s,
                         PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
                     )
@@ -476,21 +480,21 @@ class PrereleaseHistoryManager:
             force_refresh=force_refresh,
         )
         entries, shas = self.build_simplified_prerelease_history(
-            expected_version, commits
+            stable_version, commits
         )
 
-        old_version_data = cache.get(expected_version)
-        old_entries = cache.get(expected_version, {}).get("entries")
+        old_version_data = cache.get(stable_version)
+        old_entries = cache.get(stable_version, {}).get("entries")
 
         # Only write if data has changed
         if old_entries == entries:
             if cache_was_stale and isinstance(old_version_data, dict):
                 logger.debug(
                     "Prerelease history data unchanged for %s; updating last_checked",
-                    expected_version,
+                    stable_version,
                 )
                 now_after_build = datetime.now(timezone.utc)
-                cache[expected_version] = {
+                cache[stable_version] = {
                     "entries": entries,
                     "cached_at": old_version_data.get("cached_at"),
                     "last_checked": now_after_build.isoformat(),
@@ -499,18 +503,18 @@ class PrereleaseHistoryManager:
                 if cache_manager.atomic_write_json(history_file, cache):
                     logger.debug(
                         "Extended prerelease history cache freshness for %s",
-                        expected_version,
+                        stable_version,
                     )
                 return entries
             logger.debug(
                 "Prerelease history cache unchanged for %s (total %d entries)",
-                expected_version,
+                stable_version,
                 len(cache),
             )
             return entries
 
         now_after_build = datetime.now(timezone.utc)
-        cache[expected_version] = {
+        cache[stable_version] = {
             "entries": entries,
             "cached_at": now_after_build.isoformat(),
             "last_checked": now_after_build.isoformat(),
@@ -520,13 +524,13 @@ class PrereleaseHistoryManager:
             logger.debug(
                 "Saved %d prerelease history entries to cache for %s",
                 len(entries),
-                expected_version,
+                stable_version,
             )
         return entries
 
     def get_latest_active_prerelease_from_history(
         self,
-        expected_version: str,
+        stable_version: str,
         *,
         cache_manager: Any,
         github_token: Optional[str] = None,
@@ -534,16 +538,16 @@ class PrereleaseHistoryManager:
         force_refresh: bool = False,
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         """
-        Return the most recent active prerelease directory for a base version and the full prerelease history.
+        Return the most recent active prerelease directory strictly newer than a stable release and the full prerelease history.
 
         Parameters:
-            expected_version (str): Base release version to match when selecting prerelease entries.
+            stable_version (str): Latest stable release used as the admission floor when selecting prerelease entries.
 
         Returns:
-            tuple: `latest_dir` is the directory string of the newest active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
+            tuple: `latest_dir` is the directory string of the newest active prerelease admitted for `stable_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
         """
         entries = self.get_prerelease_commit_history(
-            expected_version,
+            stable_version,
             cache_manager=cache_manager,
             github_token=github_token,
             allow_env_token=allow_env_token,
@@ -989,17 +993,17 @@ class PrereleaseHistoryManager:
         return found_versions
 
     def scan_prerelease_directories(
-        self, directories: List[str], expected_version: str
+        self, directories: List[str], stable_version: str
     ) -> List[str]:
         """
-        Collect prerelease directory identifiers from a list of directory names that follow the meshtastic.github.io naming convention.
+        Collect prerelease directory identifiers whose base version is strictly newer than a stable release.
 
         Parameters:
             directories (List[str]): Iterable of directory names to inspect (e.g., "firmware-1.2.3.abcd12").
-            expected_version (str): Base version to match (e.g., "1.2.3").
+            stable_version (str): Latest stable release used as the admission floor (e.g., "2.7.26").
 
         Returns:
-            List[str]: List of directory suffixes matching the expected base version (the part after the "firmware-" prefix).
+            List[str]: List of admitted directory suffixes (the part after the "firmware-" prefix) whose parsed base is strictly newer than stable_version.
         """
         matching = []
         for raw_dir_name in directories:
@@ -1012,13 +1016,15 @@ class PrereleaseHistoryManager:
             if len(parts) < 4:
                 continue
             base_version = ".".join(parts[:3])
-            if base_version == expected_version:
+            if self.version_manager.is_prerelease_base_newer_than_stable(
+                base_version, stable_version
+            ):
                 matching.append(dir_name)
         return matching
 
     def find_latest_remote_prerelease_dir(
         self,
-        expected_version: str,
+        stable_version: str,
         *,
         cache_manager: Any,
         github_token: Optional[str] = None,
@@ -1032,7 +1038,7 @@ class PrereleaseHistoryManager:
         Prefers directories whose hash suffixes match identifiers seen in recent prerelease commit history, and falls back to repository directory listings when scoring candidates.
 
         Parameters:
-            expected_version (str): Base version to match against prerelease directory names.
+            stable_version (str): Latest stable release used as the admission floor; only prerelease directories with base strictly newer than this are considered.
             cache_manager: Cache manager used to retrieve repository directories and history.
 
         Returns:
@@ -1041,7 +1047,7 @@ class PrereleaseHistoryManager:
         preferred_hashes: set[str] = set()
         try:
             history_entries = self.get_prerelease_commit_history(
-                expected_version,
+                stable_version,
                 cache_manager=cache_manager,
                 github_token=github_token,
                 allow_env_token=allow_env_token,
@@ -1051,7 +1057,7 @@ class PrereleaseHistoryManager:
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.debug(
                 "Failed to build prerelease commit history for %s: %s",
-                expected_version,
+                stable_version,
                 exc,
             )
             history_entries = []
@@ -1077,13 +1083,13 @@ class PrereleaseHistoryManager:
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.debug(
                 "Failed to fetch prerelease directories for %s: %s",
-                expected_version,
+                stable_version,
                 exc,
             )
             return None
 
         candidate_suffixes = self.scan_prerelease_directories(
-            [d for d in repo_dirs if isinstance(d, str)], expected_version
+            [d for d in repo_dirs if isinstance(d, str)], stable_version
         )
         if not candidate_suffixes:
             return None

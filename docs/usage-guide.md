@@ -168,8 +168,10 @@ Fetchtastic organizes downloads in a structured way:
 │   ├── v2.3.1/
 │   ├── repo-dls/
 │   │   └── firmware/
-│   └── prerelease/ (if enabled)
-│       └── v2.3.3.abcdef/
+│   ├── prerelease/ (if enabled)
+│   │   └── v2.3.3.abcdef/
+│   └── nightlies/ (if enabled)
+│       └── 2.8.0.f52e2ea/    # rolling experimental nightly build
 ```
 
 APKs and desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.
@@ -294,7 +296,11 @@ Tips:
 
 ### Pre-release Downloads
 
-Enable pre-release downloads to get the latest development firmware from meshtastic.github.io.
+Enable pre-release downloads to get the latest development firmware from meshtastic.github.io. Firmware repo-prerelease selection admits any active prerelease base strictly newer than the latest stable release, including higher minor versions (for example, a `2.8.x` base when stable is `2.7.x`); bases equal to or older than stable are rejected.
+
+### Firmware Nightly Builds
+
+Separate from prereleases, Fetchtastic can download rolling experimental firmware nightly builds from `meshtastic.github.io/firmware-nightly`. These are not production releases: the rolling directory is replaced on every push to firmware `main`. The feature is opt-in (`CHECK_FIRMWARE_NIGHTLIES`, default off) and stores builds under `firmware/nightlies/<build_id>/`. `FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP` (default `1`) controls how many builds are kept, and `NOTIFY_ON_FIRMWARE_NIGHTLIES` (default off) controls NTFY notifications. See the [Configuration Reference](configuration.md) for details.
 
 ### Multiple Asset Types
 
