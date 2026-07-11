@@ -370,7 +370,7 @@ def test_fetch_snapshot_release_404(downloader):
 # ------------------------------------------------------------------
 
 
-def test_full_snapshot_decision_flow(downloader, cache_manager):
+def test_full_snapshot_decision_flow(downloader):
     """handle_snapshots → get_version_code → should_download → update_tracking."""
     release = _make_snapshot_release(vc=500)
     assert downloader.handle_snapshots(release) is release
@@ -568,7 +568,7 @@ def test_handle_snapshots_accepts_exact_tag(downloader):
 # ------------------------------------------------------------------
 
 
-def test_is_snapshot_complete_when_all_present(downloader, tmp_path):
+def test_is_snapshot_complete_when_all_present(downloader):
     release = _make_snapshot_release(vc=100)
     # Use a substring pattern that matches the fdroid universal variant
     downloader.config["SELECTED_APP_ASSETS"] = ["androidApp-fdroid-universal-debug-"]
@@ -582,7 +582,7 @@ def test_is_snapshot_complete_when_all_present(downloader, tmp_path):
     assert downloader.is_snapshot_complete(release, 100) is True
 
 
-def test_is_snapshot_complete_false_when_missing(downloader, tmp_path):
+def test_is_snapshot_complete_false_when_missing(downloader):
     release = _make_snapshot_release(vc=100)
     assert downloader.is_snapshot_complete(release, 100) is False
 
@@ -592,14 +592,14 @@ def test_should_process_snapshot_newer(downloader):
     assert downloader.should_process_snapshot(release, 999) is True
 
 
-def test_should_process_snapshot_same_version_incomplete(downloader, cache_manager):
+def test_should_process_snapshot_same_version_incomplete(downloader):
     """Same versionCode tracked, files missing → should process for backfill."""
     downloader.update_snapshot_tracking(100)
     release = _make_snapshot_release(vc=100)
     assert downloader.should_process_snapshot(release, 100) is True
 
 
-def test_should_process_snapshot_same_version_complete(downloader, cache_manager):
+def test_should_process_snapshot_same_version_complete(downloader):
     """Same versionCode tracked, all selected files present with correct size → should NOT process."""
     downloader.update_snapshot_tracking(100)
     release = _make_snapshot_release(vc=100)
@@ -613,11 +613,6 @@ def test_should_process_snapshot_same_version_complete(downloader, cache_manager
 def test_should_process_snapshot_disabled(downloader_disabled):
     release = _make_snapshot_release(vc=100)
     assert downloader_disabled.should_process_snapshot(release, 100) is False
-
-
-# ------------------------------------------------------------------
-# 5. Transactional Tracking
-# ------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------
@@ -651,6 +646,7 @@ def test_cleanup_preserves_nonnumeric_dirs(downloader, tmp_path):
 # ------------------------------------------------------------------
 
 
+@pytest.mark.configuration
 def test_config_snapshots_forced_false_when_apps_disabled():
     """CHECK_APP_SNAPSHOTS must be False when SAVE_CLIENT_APPS is False."""
     config = {
@@ -662,6 +658,7 @@ def test_config_snapshots_forced_false_when_apps_disabled():
     assert result["CHECK_APP_SNAPSHOTS"] is False
 
 
+@pytest.mark.configuration
 def test_config_snapshots_forced_false_empty_assets():
     """CHECK_APP_SNAPSHOTS must be False when SELECTED_APP_ASSETS is empty."""
     config = {
@@ -673,6 +670,7 @@ def test_config_snapshots_forced_false_empty_assets():
     assert result["CHECK_APP_SNAPSHOTS"] is False
 
 
+@pytest.mark.configuration
 def test_config_snapshots_forced_false_desktop_only():
     """CHECK_APP_SNAPSHOTS must be False when only desktop assets are selected."""
     config = {
@@ -684,6 +682,7 @@ def test_config_snapshots_forced_false_desktop_only():
     assert result["CHECK_APP_SNAPSHOTS"] is False
 
 
+@pytest.mark.configuration
 def test_config_snapshots_preserved_when_valid():
     """CHECK_APP_SNAPSHOTS True is preserved when apps enabled with Android assets."""
     config = {
@@ -695,6 +694,7 @@ def test_config_snapshots_preserved_when_valid():
     assert result["CHECK_APP_SNAPSHOTS"] is True
 
 
+@pytest.mark.configuration
 def test_config_snapshots_default_false():
     """Missing CHECK_APP_SNAPSHOTS normalizes to False."""
     config = {"SAVE_CLIENT_APPS": True, "SELECTED_APP_ASSETS": ["*.apk"]}
@@ -702,6 +702,7 @@ def test_config_snapshots_default_false():
     assert result["CHECK_APP_SNAPSHOTS"] is False
 
 
+@pytest.mark.configuration
 def test_config_snapshot_retention_normalized():
     """APP_SNAPSHOT_VERSIONS_TO_KEEP is normalized when snapshots are enabled."""
     config = {
@@ -836,7 +837,7 @@ def test_explicit_snapshot_pattern_still_works(downloader):
 
 
 def test_changing_selection_triggers_backfill(
-    downloader_stable_patterns, cache_manager
+    downloader_stable_patterns,
 ):
     """Changing SELECTED_APP_ASSETS at the same versionCode triggers processing."""
     release = _make_snapshot_release(vc=100)
@@ -856,6 +857,7 @@ def test_changing_selection_triggers_backfill(
 # ------------------------------------------------------------------
 
 
+@pytest.mark.configuration
 def test_config_retention_floor_zero_when_enabled():
     """APP_SNAPSHOT_VERSIONS_TO_KEEP=0 must be clamped to 1 when snapshots enabled."""
     config = {
@@ -868,6 +870,7 @@ def test_config_retention_floor_zero_when_enabled():
     assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] >= 1
 
 
+@pytest.mark.configuration
 def test_config_retention_floor_negative_when_enabled():
     """Negative retention must be clamped to 1 when snapshots enabled."""
     config = {
@@ -880,6 +883,7 @@ def test_config_retention_floor_negative_when_enabled():
     assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] >= 1
 
 
+@pytest.mark.configuration
 def test_config_retention_positive_preserved():
     """Valid positive retention is preserved."""
     config = {
@@ -936,14 +940,12 @@ def _make_orchestrator_for_snapshots(tmp_path, cache_manager, **config_overrides
     return orch
 
 
+@pytest.mark.integration
 def test_orch_snapshot_all_success_tracks_no_cleanup(tmp_path, cache_manager):
     """Nonempty selected set, all succeed → tracking once, cleanup NOT called
     (cleanup only runs when a real release/prerelease ships)."""
     orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
     release = _make_snapshot_release(vc=100)
-
-    from fetchtastic.download.interfaces import DownloadResult
-
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
     orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
@@ -956,7 +958,7 @@ def test_orch_snapshot_all_success_tracks_no_cleanup(tmp_path, cache_manager):
         return_value=DownloadResult(
             success=True,
             release_tag="snapshot",
-            file_path="/tmp/x.apk",
+            file_path=str(tmp_path / "x.apk"),
             download_url="http://x",
             file_size=1,
             file_type=FILE_TYPE_APP_SNAPSHOT,
@@ -972,13 +974,11 @@ def test_orch_snapshot_all_success_tracks_no_cleanup(tmp_path, cache_manager):
     orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
 
 
+@pytest.mark.integration
 def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manager):
     """Mixed success/failure → no tracking, no cleanup."""
     orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
     release = _make_snapshot_release(vc=100)
-
-    from fetchtastic.download.interfaces import DownloadResult
-
     asset1, asset2 = release.assets[0], release.assets[1]
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
@@ -992,7 +992,7 @@ def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manag
             DownloadResult(
                 success=True,
                 release_tag="snapshot",
-                file_path="/tmp/a.apk",
+                file_path=str(tmp_path / "a.apk"),
                 download_url="http://x",
                 file_size=1,
                 file_type=FILE_TYPE_APP_SNAPSHOT,
@@ -1000,7 +1000,7 @@ def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manag
             DownloadResult(
                 success=False,
                 release_tag="snapshot",
-                file_path="/tmp/b.apk",
+                file_path=str(tmp_path / "b.apk"),
                 download_url="http://y",
                 file_size=1,
                 file_type=FILE_TYPE_APP_SNAPSHOT,
@@ -1017,13 +1017,11 @@ def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manag
     orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
 
 
+@pytest.mark.integration
 def test_orch_snapshot_all_failure_no_track_no_cleanup(tmp_path, cache_manager):
     """All failure → no tracking, no cleanup."""
     orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
     release = _make_snapshot_release(vc=100)
-
-    from fetchtastic.download.interfaces import DownloadResult
-
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
     orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
@@ -1035,7 +1033,7 @@ def test_orch_snapshot_all_failure_no_track_no_cleanup(tmp_path, cache_manager):
         return_value=DownloadResult(
             success=False,
             release_tag="snapshot",
-            file_path="/tmp/x.apk",
+            file_path=str(tmp_path / "x.apk"),
             download_url="http://x",
             file_size=1,
             file_type=FILE_TYPE_APP_SNAPSHOT,
@@ -1051,6 +1049,7 @@ def test_orch_snapshot_all_failure_no_track_no_cleanup(tmp_path, cache_manager):
     orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
 
 
+@pytest.mark.integration
 def test_orch_snapshot_empty_selected_no_track_no_cleanup(tmp_path, cache_manager):
     """Empty selected set → no downloads, no tracking, no cleanup."""
     orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
@@ -1071,13 +1070,11 @@ def test_orch_snapshot_empty_selected_no_track_no_cleanup(tmp_path, cache_manage
     orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
 
 
+@pytest.mark.integration
 def test_orch_snapshot_tracking_write_failure_no_cleanup(tmp_path, cache_manager):
     """Tracking write failure → no cleanup."""
     orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
     release = _make_snapshot_release(vc=100)
-
-    from fetchtastic.download.interfaces import DownloadResult
-
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
     orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
@@ -1089,7 +1086,7 @@ def test_orch_snapshot_tracking_write_failure_no_cleanup(tmp_path, cache_manager
         return_value=DownloadResult(
             success=True,
             release_tag="snapshot",
-            file_path="/tmp/x.apk",
+            file_path=str(tmp_path / "x.apk"),
             download_url="http://x",
             file_size=1,
             file_type=FILE_TYPE_APP_SNAPSHOT,
@@ -1105,6 +1102,7 @@ def test_orch_snapshot_tracking_write_failure_no_cleanup(tmp_path, cache_manager
     orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
 
 
+@pytest.mark.integration
 def test_orch_snapshot_disabled_skips_entirely(tmp_path, cache_manager):
     """CHECK_APP_SNAPSHOTS=False → fetch never called."""
     orch = _make_orchestrator_for_snapshots(
@@ -1115,13 +1113,11 @@ def test_orch_snapshot_disabled_skips_entirely(tmp_path, cache_manager):
     orch.client_app_downloader.fetch_snapshot_release.assert_not_called()
 
 
+@pytest.mark.integration
 def test_orch_snapshot_success_counts_in_statistics(tmp_path, cache_manager):
     """Snapshot success counts in client_app_downloads and android_downloads."""
     orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
     release = _make_snapshot_release(vc=100)
-
-    from fetchtastic.download.interfaces import DownloadResult
-
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
     orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)

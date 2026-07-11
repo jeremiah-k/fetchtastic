@@ -301,6 +301,43 @@ def test_populated_snapshot_notification_displays_version_code(integration):
     assert mock_notify.call_args.kwargs["downloaded_app_snapshots"] == ["29321447"]
 
 
+def test_snapshot_only_notifications_disabled_sends_nothing(integration):
+    """Snapshot-only download with NOTIFY_ON_SNAPSHOTS unset → no notification at all."""
+    vc_dir = "/data/app/snapshots/29321447"
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-fdroid-universal-debug-29321447.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+    ]
+
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    mock_completion.assert_not_called()
+    mock_up_to_date.assert_not_called()
+
+
 # ------------------------------------------------------------------
 # Failed snapshot isolation (P1 proof)
 # ------------------------------------------------------------------

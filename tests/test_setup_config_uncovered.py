@@ -531,7 +531,7 @@ def test_setup_android_invalid_number_current_value(mocker, capsys):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_android_non_first_run_prompt(mocker):
+def test_setup_android_non_first_run_no_prompt(mocker):
     """Test _setup_android no longer prompts — normalization only."""
     from fetchtastic.setup_config import _setup_android
 

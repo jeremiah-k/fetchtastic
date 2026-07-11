@@ -302,7 +302,7 @@ def test_setup_downloads_both_selected(mocker, capsys):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_apk_snapshot_enabled(mocker, capsys):
+def test_setup_downloads_apk_snapshot_enabled(mocker):
     """Test _setup_downloads with APK selected and snapshot debug builds accepted."""
     config = {}
 
@@ -326,19 +326,20 @@ def test_setup_downloads_apk_snapshot_enabled(mocker, capsys):
     assert save_apks is True
     assert save_firmware is False
     assert result_config["CHECK_APP_SNAPSHOTS"] is True
-    assert result_config.get("APP_SNAPSHOT_VERSIONS_TO_KEEP", 1) >= 1
+    assert "APP_SNAPSHOT_VERSIONS_TO_KEEP" in result_config
+    assert result_config["APP_SNAPSHOT_VERSIONS_TO_KEEP"] >= 1
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_desktop_no_snapshot_prompt(mocker, capsys):
+def test_setup_downloads_desktop_no_snapshot_prompt(mocker):
     """Desktop-only client app selection must not trigger a snapshot prompt."""
     config = {}
 
     captured_prompts: list[str] = []
     answers = iter(["d", "2", "n"])
 
-    def _fake_input(prompt=""):
+    def _fake_input(prompt: str = "") -> str:
         captured_prompts.append(prompt)
         return next(answers)
 

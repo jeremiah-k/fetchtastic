@@ -27,14 +27,15 @@ Boolean values accept normal YAML booleans and common strings such as `true`, `f
 
 Client app assets include Android APKs and desktop installers from the Meshtastic Android release feed. They are stored together under `app/<version>/`.
 
-| Key                             | Default      | Description                                                                                        |
-| ------------------------------- | ------------ | -------------------------------------------------------------------------------------------------- |
-| `SAVE_CLIENT_APPS`              | setup choice | Enables unified client app downloads.                                                              |
-| `SELECTED_APP_ASSETS`           | setup choice | Preferred selection list for APKs and desktop installers. Supports exact names and patterns.       |
-| `APP_VERSIONS_TO_KEEP`          | `2`          | Number of stable client app releases to retain.                                                    |
-| `CHECK_APP_PRERELEASES`         | `true`       | Enables client app prerelease processing when client app downloads are enabled.                    |
-| `CHECK_APP_SNAPSHOTS`           | `false`      | Opt-in for Android snapshot debug builds. These are non-production builds signed with a debug key. |
-| `APP_SNAPSHOT_VERSIONS_TO_KEEP` | `1`          | Number of snapshot build directories to retain.                                                    |
+| Key                             | Default      | Description                                                                                         |
+| ------------------------------- | ------------ | --------------------------------------------------------------------------------------------------- |
+| `SAVE_CLIENT_APPS`              | setup choice | Enables unified client app downloads.                                                               |
+| `SELECTED_APP_ASSETS`           | setup choice | Preferred selection list for APKs and desktop installers. Supports exact names and patterns.        |
+| `APP_VERSIONS_TO_KEEP`          | `2`          | Number of stable client app releases to retain.                                                     |
+| `CHECK_APP_PRERELEASES`         | `true`       | Enables client app prerelease processing when client app downloads are enabled.                     |
+| `CHECK_APP_SNAPSHOTS`           | `false`      | Opt-in for Android snapshot debug builds. These are non-production builds signed with a debug key.  |
+| `APP_SNAPSHOT_VERSIONS_TO_KEEP` | `1`          | Number of snapshot build directories to retain.                                                     |
+| `NOTIFY_ON_SNAPSHOTS`           | `false`      | Include snapshot versionCodes in NTFY notifications. Does not affect local logs or download counts. |
 
 ### Snapshot Debug Builds
 
@@ -168,7 +169,7 @@ AUTO_EXTRACT: true
 EXTRACT_PATTERNS:
   - rak4631-
 EXCLUDE_PATTERNS:
-  - "*debug*"
+  - "*debug-symbols*"
 
 MAX_RETRIES: 3
 MAX_PARALLEL_RELEASE_CHECKS: 4

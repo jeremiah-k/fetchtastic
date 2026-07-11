@@ -22,6 +22,7 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
     CLIENT_APP_FILE_TYPES,
+    DEFAULT_NOTIFY_ON_SNAPSHOTS,
     DESKTOP_FILE_TYPES,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
@@ -429,7 +430,9 @@ class DownloadCLIIntegration:
             downloaded_app_snapshots
             if (
                 self.config
-                and coerce_bool(self.config.get("NOTIFY_ON_SNAPSHOTS", False))
+                and coerce_bool(
+                    self.config.get("NOTIFY_ON_SNAPSHOTS", DEFAULT_NOTIFY_ON_SNAPSHOTS)
+                )
             )
             else []
         )
@@ -532,6 +535,10 @@ class DownloadCLIIntegration:
                     downloaded_desktop_prereleases,
                     downloaded_app_snapshots=notified_app_snapshots,
                 )
+            elif downloaded_count > 0:
+                # Downloads occurred (e.g. snapshot-only with notifications
+                # disabled) but none were notifiable — send no NTFY at all.
+                pass
             elif self.orchestrator and self.orchestrator.wifi_skipped:
                 send_new_releases_available_notification(
                     self.config,

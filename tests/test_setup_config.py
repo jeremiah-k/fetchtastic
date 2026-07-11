@@ -280,7 +280,7 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
         """
         return section == "app"
 
-    # Answer prompts: keep APKs enabled, skip rerun, versions-to-keep, decline prereleases, decline suffixes.
+    # Answer prompts: keep APKs enabled, skip rerun, versions-to-keep, decline prereleases, decline snapshots.
     mocker.patch(
         "builtins.input",
         side_effect=["y", "n", "2", "n", "n"],
@@ -294,6 +294,7 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
     assert save_apks is True
     assert save_firmware is False
     assert updated["SELECTED_APK_ASSETS"] == ["meshtastic.apk"]
+    assert updated["CHECK_APP_SNAPSHOTS"] is False
     mock_menu.assert_not_called()
 
 

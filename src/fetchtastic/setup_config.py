@@ -1164,7 +1164,7 @@ def _setup_downloads(
 
 
 def _setup_client_app(
-    config: Dict[str, Any], is_first_run: bool, default_versions: int
+    config: Dict[str, Any], _is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
     Normalize client app version retention.

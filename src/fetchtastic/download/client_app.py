@@ -1694,11 +1694,11 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         """Download a snapshot asset into app/snapshots/<timestamp>-<version_code>/."""
         target_path: str | None = None
         try:
-            snapshot_dir = self._resolve_snapshot_dir(
-                version_code, published_at=release.published_at
-            )
-            target_path = os.path.join(
-                snapshot_dir, self._sanitize_required(asset.name, "snapshot asset name")
+            target_path = self.get_snapshot_target_path(
+                version_code,
+                asset.name,
+                create=True,
+                published_at=release.published_at,
             )
             if os.path.islink(target_path):
                 raise ValueError(f"Refusing symlinked snapshot target: {target_path}")
