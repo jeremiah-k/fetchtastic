@@ -280,10 +280,10 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
         """
         return section == "app"
 
-    # Answer prompts: keep APKs enabled, skip rerun, decline prereleases, decline suffixes.
+    # Answer prompts: keep APKs enabled, skip rerun, versions-to-keep, decline prereleases, decline snapshots.
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n", "n"],
+        side_effect=["y", "n", "2", "n", "n"],
     )
     mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
@@ -294,6 +294,7 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
     assert save_apks is True
     assert save_firmware is False
     assert updated["SELECTED_APK_ASSETS"] == ["meshtastic.apk"]
+    assert updated["CHECK_APP_SNAPSHOTS"] is False
     mock_menu.assert_not_called()
 
 
@@ -364,7 +365,7 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "y", "n", "n"],
+        side_effect=["y", "y", "2", "n", "n"],
     )
     mock_menu = mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -398,7 +399,7 @@ def test_setup_downloads_partial_keeps_existing_apk_patterns_with_fdroid_compat(
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n"],
+        side_effect=["y", "n", "2", "n", "n"],
     )
     mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
@@ -429,7 +430,7 @@ def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "y", "n"],
+        side_effect=["y", "y", "2", "n", "n"],
     )
     mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -497,7 +498,7 @@ def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["", "n", "n", "n", "n"],
+        side_effect=["", "2", "n", "n", "n", "n"],
     )
     mocker.patch(
         "fetchtastic.menu_firmware.run_menu",
@@ -1603,9 +1604,10 @@ def test_run_setup_first_run_linux_simple(
         "",  # Use default base directory
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
+        "2",  # Keep 2 versions of client app (now in _setup_downloads)
         "y",  # Check for APK prereleases
+        "n",  # Check for app snapshots
         "n",  # Add channel suffixes
-        "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
         "n",  # No cron job
@@ -1632,6 +1634,7 @@ def test_run_setup_first_run_linux_simple(
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
         assert saved_config["CHECK_PRERELEASES"] is False
         assert saved_config["CHECK_APK_PRERELEASES"] is True
+        assert saved_config["CHECK_APP_SNAPSHOTS"] is False
         assert saved_config["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
         assert saved_config["AUTO_EXTRACT"] is False
         assert saved_config["EXTRACT_PATTERNS"] == []
@@ -1689,9 +1692,10 @@ def test_run_setup_first_run_windows(
         "y",  # create menu
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
+        "2",  # Keep 2 versions of client app (now in _setup_downloads)
         "y",  # Check for APK prereleases
+        "n",  # Check for app snapshots
         "n",  # Add channel suffixes
-        "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
         "y",  # create startup shortcut
@@ -1783,9 +1787,10 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "",  # Use default base directory
         "b",  # Both APKs and firmware
         "n",  # Check for firmware prereleases
+        "1",  # Keep 1 version of client app (now in _setup_downloads)
         "y",  # Check for APK prereleases
+        "n",  # Check for app snapshots
         "n",  # Add channel suffixes
-        "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
         "n",  # No auto-extract
         "y",  # wifi only

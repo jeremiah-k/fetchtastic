@@ -214,8 +214,9 @@ def test_setup_downloads_apk_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "a",
+            "2",
             "y",
-            "n",
+            "y",
         ],
     )
 
@@ -275,7 +276,9 @@ def test_setup_downloads_both_selected(mocker, capsys):
         side_effect=[
             "b",
             "n",
+            "2",
             "y",
+            "n",
             "n",
         ],
     )
@@ -295,6 +298,65 @@ def test_setup_downloads_both_selected(mocker, capsys):
     assert save_firmware is True
     assert result_config["SAVE_APKS"] is True
     assert result_config["SAVE_FIRMWARE"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_apk_snapshot_enabled(mocker):
+    """Test _setup_downloads with APK selected and snapshot debug builds accepted."""
+    config = {}
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "a",  # Choose client app only
+            "2",  # Versions to keep
+            "n",  # App prereleases
+            "y",  # App snapshots
+        ],
+    )
+
+    mock_menu_result = {"selected_assets": ["meshtastic.apk"]}
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_menu_result)
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert result_config["CHECK_APP_SNAPSHOTS"] is True
+    assert "APP_SNAPSHOT_VERSIONS_TO_KEEP" in result_config
+    assert result_config["APP_SNAPSHOT_VERSIONS_TO_KEEP"] >= 1
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_desktop_no_snapshot_prompt(mocker):
+    """Desktop-only client app selection must not trigger a snapshot prompt."""
+    config = {}
+
+    captured_prompts: list[str] = []
+    answers = iter(["d", "2", "n"])
+
+    def _fake_input(prompt: str = "") -> str:
+        captured_prompts.append(prompt)
+        return next(answers)
+
+    mocker.patch("builtins.input", side_effect=_fake_input)
+
+    mock_menu_result = {"selected_assets": ["meshtastic.dmg"]}
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_menu_result)
+
+    result_config, _save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert result_config["SAVE_CLIENT_APPS"] is True
+    assert result_config["SAVE_APKS"] is False
+    assert result_config["CHECK_APP_SNAPSHOTS"] is False
+    assert save_firmware is False
+    assert not any("snapshot" in p.lower() for p in captured_prompts)
 
 
 @pytest.mark.configuration
@@ -402,6 +464,7 @@ def test_setup_downloads_partial_run(mocker):
         side_effect=[
             "y",  # Keep downloading client app releases
             "n",  # Skip re-running menu (existing selection kept)
+            "2",  # Versions to keep
             "y",  # Enable prereleases
             "n",  # No channel suffixes
         ],
@@ -435,6 +498,7 @@ def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
         side_effect=[
             "y",  # Keep downloading client app releases
             "n",  # Skip re-running menu (existing selection kept)
+            "2",  # Versions to keep
             "n",  # Disable prereleases
             "n",  # No channel suffixes
         ],

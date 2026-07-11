@@ -8,6 +8,7 @@ upstream Meshtastic-Android release feed. The primary config keys are:
 - SELECTED_APP_ASSETS
 - APP_VERSIONS_TO_KEEP
 - CHECK_APP_PRERELEASES
+- CHECK_APP_SNAPSHOTS
 """
 
 from __future__ import annotations
@@ -19,8 +20,10 @@ from fetchtastic.client_release_discovery import (
     is_desktop_asset_name,
 )
 from fetchtastic.constants import (
+    DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
     DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
+    DEFAULT_CHECK_APP_SNAPSHOTS,
 )
 from fetchtastic.utils import coerce_bool, expand_apk_selected_patterns
 
@@ -214,6 +217,31 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
         "SELECTED_DESKTOP_ASSETS"
     ):
         config["CHECK_DESKTOP_PRERELEASES"] = False
+
+    config["CHECK_APP_SNAPSHOTS"] = coerce_bool(
+        config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS),
+        default=DEFAULT_CHECK_APP_SNAPSHOTS,
+    )
+    snapshots_need_apks = config["CHECK_APP_SNAPSHOTS"]
+    if snapshots_need_apks and (
+        not coerce_bool(config.get("SAVE_CLIENT_APPS", False))
+        or not config.get("SELECTED_APP_ASSETS")
+        or not (bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets)
+    ):
+        config["CHECK_APP_SNAPSHOTS"] = False
+    if (
+        config.get("APP_SNAPSHOT_VERSIONS_TO_KEEP") is not None
+        or config["CHECK_APP_SNAPSHOTS"]
+    ):
+        snapshot_keep = _coerce_keep_count(
+            config.get("APP_SNAPSHOT_VERSIONS_TO_KEEP"),
+            DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
+        )
+        # Enforce a floor of 1 when snapshots are enabled so the current
+        # build is never immediately deleted after tracking.
+        if config["CHECK_APP_SNAPSHOTS"]:
+            snapshot_keep = max(1, snapshot_keep)
+        config["APP_SNAPSHOT_VERSIONS_TO_KEEP"] = snapshot_keep
     return config
 
 

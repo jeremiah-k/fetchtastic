@@ -5,7 +5,9 @@ This module provides integration between the new download subsystem and the exis
 """
 
 import os
+import re
 import time
+import urllib.parse
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
 if TYPE_CHECKING:
@@ -20,9 +22,11 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
     CLIENT_APP_FILE_TYPES,
+    DEFAULT_NOTIFY_ON_SNAPSHOTS,
     DESKTOP_FILE_TYPES,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_APP_SNAPSHOT,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
     FILE_TYPE_DESKTOP,
@@ -34,6 +38,7 @@ from fetchtastic.constants import (
     FILE_TYPE_REPOSITORY,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_FILE_TYPES,
+    SNAPSHOT_VERSION_CODE_PATTERN,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
@@ -42,6 +47,7 @@ from fetchtastic.notifications import (
     send_up_to_date_notification,
 )
 from fetchtastic.utils import (
+    coerce_bool,
     format_api_summary,
     get_api_request_summary,
     get_effective_github_token,
@@ -51,6 +57,8 @@ from .android import MeshtasticAndroidAppDownloader
 from .desktop import MeshtasticDesktopDownloader
 from .firmware import FirmwareReleaseDownloader
 from .orchestrator import DownloadOrchestrator
+
+_SNAPSHOT_VC_RE = re.compile(SNAPSHOT_VERSION_CODE_PATTERN)
 
 
 class DownloadCLIIntegration:
@@ -401,6 +409,35 @@ class DownloadCLIIntegration:
         downloaded_apk_prereleases = downloaded_apk_prereleases or []
         downloaded_desktop = downloaded_desktop or []
         downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
+
+        # Snapshot debug builds — always collect successful versionCodes for
+        # local logging and download counts.  NTFY inclusion is gated by
+        # NOTIFY_ON_SNAPSHOTS (default False).
+        downloaded_app_snapshots: list[str] = []
+        if self.orchestrator:
+            for result in self.orchestrator.download_results:
+                if (
+                    getattr(result, "file_type", "") == FILE_TYPE_APP_SNAPSHOT
+                    and getattr(result, "success", False)
+                    and not getattr(result, "was_skipped", False)
+                ):
+                    vc = self._extract_snapshot_version_code(result)
+                    if vc and vc not in downloaded_app_snapshots:
+                        downloaded_app_snapshots.append(vc)
+
+        # Snapshots included in NTFY notifications only when explicitly enabled.
+        notified_app_snapshots = (
+            downloaded_app_snapshots
+            if (
+                self.config
+                and coerce_bool(
+                    self.config.get("NOTIFY_ON_SNAPSHOTS", DEFAULT_NOTIFY_ON_SNAPSHOTS)
+                )
+            )
+            else []
+        )
+
+        # Actual download count includes snapshots for local reporting.
         downloaded_count = (
             len(downloaded_firmwares)
             + len(downloaded_apks)
@@ -408,6 +445,13 @@ class DownloadCLIIntegration:
             + len(downloaded_firmware_prereleases)
             + len(downloaded_apk_prereleases)
             + len(downloaded_desktop_prereleases)
+            + len(downloaded_app_snapshots)
+        )
+        # Notifiable count excludes snapshots when NOTIFY_ON_SNAPSHOTS is False.
+        notifiable_count = (
+            downloaded_count
+            - len(downloaded_app_snapshots)
+            + len(notified_app_snapshots)
         )
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
@@ -445,6 +489,12 @@ class DownloadCLIIntegration:
         else:
             log.info("Latest Meshtastic Client prerelease: none")
 
+        if downloaded_app_snapshots:
+            log.info(
+                "Downloaded Android snapshot debug builds: %s",
+                ", ".join(downloaded_app_snapshots),
+            )
+
         if failed_downloads:
             log.info(f"{len(failed_downloads)} downloads failed:")
             for failure in failed_downloads:
@@ -474,7 +524,7 @@ class DownloadCLIIntegration:
 
         # Send notifications based on download results
         if self.config:
-            if downloaded_count > 0:
+            if notifiable_count > 0:
                 send_download_completion_notification(
                     self.config,
                     downloaded_firmwares,
@@ -483,7 +533,12 @@ class DownloadCLIIntegration:
                     downloaded_apk_prereleases,
                     downloaded_desktop,
                     downloaded_desktop_prereleases,
+                    downloaded_app_snapshots=notified_app_snapshots,
                 )
+            elif downloaded_count > 0:
+                # Downloads occurred (e.g. snapshot-only with notifications
+                # disabled) but none were notifiable — send no NTFY at all.
+                pass
             elif self.orchestrator and self.orchestrator.wifi_skipped:
                 send_new_releases_available_notification(
                     self.config,
@@ -723,6 +778,33 @@ class DownloadCLIIntegration:
         ):
             new_versions_list.append(release_tag)
             new_versions_set.add(release_tag)
+
+    @staticmethod
+    def _extract_snapshot_version_code(result: Any) -> Optional[str]:
+        """Derive the numeric versionCode from a snapshot result's canonical path.
+
+        Handles both plain ``<versionCode>`` and timestamp-prefixed
+        ``<YYYYMMDD-HHMMSS>-<versionCode>`` directory names.
+        """
+        file_path = getattr(result, "file_path", None)
+        if file_path:
+            parent = os.path.basename(os.path.dirname(str(file_path)))
+            if parent.isdigit():
+                return parent
+            # Handle timestamp-prefixed dirs: <YYYYMMDD-HHMMSS>-<versionCode>
+            parts = parent.rsplit("-", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                return parts[1]
+        # Fallback: parse from asset name in download_url
+        url = getattr(result, "download_url", None)
+        if url:
+            # Use only the URL path so query parameters/fragments don't interfere
+            parsed = urllib.parse.urlparse(str(url))
+            name = os.path.basename(parsed.path)
+            match = _SNAPSHOT_VC_RE.search(name)
+            if match:
+                return match.group(1)
+        return None
 
     def _normalize_firmware_prerelease_tag(self, tag: Optional[str]) -> Optional[str]:
         """

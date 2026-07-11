@@ -1,9 +1,11 @@
 import time
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
+from fetchtastic.constants import FILE_TYPE_APP_SNAPSHOT
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
+from fetchtastic.download.interfaces import DownloadResult
 
 pytestmark = [pytest.mark.user_interface, pytest.mark.unit]
 
@@ -89,6 +91,7 @@ def test_summary_sends_completion_notification(integration):
             [],
             [],
             [],
+            downloaded_app_snapshots=[],
         )
         mock_up_to_date.assert_not_called()
 
@@ -211,3 +214,253 @@ def test_summary_sends_skip_notification_with_discovered_versions(integration):
             downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
         )
         mock_up_to_date.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Snapshot versionCode extraction
+# ------------------------------------------------------------------
+
+
+def test_extract_snapshot_version_code_from_path():
+    """_extract_snapshot_version_code parses versionCode from canonical path."""
+    result = Mock()
+    result.file_path = (
+        "/data/app/snapshots/29321447/" "androidApp-fdroid-universal-debug-29321447.apk"
+    )
+    result.download_url = (
+        "http://github.com/download/snapshot/"
+        "androidApp-fdroid-universal-debug-29321447.apk"
+    )
+    vc = DownloadCLIIntegration._extract_snapshot_version_code(result)
+    assert vc == "29321447"
+
+
+def test_extract_snapshot_version_code_fallback_from_url():
+    result = Mock()
+    result.file_path = None
+    result.download_url = (
+        "http://github.com/release/snapshot/" "androidApp-google-universal-debug-42.apk"
+    )
+    vc = DownloadCLIIntegration._extract_snapshot_version_code(result)
+    assert vc == "42"
+
+
+# ------------------------------------------------------------------
+# Populated snapshot notification (versionCode dedup + skip exclusion)
+# ------------------------------------------------------------------
+
+
+def test_populated_snapshot_notification_displays_version_code(integration):
+    """Populated snapshot results produce versionCode in notification, deduplicated, skipped excluded."""
+    integration.config["NOTIFY_ON_SNAPSHOTS"] = True
+    vc_dir = "/data/app/snapshots/29321447"
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-fdroid-universal-debug-29321447.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-google-universal-debug-29321447.apk",
+            download_url="http://y",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-fdroid-arm64-v8a-debug-29321447.apk",
+            download_url="http://z",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=True,
+        ),
+    ]
+
+    with patch(
+        "fetchtastic.download.cli_integration.send_download_completion_notification"
+    ) as mock_notify:
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["downloaded_app_snapshots"] == ["29321447"]
+
+
+def test_snapshot_only_notifications_disabled_sends_nothing(integration):
+    """Snapshot-only download with NOTIFY_ON_SNAPSHOTS unset → no notification at all."""
+    vc_dir = "/data/app/snapshots/29321447"
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-fdroid-universal-debug-29321447.apk",
+            download_url="https://example.invalid/snapshot.apk",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+    ]
+
+    mock_log = Mock()
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ) as mock_new_releases,
+    ):
+        integration.log_download_results_summary(
+            logger_override=mock_log,
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    # No NTFY notifications at all
+    mock_completion.assert_not_called()
+    mock_up_to_date.assert_not_called()
+    mock_new_releases.assert_not_called()
+
+    # Local accounting still works: nonzero download count and snapshot VC logged
+    log_calls = [str(c) for c in mock_log.info.call_args_list]
+    assert any("Downloaded 1 new versions" in c for c in log_calls)
+    assert any("29321447" in c for c in log_calls)
+
+
+# ------------------------------------------------------------------
+# Failed snapshot isolation (P1 proof)
+# ------------------------------------------------------------------
+
+
+def test_failed_snapshot_not_reported_as_downloaded(integration):
+    """Failed snapshot results must NOT appear in downloaded_app_snapshots."""
+    integration.orchestrator = Mock()
+    integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=False,
+            release_tag="snapshot",
+            file_path="/data/app/snapshots/29321447/androidApp-fdroid-universal-debug-29321447.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+    ]
+    integration.orchestrator.log_firmware_release_history_summary = Mock()
+    integration.orchestrator.get_latest_versions = Mock(return_value={})
+
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_notify,
+        patch("fetchtastic.download.cli_integration.send_up_to_date_notification"),
+    ):
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+    # No successful downloads → completion notification must not fire.
+    mock_notify.assert_not_called()
+
+
+def test_failed_snapshot_plus_successful_firmware(integration):
+    """A failed snapshot must not appear in the notification when firmware succeeded."""
+    integration.orchestrator = Mock()
+    integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=False,
+            release_tag="snapshot",
+            file_path="/data/app/snapshots/29321447/androidApp-fdroid-universal-debug-29321447.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+    ]
+    integration.orchestrator.log_firmware_release_history_summary = Mock()
+    integration.orchestrator.get_latest_versions = Mock(return_value={})
+
+    with patch(
+        "fetchtastic.download.cli_integration.send_download_completion_notification"
+    ) as mock_notify:
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=["v2.8.0"],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="v2.8.0",
+            latest_apk_version="",
+        )
+
+    mock_notify.assert_called_once()
+    # The failed snapshot must NOT be counted — snapshot list stays empty.
+    assert mock_notify.call_args.kwargs["downloaded_app_snapshots"] == []
+
+
+# ------------------------------------------------------------------
+# Direct notification function tests
+# ------------------------------------------------------------------
+
+
+def test_send_download_completion_notification_with_snapshots():
+    """Direct call includes snapshot versionCode in the notification message."""
+    from fetchtastic.notifications import send_download_completion_notification
+
+    config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+
+    with patch("fetchtastic.notifications.send_ntfy_notification") as mock_ntfy:
+        send_download_completion_notification(
+            config,
+            ["v2.8.0"],
+            ["v1.8.1"],
+            downloaded_app_snapshots=["29321447"],
+        )
+
+    mock_ntfy.assert_called_once()
+    message = mock_ntfy.call_args.args[2]
+    assert "29321447" in message
+    assert "snapshot debug builds" in message.lower()
+
+
+def test_send_download_completion_notification_empty_snapshots_no_notification():
+    """All lists empty (including snapshots) → no notification sent."""
+    from fetchtastic.notifications import send_download_completion_notification
+
+    config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+
+    with patch("fetchtastic.notifications.send_ntfy_notification") as mock_ntfy:
+        send_download_completion_notification(
+            config, [], [], downloaded_app_snapshots=[]
+        )
+
+    mock_ntfy.assert_not_called()

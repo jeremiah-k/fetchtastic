@@ -23,7 +23,9 @@ from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
+    DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
+    DEFAULT_CHECK_APP_SNAPSHOTS,
     DEFAULT_CREATE_LATEST_SYMLINKS,
 )
 from fetchtastic.constants import (
@@ -83,6 +85,17 @@ def _clear_desktop_assets(config: dict) -> None:
     config["SELECTED_DESKTOP_ASSETS"] = []
     # Remove old key if it exists
     config.pop("SELECTED_DESKTOP_PLATFORMS", None)
+
+
+def _clear_client_app_flags(config: Dict[str, Any]) -> None:
+    """Clear all client-app prerelease/snapshot/selection flags in one call."""
+    config["CHECK_APP_PRERELEASES"] = False
+    config["CHECK_APK_PRERELEASES"] = False
+    config["CHECK_DESKTOP_PRERELEASES"] = False
+    config["CHECK_APP_SNAPSHOTS"] = False
+    config["SELECTED_APP_ASSETS"] = []
+    config["SELECTED_APK_ASSETS"] = []
+    _clear_desktop_assets(config)
 
 
 def _migrate_desktop_asset_key(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -821,7 +834,7 @@ def _setup_downloads(
     """
     Configure which asset types (client app assets and firmware) should be downloaded and update the provided configuration accordingly.
 
-    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
+    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, ``CHECK_APP_SNAPSHOTS``, ``APP_VERSIONS_TO_KEEP``, ``APP_SNAPSHOT_VERSIONS_TO_KEEP``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
 
     Parameters:
         config (dict): Mutable configuration dictionary to update.
@@ -922,13 +935,8 @@ def _setup_downloads(
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
     if save_client_apps_was_enabled and not save_client_apps:
-        config["CHECK_APP_PRERELEASES"] = False
-        config["CHECK_APK_PRERELEASES"] = False
-        config["CHECK_DESKTOP_PRERELEASES"] = False
+        _clear_client_app_flags(config)
         config["SAVE_DESKTOP_APP"] = False
-        config["SELECTED_APP_ASSETS"] = []
-        config["SELECTED_APK_ASSETS"] = []
-        _clear_desktop_assets(config)
         save_desktop = False
 
     if save_firmware and (not is_partial_run or wants("firmware")):
@@ -992,12 +1000,7 @@ def _setup_downloads(
                 config["SAVE_CLIENT_APPS"] = False
                 config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False
-                config["CHECK_APP_PRERELEASES"] = False
-                config["CHECK_APK_PRERELEASES"] = False
-                config["CHECK_DESKTOP_PRERELEASES"] = False
-                config["SELECTED_APP_ASSETS"] = []
-                config["SELECTED_APK_ASSETS"] = []
-                _clear_desktop_assets(config)
+                _clear_client_app_flags(config)
                 save_client_apps = False
                 save_apks = False
                 save_desktop = False
@@ -1026,12 +1029,7 @@ def _setup_downloads(
                 config["SAVE_CLIENT_APPS"] = False
                 config["SAVE_APKS"] = False
                 config["SAVE_DESKTOP_APP"] = False
-                config["CHECK_APP_PRERELEASES"] = False
-                config["CHECK_APK_PRERELEASES"] = False
-                config["CHECK_DESKTOP_PRERELEASES"] = False
-                config["SELECTED_APP_ASSETS"] = []
-                config["SELECTED_APK_ASSETS"] = []
-                _clear_desktop_assets(config)
+                _clear_client_app_flags(config)
                 save_client_apps = False
                 save_apks = False
                 save_desktop = False
@@ -1047,17 +1045,34 @@ def _setup_downloads(
             config["SAVE_CLIENT_APPS"] = False
             config["SAVE_APKS"] = False
             config["SAVE_DESKTOP_APP"] = False
-            config["CHECK_APP_PRERELEASES"] = False
-            config["CHECK_APK_PRERELEASES"] = False
-            config["CHECK_DESKTOP_PRERELEASES"] = False
-            config["SELECTED_APP_ASSETS"] = []
-            config["SELECTED_APK_ASSETS"] = []
-            _clear_desktop_assets(config)
+            _clear_client_app_flags(config)
             save_client_apps = False
             save_apks = False
             save_desktop = False
         else:
             normalize_client_app_config(config)
+
+    # --- Client App Version Retention ---
+    if save_client_apps and app_section_requested:
+        current_versions = config.get(
+            "APP_VERSIONS_TO_KEEP",
+            config.get("ANDROID_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP),
+        )
+        raw_versions = _safe_input(
+            f"\nHow many versions of the client app would you like to keep? (current: {current_versions}): ",
+            default=str(current_versions),
+        ).strip() or str(current_versions)
+        parsed_versions = _parse_non_negative_int(raw_versions)
+        if parsed_versions is not None:
+            config["APP_VERSIONS_TO_KEEP"] = parsed_versions
+        else:
+            print("Invalid number — keeping current value.")
+            parsed_current = _parse_non_negative_int(current_versions)
+            config["APP_VERSIONS_TO_KEEP"] = (
+                parsed_current
+                if parsed_current is not None
+                else DEFAULT_APP_VERSIONS_TO_KEEP
+            )
 
     # --- Client App Pre-release Configuration ---
     if save_client_apps and app_section_requested:
@@ -1074,6 +1089,27 @@ def _setup_downloads(
             default=check_app_prereleases_current,
         )
         normalize_client_app_config(config)
+
+    # --- Client App Snapshot (Debug Build) Configuration ---
+    if (
+        save_client_apps
+        and app_section_requested
+        and _coerce_bool(config.get("SAVE_APKS", False))
+    ):
+        check_app_snapshots_current = _coerce_bool(
+            config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
+        )
+        check_app_snapshots_default = "yes" if check_app_snapshots_current else "no"
+        check_app_snapshots_input = _safe_input(
+            f"\nWould you like to check for and download Android snapshot debug builds? These are rolling builds replaced on every push to Android main, debug-keyed (not for production), and stored separately under app/snapshots/. [y/n] (default: {check_app_snapshots_default}): ",
+            default=check_app_snapshots_default,
+        )
+        config["CHECK_APP_SNAPSHOTS"] = _coerce_bool(
+            check_app_snapshots_input,
+            default=check_app_snapshots_current,
+        )
+    elif save_client_apps and app_section_requested:
+        config["CHECK_APP_SNAPSHOTS"] = False
 
     # --- Client App Compatibility Normalization ---
     normalize_client_app_config(config)
@@ -1128,43 +1164,16 @@ def _setup_downloads(
 
 
 def _setup_client_app(
-    config: Dict[str, Any], is_first_run: bool, default_versions: int
+    config: Dict[str, Any], _is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
-    Prompt the user for how many client app versions to keep and store that value in the configuration.
+    Normalize client app version retention.
 
-    Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["APP_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
-
-    Parameters:
-        config (dict): Configuration mapping to read and update; the function sets "APP_VERSIONS_TO_KEEP" in-place.
-        is_first_run (bool): If True, use first-run wording in the prompt.
-        default_versions (int): Fallback number to use when the config does not already contain a value.
-
-    Returns:
-        dict: The updated configuration dictionary with client app retention keys normalized.
+    The prompt is now handled in _setup_downloads. This function ensures the
+    config keys are consistent for backward compatibility.
     """
-    current_versions = config.get(
-        "APP_VERSIONS_TO_KEEP",
-        config.get("ANDROID_VERSIONS_TO_KEEP", default_versions),
-    )
-    if is_first_run:
-        prompt_text = f"How many versions of the client app would you like to keep? (default is {current_versions}): "
-    else:
-        prompt_text = f"How many versions of the client app would you like to keep? (current: {current_versions}): "
-    raw = _safe_input(prompt_text, default=str(current_versions)).strip() or str(
-        current_versions
-    )
-    parsed = _parse_non_negative_int(raw)
-    if parsed is not None:
-        config["APP_VERSIONS_TO_KEEP"] = parsed
-    else:
-        print("Invalid number — keeping current value.")
-        fallback = _parse_non_negative_int(current_versions)
-        if fallback is not None:
-            config["APP_VERSIONS_TO_KEEP"] = fallback
-        else:
-            print("Invalid current value — using default.")
-            config["APP_VERSIONS_TO_KEEP"] = default_versions
+    if "APP_VERSIONS_TO_KEEP" not in config:
+        config["APP_VERSIONS_TO_KEEP"] = default_versions
     return normalize_client_app_config(config)
 
 

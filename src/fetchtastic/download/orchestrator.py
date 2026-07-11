@@ -33,6 +33,7 @@ from fetchtastic.constants import (
     ERROR_TYPE_RETRY_FAILURE,
     ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_UNKNOWN,
+    FILE_TYPE_APP_SNAPSHOT,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
     FILE_TYPE_DESKTOP,
@@ -54,7 +55,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import is_termux
-from fetchtastic.utils import cleanup_legacy_hash_sidecars
+from fetchtastic.utils import cleanup_legacy_hash_sidecars, coerce_bool
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
@@ -62,6 +63,7 @@ from .client_app import (
     MeshtasticClientAppDownloader,
     _is_apk_prerelease_by_name,
     is_client_app_prerelease_tag,
+    is_snapshot_tag,
 )
 from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
@@ -192,12 +194,21 @@ class DownloadOrchestrator:
     def _is_client_app_prerelease_release(self, release: Release) -> bool:
         """Classify client app prereleases without depending on wrapper mocks."""
         tag_name = getattr(release, "tag_name", "")
+        if is_snapshot_tag(tag_name):
+            return False
         return (
             getattr(release, "prerelease", False) is True
             or is_client_app_prerelease_tag(tag_name)
             or self.version_manager.is_prerelease_version(tag_name) is True
             or _is_apk_prerelease_by_name(tag_name)
         )
+
+    def _is_client_app_stable_release(self, release: Release) -> bool:
+        """Return True only for genuine stable client app releases (not snapshot/prerelease)."""
+        tag_name = getattr(release, "tag_name", "")
+        if is_snapshot_tag(tag_name):
+            return False
+        return not self._is_client_app_prerelease_release(release)
 
     def run_download_pipeline(
         self,
@@ -326,7 +337,7 @@ class DownloadOrchestrator:
                 or self._ensure_android_releases()
             )
             stable_releases = [
-                r for r in app_releases if not self._is_client_app_prerelease_release(r)
+                r for r in app_releases if self._is_client_app_stable_release(r)
             ]
             keep_count = min(keep_count, len(stable_releases))
             releases_in_window = stable_releases[:keep_count]
@@ -388,7 +399,7 @@ class DownloadOrchestrator:
                 )
                 keep_count = int(DEFAULT_APP_VERSIONS_TO_KEEP)
             stable_releases = [
-                r for r in app_releases if not self._is_client_app_prerelease_release(r)
+                r for r in app_releases if self._is_client_app_stable_release(r)
             ]
             releases_to_process = stable_releases[:keep_count]
             releases_to_process = [
@@ -422,11 +433,13 @@ class DownloadOrchestrator:
                     releases_to_download.append(release)
 
             any_app_downloaded = False
+            real_release_downloaded = False
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading client app release {release.tag_name}")
                     if self._download_client_app_release(release):
                         any_app_downloaded = True
+                        real_release_downloaded = True
                         successful_stable_releases.append(release)
 
             update_pointer = getattr(
@@ -494,6 +507,10 @@ class DownloadOrchestrator:
                     result.success for result in prerelease_results
                 ):
                     successful_prereleases.append(prerelease)
+                    if any(
+                        not getattr(r, "was_skipped", False) for r in prerelease_results
+                    ):
+                        real_release_downloaded = True
                     if not self.client_app_downloader.update_prerelease_tracking(
                         prerelease.tag_name
                     ):
@@ -522,6 +539,92 @@ class DownloadOrchestrator:
                 and not prereleases
             ):
                 logger.info("No new client app prereleases to download")
+
+            # Prune old snapshot dirs when a new stable release or prerelease
+            # actually downloads at least one new asset.  Multiple snapshots
+            # accumulate across commits; they are cleaned up once a real
+            # release/prerelease ships.
+            if real_release_downloaded:
+                self.client_app_downloader.cleanup_superseded_snapshots()
+
+            # --- Snapshot Debug Builds (rolling "snapshot" tag) ---
+            if coerce_bool(self.config.get("CHECK_APP_SNAPSHOTS", False)):
+                logger.info("Checking for Android snapshot debug builds...")
+                snapshot_release = self.client_app_downloader.fetch_snapshot_release()
+                handled_snapshot = self.client_app_downloader.handle_snapshots(
+                    snapshot_release
+                )
+                if handled_snapshot is not None:
+                    snapshot_vc = self.client_app_downloader.get_snapshot_version_code(
+                        handled_snapshot
+                    )
+                    if snapshot_vc is not None and (
+                        self.client_app_downloader.should_process_snapshot(
+                            handled_snapshot, snapshot_vc
+                        )
+                    ):
+                        selected_assets = (
+                            self.client_app_downloader.get_selected_snapshot_assets(
+                                handled_snapshot
+                            )
+                        )
+                        if not selected_assets:
+                            logger.info(
+                                "No selected assets match snapshot debug build %s; skipping",
+                                snapshot_vc,
+                            )
+                        else:
+                            logger.info(
+                                "Downloading snapshot debug build %s", snapshot_vc
+                            )
+                            snapshot_results = []
+                            for asset in selected_assets:
+                                snapshot_result = (
+                                    self.client_app_downloader.download_snapshot_asset(
+                                        handled_snapshot, asset, snapshot_vc
+                                    )
+                                )
+                                if (
+                                    snapshot_result.success
+                                    and not snapshot_result.was_skipped
+                                ):
+                                    any_app_downloaded = True
+                                self._handle_download_result(
+                                    snapshot_result, FILE_TYPE_APP_SNAPSHOT
+                                )
+                                snapshot_results.append(snapshot_result)
+                            # Transactional: only track when all selected succeed
+                            if snapshot_results and all(
+                                r.success for r in snapshot_results
+                            ):
+                                if not self.client_app_downloader.update_snapshot_tracking(
+                                    snapshot_vc,
+                                    self.client_app_downloader.extract_snapshot_commit_sha(
+                                        handled_snapshot
+                                    ),
+                                ):
+                                    logger.warning(
+                                        "Failed to update snapshot tracking for %s",
+                                        snapshot_vc,
+                                    )
+                            elif snapshot_results:
+                                logger.warning(
+                                    "Snapshot %s has failed assets; tracking and cleanup deferred",
+                                    snapshot_vc,
+                                )
+                    else:
+                        if snapshot_vc is not None:
+                            logger.debug(
+                                "Snapshot debug build %s is up to date", snapshot_vc
+                            )
+                        else:
+                            logger.debug(
+                                "Snapshot release has no parsable versionCode; skipping"
+                            )
+                elif snapshot_release is not None:
+                    logger.debug("Snapshot release has no debug APK assets")
+                else:
+                    logger.debug("No snapshot release found")
 
             if not any_app_downloaded and not releases_to_download:
                 logger.info("All client app assets are up to date.")
@@ -1469,7 +1572,11 @@ class DownloadOrchestrator:
                 FILE_TYPE_DESKTOP_PRERELEASE,
             ):
                 downloader = self.desktop_downloader
-            elif file_type in (FILE_TYPE_CLIENT_APP, FILE_TYPE_CLIENT_APP_PRERELEASE):
+            elif file_type in (
+                FILE_TYPE_CLIENT_APP,
+                FILE_TYPE_CLIENT_APP_PRERELEASE,
+                FILE_TYPE_APP_SNAPSHOT,
+            ):
                 downloader = self.client_app_downloader
             elif file_type in (
                 FILE_TYPE_FIRMWARE,
@@ -1484,6 +1591,7 @@ class DownloadOrchestrator:
                     if file_type in (
                         FILE_TYPE_CLIENT_APP,
                         FILE_TYPE_CLIENT_APP_PRERELEASE,
+                        FILE_TYPE_APP_SNAPSHOT,
                         "android",
                         "android_prerelease",
                         "desktop",
@@ -1769,6 +1877,7 @@ class DownloadOrchestrator:
                 in (
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                 )
             ]
             firmware_downloads = [
@@ -1791,6 +1900,7 @@ class DownloadOrchestrator:
                 in (
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                 )
             ]
             firmware_failures = [
@@ -2072,6 +2182,7 @@ class DownloadOrchestrator:
                 return file_type in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                     "android",
                     "android_prerelease",
                     "desktop",
@@ -2104,6 +2215,7 @@ class DownloadOrchestrator:
                 if file_type not in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                     "android",
                     "android_prerelease",
                     "desktop",
@@ -2125,6 +2237,7 @@ class DownloadOrchestrator:
                 if file_type in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                 }:
                     logger.debug(
                         "Client app asset could not be classified by filename; defaulting to legacy Android bucket: %s",
@@ -2338,7 +2451,7 @@ class DownloadOrchestrator:
             (
                 release.tag_name
                 for release in app_releases
-                if not self._is_client_app_prerelease_release(release)
+                if self._is_client_app_stable_release(release)
             ),
             None,
         )
@@ -2380,7 +2493,7 @@ class DownloadOrchestrator:
                 (
                     release
                     for release in app_releases
-                    if not self._is_client_app_prerelease_release(release)
+                    if self._is_client_app_stable_release(release)
                 ),
                 None,
             )
@@ -2403,7 +2516,7 @@ class DownloadOrchestrator:
                 (
                     release
                     for release in desktop_releases
-                    if not self._is_client_app_prerelease_release(release)
+                    if self._is_client_app_stable_release(release)
                 ),
                 None,
             )
@@ -2412,7 +2525,7 @@ class DownloadOrchestrator:
                     (
                         release
                         for release in self.client_app_releases
-                        if not self._is_client_app_prerelease_release(release)
+                        if self._is_client_app_stable_release(release)
                     ),
                     None,
                 )

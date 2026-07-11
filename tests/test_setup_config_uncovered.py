@@ -101,7 +101,7 @@ def test_setup_downloads_full_run_desktop_only(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["d", "n"],  # desktop choice, no prerelease
+        side_effect=["d", "n", "n"],  # desktop choice, no prerelease, no snapshots
     )
     mock_menu = mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -136,7 +136,8 @@ def test_setup_downloads_full_run_reprompts_invalid_choice(mocker, capsys):
             "invalid-choice",
             "d",
             "n",
-        ],  # invalid, desktop choice, no prerelease
+            "n",
+        ],  # invalid, desktop choice, no prerelease, no snapshots
     )
     mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -269,7 +270,12 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n"],  # Keep desktop, don't re-run menu, no prerelease
+        side_effect=[
+            "y",
+            "n",
+            "n",
+            "n",
+        ],  # Keep desktop, don't re-run menu, no prerelease, no snapshots
     )
     mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
@@ -358,8 +364,9 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
         "builtins.input",
         side_effect=[
             "a",  # APK/client app choice
-            "n",  # no prerelease
-            "n",  # no channel suffix
+            "2",  # Versions to keep
+            "n",  # no app prerelease
+            "n",  # no app snapshots
         ],
     )
     mocker.patch(
@@ -420,7 +427,12 @@ def test_setup_downloads_backward_compat_old_key(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["y", "n", "n"],  # Keep desktop, don't re-run menu, no prerelease
+        side_effect=[
+            "y",
+            "n",
+            "n",
+            "n",
+        ],  # Keep desktop, don't re-run menu, no prerelease, no snapshots
     )
     mock_menu = mocker.patch("fetchtastic.menu_app.run_menu")
 
@@ -501,40 +513,37 @@ def test_check_storage_setup_non_interactive(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_android_invalid_number_current_value(mocker, capsys):
-    """Test _setup_android with invalid number in current value (lines 1043-1049)."""
+    """Test _setup_android with no APP_VERSIONS_TO_KEEP sets default."""
     from fetchtastic.setup_config import _setup_android
 
     config = {
-        "ANDROID_VERSIONS_TO_KEEP": "invalid",  # Invalid current value
+        "ANDROID_VERSIONS_TO_KEEP": "invalid",  # Legacy key, no APP_VERSIONS_TO_KEEP
     }
 
-    mocker.patch(
-        "builtins.input",
-        side_effect=["also_invalid"],  # User also enters invalid
-    )
+    mock_input = mocker.patch("builtins.input", return_value="5")
 
     result = _setup_android(config, is_first_run=False, default_versions=3)
-    captured = capsys.readouterr()
 
-    assert result["ANDROID_VERSIONS_TO_KEEP"] == 3  # Falls back to default
-    assert "Invalid current value — using default." in captured.out
+    # _setup_android no longer prompts; it sets APP_VERSIONS_TO_KEEP to default_versions
+    assert result["APP_VERSIONS_TO_KEEP"] == 3
+    mock_input.assert_not_called()
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_android_non_first_run_prompt(mocker):
-    """Test _setup_android non-first run prompt text (line 1037)."""
+def test_setup_android_non_first_run_no_prompt(mocker):
+    """Test _setup_android no longer prompts — normalization only."""
     from fetchtastic.setup_config import _setup_android
 
-    config = {"ANDROID_VERSIONS_TO_KEEP": 5}
+    config = {"APP_VERSIONS_TO_KEEP": 5}
 
     mock_input = mocker.patch("builtins.input", return_value="5")
 
-    _setup_android(config, is_first_run=False, default_versions=2)
+    result = _setup_android(config, is_first_run=False, default_versions=2)
 
-    call_args = mock_input.call_args[0][0]
-    assert "current:" in call_args
-    assert "5" in call_args
+    # _setup_android no longer prompts; it just normalizes
+    mock_input.assert_not_called()
+    assert result["APP_VERSIONS_TO_KEEP"] == 5
 
 
 # Tests for _setup_firmware uncovered lines
@@ -1246,6 +1255,7 @@ def test_run_setup_windows_cmd_environment(
                 "b",  # Both client apps and firmware
                 "n",  # No firmware prereleases
                 "n",  # No client app prereleases
+                "n",  # No app snapshots
                 "n",  # No channel suffixes
                 "2",  # Keep 2 versions
                 "2",  # Keep 2 versions
@@ -1507,6 +1517,7 @@ def test_run_setup_desktop_invalid_version_input(
             "",  # Use default base directory
             "d",  # Desktop/client app choice
             "n",  # No prereleases
+            "n",  # No app snapshots
             "invalid",  # Invalid version input
             "y",  # Wi-Fi only
             "n",  # No cron
@@ -1588,6 +1599,7 @@ def test_run_setup_version_package_not_found(
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
             "n",  # No client app prereleases
+            "n",  # No app snapshots
             "n",  # No channel suffixes
             "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware
@@ -1672,6 +1684,7 @@ def test_run_setup_version_other_error(
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
             "n",  # No client app prereleases
+            "n",  # No app snapshots
             "n",  # No channel suffixes
             "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware
@@ -1757,6 +1770,7 @@ def test_run_setup_config_dir_creation_error(
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
             "n",  # No client app prereleases
+            "n",  # No app snapshots
             "n",  # No channel suffixes
             "2",  # Keep 2 versions
             "2",  # Keep 2 versions firmware

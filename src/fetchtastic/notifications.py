@@ -73,6 +73,7 @@ def send_download_completion_notification(
     downloaded_apk_prereleases: Optional[List[str]] = None,
     downloaded_desktop: Optional[List[str]] = None,
     downloaded_desktop_prereleases: Optional[List[str]] = None,
+    downloaded_app_snapshots: Optional[List[str]] = None,
 ) -> None:
     """
     Send notification when downloads are completed successfully.
@@ -85,6 +86,7 @@ def send_download_completion_notification(
         downloaded_apk_prereleases (Optional[List[str]]): Legacy list of client app APK prerelease versions that were downloaded.
         downloaded_desktop (Optional[List[str]]): Legacy list of client app desktop versions that were downloaded.
         downloaded_desktop_prereleases (Optional[List[str]]): Legacy list of client app desktop prerelease versions that were downloaded.
+        downloaded_app_snapshots (Optional[List[str]]): List of snapshot debug build versionCodes that were downloaded.
 
     Side effects:
         - Sends notification to configured NTFY server/topic if downloads occurred.
@@ -96,6 +98,7 @@ def send_download_completion_notification(
     downloaded_apk_prereleases = downloaded_apk_prereleases or []
     downloaded_desktop = downloaded_desktop or []
     downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
+    downloaded_app_snapshots = downloaded_app_snapshots or []
     downloaded_client_apps = _dedupe_preserving_order(
         [*downloaded_apks, *downloaded_desktop]
     )
@@ -110,6 +113,7 @@ def send_download_completion_notification(
         and not downloaded_apk_prereleases
         and not downloaded_desktop
         and not downloaded_desktop_prereleases
+        and not downloaded_app_snapshots
     ):
         return  # No downloads, no notification needed
 
@@ -134,6 +138,13 @@ def send_download_completion_notification(
         message = (
             "Downloaded Meshtastic Client prerelease versions: "
             f"{', '.join(downloaded_client_app_prereleases)}"
+        )
+        notification_messages.append(message)
+
+    if downloaded_app_snapshots:
+        message = (
+            "Downloaded Android snapshot debug builds: "
+            f"{', '.join(downloaded_app_snapshots)}"
         )
         notification_messages.append(message)
 
