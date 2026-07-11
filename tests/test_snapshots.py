@@ -901,7 +901,7 @@ def test_config_retention_positive_preserved():
 # ------------------------------------------------------------------
 
 
-def _make_orchestrator_for_snapshots(tmp_path, cache_manager, **config_overrides):
+def _make_orchestrator_for_snapshots(tmp_path, **config_overrides):
     """Create an orchestrator wired for snapshot integration tests."""
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -944,7 +944,7 @@ def _make_orchestrator_for_snapshots(tmp_path, cache_manager, **config_overrides
 def test_orch_snapshot_all_success_tracks_no_cleanup(tmp_path, cache_manager):
     """Nonempty selected set, all succeed → tracking once, cleanup NOT called
     (cleanup only runs when a real release/prerelease ships)."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
@@ -977,7 +977,7 @@ def test_orch_snapshot_all_success_tracks_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manager):
     """Mixed success/failure → no tracking, no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
     asset1, asset2 = release.assets[0], release.assets[1]
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
@@ -1020,7 +1020,7 @@ def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manag
 @pytest.mark.integration
 def test_orch_snapshot_all_failure_no_track_no_cleanup(tmp_path, cache_manager):
     """All failure → no tracking, no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
@@ -1052,7 +1052,7 @@ def test_orch_snapshot_all_failure_no_track_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_orch_snapshot_empty_selected_no_track_no_cleanup(tmp_path, cache_manager):
     """Empty selected set → no downloads, no tracking, no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
 
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
@@ -1073,7 +1073,7 @@ def test_orch_snapshot_empty_selected_no_track_no_cleanup(tmp_path, cache_manage
 @pytest.mark.integration
 def test_orch_snapshot_tracking_write_failure_no_cleanup(tmp_path, cache_manager):
     """Tracking write failure → no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
@@ -1105,9 +1105,7 @@ def test_orch_snapshot_tracking_write_failure_no_cleanup(tmp_path, cache_manager
 @pytest.mark.integration
 def test_orch_snapshot_disabled_skips_entirely(tmp_path, cache_manager):
     """CHECK_APP_SNAPSHOTS=False → fetch never called."""
-    orch = _make_orchestrator_for_snapshots(
-        tmp_path, cache_manager, CHECK_APP_SNAPSHOTS=False
-    )
+    orch = _make_orchestrator_for_snapshots(tmp_path, CHECK_APP_SNAPSHOTS=False)
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=None)
     orch._process_client_app_downloads()
     orch.client_app_downloader.fetch_snapshot_release.assert_not_called()
@@ -1116,7 +1114,7 @@ def test_orch_snapshot_disabled_skips_entirely(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_orch_snapshot_success_counts_in_statistics(tmp_path, cache_manager):
     """Snapshot success counts in client_app_downloads and android_downloads."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
     orch.client_app_downloader.handle_snapshots = Mock(return_value=release)

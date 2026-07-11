@@ -309,13 +309,14 @@ def test_snapshot_only_notifications_disabled_sends_nothing(integration):
             success=True,
             release_tag="snapshot",
             file_path=f"{vc_dir}/androidApp-fdroid-universal-debug-29321447.apk",
-            download_url="http://x",
+            download_url="https://example.invalid/snapshot.apk",
             file_size=1,
             file_type=FILE_TYPE_APP_SNAPSHOT,
             was_skipped=False,
         ),
     ]
 
+    mock_log = Mock()
     with (
         patch(
             "fetchtastic.download.cli_integration.send_download_completion_notification"
@@ -323,9 +324,12 @@ def test_snapshot_only_notifications_disabled_sends_nothing(integration):
         patch(
             "fetchtastic.download.cli_integration.send_up_to_date_notification"
         ) as mock_up_to_date,
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ) as mock_new_releases,
     ):
         integration.log_download_results_summary(
-            logger_override=Mock(),
+            logger_override=mock_log,
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
             downloaded_apks=[],
@@ -334,8 +338,15 @@ def test_snapshot_only_notifications_disabled_sends_nothing(integration):
             latest_apk_version="",
         )
 
+    # No NTFY notifications at all
     mock_completion.assert_not_called()
     mock_up_to_date.assert_not_called()
+    mock_new_releases.assert_not_called()
+
+    # Local accounting still works: nonzero download count and snapshot VC logged
+    log_calls = [str(c) for c in mock_log.info.call_args_list]
+    assert any("Downloaded 1 new versions" in c for c in log_calls)
+    assert any("29321447" in c for c in log_calls)
 
 
 # ------------------------------------------------------------------

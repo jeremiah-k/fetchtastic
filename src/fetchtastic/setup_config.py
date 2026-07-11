@@ -834,7 +834,7 @@ def _setup_downloads(
     """
     Configure which asset types (client app assets and firmware) should be downloaded and update the provided configuration accordingly.
 
-    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
+    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, ``CHECK_APP_SNAPSHOTS``, ``APP_VERSIONS_TO_KEEP``, ``APP_SNAPSHOT_VERSIONS_TO_KEEP``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
 
     Parameters:
         config (dict): Mutable configuration dictionary to update.

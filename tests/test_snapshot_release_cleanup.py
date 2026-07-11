@@ -34,24 +34,24 @@ def _make_prerelease() -> Release:
         assets=[
             Asset(
                 name="app-fdroid-universal-release.apk",
-                download_url="http://x",
+                download_url="https://example.invalid/a.apk",
                 size=1,
             ),
             Asset(
                 name="app-google-universal-release.apk",
-                download_url="http://y",
+                download_url="https://example.invalid/b.apk",
                 size=1,
             ),
         ],
     )
 
 
-def _ok_result(file_path: str = "/tmp/x.apk") -> DownloadResult:
+def _ok_result(file_path: str) -> DownloadResult:
     return DownloadResult(
         success=True,
         release_tag="snapshot",
         file_path=file_path,
-        download_url="http://x",
+        download_url="https://example.invalid/snapshot.apk",
         file_size=1,
         file_type=FILE_TYPE_APP_SNAPSHOT,
     )
@@ -60,7 +60,7 @@ def _ok_result(file_path: str = "/tmp/x.apk") -> DownloadResult:
 @pytest.mark.integration
 def test_snapshot_only_no_cleanup(tmp_path, cache_manager):
     """Successful snapshot download with no release/prerelease → no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
 
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
@@ -86,7 +86,7 @@ def test_snapshot_only_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_new_stable_download_triggers_cleanup(tmp_path, cache_manager):
     """Stable release downloads new assets → cleanup called once."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     # Allow stable assets to match so releases_to_download is non-empty.
     orch.client_app_downloader.should_download_asset = Mock(return_value=True)
     orch.client_app_downloader.is_release_complete = Mock(return_value=False)
@@ -104,7 +104,7 @@ def test_new_stable_download_triggers_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_new_prerelease_download_triggers_cleanup(tmp_path, cache_manager):
     """Prerelease with successful non-skipped download → cleanup called once."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     prerelease = _make_prerelease()
 
     orch.client_app_downloader.handle_prereleases = Mock(return_value=[prerelease])
@@ -115,7 +115,7 @@ def test_new_prerelease_download_triggers_cleanup(tmp_path, cache_manager):
             success=True,
             release_tag=prerelease.tag_name,
             file_path=str(tmp_path / "pre.apk"),
-            download_url="http://x",
+            download_url="https://example.invalid/a.apk",
             file_size=1,
             was_skipped=False,
         )
@@ -136,7 +136,7 @@ def test_new_prerelease_download_triggers_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_already_complete_stable_no_cleanup(tmp_path, cache_manager):
     """Stable release already complete → no download → no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     orch.client_app_downloader.should_download_asset = Mock(return_value=True)
     orch.client_app_downloader.is_release_complete = Mock(return_value=True)
     orch._download_client_app_release = Mock(return_value=True)
@@ -152,7 +152,7 @@ def test_already_complete_stable_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_already_complete_prerelease_no_cleanup(tmp_path, cache_manager):
     """Prerelease already tracked and complete → no download → no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     prerelease = _make_prerelease()
 
     orch.client_app_downloader.handle_prereleases = Mock(return_value=[prerelease])
@@ -173,7 +173,7 @@ def test_already_complete_prerelease_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_partial_prerelease_failure_no_cleanup(tmp_path, cache_manager):
     """Some prerelease assets fail → not all succeed → no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     prerelease = _make_prerelease()
 
     orch.client_app_downloader.handle_prereleases = Mock(return_value=[prerelease])
@@ -185,7 +185,7 @@ def test_partial_prerelease_failure_no_cleanup(tmp_path, cache_manager):
                 success=True,
                 release_tag=prerelease.tag_name,
                 file_path=str(tmp_path / "a.apk"),
-                download_url="http://x",
+                download_url="https://example.invalid/a.apk",
                 file_size=1,
                 was_skipped=False,
             ),
@@ -193,7 +193,7 @@ def test_partial_prerelease_failure_no_cleanup(tmp_path, cache_manager):
                 success=False,
                 release_tag=prerelease.tag_name,
                 file_path=str(tmp_path / "b.apk"),
-                download_url="http://y",
+                download_url="https://example.invalid/b.apk",
                 file_size=1,
                 was_skipped=False,
             ),
@@ -213,7 +213,7 @@ def test_partial_prerelease_failure_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_stable_failure_no_cleanup(tmp_path, cache_manager):
     """_download_client_app_release returns False → no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     orch.client_app_downloader.should_download_asset = Mock(return_value=True)
     orch.client_app_downloader.is_release_complete = Mock(return_value=False)
     orch._download_client_app_release = Mock(return_value=False)
@@ -229,7 +229,7 @@ def test_stable_failure_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_snapshot_tracking_failure_no_cleanup(tmp_path, cache_manager):
     """update_snapshot_tracking returns False → snapshot-only, no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
 
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
@@ -255,7 +255,7 @@ def test_snapshot_tracking_failure_no_cleanup(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_both_release_and_snapshot_cleanup_once(tmp_path, cache_manager):
     """Stable download succeeds AND snapshot succeeds → cleanup called exactly once."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
 
     # Stable flow: asset matches, incomplete, download succeeds.
@@ -286,7 +286,7 @@ def test_both_release_and_snapshot_cleanup_once(tmp_path, cache_manager):
 @pytest.mark.integration
 def test_empty_selected_assets_no_cleanup(tmp_path, cache_manager):
     """No matching snapshot assets and no release download → no cleanup."""
-    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
 
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
