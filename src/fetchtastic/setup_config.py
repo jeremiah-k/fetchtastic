@@ -23,6 +23,7 @@ from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
+    DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
     DEFAULT_CHECK_APP_SNAPSHOTS,
     DEFAULT_CREATE_LATEST_SYMLINKS,
@@ -1051,6 +1052,26 @@ def _setup_downloads(
         else:
             normalize_client_app_config(config)
 
+    # --- Client App Version Retention ---
+    if save_client_apps and app_section_requested:
+        current_versions = config.get(
+            "APP_VERSIONS_TO_KEEP",
+            config.get("ANDROID_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP),
+        )
+        raw_versions = _safe_input(
+            f"\nHow many versions of the client app would you like to keep? (current: {current_versions}): ",
+            default=str(current_versions),
+        ).strip() or str(current_versions)
+        parsed_versions = _parse_non_negative_int(raw_versions)
+        if parsed_versions is not None:
+            config["APP_VERSIONS_TO_KEEP"] = parsed_versions
+        else:
+            print("Invalid number — keeping current value.")
+            config["APP_VERSIONS_TO_KEEP"] = (
+                _parse_non_negative_int(current_versions)
+                or DEFAULT_APP_VERSIONS_TO_KEEP
+            )
+
     # --- Client App Pre-release Configuration ---
     if save_client_apps and app_section_requested:
         check_app_prereleases_current = _coerce_bool(
@@ -1144,40 +1165,13 @@ def _setup_client_app(
     config: Dict[str, Any], is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
-    Prompt the user for how many client app versions to keep and store that value in the configuration.
+    Normalize client app version retention.
 
-    Prompts with first-run or regular phrasing based on is_first_run, parses the user's input as an integer, and updates config["APP_VERSIONS_TO_KEEP"]. If the config already contains a value, it is used as the prompt default; otherwise default_versions is used. On invalid input, the existing numeric value is retained.
-
-    Parameters:
-        config (dict): Configuration mapping to read and update; the function sets "APP_VERSIONS_TO_KEEP" in-place.
-        is_first_run (bool): If True, use first-run wording in the prompt.
-        default_versions (int): Fallback number to use when the config does not already contain a value.
-
-    Returns:
-        dict: The updated configuration dictionary with client app retention keys normalized.
+    The prompt is now handled in _setup_downloads. This function ensures the
+    config keys are consistent for backward compatibility.
     """
-    current_versions = config.get(
-        "APP_VERSIONS_TO_KEEP",
-        config.get("ANDROID_VERSIONS_TO_KEEP", default_versions),
-    )
-    if is_first_run:
-        prompt_text = f"How many versions of the client app would you like to keep? (default is {current_versions}): "
-    else:
-        prompt_text = f"How many versions of the client app would you like to keep? (current: {current_versions}): "
-    raw = _safe_input(prompt_text, default=str(current_versions)).strip() or str(
-        current_versions
-    )
-    parsed = _parse_non_negative_int(raw)
-    if parsed is not None:
-        config["APP_VERSIONS_TO_KEEP"] = parsed
-    else:
-        print("Invalid number — keeping current value.")
-        fallback = _parse_non_negative_int(current_versions)
-        if fallback is not None:
-            config["APP_VERSIONS_TO_KEEP"] = fallback
-        else:
-            print("Invalid current value — using default.")
-            config["APP_VERSIONS_TO_KEEP"] = default_versions
+    if "APP_VERSIONS_TO_KEEP" not in config:
+        config["APP_VERSIONS_TO_KEEP"] = default_versions
     return normalize_client_app_config(config)
 
 

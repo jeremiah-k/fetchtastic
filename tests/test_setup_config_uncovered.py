@@ -364,8 +364,9 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
         "builtins.input",
         side_effect=[
             "a",  # APK/client app choice
-            "n",  # no prerelease
-            "n",  # no channel suffix
+            "2",  # Versions to keep
+            "n",  # no app prerelease
+            "n",  # no app snapshots
         ],
     )
     mocker.patch(
@@ -512,40 +513,37 @@ def test_check_storage_setup_non_interactive(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_android_invalid_number_current_value(mocker, capsys):
-    """Test _setup_android with invalid number in current value (lines 1043-1049)."""
+    """Test _setup_android with no APP_VERSIONS_TO_KEEP sets default."""
     from fetchtastic.setup_config import _setup_android
 
     config = {
-        "ANDROID_VERSIONS_TO_KEEP": "invalid",  # Invalid current value
+        "ANDROID_VERSIONS_TO_KEEP": "invalid",  # Legacy key, no APP_VERSIONS_TO_KEEP
     }
 
-    mocker.patch(
-        "builtins.input",
-        side_effect=["also_invalid"],  # User also enters invalid
-    )
+    mock_input = mocker.patch("builtins.input", return_value="5")
 
     result = _setup_android(config, is_first_run=False, default_versions=3)
-    captured = capsys.readouterr()
 
-    assert result["ANDROID_VERSIONS_TO_KEEP"] == 3  # Falls back to default
-    assert "Invalid current value — using default." in captured.out
+    # _setup_android no longer prompts; it sets APP_VERSIONS_TO_KEEP to default_versions
+    assert result["APP_VERSIONS_TO_KEEP"] == 3
+    mock_input.assert_not_called()
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_android_non_first_run_prompt(mocker):
-    """Test _setup_android non-first run prompt text (line 1037)."""
+    """Test _setup_android no longer prompts — normalization only."""
     from fetchtastic.setup_config import _setup_android
 
-    config = {"ANDROID_VERSIONS_TO_KEEP": 5}
+    config = {"APP_VERSIONS_TO_KEEP": 5}
 
     mock_input = mocker.patch("builtins.input", return_value="5")
 
-    _setup_android(config, is_first_run=False, default_versions=2)
+    result = _setup_android(config, is_first_run=False, default_versions=2)
 
-    call_args = mock_input.call_args[0][0]
-    assert "current:" in call_args
-    assert "5" in call_args
+    # _setup_android no longer prompts; it just normalizes
+    mock_input.assert_not_called()
+    assert result["APP_VERSIONS_TO_KEEP"] == 5
 
 
 # Tests for _setup_firmware uncovered lines

@@ -214,8 +214,9 @@ def test_setup_downloads_apk_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "a",
+            "2",
             "y",
-            "n",
+            "y",
         ],
     )
 
@@ -275,6 +276,7 @@ def test_setup_downloads_both_selected(mocker, capsys):
         side_effect=[
             "b",
             "n",
+            "2",
             "y",
             "n",
             "n",
@@ -308,6 +310,7 @@ def test_setup_downloads_apk_snapshot_enabled(mocker, capsys):
         "builtins.input",
         side_effect=[
             "a",  # Choose client app only
+            "2",  # Versions to keep
             "n",  # App prereleases
             "y",  # App snapshots
         ],
@@ -333,7 +336,7 @@ def test_setup_downloads_desktop_no_snapshot_prompt(mocker, capsys):
     config = {}
 
     captured_prompts: list[str] = []
-    answers = iter(["d", "n"])
+    answers = iter(["d", "2", "n"])
 
     def _fake_input(prompt=""):
         captured_prompts.append(prompt)
@@ -460,6 +463,7 @@ def test_setup_downloads_partial_run(mocker):
         side_effect=[
             "y",  # Keep downloading client app releases
             "n",  # Skip re-running menu (existing selection kept)
+            "2",  # Versions to keep
             "y",  # Enable prereleases
             "n",  # No channel suffixes
         ],
@@ -493,6 +497,7 @@ def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
         side_effect=[
             "y",  # Keep downloading client app releases
             "n",  # Skip re-running menu (existing selection kept)
+            "2",  # Versions to keep
             "n",  # Disable prereleases
             "n",  # No channel suffixes
         ],
