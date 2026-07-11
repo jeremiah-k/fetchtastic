@@ -1315,7 +1315,10 @@ def test_handle_prereleases_disabled(downloader):
     assert downloader.handle_prereleases(releases) == []
 
 
-def test_handle_prereleases_basic(downloader, mocker):
+def test_handle_prereleases_basic(downloader):
+    # A prerelease sharing the stable base (2.7.14-closed.1 over v2.7.14) is
+    # excluded: the stable release supersedes same-base prereleases, so the
+    # highest-active-base selector returns no eligible candidates.
     releases = [
         Release(
             tag_name="v2.7.14", prerelease=False, published_at="2026-01-01T00:00:00Z"
@@ -1326,14 +1329,8 @@ def test_handle_prereleases_basic(downloader, mocker):
             published_at="2026-01-02T00:00:00Z",
         ),
     ]
-    mocker.patch.object(
-        downloader.version_manager,
-        "calculate_expected_prerelease_version",
-        return_value=None,
-    )
     result = downloader.handle_prereleases(releases)
-    assert len(result) == 1
-    assert result[0].tag_name == "v2.7.14-closed.1"
+    assert result == []
 
 
 def test_handle_prereleases_filters_by_expected_base(downloader, mocker):
@@ -1388,7 +1385,11 @@ def test_handle_prereleases_filters_by_expected_base_exclude(downloader, mocker)
     assert result == []
 
 
-def test_handle_prereleases_expected_base_does_not_prefix_match(downloader, mocker):
+def test_handle_prereleases_higher_patch_tuple_eligible_over_stable(downloader):
+    # Guards against string-prefix comparison: a prerelease on base 2.7.10 is
+    # eligible over a stable on 2.7.0 because tuple comparison
+    # (2, 7, 10) > (2, 7, 0). A naive string-prefix check would mis-rank these
+    # (e.g. treat "2.7.10" as sharing a "2.7.1" prefix or ranking below "2.7.0").
     downloader.config["CHECK_APP_PRERELEASES"] = True
     releases = [
         Release(
@@ -1400,15 +1401,10 @@ def test_handle_prereleases_expected_base_does_not_prefix_match(downloader, mock
             published_at="2026-01-02T00:00:00Z",
         ),
     ]
-    mocker.patch.object(
-        downloader.version_manager,
-        "calculate_expected_prerelease_version",
-        return_value="2.7.1",
-    )
 
     result = downloader.handle_prereleases(releases)
 
-    assert result == []
+    assert [r.tag_name for r in result] == ["v2.7.10-open.1"]
 
 
 def test_handle_prereleases_filters_by_expected_base_no_clean(downloader, mocker):

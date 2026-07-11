@@ -4523,6 +4523,190 @@ class TestDownloadOrchestrator:
         assert mock_pointer.call_count == 1
         mock_pointer.assert_called_once_with(older)
 
+    # ------------------------------------------------------------------
+    # Client-app higher-minor prerelease contracts (cases 20-24).
+    #
+    # Production reproduction fixture: stable v2.7.14 + prerelease
+    # v2.8.0-closed.8.  The orchestrator's transactional tracking/latest
+    # updates and completeness-triggered backfill already work, but the
+    # selector (handle_prereleases) currently rejects higher-minor
+    # prereleases because clean_tuple (2,8,0) != expected_tuple (2,7,15).
+    # T1 locks the selector contract (RED until the selector fix lands);
+    # T2/T3/T4 lock the orchestration contracts that the fix must not
+    # break.  Cases 22/23/24 are covered by existing tests (named below)
+    # and depend on the same selector fix represented by T1.
+    # ------------------------------------------------------------------
+
+    def test_higher_minor_prerelease_selector_must_surface_v2_8_0_closed(
+        self, tmp_path
+    ):
+        """Case 20 (selector): handle_prereleases must not reject a higher-minor prerelease.
+
+        RED until the selector accepts v2.8.0-closed.8 alongside stable v2.7.14.
+        Currently the expected-base filter (clean_tuple (2,8,0) != expected (2,7,15))
+        drops the prerelease, which also blocks backfill (case 22) and retain/repair
+        (case 23) for the reproduction fixture.
+        """
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "CHECK_APP_PRERELEASES": True,
+        }
+        orch = DownloadOrchestrator(config)
+        prerelease = Release(tag_name="v2.8.0-closed.8", prerelease=True, assets=[])
+        stable = Release(tag_name="v2.7.14", prerelease=False, assets=[])
+
+        surfaced = orch.client_app_downloader.handle_prereleases([prerelease, stable])
+
+        assert any(r.tag_name == "v2.8.0-closed.8" for r in surfaced), surfaced
+
+    def test_higher_minor_prerelease_storage_under_prerelease_dir(self, tmp_path):
+        """Case 20 (storage): prerelease assets resolve under app/prerelease/<tag>/.
+
+        GREEN: the storage-path logic already handles higher-minor tags; this locks
+        the path so a regression in _resolve_release_dir is caught.
+        """
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_CLIENT_APPS": True,
+            "CHECK_APP_PRERELEASES": True,
+        }
+        orch = DownloadOrchestrator(config)
+        prerelease = Release(tag_name="v2.8.0-closed.8", prerelease=True, assets=[])
+
+        target = orch.client_app_downloader.get_target_path_for_release(
+            "v2.8.0-closed.8", "app.apk", release=prerelease
+        )
+
+        expected = str(tmp_path / "app" / "prerelease" / "v2.8.0-closed.8" / "app.apk")
+        assert target == expected
+
+    def test_higher_minor_prerelease_download_passes_assets_then_tracking_then_latest(
+        self, orchestrator
+    ):
+        """Case 20 (orchestration + transaction ordering): all selected assets are
+        passed to download_app, tracking updates only after every asset succeeds,
+        and the latest pointer updates after completion.
+
+        GREEN: the orchestrator already enforces the transaction; this locks the
+        ordering (download_app* < update_prerelease_tracking < latest pointer) on the
+        reproduction fixture so the selector fix cannot regress it.
+        """
+        asset_apk = Mock()
+        asset_apk.name = "app.apk"
+        asset_dmg = Mock()
+        asset_dmg.name = "app.dmg"
+        prerelease = Release(
+            tag_name="v2.8.0-closed.8",
+            prerelease=True,
+            assets=[asset_apk, asset_dmg],
+        )
+        # Stable release with no assets is filtered out of releases_to_process, so
+        # it does not update the stable latest pointer and isolates the prerelease path.
+        stable = Release(tag_name="v2.7.14", prerelease=False, assets=[])
+
+        orchestrator.client_app_downloader.get_releases.return_value = [stable]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
+            True
+        )
+        orchestrator.client_app_downloader.get_assets.side_effect = (
+            lambda release: release.assets
+        )
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        success_result = Mock(spec=DownloadResult)
+        success_result.success = True
+        success_result.was_skipped = False
+        orchestrator.client_app_downloader.download_app.return_value = success_result
+
+        orchestrator._process_client_app_downloads()
+
+        # Every selected asset is passed to download_app with the prerelease.
+        download_calls = orchestrator.client_app_downloader.download_app.call_args_list
+        assert len(download_calls) == 2
+        assert all(call.args[0] is prerelease for call in download_calls)
+
+        # Tracking updates exactly once, only after all assets succeed.
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_called_once_with(
+            "v2.8.0-closed.8"
+        )
+
+        # Latest pointer updates exactly once with the prerelease, after completion.
+        orchestrator.client_app_downloader.update_latest_pointer_for_release.assert_called_once_with(
+            prerelease
+        )
+
+        # Transaction ordering on the single downloader mock:
+        # every download_app precedes tracking precedes the latest pointer.
+        names = [c[0] for c in orchestrator.client_app_downloader.mock_calls]
+        last_download = max(i for i, n in enumerate(names) if n == "download_app")
+        tracking_idx = names.index("update_prerelease_tracking")
+        pointer_idx = names.index("update_latest_pointer_for_release")
+        assert last_download < tracking_idx < pointer_idx
+
+    def test_higher_minor_prerelease_partial_failure_advances_neither_tracking_nor_latest(
+        self, orchestrator
+    ):
+        """Case 21: when one of the prerelease assets fails, tracking and the latest
+        pointer must not advance.
+
+        GREEN: the orchestrator's all-or-nothing guard (prerelease_results and all
+        succeed) already enforces this; this locks the contract on the reproduction
+        fixture.  Genuinely missing coverage — no existing test covers partial asset
+        failure within a single client-app prerelease.
+        """
+        asset_apk = Mock()
+        asset_apk.name = "app.apk"
+        asset_dmg = Mock()
+        asset_dmg.name = "app.dmg"
+        prerelease = Release(
+            tag_name="v2.8.0-closed.8",
+            prerelease=True,
+            assets=[asset_apk, asset_dmg],
+        )
+        stable = Release(tag_name="v2.7.14", prerelease=False, assets=[])
+
+        orchestrator.client_app_downloader.get_releases.return_value = [stable]
+        orchestrator.client_app_downloader.update_release_history.return_value = {}
+        orchestrator.client_app_downloader.ensure_release_notes.return_value = None
+        orchestrator.client_app_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.client_app_downloader.is_release_complete.return_value = True
+        orchestrator.client_app_downloader.handle_prereleases.return_value = [
+            prerelease
+        ]
+        orchestrator.client_app_downloader.should_download_prerelease.return_value = (
+            True
+        )
+        orchestrator.client_app_downloader.get_assets.side_effect = (
+            lambda release: release.assets
+        )
+        orchestrator.client_app_downloader.should_download_asset.return_value = True
+        success_result = Mock(spec=DownloadResult)
+        success_result.success = True
+        success_result.was_skipped = False
+        failure_result = Mock(spec=DownloadResult)
+        failure_result.success = False
+        failure_result.was_skipped = False
+        orchestrator.client_app_downloader.download_app.side_effect = [
+            success_result,
+            failure_result,
+        ]
+
+        orchestrator._process_client_app_downloads()
+
+        # Both assets were attempted (the orchestrator downloads all, then checks).
+        assert orchestrator.client_app_downloader.download_app.call_count == 2
+
+        # Partial failure rolls back the whole prerelease transaction.
+        orchestrator.client_app_downloader.update_prerelease_tracking.assert_not_called()
+        orchestrator.client_app_downloader.update_latest_pointer_for_release.assert_not_called()
+
 
 class TestFirmwarePrereleaseBaselineRegression:
     """Regression tests for the repo-prerelease baseline selection fix.
