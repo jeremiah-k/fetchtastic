@@ -536,44 +536,61 @@ class DownloadOrchestrator:
                         handled_snapshot
                     )
                     if snapshot_vc is not None and (
-                        self.client_app_downloader.should_download_snapshot(snapshot_vc)
+                        self.client_app_downloader.should_process_snapshot(
+                            handled_snapshot, snapshot_vc
+                        )
                     ):
-                        logger.info("Downloading snapshot debug build %s", snapshot_vc)
-                        for asset in self.client_app_downloader.get_assets(
-                            handled_snapshot
-                        ):
-                            if (
-                                self.client_app_downloader.parse_snapshot_version_code(
-                                    asset.name
-                                )
-                                is None
-                            ):
-                                continue
-                            snapshot_result = (
-                                self.client_app_downloader.download_snapshot_asset(
-                                    handled_snapshot, asset, snapshot_vc
-                                )
-                            )
-                            if (
-                                snapshot_result.success
-                                and not snapshot_result.was_skipped
-                            ):
-                                any_app_downloaded = True
-                            self._handle_download_result(
-                                snapshot_result, FILE_TYPE_APP_SNAPSHOT
-                            )
-                        if not self.client_app_downloader.update_snapshot_tracking(
-                            snapshot_vc,
-                            self.client_app_downloader.extract_snapshot_commit_sha(
+                        selected_assets = (
+                            self.client_app_downloader.get_selected_snapshot_assets(
                                 handled_snapshot
-                            ),
-                        ):
-                            logger.warning(
-                                "Failed to update snapshot tracking for %s",
+                            )
+                        )
+                        if not selected_assets:
+                            logger.info(
+                                "No selected assets match snapshot debug build %s; skipping",
                                 snapshot_vc,
                             )
                         else:
-                            self.client_app_downloader.cleanup_superseded_snapshots()
+                            logger.info(
+                                "Downloading snapshot debug build %s", snapshot_vc
+                            )
+                            snapshot_results = []
+                            for asset in selected_assets:
+                                snapshot_result = (
+                                    self.client_app_downloader.download_snapshot_asset(
+                                        handled_snapshot, asset, snapshot_vc
+                                    )
+                                )
+                                if (
+                                    snapshot_result.success
+                                    and not snapshot_result.was_skipped
+                                ):
+                                    any_app_downloaded = True
+                                self._handle_download_result(
+                                    snapshot_result, FILE_TYPE_APP_SNAPSHOT
+                                )
+                                snapshot_results.append(snapshot_result)
+                            # Transactional: only track when all selected succeed
+                            if snapshot_results and all(
+                                r.success for r in snapshot_results
+                            ):
+                                if not self.client_app_downloader.update_snapshot_tracking(
+                                    snapshot_vc,
+                                    self.client_app_downloader.extract_snapshot_commit_sha(
+                                        handled_snapshot
+                                    ),
+                                ):
+                                    logger.warning(
+                                        "Failed to update snapshot tracking for %s",
+                                        snapshot_vc,
+                                    )
+                                else:
+                                    self.client_app_downloader.cleanup_superseded_snapshots()
+                            elif snapshot_results:
+                                logger.warning(
+                                    "Snapshot %s has failed assets; tracking and cleanup deferred",
+                                    snapshot_vc,
+                                )
                     else:
                         logger.debug(
                             "Snapshot debug build %s is up to date", snapshot_vc
@@ -1529,7 +1546,11 @@ class DownloadOrchestrator:
                 FILE_TYPE_DESKTOP_PRERELEASE,
             ):
                 downloader = self.desktop_downloader
-            elif file_type in (FILE_TYPE_CLIENT_APP, FILE_TYPE_CLIENT_APP_PRERELEASE):
+            elif file_type in (
+                FILE_TYPE_CLIENT_APP,
+                FILE_TYPE_CLIENT_APP_PRERELEASE,
+                FILE_TYPE_APP_SNAPSHOT,
+            ):
                 downloader = self.client_app_downloader
             elif file_type in (
                 FILE_TYPE_FIRMWARE,
@@ -1544,6 +1565,7 @@ class DownloadOrchestrator:
                     if file_type in (
                         FILE_TYPE_CLIENT_APP,
                         FILE_TYPE_CLIENT_APP_PRERELEASE,
+                        FILE_TYPE_APP_SNAPSHOT,
                         "android",
                         "android_prerelease",
                         "desktop",
@@ -1829,6 +1851,7 @@ class DownloadOrchestrator:
                 in (
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                 )
             ]
             firmware_downloads = [
@@ -1851,6 +1874,7 @@ class DownloadOrchestrator:
                 in (
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                 )
             ]
             firmware_failures = [
@@ -2132,6 +2156,7 @@ class DownloadOrchestrator:
                 return file_type in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                     "android",
                     "android_prerelease",
                     "desktop",
@@ -2164,6 +2189,7 @@ class DownloadOrchestrator:
                 if file_type not in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                     "android",
                     "android_prerelease",
                     "desktop",
@@ -2185,6 +2211,7 @@ class DownloadOrchestrator:
                 if file_type in {
                     FILE_TYPE_CLIENT_APP,
                     FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_APP_SNAPSHOT,
                 }:
                     logger.debug(
                         "Client app asset could not be classified by filename; defaulting to legacy Android bucket: %s",
