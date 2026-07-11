@@ -300,6 +300,62 @@ def test_setup_downloads_both_selected(mocker, capsys):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_downloads_apk_snapshot_enabled(mocker, capsys):
+    """Test _setup_downloads with APK selected and snapshot debug builds accepted."""
+    config = {}
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "a",  # Choose client app only
+            "n",  # App prereleases
+            "y",  # App snapshots
+        ],
+    )
+
+    mock_menu_result = {"selected_assets": ["meshtastic.apk"]}
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_menu_result)
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_apks is True
+    assert save_firmware is False
+    assert result_config["CHECK_APP_SNAPSHOTS"] is True
+    assert result_config.get("APP_SNAPSHOT_VERSIONS_TO_KEEP", 1) >= 1
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_desktop_no_snapshot_prompt(mocker, capsys):
+    """Test that desktop-only (firmware selected, no APKs) does not consume a snapshot prompt input."""
+    config = {"SAVE_DESKTOP_APP": True}
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "f",  # Choose firmware only (no client apps at all)
+            "n",  # Firmware prereleases
+            "n",  # Channel suffixes
+        ],
+    )
+
+    mock_firmware_result = {"selected_assets": ["rak4631-"]}
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu", return_value=mock_firmware_result
+    )
+
+    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_apks is False
+    assert result_config.get("CHECK_APP_SNAPSHOTS") is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_no_selection(mocker, capsys):
     """Test _setup_downloads when user selects nothing."""
     config = {}

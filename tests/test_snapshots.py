@@ -523,7 +523,7 @@ def test_get_selected_snapshot_assets_rejects_non_snapshot_tag(downloader):
 
 
 def test_get_selected_snapshot_assets_rejects_mixed_version_codes(downloader):
-    """Assets with different versionCodes should not be selected together."""
+    """Assets with different versionCodes must be rejected entirely (all-or-nothing)."""
     downloader.config["SELECTED_APP_ASSETS"] = ["androidApp-fdroid-universal-debug-"]
     release = Release(
         tag_name="snapshot",
@@ -542,9 +542,8 @@ def test_get_selected_snapshot_assets_rejects_mixed_version_codes(downloader):
         ],
     )
     selected = downloader.get_selected_snapshot_assets(release)
-    # First asset's vc (100) is authoritative; second (200) must be excluded
-    assert len(selected) == 1
-    assert "100" in selected[0].name
+    # Mixed versionCodes → entire release rejected, no assets selected
+    assert selected == []
 
 
 # ------------------------------------------------------------------
@@ -671,7 +670,10 @@ def test_cleanup_rejects_symlinked_root(downloader, tmp_path):
     base.mkdir(parents=True, exist_ok=True)
     real_snapshots = tmp_path / "real_snapshots"
     real_snapshots.mkdir()
-    os.symlink(str(real_snapshots), str(base / APP_SNAPSHOTS_DIR_NAME))
+    try:
+        os.symlink(str(real_snapshots), str(base / APP_SNAPSHOTS_DIR_NAME))
+    except OSError:
+        pytest.skip("Symlinks are not supported or permitted on this platform")
     assert downloader.cleanup_superseded_snapshots() == 0
 
 
@@ -749,3 +751,439 @@ def test_config_snapshot_retention_normalized():
     result = normalize_client_app_config(config)
     assert "APP_SNAPSHOT_VERSIONS_TO_KEEP" in result
     assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] >= 1
+
+
+# ------------------------------------------------------------------
+# 9. Realistic Asset-Selection Tests (P0 proof with setup-generated patterns)
+# ------------------------------------------------------------------
+
+
+@pytest.fixture
+def downloader_stable_patterns(tmp_path, cache_manager):
+    """Downloader with realistic setup-generated stable APK selections."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-fdroid-universal-release.apk"],
+        "APP_VERSIONS_TO_KEEP": 1,
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    return MeshtasticClientAppDownloader(config, cache_manager)
+
+
+def test_stable_fdroid_universal_selects_snapshot_fdroid_universal(
+    downloader_stable_patterns,
+):
+    """app-fdroid-universal-release.apk → only androidApp-fdroid-universal-debug-*.apk."""
+    release = _make_snapshot_release(vc=100)
+    selected = downloader_stable_patterns.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "fdroid" in selected[0].name
+    assert "universal" in selected[0].name
+
+
+def test_stable_fdroid_arm64_selects_snapshot_fdroid_arm64(tmp_path, cache_manager):
+    """app-fdroid-arm64-v8a-release.apk → only androidApp-fdroid-arm64-v8a-debug-*.apk."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-fdroid-arm64-v8a-release.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "fdroid" in selected[0].name
+    assert "arm64-v8a" in selected[0].name
+
+
+def test_stable_google_release_maps_to_google_universal(tmp_path, cache_manager):
+    """app-google-release.apk (no ABI) → androidApp-google-universal-debug-*.apk only."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-google-release.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "google" in selected[0].name
+    assert "universal" in selected[0].name
+
+
+def test_stable_google_does_not_select_arm64(tmp_path, cache_manager):
+    """app-google-release.apk must NOT select google-arm64-v8a snapshot."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-google-release.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    for asset in selected:
+        assert "arm64-v8a" not in asset.name
+        assert "armeabi-v7a" not in asset.name
+
+
+def test_wildcard_apk_selects_all_snapshot_apks(tmp_path, cache_manager):
+    """*.apk selects all 6 snapshot APKs."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["*"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 6
+
+
+def test_desktop_only_selects_zero_snapshots(tmp_path, cache_manager):
+    """Desktop-only patterns select zero snapshot assets."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["meshtastic.dmg"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert selected == []
+
+
+def test_explicit_snapshot_pattern_still_works(downloader):
+    """A manually-authored snapshot-specific pattern still matches."""
+    release = _make_snapshot_release(vc=100)
+    selected = downloader.get_selected_snapshot_assets(release)
+    # downloader fixture has SELECTED_APP_ASSETS=["androidApp-fdroid-universal-debug-*.apk"]
+    # which the semantic parser resolves to flavor=fdroid, abi=universal
+    assert len(selected) >= 1
+    assert all("fdroid" in a.name and "universal" in a.name for a in selected)
+
+
+def test_changing_selection_triggers_backfill(
+    downloader_stable_patterns, cache_manager
+):
+    """Changing SELECTED_APP_ASSETS at the same versionCode triggers processing."""
+    release = _make_snapshot_release(vc=100)
+    # Track vc=100 so should_download_snapshot returns False
+    downloader_stable_patterns.update_snapshot_tracking(100)
+    # Current selection is fdroid-universal, which is incomplete (no file on disk)
+    assert downloader_stable_patterns.should_process_snapshot(release, 100) is True
+    # Now change to arm64 selection — still incomplete, should still process
+    downloader_stable_patterns.config["SELECTED_APP_ASSETS"] = [
+        "app-fdroid-arm64-v8a-release.apk"
+    ]
+    assert downloader_stable_patterns.should_process_snapshot(release, 100) is True
+
+
+# ------------------------------------------------------------------
+# 10. Retention Normalization Floor Tests
+# ------------------------------------------------------------------
+
+
+def test_config_retention_floor_zero_when_enabled():
+    """APP_SNAPSHOT_VERSIONS_TO_KEEP=0 must be clamped to 1 when snapshots enabled."""
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "CHECK_APP_SNAPSHOTS": True,
+        "SELECTED_APP_ASSETS": ["*.apk"],
+        "APP_SNAPSHOT_VERSIONS_TO_KEEP": 0,
+    }
+    result = normalize_client_app_config(config)
+    assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] >= 1
+
+
+def test_config_retention_floor_negative_when_enabled():
+    """Negative retention must be clamped to 1 when snapshots enabled."""
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "CHECK_APP_SNAPSHOTS": True,
+        "SELECTED_APP_ASSETS": ["*.apk"],
+        "APP_SNAPSHOT_VERSIONS_TO_KEEP": -5,
+    }
+    result = normalize_client_app_config(config)
+    assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] >= 1
+
+
+def test_config_retention_positive_preserved():
+    """Valid positive retention is preserved."""
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "CHECK_APP_SNAPSHOTS": True,
+        "SELECTED_APP_ASSETS": ["*.apk"],
+        "APP_SNAPSHOT_VERSIONS_TO_KEEP": 3,
+    }
+    result = normalize_client_app_config(config)
+    assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] == 3
+
+
+# ------------------------------------------------------------------
+# 11. Orchestrator Integration Tests (transactional through real code path)
+# ------------------------------------------------------------------
+
+
+def _make_orchestrator_for_snapshots(tmp_path, cache_manager, **config_overrides):
+    """Create an orchestrator wired for snapshot integration tests."""
+    from fetchtastic.download.interfaces import DownloadResult
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APP_ASSETS": ["app-fdroid-universal-release.apk"],
+        "APP_VERSIONS_TO_KEEP": 1,
+        "CHECK_APP_SNAPSHOTS": True,
+        "CHECK_APP_PRERELEASES": False,
+        "EXCLUDE_PATTERNS": [],
+    }
+    config.update(config_overrides)
+    orch = DownloadOrchestrator(config)
+
+    # Provide a stable release so _process_client_app_downloads doesn't exit early,
+    # but mock stable-flow methods so it's a no-op.
+    stable = Release(
+        tag_name="v2.8.0",
+        prerelease=False,
+        published_at="2024-01-01",
+        assets=[
+            Asset(
+                name="app-fdroid-universal-release.apk", download_url="http://x", size=1
+            )
+        ],
+    )
+    orch._ensure_client_app_releases = Mock(return_value=[stable])
+    orch.client_app_downloader.migrate_legacy_layout = Mock()
+    orch.client_app_downloader.update_release_history = Mock()
+    # Stable assets should not match for download so stable flow is a no-op
+    orch.client_app_downloader.should_download_asset = Mock(return_value=False)
+    orch.client_app_downloader.handle_prereleases = Mock(return_value=[])
+    return orch
+
+
+def test_orch_snapshot_all_success_tracks_and_cleans(tmp_path, cache_manager):
+    """Nonempty selected set, all succeed → tracking once, cleanup once."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    release = _make_snapshot_release(vc=100)
+
+    from fetchtastic.download.interfaces import DownloadResult
+
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
+    orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
+    orch.client_app_downloader.should_process_snapshot = Mock(return_value=True)
+    selected = [release.assets[0]]
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(
+        return_value=selected
+    )
+    orch.client_app_downloader.download_snapshot_asset = Mock(
+        return_value=DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path="/tmp/x.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+        )
+    )
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=True)
+    orch.client_app_downloader.cleanup_superseded_snapshots = Mock(return_value=0)
+    orch._handle_download_result = Mock()
+
+    orch._process_client_app_downloads()
+
+    orch.client_app_downloader.update_snapshot_tracking.assert_called_once()
+    orch.client_app_downloader.cleanup_superseded_snapshots.assert_called_once()
+
+
+def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manager):
+    """Mixed success/failure → no tracking, no cleanup."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    release = _make_snapshot_release(vc=100)
+
+    from fetchtastic.download.interfaces import DownloadResult
+
+    asset1, asset2 = release.assets[0], release.assets[1]
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
+    orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
+    orch.client_app_downloader.should_process_snapshot = Mock(return_value=True)
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(
+        return_value=[asset1, asset2]
+    )
+    orch.client_app_downloader.download_snapshot_asset = Mock(
+        side_effect=[
+            DownloadResult(
+                success=True,
+                release_tag="snapshot",
+                file_path="/tmp/a.apk",
+                download_url="http://x",
+                file_size=1,
+                file_type=FILE_TYPE_APP_SNAPSHOT,
+            ),
+            DownloadResult(
+                success=False,
+                release_tag="snapshot",
+                file_path="/tmp/b.apk",
+                download_url="http://y",
+                file_size=1,
+                file_type=FILE_TYPE_APP_SNAPSHOT,
+            ),
+        ]
+    )
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=True)
+    orch.client_app_downloader.cleanup_superseded_snapshots = Mock(return_value=0)
+    orch._handle_download_result = Mock()
+
+    orch._process_client_app_downloads()
+
+    orch.client_app_downloader.update_snapshot_tracking.assert_not_called()
+    orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
+
+
+def test_orch_snapshot_all_failure_no_track_no_cleanup(tmp_path, cache_manager):
+    """All failure → no tracking, no cleanup."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    release = _make_snapshot_release(vc=100)
+
+    from fetchtastic.download.interfaces import DownloadResult
+
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
+    orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
+    orch.client_app_downloader.should_process_snapshot = Mock(return_value=True)
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(
+        return_value=[release.assets[0]]
+    )
+    orch.client_app_downloader.download_snapshot_asset = Mock(
+        return_value=DownloadResult(
+            success=False,
+            release_tag="snapshot",
+            file_path="/tmp/x.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+        )
+    )
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=True)
+    orch.client_app_downloader.cleanup_superseded_snapshots = Mock(return_value=0)
+    orch._handle_download_result = Mock()
+
+    orch._process_client_app_downloads()
+
+    orch.client_app_downloader.update_snapshot_tracking.assert_not_called()
+    orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
+
+
+def test_orch_snapshot_empty_selected_no_track_no_cleanup(tmp_path, cache_manager):
+    """Empty selected set → no downloads, no tracking, no cleanup."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    release = _make_snapshot_release(vc=100)
+
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
+    orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
+    orch.client_app_downloader.should_process_snapshot = Mock(return_value=True)
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(return_value=[])
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=True)
+    orch.client_app_downloader.cleanup_superseded_snapshots = Mock(return_value=0)
+    orch._handle_download_result = Mock()
+
+    orch._process_client_app_downloads()
+
+    orch.client_app_downloader.update_snapshot_tracking.assert_not_called()
+    orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
+
+
+def test_orch_snapshot_tracking_write_failure_no_cleanup(tmp_path, cache_manager):
+    """Tracking write failure → no cleanup."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    release = _make_snapshot_release(vc=100)
+
+    from fetchtastic.download.interfaces import DownloadResult
+
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
+    orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
+    orch.client_app_downloader.should_process_snapshot = Mock(return_value=True)
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(
+        return_value=[release.assets[0]]
+    )
+    orch.client_app_downloader.download_snapshot_asset = Mock(
+        return_value=DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path="/tmp/x.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+        )
+    )
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=False)
+    orch.client_app_downloader.cleanup_superseded_snapshots = Mock(return_value=0)
+    orch._handle_download_result = Mock()
+
+    orch._process_client_app_downloads()
+
+    orch.client_app_downloader.update_snapshot_tracking.assert_called_once()
+    orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
+
+
+def test_orch_snapshot_disabled_skips_entirely(tmp_path, cache_manager):
+    """CHECK_APP_SNAPSHOTS=False → fetch never called."""
+    orch = _make_orchestrator_for_snapshots(
+        tmp_path, cache_manager, CHECK_APP_SNAPSHOTS=False
+    )
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=None)
+    orch._process_client_app_downloads()
+    orch.client_app_downloader.fetch_snapshot_release.assert_not_called()
+
+
+def test_orch_snapshot_success_counts_in_statistics(tmp_path, cache_manager):
+    """Snapshot success counts in client_app_downloads and android_downloads."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
+    release = _make_snapshot_release(vc=100)
+
+    from fetchtastic.download.interfaces import DownloadResult
+
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
+    orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
+    orch.client_app_downloader.should_process_snapshot = Mock(return_value=True)
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(
+        return_value=[release.assets[0]]
+    )
+    orch.client_app_downloader.download_snapshot_asset = Mock(
+        return_value=DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=str(tmp_path / "app" / "snapshots" / "100" / "test.apk"),
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+        )
+    )
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=True)
+    orch.client_app_downloader.cleanup_superseded_snapshots = Mock(return_value=0)
+    # Do NOT mock _handle_download_result — let it store results for statistics
+
+    orch._process_client_app_downloads()
+
+    stats = orch.get_download_statistics()
+    assert stats["client_app_downloads"] >= 1
+    assert stats["android_downloads"] >= 1

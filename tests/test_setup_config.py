@@ -1633,6 +1633,7 @@ def test_run_setup_first_run_linux_simple(
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
         assert saved_config["CHECK_PRERELEASES"] is False
         assert saved_config["CHECK_APK_PRERELEASES"] is True
+        assert saved_config["CHECK_APP_SNAPSHOTS"] is False
         assert saved_config["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
         assert saved_config["AUTO_EXTRACT"] is False
         assert saved_config["EXTRACT_PATTERNS"] == []
