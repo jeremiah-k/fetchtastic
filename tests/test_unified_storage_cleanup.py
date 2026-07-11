@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from fetchtastic.constants import APP_DIR_NAME
+from fetchtastic.constants import APP_DIR_NAME, LATEST_POINTER_NAME
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.client_app import MeshtasticClientAppDownloader
 from fetchtastic.download.interfaces import Asset, Release
@@ -224,3 +224,188 @@ def test_legacy_platform_classes_use_client_app_lifecycle(tmp_path):
     assert isinstance(
         MeshtasticDesktopDownloader(config, cache), MeshtasticClientAppDownloader
     )
+
+
+# Regression coverage for required cleanup cases 12-19. These exercise the
+# desired post-hotfix behavior: higher-minor prerelease directories are retained
+# on their own merits (not over-filtered through handle_prereleases), and the
+# managed "latest" pointer is validated only after removals so dangling, unsafe,
+# or non-retained symlinks are removed via remove_latest_pointer while valid and
+# non-symlink latest entries are preserved. Against current production the
+# missing-behavior cases fail (red); the preserve-valid cases lock existing
+# correct behavior.
+
+
+def test_higher_minor_prerelease_dir_is_retained_alongside_stable(tmp_path):
+    """Case 12: retain v2.8.0-closed.8 directory while stable v2.7.14 is current."""
+    dl = _make_downloader(tmp_path)
+    prerelease_base = tmp_path / APP_DIR_NAME / "prerelease"
+    higher_minor = prerelease_base / "v2.8.0-closed.8"
+    higher_minor.mkdir(parents=True)
+    (higher_minor / "app-universal.apk").write_bytes(b"apk")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[
+            Release(tag_name="v2.7.14", prerelease=False),
+            Release(tag_name="v2.8.0-closed.8", prerelease=True),
+        ]
+    )
+
+    assert higher_minor.exists()
+    assert (higher_minor / "app-universal.apk").exists()
+
+
+def test_same_base_superseded_prerelease_dir_is_removed(tmp_path):
+    """Case 13: remove a superseded same-base build, retain the current one."""
+    dl = _make_downloader(tmp_path)
+    prerelease_base = tmp_path / APP_DIR_NAME / "prerelease"
+    superseded = prerelease_base / "v2.8.0-closed.7"
+    current = prerelease_base / "v2.8.0-closed.8"
+    for directory in (superseded, current):
+        directory.mkdir(parents=True)
+        (directory / "app-universal.apk").write_bytes(b"apk")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[
+            Release(tag_name="v2.7.14", prerelease=False),
+            Release(tag_name="v2.8.0-closed.8", prerelease=True),
+        ]
+    )
+
+    assert not superseded.exists()
+    assert current.exists()
+
+
+def test_older_prerelease_base_removed_when_newer_active_base_exists(tmp_path):
+    """Case 14: drop the older prerelease base when a newer active base exists."""
+    dl = _make_downloader(tmp_path)
+    prerelease_base = tmp_path / APP_DIR_NAME / "prerelease"
+    older_base = prerelease_base / "v2.7.15-open.1"
+    newer_base = prerelease_base / "v2.8.0-closed.8"
+    for directory in (older_base, newer_base):
+        directory.mkdir(parents=True)
+        (directory / "app-universal.apk").write_bytes(b"apk")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[
+            Release(tag_name="v2.7.14", prerelease=False),
+            Release(tag_name="v2.7.15-open.1", prerelease=True),
+            Release(tag_name="v2.8.0-closed.8", prerelease=True),
+        ]
+    )
+
+    assert not older_base.exists()
+    assert newer_base.exists()
+
+
+def test_valid_latest_pointer_to_retained_directory_is_preserved(tmp_path):
+    """Case 15: a latest pointer at a retained directory survives cleanup."""
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    retained = app_dir / "v2.7.14"
+    retained.mkdir(parents=True)
+    (retained / "app-universal.apk").write_bytes(b"apk")
+    latest = app_dir / LATEST_POINTER_NAME
+    try:
+        os.symlink("v2.7.14", latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[Release(tag_name="v2.7.14", prerelease=False)]
+    )
+
+    assert latest.is_symlink()
+    assert os.readlink(latest) == "v2.7.14"
+    assert retained.exists()
+
+
+def test_latest_pointer_whose_target_was_deleted_is_removed(tmp_path):
+    """Case 16: a latest pointer left dangling by removals must be removed too."""
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    stale = app_dir / "v2.7.13"
+    retained = app_dir / "v2.7.14"
+    for directory in (stale, retained):
+        directory.mkdir(parents=True)
+        (directory / "app-universal.apk").write_bytes(b"apk")
+    latest = app_dir / LATEST_POINTER_NAME
+    try:
+        os.symlink("v2.7.13", latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[Release(tag_name="v2.7.14", prerelease=False)]
+    )
+
+    assert not stale.exists()
+    assert not latest.is_symlink()
+
+
+def test_preexisting_dangling_latest_pointer_is_removed(tmp_path):
+    """Case 17: a latest pointer that was already dangling gets cleaned up."""
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    retained = app_dir / "v2.7.14"
+    retained.mkdir(parents=True)
+    (retained / "app-universal.apk").write_bytes(b"apk")
+    latest = app_dir / LATEST_POINTER_NAME
+    try:
+        os.symlink("v2.7.99", latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[Release(tag_name="v2.7.14", prerelease=False)]
+    )
+
+    assert not latest.is_symlink()
+    assert retained.exists()
+
+
+def test_non_symlink_latest_entry_is_preserved(tmp_path):
+    """Case 18: a user-managed non-symlink latest entry is never removed."""
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    retained = app_dir / "v2.7.14"
+    retained.mkdir(parents=True)
+    (retained / "app-universal.apk").write_bytes(b"apk")
+    latest = app_dir / LATEST_POINTER_NAME
+    latest.write_text("user-managed-not-a-symlink")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[Release(tag_name="v2.7.14", prerelease=False)]
+    )
+
+    assert latest.exists()
+    assert not latest.is_symlink()
+    assert latest.read_text() == "user-managed-not-a-symlink"
+    assert retained.exists()
+
+
+def test_unsafe_latest_pointer_target_removed_without_following(tmp_path):
+    """Case 19: an unsafe latest symlink is removed without following its target."""
+    dl = _make_downloader(tmp_path)
+    app_dir = tmp_path / APP_DIR_NAME
+    retained = app_dir / "v2.7.14"
+    retained.mkdir(parents=True)
+    (retained / "app-universal.apk").write_bytes(b"apk")
+    # Real target lives outside the managed app tree but inside tmp_path so the
+    # test never mutates outside the temporary directory.
+    outside_target = tmp_path / "outside-target"
+    outside_target.write_text("precious")
+    latest = app_dir / LATEST_POINTER_NAME
+    try:
+        os.symlink(os.path.relpath(outside_target, app_dir), latest)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not supported in this test environment")
+
+    dl.cleanup_prerelease_directories(
+        cached_releases=[Release(tag_name="v2.7.14", prerelease=False)]
+    )
+
+    assert not latest.is_symlink()
+    assert outside_target.exists()
+    assert outside_target.read_text() == "precious"
+    assert retained.exists()

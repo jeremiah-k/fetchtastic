@@ -74,7 +74,7 @@ from .github_source import (
     create_release_from_github_data,
 )
 from .interfaces import Asset, DownloadResult, Release
-from .latest_pointer import update_latest_pointer
+from .latest_pointer import remove_latest_pointer, update_latest_pointer
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
@@ -1156,6 +1156,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         prerelease_dir = os.path.join(app_dir, APK_PRERELEASES_DIR_NAME)
         if self._is_safe_managed_dir(prerelease_dir):
             self._remove_unexpected_entries(prerelease_dir, expected_prerelease)
+        self._validate_latest_pointer(app_dir, expected_stable)
+        if self._is_safe_managed_dir(prerelease_dir):
+            self._validate_latest_pointer(prerelease_dir, expected_prerelease)
 
     def _remove_unexpected_entries(self, base_dir: str, allowed: set[str]) -> None:
         try:
@@ -1190,6 +1193,38 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             logger.info("Removing stale client app version dir: %s", entry.name)
             _safe_rmtree(entry.path, base_dir, entry.name)
 
+    def _validate_latest_pointer(
+        self, parent_dir: str, retained_names: set[str]
+    ) -> None:
+        """Validate a managed latest symlink after cleanup removals.
+
+        Removes the latest pointer via ``remove_latest_pointer`` when its target
+        is missing, unsafe (absolute/traversal/nested), itself a symlink, or not
+        in the retained set. Never removes a non-symlink latest entry. Does not
+        follow symlinks. Parent/ancestor symlink protections are delegated to
+        ``remove_latest_pointer``.
+        """
+        link_path = os.path.join(parent_dir, LATEST_POINTER_NAME)
+        if not os.path.islink(link_path):
+            return
+        try:
+            target = os.readlink(link_path)
+        except OSError:
+            return
+        safe_target = _sanitize_path_component(target)
+        if safe_target is None or safe_target != target:
+            remove_latest_pointer(parent_dir)
+            return
+        if safe_target not in retained_names:
+            remove_latest_pointer(parent_dir)
+            return
+        target_path = os.path.join(parent_dir, safe_target)
+        try:
+            if os.path.islink(target_path) or not os.path.exists(target_path):
+                remove_latest_pointer(parent_dir)
+        except OSError:
+            remove_latest_pointer(parent_dir)
+
     def get_latest_release_tag(self) -> str | None:
         if os.path.exists(self.latest_release_path):
             try:
@@ -1215,6 +1250,81 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             },
         )
 
+    def _latest_stable_release_tuple(
+        self, releases: list[Release]
+    ) -> tuple[int, ...] | None:
+        """Return the release tuple of the latest genuine stable release.
+
+        Selection is deterministic and independent of input order: the stable
+        release with the highest version tuple wins, with published_at and tag
+        name as tie breakers. Returns None when no stable release is present.
+        """
+        stable_releases = [r for r in releases if self._is_client_app_stable(r)]
+        if not stable_releases:
+            return None
+
+        def _key(release: Release) -> tuple[Any, ...]:
+            release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+            published_dt = parse_iso_datetime_utc(release.published_at)
+            published_ts = published_dt.timestamp() if published_dt else 0
+            return (release_tuple or (0,), published_ts, release.tag_name or "")
+
+        latest = max(stable_releases, key=_key)
+        return self.version_manager.get_release_tuple(latest.tag_name)
+
+    def _select_active_prereleases(self, releases: list[Release]) -> list[Release]:
+        """Select active client-app prereleases on the single highest eligible base.
+
+        Policy:
+        - Only classified non-snapshot prereleases are considered (snapshots excluded).
+        - When a parseable stable release exists, prerelease bases whose parsed
+          base is <= the stable base are discarded.
+        - Every tag (open/closed/internal) on the single highest eligible
+          prerelease base is retained; superseded bases are dropped entirely.
+        - When no stable release has a parseable tuple, the highest parseable
+          prerelease base wins.
+        - When no candidate has a parseable base, all classified candidates are
+          preserved so unparseable prereleases are never silently dropped.
+          Unparseable candidates are never retained alongside a parseable winner
+          because they cannot be assigned to that stream.
+        - Output is deterministic: published_at descending with a tag-name
+          tiebreak, independent of input order.
+        """
+        candidates = [r for r in releases if self._is_client_app_prerelease(r)]
+
+        def _selection_sort_key(release: Release) -> tuple[Any, ...]:
+            return (release.published_at or "", release.tag_name or "")
+
+        candidates.sort(key=_selection_sort_key, reverse=True)
+        if not candidates:
+            return []
+
+        latest_stable_tuple = self._latest_stable_release_tuple(releases)
+
+        has_parseable = False
+        eligible_by_base: dict[tuple[int, ...], list[Release]] = {}
+        for candidate in candidates:
+            clean = self.version_manager.extract_clean_version(candidate.tag_name)
+            candidate_base = (
+                self.version_manager.get_release_tuple(clean) if clean else None
+            )
+            if candidate_base is None:
+                continue
+            has_parseable = True
+            if (
+                latest_stable_tuple is not None
+                and candidate_base <= latest_stable_tuple
+            ):
+                continue
+            eligible_by_base.setdefault(candidate_base, []).append(candidate)
+
+        if eligible_by_base:
+            winning_base = max(eligible_by_base)
+            return eligible_by_base[winning_base]
+        if has_parseable:
+            return []
+        return candidates
+
     def handle_prereleases(
         self,
         releases: list[Release],
@@ -1225,41 +1335,22 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         )
         if not check_prereleases:
             return []
-        prereleases = [r for r in releases if self._is_client_app_prerelease(r)]
-        prereleases.sort(key=lambda r: r.published_at or "", reverse=True)
-        latest_release = next(
-            (r for r in releases if self._is_client_app_stable(r)), None
-        )
-        expected_base = (
-            self.version_manager.calculate_expected_prerelease_version(
-                latest_release.tag_name
-            )
-            if latest_release
-            else None
-        )
-        if expected_base:
-            expected_tuple = self.version_manager.get_release_tuple(expected_base)
-            filtered = []
-            for prerelease in prereleases:
-                clean = self.version_manager.extract_clean_version(prerelease.tag_name)
-                clean_tuple = self.version_manager.get_release_tuple(clean)
-                if not clean or clean_tuple is None or clean_tuple == expected_tuple:
-                    filtered.append(prerelease)
-            prereleases = filtered
-        if recent_commits and expected_base:
+        selected = self._select_active_prereleases(releases)
+        if recent_commits and selected:
             hashes = [
                 commit.get("sha", "")[:7]
                 for commit in recent_commits
                 if commit.get("sha")
             ]
-            by_commit = [
-                prerelease
-                for prerelease in prereleases
-                if any(hash_part in prerelease.tag_name for hash_part in hashes)
-            ]
-            if by_commit:
-                prereleases = by_commit
-        return prereleases
+            if hashes:
+                narrowed = [
+                    release
+                    for release in selected
+                    if any(short in release.tag_name for short in hashes)
+                ]
+                if narrowed:
+                    selected = narrowed
+        return selected
 
     def get_latest_prerelease_tag(
         self, releases: list[Release] | None = None
@@ -1267,37 +1358,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         available = releases or self.get_releases()
         if not available:
             return None
-        sorted_releases = sorted(
-            available,
-            key=lambda release: release.published_at or "",
-            reverse=True,
-        )
-        latest_stable = next(
-            (
-                release
-                for release in sorted_releases
-                if self._is_client_app_stable(release)
-            ),
-            None,
-        )
-        latest_stable_tuple = (
-            self.version_manager.get_release_tuple(latest_stable.tag_name)
-            if latest_stable
-            else None
-        )
-        for release in sorted_releases:
-            if self._is_client_app_stable(release):
-                continue
-            if is_snapshot_tag(release.tag_name):
-                continue
-            prerelease_tuple = self.version_manager.get_release_tuple(release.tag_name)
-            if (
-                latest_stable_tuple is None
-                or prerelease_tuple is None
-                or prerelease_tuple > latest_stable_tuple
-            ):
-                return release.tag_name
-        return None
+        selected = self._select_active_prereleases(available)
+        return selected[0].tag_name if selected else None
 
     def get_prerelease_tracking_file(self) -> str:
         return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
