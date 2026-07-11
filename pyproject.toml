@@ -27,7 +27,7 @@ dependencies = [
   "requests",
   "pick",
   "PyYAML",
-  "urllib3>=2.0",
+  "urllib3>=2.7.0",
   "packaging",
   "platformdirs==4.10.0",
   "rich",

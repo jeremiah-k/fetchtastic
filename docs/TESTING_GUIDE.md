@@ -34,14 +34,11 @@ venv\Scripts\activate
 
 ### 3. Install Dependencies
 
-Install required packages from requirements files:
+Install the package with dependencies:
 
 ```bash
-# Install basic dependencies
-pip install -r requirements.txt
-
-# Install development dependencies (includes testing tools)
-pip install -r requirements-dev.txt
+# Install with production + development dependencies
+pip install -e ".[test]"
 ```
 
 ## Running Tests
@@ -343,11 +340,11 @@ These manual checks can catch additional type-related issues that may not be cau
 
 2. **ModuleNotFoundError**
    - Solution: Ensure virtual environment is activated
-   - Install dependencies with `pip install -r requirements.txt`
+   - Install dependencies with `pip install -e ".[test]"`
 
 3. **Coverage-related errors**
    - Solution: Install pytest-cov with `pip install pytest-cov`
-   - This is typically included in requirements-dev.txt
+   - This is included in the `test` optional dependency group
 
 ### Verification Commands
 
