@@ -46,6 +46,7 @@ from fetchtastic.notifications import (
     send_up_to_date_notification,
 )
 from fetchtastic.utils import (
+    coerce_bool,
     format_api_summary,
     get_api_request_summary,
     get_effective_github_token,
@@ -408,12 +409,15 @@ class DownloadCLIIntegration:
         downloaded_desktop = downloaded_desktop or []
         downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
 
-        # Snapshot debug builds are categorized directly from orchestrator
-        # results to avoid extending the legacy result tuple contract.
-        # Display versionCode (parsed from path) rather than the constant "snapshot" tag.
-        # Only collect successful, non-skipped results.
+        # Snapshot debug builds — collection code retained for future
+        # config-based re-enablement, but notifications are disabled for now.
+        # Populate the list only when a NOTIFY_ON_SNAPSHOTS config key is True.
         downloaded_app_snapshots: list[str] = []
-        if self.orchestrator:
+        if (
+            self.orchestrator
+            and self.config
+            and coerce_bool(self.config.get("NOTIFY_ON_SNAPSHOTS", False))
+        ):
             for result in self.orchestrator.download_results:
                 if (
                     getattr(result, "file_type", "") == FILE_TYPE_APP_SNAPSHOT

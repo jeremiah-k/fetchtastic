@@ -252,6 +252,7 @@ def test_extract_snapshot_version_code_fallback_from_url():
 
 def test_populated_snapshot_notification_displays_version_code(integration):
     """Populated snapshot results produce versionCode in notification, deduplicated, skipped excluded."""
+    integration.config["NOTIFY_ON_SNAPSHOTS"] = True
     vc_dir = "/data/app/snapshots/29321447"
     integration.orchestrator.download_results = [
         DownloadResult(
