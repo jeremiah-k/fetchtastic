@@ -1187,3 +1187,182 @@ def test_orch_snapshot_success_counts_in_statistics(tmp_path, cache_manager):
     stats = orch.get_download_statistics()
     assert stats["client_app_downloads"] >= 1
     assert stats["android_downloads"] >= 1
+
+
+# ==================================================================
+# ABI Wildcard, Legacy APK, Stable Classification, Exclusion Warning
+# ==================================================================
+
+
+def _make_downloader_with_selection(tmp_path, cache_manager, selected_assets):
+    """Helper: create a downloader with the given SELECTED_APP_ASSETS."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": selected_assets,
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    return MeshtasticClientAppDownloader(config, cache_manager)
+
+
+# ------------------------------------------------------------------
+# ABI Wildcard Pattern Tests (P1)
+# ------------------------------------------------------------------
+
+
+def test_wildcard_fdroid_selects_all_fdroid_abis(tmp_path, cache_manager):
+    """*fdroid*.apk selects all F-Droid snapshot ABIs (not just universal)."""
+    dl = _make_downloader_with_selection(tmp_path, cache_manager, ["*fdroid*.apk"])
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 3
+    assert all("fdroid" in a.name for a in selected)
+    names = {a.name for a in selected}
+    assert any("universal" in n for n in names)
+    assert any("arm64-v8a" in n for n in names)
+    assert any("armeabi-v7a" in n for n in names)
+
+
+def test_wildcard_google_selects_all_google_abis(tmp_path, cache_manager):
+    """*google*.apk selects all Google snapshot ABIs."""
+    dl = _make_downloader_with_selection(tmp_path, cache_manager, ["*google*.apk"])
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 3
+    assert all("google" in a.name for a in selected)
+    names = {a.name for a in selected}
+    assert any("universal" in n for n in names)
+    assert any("arm64-v8a" in n for n in names)
+    assert any("armeabi-v7a" in n for n in names)
+
+
+def test_wildcard_pattern_app_fdroid_dash_star(tmp_path, cache_manager):
+    """app-fdroid-*-release.apk selects all F-Droid ABIs."""
+    dl = _make_downloader_with_selection(
+        tmp_path, cache_manager, ["app-fdroid-*-release.apk"]
+    )
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 3
+    assert all("fdroid" in a.name for a in selected)
+
+
+def test_wildcard_pattern_android_app_fdroid(tmp_path, cache_manager):
+    """androidApp-fdroid-*-debug-*.apk selects all F-Droid ABIs."""
+    dl = _make_downloader_with_selection(
+        tmp_path, cache_manager, ["androidApp-fdroid-*-debug-*.apk"]
+    )
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 3
+    assert all("fdroid" in a.name for a in selected)
+
+
+def test_no_abi_pattern_still_maps_to_universal(tmp_path, cache_manager):
+    """app-google-release.apk (no wildcard) still maps to universal only."""
+    dl = _make_downloader_with_selection(
+        tmp_path, cache_manager, ["app-google-release.apk"]
+    )
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "google" in selected[0].name
+    assert "universal" in selected[0].name
+
+
+# ------------------------------------------------------------------
+# Legacy Generic APK Tests (P1)
+# ------------------------------------------------------------------
+
+
+def test_legacy_meshtastic_apk_maps_to_google_universal(tmp_path, cache_manager):
+    """meshtastic.apk maps to Google universal snapshot."""
+    dl = _make_downloader_with_selection(tmp_path, cache_manager, ["meshtastic.apk"])
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "google" in selected[0].name
+    assert "universal" in selected[0].name
+
+
+def test_legacy_app_release_apk_maps_to_google_universal(tmp_path, cache_manager):
+    """app-release.apk maps to Google universal snapshot."""
+    dl = _make_downloader_with_selection(tmp_path, cache_manager, ["app-release.apk"])
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "google" in selected[0].name
+    assert "universal" in selected[0].name
+
+
+def test_legacy_google_release_maps_to_google_universal(tmp_path, cache_manager):
+    """googleRelease.apk maps to Google universal snapshot."""
+    dl = _make_downloader_with_selection(tmp_path, cache_manager, ["googleRelease.apk"])
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "google" in selected[0].name
+    assert "universal" in selected[0].name
+
+
+# ------------------------------------------------------------------
+# Stable Classification Tests (P2)
+# ------------------------------------------------------------------
+
+
+def test_snapshot_not_stable_even_if_prerelease_true(downloader):
+    """Snapshot tag must never classify as stable, even if prerelease=True."""
+    snap = Release(
+        tag_name="snapshot",
+        prerelease=True,
+        assets=[Asset(name="x.apk", download_url="http://x", size=1)],
+    )
+    assert downloader._is_client_app_stable(snap) is False
+
+
+def test_snapshot_not_stable_even_if_prerelease_false(downloader):
+    """Snapshot tag must never classify as stable, even if prerelease=False."""
+    snap = Release(
+        tag_name="snapshot",
+        prerelease=False,
+        assets=[Asset(name="x.apk", download_url="http://x", size=1)],
+    )
+    assert downloader._is_client_app_stable(snap) is False
+
+
+def test_normal_stable_is_stable(downloader):
+    """A normal stable release classifies as stable."""
+    stable = Release(
+        tag_name="v2.8.0",
+        prerelease=False,
+        assets=[Asset(name="x.apk", download_url="http://x", size=1)],
+    )
+    assert downloader._is_client_app_stable(stable) is True
+
+
+def test_normal_prerelease_not_stable(downloader):
+    """A normal prerelease release does not classify as stable."""
+    pre = Release(
+        tag_name="v2.8.1-open.1",
+        prerelease=True,
+        assets=[Asset(name="x.apk", download_url="http://x", size=1)],
+    )
+    assert downloader._is_client_app_stable(pre) is False
+
+
+# ------------------------------------------------------------------
+# Debug Exclusion Warning Test (P2)
+# ------------------------------------------------------------------
+
+
+def test_debug_exclusion_warns_when_all_removed(downloader_stable_patterns, caplog):
+    """EXCLUDE_PATTERNS=['*debug*'] should warn when all snapshot assets removed."""
+    import logging
+
+    downloader_stable_patterns.config["EXCLUDE_PATTERNS"] = ["*debug*"]
+    release = _make_snapshot_release(vc=100)
+    with caplog.at_level(logging.WARNING):
+        selected = downloader_stable_patterns.get_selected_snapshot_assets(release)
+    assert selected == []
+    assert any("exclusion" in r.message.lower() for r in caplog.records)

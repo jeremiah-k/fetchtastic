@@ -329,29 +329,30 @@ def test_setup_downloads_apk_snapshot_enabled(mocker, capsys):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_downloads_desktop_no_snapshot_prompt(mocker, capsys):
-    """Test that desktop-only (firmware selected, no APKs) does not consume a snapshot prompt input."""
-    config = {"SAVE_DESKTOP_APP": True}
+    """Desktop-only client app selection must not trigger a snapshot prompt."""
+    config = {}
 
-    mocker.patch(
-        "builtins.input",
-        side_effect=[
-            "f",  # Choose firmware only (no client apps at all)
-            "n",  # Firmware prereleases
-            "n",  # Channel suffixes
-        ],
-    )
+    captured_prompts: list[str] = []
+    answers = iter(["d", "n"])
 
-    mock_firmware_result = {"selected_assets": ["rak4631-"]}
-    mocker.patch(
-        "fetchtastic.menu_firmware.run_menu", return_value=mock_firmware_result
-    )
+    def _fake_input(prompt=""):
+        captured_prompts.append(prompt)
+        return next(answers)
 
-    result_config, save_apks, save_firmware = setup_config._setup_downloads(
+    mocker.patch("builtins.input", side_effect=_fake_input)
+
+    mock_menu_result = {"selected_assets": ["meshtastic.dmg"]}
+    mocker.patch("fetchtastic.menu_app.run_menu", return_value=mock_menu_result)
+
+    result_config, _save_apks, save_firmware = setup_config._setup_downloads(
         config, is_partial_run=False, wants=lambda _: True
     )
 
-    assert save_apks is False
-    assert result_config.get("CHECK_APP_SNAPSHOTS") is False
+    assert result_config["SAVE_CLIENT_APPS"] is True
+    assert result_config["SAVE_APKS"] is False
+    assert result_config["CHECK_APP_SNAPSHOTS"] is False
+    assert save_firmware is False
+    assert not any("snapshot" in p.lower() for p in captured_prompts)
 
 
 @pytest.mark.configuration

@@ -3,7 +3,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from fetchtastic.constants import FILE_TYPE_APP_SNAPSHOT
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
+from fetchtastic.download.interfaces import DownloadResult
 
 pytestmark = [pytest.mark.user_interface, pytest.mark.unit]
 
@@ -241,3 +243,58 @@ def test_extract_snapshot_version_code_fallback_from_url():
     )
     vc = DownloadCLIIntegration._extract_snapshot_version_code(result)
     assert vc == "42"
+
+
+# ------------------------------------------------------------------
+# Populated snapshot notification (versionCode dedup + skip exclusion)
+# ------------------------------------------------------------------
+
+
+def test_populated_snapshot_notification_displays_version_code(integration):
+    """Populated snapshot results produce versionCode in notification, deduplicated, skipped excluded."""
+    vc_dir = "/data/app/snapshots/29321447"
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-fdroid-universal-debug-29321447.apk",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-google-universal-debug-29321447.apk",
+            download_url="http://y",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=False,
+        ),
+        DownloadResult(
+            success=True,
+            release_tag="snapshot",
+            file_path=f"{vc_dir}/androidApp-fdroid-arm64-v8a-debug-29321447.apk",
+            download_url="http://z",
+            file_size=1,
+            file_type=FILE_TYPE_APP_SNAPSHOT,
+            was_skipped=True,
+        ),
+    ]
+
+    with patch(
+        "fetchtastic.download.cli_integration.send_download_completion_notification"
+    ) as mock_notify:
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["downloaded_app_snapshots"] == ["29321447"]
