@@ -107,6 +107,9 @@ STORAGE_CHANNEL_SUFFIXES = frozenset({"alpha", "beta", "rc"})
 MAX_RETRY_DELAY = 60  # Cap exponential backoff at 60 seconds
 EXECUTABLE_PERMISSIONS = 0o755
 
+# Snapshot debug-build versionCode pattern (shared to avoid divergence)
+SNAPSHOT_VERSION_CODE_PATTERN = r"-debug-(\d+)\.apk$"
+
 # Download configuration defaults
 DEFAULT_CONNECT_RETRIES = 5
 DEFAULT_BACKOFF_FACTOR = 0.3

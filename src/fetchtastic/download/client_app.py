@@ -54,6 +54,7 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_SNAPSHOT_TAG,
     MESHTASTIC_CLIENT_APP_RELEASES_URL,
     RELEASE_SCAN_COUNT,
+    SNAPSHOT_VERSION_CODE_PATTERN,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -80,9 +81,44 @@ from .version import VersionManager
 MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
 
 # Snapshot debug-build asset names: androidApp-{flavor}-{abi}-debug-{versionCode}.apk
-_SNAPSHOT_VERSION_CODE_RE = re.compile(r"-debug-(\d+)\.apk$")
+_SNAPSHOT_VERSION_CODE_RE = re.compile(SNAPSHOT_VERSION_CODE_PATTERN)
 # Release title: "Snapshot {versionCode} ({commit_sha})"
 _SNAPSHOT_COMMIT_SHA_RE = re.compile(r"\(([0-9a-f]{7,40})\)")
+
+# Semantic APK identity parsing for snapshot-aware asset matching.
+# Stable names: app-{flavor}-{abi}-release.apk, app-{flavor}-release.apk
+# Snapshot names: androidApp-{flavor}-{abi}-debug-{versionCode}.apk
+_SNAPSHOT_APK_FLAVORS = ("fdroid", "google")
+_SNAPSHOT_APK_ABIS = ("arm64-v8a", "armeabi-v7a", "universal", "x86_64", "x86")
+
+
+def _parse_apk_identity(name: str) -> dict[str, str | None] | None:
+    """Extract flavor and abi from a stable or snapshot Android APK name/pattern.
+
+    Returns ``{"flavor": str, "abi": str | None}`` or ``None`` when the name is
+    not a recognizable Android APK identifier.  ``abi`` is ``None`` when the name
+    does not specify an architecture (e.g. ``app-google-release.apk``).
+    """
+    lower = (name or "").lower()
+    if not lower.endswith(".apk"):
+        return None
+    flavor = next((f for f in _SNAPSHOT_APK_FLAVORS if f in lower), None)
+    if flavor is None:
+        return None
+    abi = next((a for a in _SNAPSHOT_APK_ABIS if a in lower), None)
+    return {"flavor": flavor, "abi": abi}
+
+
+def _snapshot_identities_match(
+    pat: dict[str, str | None], asset: dict[str, str | None]
+) -> bool:
+    """Return True when a configured-pattern identity selects a snapshot asset identity."""
+    if pat["flavor"] != asset["flavor"]:
+        return False
+    if pat["abi"] is not None:
+        return pat["abi"] == asset["abi"]
+    # No ABI in pattern (e.g. app-google-release.apk) → universal only.
+    return asset["abi"] == "universal"
 
 
 def is_client_app_asset_name(asset_name: str) -> bool:
@@ -1309,6 +1345,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 MESHTASTIC_ANDROID_SNAPSHOT_RELEASE_URL,
                 github_token=self.config.get("GITHUB_TOKEN"),
             )
+            if response is None:
+                return None
             return create_release_from_github_data(response.json())
         except requests.HTTPError as exc:
             if exc.response is not None and exc.response.status_code == 404:
@@ -1337,15 +1375,76 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return snapshot_release if has_snapshot_apk else None
 
     def get_snapshot_version_code(self, release: Release) -> int | None:
-        """Return the versionCode from the first matching snapshot asset."""
+        """Return the single unique versionCode from all snapshot APK assets, or None if mixed/missing."""
+        vcs: set[int] = set()
         for asset in self.get_assets(release):
             vc = self.parse_snapshot_version_code(asset.name)
             if vc is not None:
-                return vc
+                vcs.add(vc)
+        if len(vcs) == 1:
+            return vcs.pop()
+        if len(vcs) > 1:
+            logger.warning(
+                "Snapshot release %s has mixed versionCodes %s; rejecting",
+                release.tag_name,
+                sorted(vcs),
+            )
         return None
 
+    def should_download_snapshot_asset(self, asset_name: str) -> bool:
+        """Return True when a snapshot asset matches configured selections semantically.
+
+        Normalises both configured patterns and snapshot asset names into
+        (flavor, abi) identities so that a stable-release selection like
+        ``app-fdroid-universal-release.apk`` matches the corresponding snapshot
+        build ``androidApp-fdroid-universal-debug-<vc>.apk``.
+
+        When a flavor has both ABI-specific patterns (e.g. arm64-v8a) and
+        no-ABI legacy patterns (e.g. app-fdroid-release.apk from compat
+        expansion), only the specific ABIs are selected — the legacy pattern
+        does not expand to universal.
+        """
+        if self._is_excluded(asset_name):
+            return False
+        raw_selected = self.config.get("SELECTED_APP_ASSETS")
+        if raw_selected is None:
+            return False
+        if raw_selected == ["*"]:
+            return is_android_asset_name(asset_name)
+        expanded = expand_apk_selected_patterns(raw_selected)
+        if not expanded:
+            return False
+        asset_id = _parse_apk_identity(asset_name)
+        if asset_id is None:
+            return False
+
+        # Gather explicit ABIs per flavor from all expanded patterns.
+        explicit_abis: dict[str, set[str | None]] = {}
+        for pattern in expanded:
+            pat_id = _parse_apk_identity(pattern)
+            if pat_id is None:
+                continue
+            flavor = pat_id["flavor"]
+            if flavor not in explicit_abis:
+                explicit_abis[flavor] = set()
+            explicit_abis[flavor].add(pat_id["abi"])
+
+        flavor = asset_id["flavor"]
+        abis_for_flavor = explicit_abis.get(flavor, set())
+        # If any pattern for this flavor specifies a concrete ABI, only
+        # match those — ignore no-ABI legacy patterns for this flavor.
+        specific_abis = abis_for_flavor - {None}
+        if specific_abis:
+            return asset_id["abi"] in specific_abis
+        # No specific ABIs for this flavor → a no-ABI pattern maps to universal.
+        if None in abis_for_flavor:
+            return asset_id["abi"] == "universal"
+
+        # Fallback: manually-authored substring pattern (e.g. snapshot-specific).
+        return matches_selected_patterns(asset_name, expanded)
+
     def get_selected_snapshot_assets(self, release: Release) -> list[Asset]:
-        """Return snapshot assets matching user SELECTED_APP_ASSETS filters with consistent versionCode."""
+        """Return snapshot assets matching user selections with consistent versionCode."""
         if not is_snapshot_tag(release.tag_name):
             return []
         chosen_vc = self.get_snapshot_version_code(release)
@@ -1356,7 +1455,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             vc = self.parse_snapshot_version_code(asset.name)
             if vc is None or vc != chosen_vc:
                 continue
-            if self.should_download_asset(asset.name):
+            if self.should_download_snapshot_asset(asset.name):
                 selected.append(asset)
         return selected
 
@@ -1411,7 +1510,12 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 stored = data.get("version_code")
                 if stored is not None:
                     return int(version_code) > int(stored)
-            except (OSError, ValueError, json.JSONDecodeError, TypeError):
+            except (OSError, ValueError, json.JSONDecodeError, TypeError) as exc:
+                logger.debug(
+                    "Error reading snapshot tracking file %s: %s; defaulting to download",
+                    tracking_file,
+                    exc,
+                )
                 return True
         return True
 
