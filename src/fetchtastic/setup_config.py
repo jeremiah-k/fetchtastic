@@ -1067,9 +1067,11 @@ def _setup_downloads(
             config["APP_VERSIONS_TO_KEEP"] = parsed_versions
         else:
             print("Invalid number — keeping current value.")
+            parsed_current = _parse_non_negative_int(current_versions)
             config["APP_VERSIONS_TO_KEEP"] = (
-                _parse_non_negative_int(current_versions)
-                or DEFAULT_APP_VERSIONS_TO_KEEP
+                parsed_current
+                if parsed_current is not None
+                else DEFAULT_APP_VERSIONS_TO_KEEP
             )
 
     # --- Client App Pre-release Configuration ---

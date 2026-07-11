@@ -113,29 +113,52 @@ def _parse_apk_identity(name: str) -> ApkIdentity | None:
 
     ``abi`` has three states:
     - A concrete ABI string (e.g. ``"arm64-v8a"``) for exact matching.
-    - ``_ABI_WILDCARD`` (``"*"``) when glob metacharacters are present but no
-      recognized ABI token — meaning "any ABI for this flavor."
+    - ``_ABI_WILDCARD`` (``"*"``) when ``*``/``?`` glob metacharacters are
+      present without a literal ABI token — meaning "any ABI for this flavor."
     - ``None`` when no ABI is specified and no wildcard is present — meaning
       "default to universal only."
+
+    Character-class patterns (``[...]``) are resolved via ``fnmatch`` against
+    known ABIs so that ``app-fdroid-[u]niversal-release.apk`` narrows to
+    universal rather than broadening to every ABI.
     """
     lower = (name or "").lower()
     if not lower.endswith(".apk"):
         return None
-    # Legacy generic official APK names → default to Google universal.
     basename = lower.rsplit("/", 1)[-1]
     if basename in _LEGACY_GENERIC_APK_NAMES:
         return ApkIdentity(flavor="google", abi=None)
     flavor = next((f for f in _SNAPSHOT_APK_FLAVORS if f in lower), None)
     if flavor is None:
-        if "google" in lower or "googlerelease" in lower:
-            return ApkIdentity(flavor="google", abi=None)
         return None
     abi = next((a for a in _SNAPSHOT_APK_ABIS if a in lower), None)
+    if abi is None and "[" in lower:
+        abi = _resolve_character_class_abi(lower)
+        if abi is None:
+            # Malformed character class — do not fall through to * ? wildcard.
+            return ApkIdentity(flavor=flavor, abi=None)
     if abi is not None:
         return ApkIdentity(flavor=flavor, abi=abi)
-    if any(c in lower for c in "*?["):
+    if "*" in lower or "?" in lower:
         return ApkIdentity(flavor=flavor, abi=_ABI_WILDCARD)
     return ApkIdentity(flavor=flavor, abi=None)
+
+
+def _resolve_character_class_abi(lower: str) -> str | None:
+    """Try to resolve a known ABI from a pattern containing ``[`` via fnmatch."""
+    import fnmatch as _fnmatch
+
+    flavor = next((f for f in _SNAPSHOT_APK_FLAVORS if f in lower), None)
+    if flavor is None:
+        return None
+    for known_abi in _SNAPSHOT_APK_ABIS:
+        # Check stable alias: app-<flavor>-<abi>-release.apk
+        if _fnmatch.fnmatch(f"app-{flavor}-{known_abi}-release.apk", lower):
+            return known_abi
+        # Check snapshot alias: androidapp-<flavor>-<abi>-debug-<digits>.apk
+        if _fnmatch.fnmatch(f"androidapp-{flavor}-{known_abi}-debug-12345.apk", lower):
+            return known_abi
+    return None
 
 
 def is_client_app_asset_name(asset_name: str) -> bool:
@@ -1417,8 +1440,6 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         dir_name = str(version_code)
         if published_at:
             try:
-                from datetime import datetime
-
                 dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
                 dir_name = f"{dt.strftime('%Y%m%d-%H%M%S')}-{version_code}"
             except (ValueError, TypeError):

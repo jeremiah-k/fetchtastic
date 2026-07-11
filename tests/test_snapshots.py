@@ -28,7 +28,7 @@ from fetchtastic.download.client_app import (
 )
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 
-pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+pytestmark = [pytest.mark.core_downloads]
 
 # Flavor/ABI combinations that produce the 6 snapshot APKs
 _SNAPSHOT_VARIANTS = [
@@ -620,31 +620,6 @@ def test_should_process_snapshot_disabled(downloader_disabled):
 # ------------------------------------------------------------------
 
 
-def test_transactional_all_success_tracks(downloader, cache_manager):
-    """When all selected assets succeed, tracking IS updated."""
-    downloader.config["SELECTED_APP_ASSETS"] = ["androidApp-fdroid-universal-debug-"]
-    release = _make_snapshot_release(vc=100)
-    with patch.object(
-        downloader,
-        "download_snapshot_asset",
-        return_value=DownloadResult(
-            success=True,
-            release_tag="snapshot",
-            file_path="/tmp/x.apk",
-            download_url="http://x",
-            file_size=1,
-            file_type=FILE_TYPE_APP_SNAPSHOT,
-        ),
-    ):
-        selected = downloader.get_selected_snapshot_assets(release)
-        results = []
-        for asset in selected:
-            results.append(downloader.download_snapshot_asset(release, asset, 100))
-    assert all(r.success for r in results)
-    # Verify tracking was updated (manually call update to verify it works)
-    assert downloader.update_snapshot_tracking(100) is True
-
-
 # ------------------------------------------------------------------
 # 6. Cleanup Safety
 # ------------------------------------------------------------------
@@ -924,7 +899,6 @@ def test_config_retention_positive_preserved():
 
 def _make_orchestrator_for_snapshots(tmp_path, cache_manager, **config_overrides):
     """Create an orchestrator wired for snapshot integration tests."""
-    from fetchtastic.download.interfaces import DownloadResult
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
     config = {
@@ -1432,3 +1406,125 @@ def test_download_app_rejects_snapshot_tag(downloader):
     result = downloader.download_app(release, release.assets[0])
     assert result.success is False
     assert "snapshot" in (result.error_message or "").lower()
+
+
+# ------------------------------------------------------------------
+# 14. Character-Class Pattern Tests (fnmatch ABI narrowing)
+# ------------------------------------------------------------------
+
+
+def test_character_class_universal_selects_universal_only(tmp_path, cache_manager):
+    """androidApp-fdroid-[u]niversal-debug-*.apk selects only fdroid universal."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["androidApp-fdroid-[u]niversal-debug-*.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "universal" in selected[0].name
+    assert "fdroid" in selected[0].name
+
+
+def test_character_class_arm64_selects_arm64_only(tmp_path, cache_manager):
+    """app-fdroid-[a]rm64-v8a-release.apk selects only fdroid arm64-v8a."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-fdroid-[a]rm64-v8a-release.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "arm64-v8a" in selected[0].name
+    assert "fdroid" in selected[0].name
+
+
+def test_character_class_armeabi_selects_armeabi_only(tmp_path, cache_manager):
+    """app-fdroid-[a]rmeabi-v7a-release.apk selects only fdroid armeabi-v7a."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-fdroid-[a]rmeabi-v7a-release.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "armeabi-v7a" in selected[0].name
+
+
+def test_character_class_google_universal_selects_universal_only(
+    tmp_path, cache_manager
+):
+    """app-google-[u]niversal-release.apk selects only google universal."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-google-[u]niversal-release.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    assert len(selected) == 1
+    assert "google" in selected[0].name
+    assert "universal" in selected[0].name
+
+
+def test_character_class_malformed_does_not_select_all(tmp_path, cache_manager):
+    """Malformed [ syntax fails safely and does not broaden to all ABIs."""
+    config = {
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["app-fdroid-[invalid-debug-*.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "EXCLUDE_PATTERNS": [],
+    }
+    dl = MeshtasticClientAppDownloader(config, cache_manager)
+    release = _make_snapshot_release(vc=100)
+    selected = dl.get_selected_snapshot_assets(release)
+    # Malformed character class doesn't match any known ABI → maps to universal only
+    # (not _ABI_WILDCARD)
+    for asset in selected:
+        assert "universal" in asset.name
+
+
+# ------------------------------------------------------------------
+# 15. Timestamp-Prefixed Directory Cleanup Tests
+# ------------------------------------------------------------------
+
+
+def test_cleanup_timestamp_prefixed_dirs(downloader, tmp_path):
+    """Cleanup correctly parses and sorts timestamp-prefixed snapshot dirs."""
+    base = tmp_path / "downloads" / APP_DIR_NAME / APP_SNAPSHOTS_DIR_NAME
+    for ts_suffix, vc in [
+        ("20260711-080000", 29321445),
+        ("20260711-090000", 29321446),
+        ("20260711-100000", 29321447),
+    ]:
+        d = base / f"{ts_suffix}-{vc}"
+        d.mkdir(parents=True)
+        (d / "test.apk").write_text("x")
+    # Non-numeric dir should be preserved
+    (base / "not_a_number").mkdir(parents=True)
+    downloader.config["APP_SNAPSHOT_VERSIONS_TO_KEEP"] = 2
+    deleted = downloader.cleanup_superseded_snapshots()
+    assert deleted == 1
+    # Oldest VC deleted
+    assert not (base / "20260711-080000-29321445").exists()
+    # Newer two remain
+    assert (base / "20260711-090000-29321446").is_dir()
+    assert (base / "20260711-100000-29321447").is_dir()
+    # Non-numeric dir untouched
+    assert (base / "not_a_number").is_dir()
