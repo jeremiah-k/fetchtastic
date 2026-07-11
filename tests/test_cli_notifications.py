@@ -1,5 +1,5 @@
 import time
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -212,3 +212,32 @@ def test_summary_sends_skip_notification_with_discovered_versions(integration):
             downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
         )
         mock_up_to_date.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Snapshot versionCode extraction
+# ------------------------------------------------------------------
+
+
+def test_extract_snapshot_version_code_from_path():
+    """_extract_snapshot_version_code parses versionCode from canonical path."""
+    result = Mock()
+    result.file_path = (
+        "/data/app/snapshots/29321447/" "androidApp-fdroid-universal-debug-29321447.apk"
+    )
+    result.download_url = (
+        "http://github.com/download/snapshot/"
+        "androidApp-fdroid-universal-debug-29321447.apk"
+    )
+    vc = DownloadCLIIntegration._extract_snapshot_version_code(result)
+    assert vc == "29321447"
+
+
+def test_extract_snapshot_version_code_fallback_from_url():
+    result = Mock()
+    result.file_path = None
+    result.download_url = (
+        "http://github.com/release/snapshot/" "androidApp-google-universal-debug-42.apk"
+    )
+    vc = DownloadCLIIntegration._extract_snapshot_version_code(result)
+    assert vc == "42"
