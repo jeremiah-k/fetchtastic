@@ -409,15 +409,11 @@ class DownloadCLIIntegration:
         downloaded_desktop = downloaded_desktop or []
         downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
 
-        # Snapshot debug builds — collection code retained for future
-        # config-based re-enablement, but notifications are disabled for now.
-        # Populate the list only when a NOTIFY_ON_SNAPSHOTS config key is True.
+        # Snapshot debug builds — always collect successful versionCodes for
+        # local logging and download counts.  NTFY inclusion is gated by
+        # NOTIFY_ON_SNAPSHOTS (default False).
         downloaded_app_snapshots: list[str] = []
-        if (
-            self.orchestrator
-            and self.config
-            and coerce_bool(self.config.get("NOTIFY_ON_SNAPSHOTS", False))
-        ):
+        if self.orchestrator:
             for result in self.orchestrator.download_results:
                 if (
                     getattr(result, "file_type", "") == FILE_TYPE_APP_SNAPSHOT
@@ -428,6 +424,17 @@ class DownloadCLIIntegration:
                     if vc and vc not in downloaded_app_snapshots:
                         downloaded_app_snapshots.append(vc)
 
+        # Snapshots included in NTFY notifications only when explicitly enabled.
+        notified_app_snapshots = (
+            downloaded_app_snapshots
+            if (
+                self.config
+                and coerce_bool(self.config.get("NOTIFY_ON_SNAPSHOTS", False))
+            )
+            else []
+        )
+
+        # Actual download count includes snapshots for local reporting.
         downloaded_count = (
             len(downloaded_firmwares)
             + len(downloaded_apks)
@@ -436,6 +443,12 @@ class DownloadCLIIntegration:
             + len(downloaded_apk_prereleases)
             + len(downloaded_desktop_prereleases)
             + len(downloaded_app_snapshots)
+        )
+        # Notifiable count excludes snapshots when NOTIFY_ON_SNAPSHOTS is False.
+        notifiable_count = (
+            downloaded_count
+            - len(downloaded_app_snapshots)
+            + len(notified_app_snapshots)
         )
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
@@ -508,7 +521,7 @@ class DownloadCLIIntegration:
 
         # Send notifications based on download results
         if self.config:
-            if downloaded_count > 0:
+            if notifiable_count > 0:
                 send_download_completion_notification(
                     self.config,
                     downloaded_firmwares,
@@ -517,7 +530,7 @@ class DownloadCLIIntegration:
                     downloaded_apk_prereleases,
                     downloaded_desktop,
                     downloaded_desktop_prereleases,
-                    downloaded_app_snapshots=downloaded_app_snapshots,
+                    downloaded_app_snapshots=notified_app_snapshots,
                 )
             elif self.orchestrator and self.orchestrator.wifi_skipped:
                 send_new_releases_available_notification(

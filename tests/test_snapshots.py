@@ -936,8 +936,9 @@ def _make_orchestrator_for_snapshots(tmp_path, cache_manager, **config_overrides
     return orch
 
 
-def test_orch_snapshot_all_success_tracks_and_cleans(tmp_path, cache_manager):
-    """Nonempty selected set, all succeed → tracking once, cleanup once."""
+def test_orch_snapshot_all_success_tracks_no_cleanup(tmp_path, cache_manager):
+    """Nonempty selected set, all succeed → tracking once, cleanup NOT called
+    (cleanup only runs when a real release/prerelease ships)."""
     orch = _make_orchestrator_for_snapshots(tmp_path, cache_manager)
     release = _make_snapshot_release(vc=100)
 
@@ -968,7 +969,7 @@ def test_orch_snapshot_all_success_tracks_and_cleans(tmp_path, cache_manager):
     orch._process_client_app_downloads()
 
     orch.client_app_downloader.update_snapshot_tracking.assert_called_once()
-    orch.client_app_downloader.cleanup_superseded_snapshots.assert_called_once()
+    orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
 
 
 def test_orch_snapshot_partial_failure_no_track_no_cleanup(tmp_path, cache_manager):

@@ -433,11 +433,13 @@ class DownloadOrchestrator:
                     releases_to_download.append(release)
 
             any_app_downloaded = False
+            real_release_downloaded = False
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading client app release {release.tag_name}")
                     if self._download_client_app_release(release):
                         any_app_downloaded = True
+                        real_release_downloaded = True
                         successful_stable_releases.append(release)
 
             update_pointer = getattr(
@@ -505,6 +507,10 @@ class DownloadOrchestrator:
                     result.success for result in prerelease_results
                 ):
                     successful_prereleases.append(prerelease)
+                    if any(
+                        not getattr(r, "was_skipped", False) for r in prerelease_results
+                    ):
+                        real_release_downloaded = True
                     if not self.client_app_downloader.update_prerelease_tracking(
                         prerelease.tag_name
                     ):
@@ -534,10 +540,11 @@ class DownloadOrchestrator:
             ):
                 logger.info("No new client app prereleases to download")
 
-            # Prune old snapshot dirs when stable releases or prereleases are
-            # processed.  Multiple snapshots accumulate across commits; they
-            # are cleaned up once a real release/prerelease ships.
-            if releases_to_download or prereleases:
+            # Prune old snapshot dirs when a new stable release or prerelease
+            # actually downloads at least one new asset.  Multiple snapshots
+            # accumulate across commits; they are cleaned up once a real
+            # release/prerelease ships.
+            if real_release_downloaded:
                 self.client_app_downloader.cleanup_superseded_snapshots()
 
             # --- Snapshot Debug Builds (rolling "snapshot" tag) ---
@@ -600,8 +607,6 @@ class DownloadOrchestrator:
                                         "Failed to update snapshot tracking for %s",
                                         snapshot_vc,
                                     )
-                                else:
-                                    self.client_app_downloader.cleanup_superseded_snapshots()
                             elif snapshot_results:
                                 logger.warning(
                                     "Snapshot %s has failed assets; tracking and cleanup deferred",
