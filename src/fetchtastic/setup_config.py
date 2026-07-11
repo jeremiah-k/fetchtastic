@@ -926,6 +926,7 @@ def _setup_downloads(
         config["CHECK_APP_PRERELEASES"] = False
         config["CHECK_APK_PRERELEASES"] = False
         config["CHECK_DESKTOP_PRERELEASES"] = False
+        config["CHECK_APP_SNAPSHOTS"] = False
         config["SAVE_DESKTOP_APP"] = False
         config["SELECTED_APP_ASSETS"] = []
         config["SELECTED_APK_ASSETS"] = []
@@ -996,6 +997,7 @@ def _setup_downloads(
                 config["CHECK_APP_PRERELEASES"] = False
                 config["CHECK_APK_PRERELEASES"] = False
                 config["CHECK_DESKTOP_PRERELEASES"] = False
+                config["CHECK_APP_SNAPSHOTS"] = False
                 config["SELECTED_APP_ASSETS"] = []
                 config["SELECTED_APK_ASSETS"] = []
                 _clear_desktop_assets(config)
@@ -1030,6 +1032,7 @@ def _setup_downloads(
                 config["CHECK_APP_PRERELEASES"] = False
                 config["CHECK_APK_PRERELEASES"] = False
                 config["CHECK_DESKTOP_PRERELEASES"] = False
+                config["CHECK_APP_SNAPSHOTS"] = False
                 config["SELECTED_APP_ASSETS"] = []
                 config["SELECTED_APK_ASSETS"] = []
                 _clear_desktop_assets(config)
@@ -1051,6 +1054,7 @@ def _setup_downloads(
             config["CHECK_APP_PRERELEASES"] = False
             config["CHECK_APK_PRERELEASES"] = False
             config["CHECK_DESKTOP_PRERELEASES"] = False
+            config["CHECK_APP_SNAPSHOTS"] = False
             config["SELECTED_APP_ASSETS"] = []
             config["SELECTED_APK_ASSETS"] = []
             _clear_desktop_assets(config)
@@ -1083,7 +1087,7 @@ def _setup_downloads(
         )
         check_app_snapshots_default = "yes" if check_app_snapshots_current else "no"
         check_app_snapshots_input = _safe_input(
-            f"\nWould you like to check for and download Android snapshot debug builds from GitHub? [y/n] (default: {check_app_snapshots_default}): ",
+            f"\nWould you like to check for and download Android snapshot debug builds? These are rolling builds replaced on every push to Android main, debug-keyed (not for production), and stored separately under app/snapshots/. [y/n] (default: {check_app_snapshots_default}): ",
             default=check_app_snapshots_default,
         )
         config["CHECK_APP_SNAPSHOTS"] = _coerce_bool(
