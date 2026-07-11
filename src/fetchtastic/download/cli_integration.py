@@ -5,6 +5,7 @@ This module provides integration between the new download subsystem and the exis
 """
 
 import os
+import re
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
@@ -52,6 +53,8 @@ from .android import MeshtasticAndroidAppDownloader
 from .desktop import MeshtasticDesktopDownloader
 from .firmware import FirmwareReleaseDownloader
 from .orchestrator import DownloadOrchestrator
+
+_SNAPSHOT_VC_RE = re.compile(r"-debug-(\d+)\.apk$")
 
 
 class DownloadCLIIntegration:
@@ -405,6 +408,7 @@ class DownloadCLIIntegration:
 
         # Snapshot debug builds are categorized directly from orchestrator
         # results to avoid extending the legacy result tuple contract.
+        # Display versionCode (parsed from path) rather than the constant "snapshot" tag.
         downloaded_app_snapshots: list[str] = []
         if self.orchestrator:
             for result in self.orchestrator.download_results:
@@ -413,9 +417,9 @@ class DownloadCLIIntegration:
                 ) == FILE_TYPE_APP_SNAPSHOT and not getattr(
                     result, "was_skipped", False
                 ):
-                    tag = result.release_tag
-                    if tag and tag not in downloaded_app_snapshots:
-                        downloaded_app_snapshots.append(tag)
+                    vc = self._extract_snapshot_version_code(result)
+                    if vc and vc not in downloaded_app_snapshots:
+                        downloaded_app_snapshots.append(vc)
 
         downloaded_count = (
             len(downloaded_firmwares)
@@ -747,6 +751,23 @@ class DownloadCLIIntegration:
         ):
             new_versions_list.append(release_tag)
             new_versions_set.add(release_tag)
+
+    @staticmethod
+    def _extract_snapshot_version_code(result: Any) -> Optional[str]:
+        """Derive the numeric versionCode from a snapshot result's canonical path."""
+        file_path = getattr(result, "file_path", None)
+        if file_path:
+            parent = os.path.basename(os.path.dirname(str(file_path)))
+            if parent.isdigit():
+                return parent
+        # Fallback: parse from asset name in download_url
+        url = getattr(result, "download_url", None)
+        if url:
+            name = os.path.basename(str(url))
+            match = _SNAPSHOT_VC_RE.search(name)
+            if match:
+                return match.group(1)
+        return None
 
     def _normalize_firmware_prerelease_tag(self, tag: Optional[str]) -> Optional[str]:
         """
