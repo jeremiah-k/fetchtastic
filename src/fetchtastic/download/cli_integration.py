@@ -757,12 +757,20 @@ class DownloadCLIIntegration:
 
     @staticmethod
     def _extract_snapshot_version_code(result: Any) -> Optional[str]:
-        """Derive the numeric versionCode from a snapshot result's canonical path."""
+        """Derive the numeric versionCode from a snapshot result's canonical path.
+
+        Handles both plain ``<versionCode>`` and timestamp-prefixed
+        ``<YYYYMMDD-HHMMSS>-<versionCode>`` directory names.
+        """
         file_path = getattr(result, "file_path", None)
         if file_path:
             parent = os.path.basename(os.path.dirname(str(file_path)))
             if parent.isdigit():
                 return parent
+            # Handle timestamp-prefixed dirs: <YYYYMMDD-HHMMSS>-<versionCode>
+            parts = parent.rsplit("-", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                return parts[1]
         # Fallback: parse from asset name in download_url
         url = getattr(result, "download_url", None)
         if url:

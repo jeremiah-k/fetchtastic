@@ -157,6 +157,20 @@ def is_snapshot_tag(tag_name: str) -> bool:
     return (tag_name or "").strip().lower() == MESHTASTIC_ANDROID_SNAPSHOT_TAG
 
 
+def _parse_snapshot_vc_from_dirname(name: str) -> int | None:
+    """Extract versionCode from a snapshot directory name.
+
+    Handles both plain ``<versionCode>`` and timestamp-prefixed
+    ``<YYYYMMDD-HHMMSS>-<versionCode>`` formats.
+    """
+    if name.isdigit():
+        return int(name)
+    parts = name.rsplit("-", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return int(parts[1])
+    return None
+
+
 def _is_apk_prerelease_by_name(
     tag_name: str, version_manager: VersionManager | None = None
 ) -> bool:
@@ -576,6 +590,10 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         is_prerelease: bool | None = None,
         release: Release | None = None,
     ) -> str:
+        if is_snapshot_tag(release_tag):
+            raise ValueError(
+                f"Snapshot releases must use dedicated snapshot methods: {release_tag}"
+            )
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
         if release is not None:
@@ -685,6 +703,10 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return self._is_client_app_prerelease(release)
 
     def _get_storage_tag_for_release(self, release: Release) -> str:
+        if is_snapshot_tag(release.tag_name):
+            raise ValueError(
+                f"Snapshot releases must use dedicated snapshot methods, not generic storage: {release.tag_name}"
+            )
         return self._sanitize_required(release.tag_name, "release tag")
 
     def update_release_history(
@@ -1156,6 +1178,11 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return None
 
     def update_latest_release_tag(self, release_tag: str) -> bool:
+        if is_snapshot_tag(release_tag):
+            logger.warning(
+                "Rejecting snapshot tag in latest release tracking: %s", release_tag
+            )
+            return False
         return self.cache_manager.atomic_write_json(
             self.latest_release_path,
             {
@@ -1238,6 +1265,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         for release in sorted_releases:
             if self._is_client_app_stable(release):
                 continue
+            if is_snapshot_tag(release.tag_name):
+                continue
             prerelease_tuple = self.version_manager.get_release_tuple(release.tag_name)
             if (
                 latest_stable_tuple is None
@@ -1251,6 +1280,11 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
+        if is_snapshot_tag(prerelease_tag):
+            logger.warning(
+                "Rejecting snapshot tag in prerelease tracking: %s", prerelease_tag
+            )
+            return False
         metadata = self.version_manager.get_prerelease_metadata_from_version(
             prerelease_tag
         )
@@ -1371,12 +1405,27 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         os.makedirs(snapshot_dir, exist_ok=True)
         return snapshot_dir
 
-    def _resolve_snapshot_dir(self, version_code: int) -> str:
-        """Return app/snapshots/<version_code>/, creating it when needed."""
+    def _resolve_snapshot_dir(
+        self, version_code: int, published_at: str | None = None
+    ) -> str:
+        """Return app/snapshots/<timestamp>-<version_code>/, creating it when needed.
+
+        When ``published_at`` is provided (ISO 8601), the directory name is
+        prefixed with ``YYYYMMDD-HHMMSS-`` for chronological visibility.
+        """
         base_dir = self._ensure_snapshot_base_dir()
+        dir_name = str(version_code)
+        if published_at:
+            try:
+                from datetime import datetime
+
+                dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+                dir_name = f"{dt.strftime('%Y%m%d-%H%M%S')}-{version_code}"
+            except (ValueError, TypeError):
+                pass
         release_dir = os.path.join(
             base_dir,
-            self._sanitize_required(str(version_code), "snapshot version code"),
+            self._sanitize_required(dir_name, "snapshot directory name"),
         )
         if os.path.islink(release_dir):
             raise ValueError(f"Refusing symlinked snapshot release dir: {release_dir}")
@@ -1515,19 +1564,44 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return matches_selected_patterns(asset_name, expanded)
 
     def get_snapshot_target_path(
-        self, version_code: int, asset_name: str, *, create: bool = False
+        self,
+        version_code: int,
+        asset_name: str,
+        *,
+        create: bool = False,
+        published_at: str | None = None,
     ) -> str:
         """Return the canonical download path for a snapshot asset."""
         if create:
-            release_dir = self._resolve_snapshot_dir(version_code)
+            release_dir = self._resolve_snapshot_dir(version_code, published_at)
         else:
             base_dir = os.path.join(
                 self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME
             )
-            release_dir = os.path.join(base_dir, str(version_code))
+            # When not creating, find the existing dir matching this versionCode
+            # (may have a timestamp prefix from a prior download).
+            release_dir = self._find_snapshot_release_dir(base_dir, version_code)
         return os.path.join(
             release_dir, self._sanitize_required(asset_name, "snapshot asset name")
         )
+
+    def _find_snapshot_release_dir(self, base_dir: str, version_code: int) -> str:
+        """Find the existing snapshot directory for a versionCode (handles timestamp prefix)."""
+        # Try exact match first (legacy or no-timestamp)
+        exact = os.path.join(base_dir, str(version_code))
+        if os.path.isdir(exact):
+            return exact
+        # Try timestamp-prefixed dirs: <YYYYMMDD-HHMMSS>-<versionCode>
+        suffix = f"-{version_code}"
+        try:
+            if os.path.isdir(base_dir):
+                with os.scandir(base_dir) as it:
+                    for entry in it:
+                        if entry.is_dir() and entry.name.endswith(suffix):
+                            return entry.path
+        except OSError:
+            pass
+        return exact  # fallback to plain name
 
     def is_snapshot_complete(self, release: Release, version_code: int) -> bool:
         """Check whether all selected snapshot assets are present and complete on disk."""
@@ -1535,7 +1609,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         if not selected:
             return False
         for asset in selected:
-            target = self.get_snapshot_target_path(version_code, asset.name)
+            target = self.get_snapshot_target_path(
+                version_code, asset.name, published_at=release.published_at
+            )
             if not self._is_asset_complete_for_target(target, asset):
                 return False
         return True
@@ -1594,10 +1670,12 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def download_snapshot_asset(
         self, release: Release, asset: Asset, version_code: int
     ) -> DownloadResult:
-        """Download a snapshot asset into app/snapshots/<version_code>/."""
+        """Download a snapshot asset into app/snapshots/<timestamp>-<version_code>/."""
         target_path: str | None = None
         try:
-            snapshot_dir = self._resolve_snapshot_dir(version_code)
+            snapshot_dir = self._resolve_snapshot_dir(
+                version_code, published_at=release.published_at
+            )
             target_path = os.path.join(
                 snapshot_dir, self._sanitize_required(asset.name, "snapshot asset name")
             )
@@ -1690,9 +1768,8 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 for entry in it:
                     if not entry.is_dir() or entry.is_symlink():
                         continue
-                    try:
-                        vc = int(entry.name)
-                    except ValueError:
+                    vc = _parse_snapshot_vc_from_dirname(entry.name)
+                    if vc is None:
                         continue
                     entries.append((vc, entry.path))
         except FileNotFoundError:
