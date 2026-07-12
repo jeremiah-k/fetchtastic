@@ -99,19 +99,24 @@ _NIGHTLY_BUILD_TOKEN_RX = re.compile(r"(\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORE
 
 def _resolve_extract_patterns(raw: Any) -> Optional[List[str]]:
     """Resolve an extraction-patterns config value, distinguishing
-    absent/unsupported from explicitly empty.
+    absent/unsupported/malformed from explicitly empty.
 
     Returns:
-      * ``None``  — value is absent (``None``) or an unsupported type
-        (e.g. ``int``, ``dict``). Callers may fall back to another key.
-      * ``[]``    — value is a valid string / list / tuple / set / frozenset
-        that resolves to no nonempty patterns (explicit empty). Callers
-        MUST NOT fall back: the user explicitly opted out.
+      * ``None``  — value is absent (``None``), an unsupported type
+        (e.g. ``int``, ``dict``), or a collection containing any
+        non-string member (mixed types). Callers may fall back to
+        another key.
+      * ``[]``    — value is a valid all-string string / list / tuple /
+        set / frozenset that resolves to no nonempty patterns (explicit
+        empty). Callers MUST NOT fall back: the user explicitly opted out.
       * ``[...]`` — nonempty deterministic ordered list of stripped,
         deduplicated strings.
 
-    The input is never mutated. ``set`` / ``frozenset`` are sorted for
-    determinism. Lists / tuples / strings preserve first-seen order.
+    The input is never mutated. All-or-nothing: a collection with any
+    non-string member is malformed (``None``) — partial salvage is never
+    returned. ``set`` / ``frozenset`` members are validated before sorting
+    so mixed types never raise ``TypeError``. Lists / tuples / strings
+    preserve first-seen order; sets / frozensets are sorted for determinism.
     """
     if raw is None:
         return None
@@ -121,20 +126,23 @@ def _resolve_extract_patterns(raw: Any) -> Optional[List[str]]:
     if not isinstance(raw, (list, tuple, set, frozenset)):
         # Unsupported scalar / mapping → caller may fall back.
         return None
+    # All-or-nothing: any non-string member makes the whole collection
+    # malformed. Validate BEFORE sorting sets so mixed types never raise.
+    for item in raw:
+        if not isinstance(item, str):
+            return None
     if isinstance(raw, (set, frozenset)):
         items: List[str] = []
         for item in sorted(raw):
-            if isinstance(item, str):
-                stripped = item.strip()
-                if stripped and stripped not in items:
-                    items.append(stripped)
-        return items
-    items = []
-    for item in raw:
-        if isinstance(item, str):
             stripped = item.strip()
             if stripped and stripped not in items:
                 items.append(stripped)
+        return items
+    items = []
+    for item in raw:
+        stripped = item.strip()
+        if stripped and stripped not in items:
+            items.append(stripped)
     return items
 
 
@@ -2885,18 +2893,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Scan a nightly listing and return the build-id parsed from the single
         release-level manifest.
 
+        Only entries whose GitHub Contents ``type`` is exactly ``"file"`` can
+        supply identity — directories, symlinks, submodules, and unknown types
+        are ignored even when their name matches the manifest pattern. A
+        non-file manifest-name entry cannot establish build identity.
+
         Returns ``None`` when no manifest is present **and the listing is
         empty** (no candidate published yet). For a nonempty listing with zero
-        manifests, raises ``ValueError`` (malformed generation). For multiple
-        unique build-ids, raises ``ValueError`` (ambiguous generation). Exact
-        duplicate manifest entries (same build-id) are deduplicated and treated
-        as one.
+        valid file manifests, raises ``ValueError`` (malformed generation). For
+        multiple unique build-ids, raises ``ValueError`` (ambiguous generation).
+        Exact duplicate manifest entries (same build-id) are deduplicated and
+        treated as one.
         """
         listing = entries or []
         build_ids: list[str] = []
         seen: set[str] = set()
         for entry in listing:
             if not isinstance(entry, dict):
+                continue
+            # Only a regular GitHub Contents "file" entry can supply identity.
+            # A dir/symlink/submodule/unknown manifest-name entry is ignored.
+            if entry.get("type") != "file":
                 continue
             name = entry.get("name")
             if not isinstance(name, str):
@@ -3085,8 +3102,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             resolved = _resolve_extract_patterns(self.config.get(key))
             if resolved is None:
                 logger.warning(
-                    "Config key %s has an unsupported type (%s); "
-                    "falling back to the next selection key",
+                    "Config key %s has an unsupported type or malformed value "
+                    "(type %s); falling back to the next selection key",
                     key,
                     type(self.config.get(key)).__name__,
                 )
@@ -3111,10 +3128,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
           - ``build_id`` must match the strict nightly build-id regex;
             otherwise the result is empty.
           - The release manifest for *this* build (``firmware-<build_id>.json``)
-            is included exactly once — but **only when at least one eligible
-            non-release entry also survives selection**. A manifest-only
-            result is never produced (fail-closed against no-match /
-            excluded-all).
+            is included exactly once — but **only when it is a regular
+            ``type == "file"`` entry AND at least one eligible non-release
+            entry also survives selection**. A non-file manifest (dir,
+            symlink, submodule) is never selected and never establishes the
+            build companion. A manifest-only OR payload-only result is never
+            produced (fail-closed against no-match / excluded-all /
+            manifest-as-dir).
           - Only entries whose GitHub Contents ``type`` is exactly ``"file"``
             are eligible. Directories, symlinks, submodules, and unknown
             types are ignored before manifest/pattern/exclude evaluation.
@@ -3191,14 +3211,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 non_release.append(entry)
                 seen_names.add(name)
 
-        # Fail-closed: never return a manifest-only result. The release
-        # manifest is included exactly once only when at least one eligible
-        # non-release file also survives type/stale/include/exclude/dedupe.
-        if not non_release:
+        # Fail-closed: selection requires BOTH exactly one file manifest for
+        # this build AND ≥1 eligible non-release file. Never manifest-only
+        # (no companion payload) and never payload-only (no file manifest —
+        # e.g. the manifest is a dir/symlink/submodule or absent entirely).
+        if not non_release or manifest_entry is None:
             return []
-        selected: List[Dict[str, Any]] = (
-            [manifest_entry] if manifest_entry is not None else []
-        ) + non_release
+        selected: List[Dict[str, Any]] = [manifest_entry] + non_release
         selected.sort(key=lambda e: str(e.get("name", "")))
         return selected
 
@@ -3276,7 +3295,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
         return tracked != build_id
 
     def should_process_nightly(
-        self, entries: List[Dict[str, Any]], build_id: str
+        self,
+        entries: List[Dict[str, Any]],
+        build_id: str,
+        selected: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         """
         Decide whether a nightly build should be processed.
@@ -3291,6 +3313,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Same-identity skip uses the shared :meth:`_validate_nightly_asset`
         against the non-writing managed target path so a tracked build is only
         skipped when every selected asset passes path/content validation.
+
+        ``selected`` — optional precomputed selection list (the exact list
+        returned by :meth:`get_selected_nightly_assets` for this build). When
+        supplied, the selector is not re-invoked and this list is validated
+        as-is, so the orchestrator can compute the set once and reuse it for
+        processing, maintenance, retry, and finalization without a config
+        reread or reselection in the same run. Omit (``None``) for the
+        backwards-compatible recompute-from-entries behavior.
         """
         if not self._nightlies_enabled() or not build_id:
             return False
@@ -3307,7 +3337,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return True
 
         # Same identity: backfill if any selected asset is not fully valid.
-        selected = self.get_selected_nightly_assets(entries, build_id)
+        # Reuse the caller-supplied precomputed selection when available so a
+        # single run never recomputes/rereads the pattern configuration.
+        if selected is None:
+            selected = self.get_selected_nightly_assets(entries, build_id)
         for entry in selected:
             name = entry.get("name")
             if not isinstance(name, str) or not name:
@@ -3820,7 +3853,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
             remove_latest_pointer(base_dir)
 
     def repair_nightly_executable_metadata(
-        self, build_id: str, entries: List[Dict[str, Any]]
+        self,
+        build_id: str,
+        entries: List[Dict[str, Any]],
+        selected: Optional[List[Dict[str, Any]]] = None,
     ) -> int:
         """
         Best-effort repair of the executable bit on ``*.sh`` nightly assets
@@ -3832,11 +3868,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
         ``build_id``) are examined, so stale or unmanaged files are never
         touched.
 
+        ``selected`` — optional precomputed selection list (the exact list
+        returned by :meth:`get_selected_nightly_assets`). When supplied, the
+        selector is not re-invoked, so the orchestrator reuses one
+        precomputed set through process/maintenance/retry without a config
+        reread. Omit (``None``) for the backwards-compatible
+        recompute-from-entries behavior.
+
         Returns the number of assets repaired.
         """
         if os.name == "nt":
             return 0
-        selected = self.get_selected_nightly_assets(entries, build_id)
+        if selected is None:
+            selected = self.get_selected_nightly_assets(entries, build_id)
         repaired = 0
         for entry in selected:
             name = entry.get("name")

@@ -336,11 +336,19 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
 def _normalize_display_patterns(raw: Any) -> List[str]:
     """Setup-local safe normalization for display of EXTRACT_PATTERNS.
 
+    All-or-nothing policy mirroring the downloader's resolver: a collection
+    is valid only when EVERY member is a string. Any non-string member makes
+    the whole collection malformed — the result is ``[]`` (no partial
+    display / no fallback value) and a concise warning is emitted so the
+    user knows why no patterns are shown.
+
     Handles ``str`` / ``list`` / ``tuple`` / ``set`` / ``frozenset`` values
-    deterministically: each item is stringified, stripped, deduplicated
-    (first-seen order for sequences; sorted for set/frozenset), and empty
-    fragments are dropped. ``None`` and unsupported types (``int``, ``dict``,
-    etc.) return ``[]`` — callers emit a no-pattern warning in that case.
+    deterministically: each item is stripped, deduplicated (first-seen order
+    for sequences; sorted for set/frozenset), and empty fragments are
+    dropped. Set members are validated before sorting so mixed types never
+    raise ``TypeError``. ``None`` and unsupported types (``int``, ``dict``,
+    etc.) return ``[]`` — callers emit a no-pattern warning for the
+    unsupported-type case.
 
     This is informational only — the downloader resolves actual selection
     patterns via its own resolver. Setup never imports that private helper.
@@ -351,20 +359,25 @@ def _normalize_display_patterns(raw: Any) -> List[str]:
     if isinstance(raw, str):
         stripped = raw.strip()
         return [stripped] if stripped else []
-    if isinstance(raw, (set, frozenset)):
-        items: List[str] = []
-        for item in sorted(raw):
-            if not isinstance(item, str):
-                continue
-            stripped = item.strip()
-            if stripped and stripped not in items:
-                items.append(stripped)
-        return items
-    if isinstance(raw, (list, tuple)):
-        items = []
+    if isinstance(raw, (set, frozenset, list, tuple)):
+        # All-or-nothing: any non-string member makes the whole collection
+        # malformed. Validate BEFORE sorting sets so mixed types never raise.
         for item in raw:
             if not isinstance(item, str):
-                continue
+                logger.warning(
+                    "EXTRACT_PATTERNS contains non-string members; "
+                    "treating as empty."
+                )
+                return []
+        if isinstance(raw, (set, frozenset)):
+            items: List[str] = []
+            for item in sorted(raw):
+                stripped = item.strip()
+                if stripped and stripped not in items:
+                    items.append(stripped)
+            return items
+        items = []
+        for item in raw:
             stripped = item.strip()
             if stripped and stripped not in items:
                 items.append(stripped)

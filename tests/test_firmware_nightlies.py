@@ -2988,8 +2988,11 @@ def test_repair_nightly_executable_metadata_chmods_valid_sh(tmp_path):
     digest = hashlib.sha256(b"#!/bin/sh\necho hi\n").hexdigest()
     Path(hash_path).write_text(f"{digest}  device-install.sh\n")
 
+    manifest_entry = _contents_entry(f"firmware-{BUILD_2_8_0}.json")
     entry = _contents_entry("device-install.sh", size=len(b"#!/bin/sh\necho hi\n"))
-    repaired = dl.repair_nightly_executable_metadata(BUILD_2_8_0, [entry])
+    repaired = dl.repair_nightly_executable_metadata(
+        BUILD_2_8_0, [manifest_entry, entry]
+    )
 
     assert repaired == 1
     import stat as _stat
@@ -3006,8 +3009,11 @@ def test_repair_nightly_executable_metadata_skips_invalid(tmp_path):
     )
     target = dl.get_nightly_target_path(BUILD_2_8_0, "device-install.sh", create=True)
     Path(target).write_bytes(b"bad")
+    manifest_entry = _contents_entry(f"firmware-{BUILD_2_8_0}.json")
     entry = _contents_entry("device-install.sh", size=100)
-    repaired = dl.repair_nightly_executable_metadata(BUILD_2_8_0, [entry])
+    repaired = dl.repair_nightly_executable_metadata(
+        BUILD_2_8_0, [manifest_entry, entry]
+    )
     assert repaired == 0
 
 
@@ -3017,8 +3023,11 @@ def test_repair_nightly_executable_metadata_skips_non_sh(tmp_path):
     dl = _seed_device_patterns(
         FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
     )
+    manifest_entry = _contents_entry(f"firmware-{BUILD_2_8_0}.json")
     entry = _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2", size=100)
-    repaired = dl.repair_nightly_executable_metadata(BUILD_2_8_0, [entry])
+    repaired = dl.repair_nightly_executable_metadata(
+        BUILD_2_8_0, [manifest_entry, entry]
+    )
     assert repaired == 0
 
 
@@ -5047,8 +5056,12 @@ def test_setup_display_normalizer_handles_str_list_tuple_set_frozenset():
     # Unsupported types.
     assert _normalize_display_patterns(42) == []
     assert _normalize_display_patterns({"a": 1}) == []
-    # Non-string items in collections are skipped.
-    assert _normalize_display_patterns(["ok", 1, None, "ok"]) == ["ok"]
+    # All-or-nothing: any non-string member makes the whole collection
+    # malformed → empty (no partial salvage, no fallback display).
+    assert _normalize_display_patterns(["ok", 1, None, "ok"]) == []
+    assert _normalize_display_patterns(("ok", 1)) == []
+    assert _normalize_display_patterns({"ok", 1}) == []
+    assert _normalize_display_patterns(frozenset({"ok", 1})) == []
 
 
 def test_setup_display_normalizer_does_not_mutate_input():
@@ -5064,3 +5077,366 @@ def test_setup_display_normalizer_does_not_mutate_input():
     snapshot = set(as_set)
     _normalize_display_patterns(as_set)
     assert as_set == snapshot
+
+
+# ==================================================================
+# PC: get_nightly_build_id — only file manifests supply identity
+# ==================================================================
+
+
+@pytest.mark.parametrize("entry_type", ["dir", "symlink", "submodule"])
+def test_get_nightly_build_id_ignores_non_file_manifest(downloader, entry_type):
+    """A manifest-name entry with a non-file type cannot supply identity.
+
+    A nonempty listing whose only manifest-name entry is a dir/symlink/
+    submodule has no valid file manifest — the existing malformed-generation
+    error (ValueError) fires and the orchestrator surfaces CHECK_FAILED.
+    """
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", entry_type=entry_type),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+    ]
+    with pytest.raises(ValueError, match="no release-level manifest"):
+        downloader.get_nightly_build_id(listing)
+
+
+def test_get_nightly_build_id_non_file_manifest_in_nonempty_listing_raises(
+    downloader,
+):
+    """Listing with only non-file manifest-name entries raises ValueError."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", entry_type="dir"),
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", entry_type="symlink"),
+    ]
+    with pytest.raises(ValueError, match="no release-level manifest"):
+        downloader.get_nightly_build_id(listing)
+
+
+def test_get_nightly_build_id_file_manifest_amidst_non_file(downloader):
+    """A file manifest wins over non-file manifest-name entries."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", entry_type="dir"),
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+    ]
+    assert downloader.get_nightly_build_id(listing) == BUILD_2_8_0
+
+
+def test_get_nightly_build_id_duplicate_file_and_dir_manifest(downloader):
+    """Duplicate file manifest deduped; non-file manifest-name entries ignored."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", entry_type="dir"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+    ]
+    assert downloader.get_nightly_build_id(listing) == BUILD_2_8_0
+
+
+# ==================================================================
+# PC: get_selected_nightly_assets — no payload-only transaction
+# ==================================================================
+
+
+def test_get_selected_nightly_assets_dir_manifest_blocks_payload_only(downloader):
+    """A dir-type manifest + payloads → empty (no payload-only transaction).
+
+    Selection independently requires exactly one file manifest for the chosen
+    build plus ≥1 eligible non-release file. A non-file manifest is never
+    selected and cannot serve as the build companion.
+    """
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", entry_type="dir"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+    assert downloader.get_selected_nightly_assets(listing, BUILD_2_8_0) == []
+
+
+def test_get_selected_nightly_assets_symlink_manifest_rejected(downloader):
+    """A symlink manifest is rejected; payloads alone produce no transaction."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", entry_type="symlink"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.elf"),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+    assert downloader.get_selected_nightly_assets(listing, BUILD_2_8_0) == []
+
+
+def test_get_selected_nightly_assets_no_file_manifest_with_payloads_empty(downloader):
+    """Absence of any file manifest + payloads → empty selection."""
+    listing = [
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+    assert downloader.get_selected_nightly_assets(listing, BUILD_2_8_0) == []
+
+
+# ==================================================================
+# PC: _resolve_extract_patterns — all-or-nothing collection policy
+# ==================================================================
+
+
+@pytest.mark.parametrize(
+    "mixed",
+    [
+        ["rak4631-", 1],
+        ("rak4631-", None),
+        {"rak4631-", 42},
+        frozenset({"rak4631-", 1}),
+        ["a", [1]],
+        [None],
+        (1,),
+    ],
+)
+def test_resolve_extract_patterns_mixed_collection_returns_none(mixed):
+    """Any non-string member makes the whole collection malformed (None)."""
+    from fetchtastic.download.firmware import _resolve_extract_patterns
+
+    assert _resolve_extract_patterns(mixed) is None
+
+
+@pytest.mark.parametrize(
+    "valid",
+    [
+        "rak4631-",
+        ["rak4631-", "tbeam"],
+        ("rak4631-", "tbeam"),
+        {"rak4631-", "tbeam"},
+        frozenset({"rak4631-", "tbeam"}),
+    ],
+)
+def test_resolve_extract_patterns_valid_all_string(valid):
+    """All-string collections resolve to a nonempty deterministic list."""
+    from fetchtastic.download.firmware import _resolve_extract_patterns
+
+    result = _resolve_extract_patterns(valid)
+    assert isinstance(result, list)
+    assert all(isinstance(p, str) for p in result)
+    assert "rak4631-" in result
+
+
+@pytest.mark.parametrize("empty", ["", [], (), set(), frozenset(), ["   ", ""]])
+def test_resolve_extract_patterns_explicit_empty(empty):
+    """Valid all-string empties → [] (explicit opt-out, never None)."""
+    from fetchtastic.download.firmware import _resolve_extract_patterns
+
+    assert _resolve_extract_patterns(empty) == []
+
+
+def test_resolve_extract_patterns_set_sorted_deterministic():
+    """Sets/frozensets resolve to sorted order (no TypeError on mixed)."""
+    from fetchtastic.download.firmware import _resolve_extract_patterns
+
+    assert _resolve_extract_patterns({"b", "a"}) == ["a", "b"]
+    assert _resolve_extract_patterns(frozenset({"c", "a", "b"})) == ["a", "b", "c"]
+
+
+@pytest.mark.parametrize("scalar", [None, 42, 3.14, {"a": 1}])
+def test_resolve_extract_patterns_unsupported_returns_none(scalar):
+    """Unsupported scalars/mappings/None → None (caller may fall back)."""
+    from fetchtastic.download.firmware import _resolve_extract_patterns
+
+    assert _resolve_extract_patterns(scalar) is None
+
+
+def test_resolve_extract_patterns_does_not_mutate():
+    """The input collection is never mutated."""
+    from fetchtastic.download.firmware import _resolve_extract_patterns
+
+    patterns = ["rak4631-", "rak4631-", "  ", "tbeam"]
+    snapshot = list(patterns)
+    _resolve_extract_patterns(patterns)
+    assert patterns == snapshot
+
+
+def test_nightly_patterns_mixed_collection_falls_back_with_warning(downloader, caplog):
+    """A mixed-type EXTRACT_PATTERNS falls back AND emits a warning."""
+    import logging
+
+    listing = _make_nightly_listing()
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-", 1]
+    downloader.config["SELECTED_PRERELEASE_ASSETS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    with caplog.at_level(logging.WARNING, logger="fetchtastic"):
+        selected = select(listing, BUILD_2_8_0)
+
+    assert any(
+        "EXTRACT_PATTERNS" in rec.getMessage() and "malformed" in rec.getMessage()
+        for rec in caplog.records
+    )
+    # Fell back to SELECTED_PRERELEASE_ASSETS.
+    assert any("rak4631" in e["name"] and e["name"].endswith(".uf2") for e in selected)
+
+
+# ==================================================================
+# PC: setup display — mixed collections warn + no partial display
+# ==================================================================
+
+
+def test_setup_display_normalizer_mixed_collection_warns(caplog):
+    """Mixed collections → [] + warning, no partial salvage."""
+    import logging
+
+    from fetchtastic.setup_config import _normalize_display_patterns
+
+    with caplog.at_level(logging.WARNING, logger="fetchtastic"):
+        result = _normalize_display_patterns(["ok", 1, None])
+
+    assert result == []
+    assert any("non-string" in rec.getMessage() for rec in caplog.records)
+
+
+def test_setup_display_normalizer_mixed_set_no_typeerror():
+    """Mixed-type set/frozenset validated before sort — no TypeError."""
+    from fetchtastic.setup_config import _normalize_display_patterns
+
+    assert _normalize_display_patterns({"ok", 1, None}) == []
+    assert _normalize_display_patterns(frozenset({"ok", 1})) == []
+
+
+# ==================================================================
+# PC: selected-set reuse — single compute through process/maintenance
+# ==================================================================
+
+
+def test_should_process_nightly_selected_param_skips_recompute(
+    downloader, cache_manager
+):
+    """When ``selected`` is supplied, should_process_nightly does not recompute."""
+    listing = _make_nightly_listing()
+    # Seed tracking to match → same-identity validation path (not short-circuit).
+    tracking = downloader.cache_manager.get_cache_file_path(
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
+    )
+    Path(tracking).parent.mkdir(parents=True, exist_ok=True)
+    Path(tracking).write_text(json.dumps({"build_id": BUILD_2_8_0}))
+
+    selected = downloader.get_selected_nightly_assets(listing, BUILD_2_8_0)
+    assert selected  # sanity
+
+    downloader.get_selected_nightly_assets = Mock(return_value=selected)
+
+    downloader.should_process_nightly(listing, BUILD_2_8_0, selected=selected)
+
+    downloader.get_selected_nightly_assets.assert_not_called()
+
+
+def test_repair_nightly_executable_metadata_selected_param_skips_recompute(
+    downloader, tmp_path
+):
+    """When ``selected`` is supplied, repair does not recompute."""
+    listing = _make_nightly_listing()
+    selected = downloader.get_selected_nightly_assets(listing, BUILD_2_8_0)
+    assert selected
+
+    downloader.get_selected_nightly_assets = Mock(return_value=selected)
+    downloader.repair_nightly_executable_metadata(
+        BUILD_2_8_0, listing, selected=selected
+    )
+
+    downloader.get_selected_nightly_assets.assert_not_called()
+
+
+def test_orch_selector_called_once_maintenance(tmp_path):
+    """Maintenance run computes the selected set exactly once."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    _seed_device_patterns(fd)
+    listing = _make_nightly_listing()
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+
+    # Wrap the real selector so we count calls while still producing a real set.
+    real_select = fd.get_selected_nightly_assets
+    fd.get_selected_nightly_assets = Mock(side_effect=real_select)
+
+    # Maintenance path: tracked build → should_process returns False.
+    fd.should_process_nightly = Mock(return_value=False)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.recreate_latest_pointer_for_nightly = Mock(return_value=True)
+    real_repair = fd.repair_nightly_executable_metadata
+    fd.repair_nightly_executable_metadata = Mock(side_effect=real_repair)
+
+    orch._process_firmware_nightlies()
+
+    # Exactly ONE selection computation for the whole maintenance run.
+    fd.get_selected_nightly_assets.assert_called_once()
+    # repair received the precomputed set via the selected kwarg.
+    repair_kwargs = fd.repair_nightly_executable_metadata.call_args.kwargs
+    assert "selected" in repair_kwargs
+    assert repair_kwargs["selected"] is not None
+
+
+def test_orch_selector_called_once_fresh_run(tmp_path):
+    """Fresh run (untracked build) computes the selected set exactly once."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    _seed_device_patterns(fd)
+    listing = _make_nightly_listing()
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+
+    real_select = fd.get_selected_nightly_assets
+    fd.get_selected_nightly_assets = Mock(side_effect=real_select)
+
+    ftype = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
+    fd.download_nightly_asset = Mock(
+        return_value=DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=str(tmp_path / "x.bin"),
+            download_url="http://x",
+            file_size=1,
+            file_type=ftype,
+        )
+    )
+    fd.get_nightly_target_path = Mock(return_value=str(tmp_path / "x.bin"))
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+    orch._handle_download_result = Mock()
+
+    orch._process_firmware_nightlies()
+
+    fd.get_selected_nightly_assets.assert_called_once()
+
+
+def test_orch_config_mutation_cannot_alter_repair_set(downloader, tmp_path):
+    """After precompute, mutating EXTRACT_PATTERNS cannot change repair's set."""
+    listing = _make_nightly_listing()
+    downloader.config["EXTRACT_PATTERNS"] = ["device-"]
+    selected = downloader.get_selected_nightly_assets(listing, BUILD_2_8_0)
+    # Sanity: the original selection includes device-install.sh.
+    assert any(e["name"] == "device-install.sh" for e in selected)
+
+    # Mutate config to a non-matching pattern AFTER selection.
+    downloader.config["EXTRACT_PATTERNS"] = ["nonexistent-device-"]
+    # If repair recomputed, it would call the selector and get an empty set.
+    downloader.get_selected_nightly_assets = Mock(return_value=[])
+
+    examined_names: list[str] = []
+    original_validate = downloader._validate_nightly_asset
+
+    def _spy(target: str, name: str, size: Any) -> tuple:
+        examined_names.append(name)
+        return original_validate(target, name, size)
+
+    downloader._validate_nightly_asset = _spy
+    downloader.repair_nightly_executable_metadata(
+        BUILD_2_8_0, listing, selected=selected
+    )
+
+    # It examined device-install.sh from the ORIGINAL selection, proving
+    # the precomputed set was used, not a recomputed empty set.
+    assert "device-install.sh" in examined_names
+    downloader.get_selected_nightly_assets.assert_not_called()

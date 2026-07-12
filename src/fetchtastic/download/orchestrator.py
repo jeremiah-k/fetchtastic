@@ -1180,12 +1180,14 @@ class DownloadOrchestrator:
                     build_id,
                 )
                 return
-            if not self.firmware_downloader.should_process_nightly(entries, build_id):
+            if not self.firmware_downloader.should_process_nightly(
+                entries, build_id, selected=selected
+            ):
                 logger.debug(
                     "Firmware-nightly build %s already complete; running maintenance",
                     build_id,
                 )
-                self._run_nightly_maintenance(build_id, entries)
+                self._run_nightly_maintenance(build_id, entries, selected=selected)
                 self.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
                 return
 
@@ -1316,13 +1318,20 @@ class DownloadOrchestrator:
         return False
 
     def _run_nightly_maintenance(
-        self, build_id: str, entries: List[Dict[str, Any]]
+        self,
+        build_id: str,
+        entries: List[Dict[str, Any]],
+        selected: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """
         Run retention cleanup, latest-pointer repair/recreate, and executable-
         metadata repair for an already-complete nightly build. Does NOT rewrite
         tracking and does NOT report a download. Preserves a non-symlink
         ``latest`` entry.
+
+        ``selected`` — optional precomputed selection list forwarded to
+        :meth:`repair_nightly_executable_metadata` so the orchestrator reuses
+        one precomputed set per run without re-reading config.
         """
         try:
             self.firmware_downloader.cleanup_superseded_nightlies(build_id)
@@ -1336,7 +1345,7 @@ class DownloadOrchestrator:
             )
         try:
             repaired = self.firmware_downloader.repair_nightly_executable_metadata(
-                build_id, entries
+                build_id, entries, selected=selected
             )
             if repaired:
                 logger.info(
