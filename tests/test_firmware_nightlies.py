@@ -317,13 +317,14 @@ def test_get_nightly_build_id_extracts_from_manifest(downloader, mock_cache_mana
 
 
 def test_get_nightly_build_id_none_when_no_manifest(downloader):
-    """get_nightly_build_id returns None when no release manifest is present."""
+    """get_nightly_build_id raises ValueError for a nonempty listing with no manifest."""
     listing = [
         _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip"),
         _contents_entry("device-install.sh"),
     ]
     get_build = _require_method(downloader, "get_nightly_build_id")
-    assert get_build(listing) is None
+    with pytest.raises(ValueError, match="no release-level manifest"):
+        get_build(listing)
 
 
 # ==================================================================
@@ -2098,7 +2099,7 @@ def test_nightly_run_state_unchecked_by_default(tmp_path):
 
 
 def test_nightly_run_state_already_complete_when_should_process_false(tmp_path):
-    """should_process_nightly False sets ALREADY_COMPLETE."""
+    """should_process_nightly False runs maintenance and sets MAINTENANCE_ONLY."""
     from fetchtastic.constants import NightlyRunState
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -2109,10 +2110,13 @@ def test_nightly_run_state_already_complete_when_should_process_false(tmp_path):
     fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
     fd.should_process_nightly = Mock(return_value=False)
     orch._handle_download_result = Mock()
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.recreate_latest_pointer_for_nightly = Mock(return_value=True)
+    fd.repair_nightly_executable_metadata = Mock(return_value=0)
 
     orch._process_firmware_nightlies()
 
-    assert orch.nightly_run_state == NightlyRunState.ALREADY_COMPLETE
+    assert orch.nightly_run_state == NightlyRunState.MAINTENANCE_ONLY
     assert orch.latest_firmware_nightly_build_id is None
 
 
@@ -2160,7 +2164,7 @@ def test_nightly_run_state_attempted_incomplete_on_partial_failure(tmp_path):
 
 
 def test_nightly_run_state_finalized_on_full_success(tmp_path):
-    """All assets valid + tracking persists sets FINALIZED + run-scoped build-id."""
+    """All assets valid + tracking persists sets FINALIZED_WITH_DOWNLOAD + run-scoped build-id."""
     from fetchtastic.constants import NightlyRunState
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -2174,26 +2178,28 @@ def test_nightly_run_state_finalized_on_full_success(tmp_path):
     selected = [listing[0], listing[4]]
     fd.get_selected_nightly_assets = Mock(return_value=selected)
     ftype = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
-    fd.download_nightly_asset = Mock(
-        return_value=DownloadResult(
+
+    def _make_result(entry, _build_id=None):
+        return DownloadResult(
             success=True,
             release_tag=BUILD_2_8_0,
-            file_path=str(tmp_path / "x"),
-            download_url="http://x",
+            file_path=str(tmp_path / entry["name"]),
+            download_url=entry.get("download_url") or entry.get("browser_download_url"),
             file_size=1,
             file_type=ftype,
+            was_skipped=False,
         )
-    )
+
+    fd.download_nightly_asset = Mock(side_effect=_make_result)
     fd.get_nightly_target_path = Mock(return_value=str(tmp_path / "x"))
     fd._validate_nightly_asset = Mock(return_value=(True, ""))
     fd.update_nightly_tracking = Mock(return_value=True)
     fd.cleanup_superseded_nightlies = Mock(return_value=0)
     fd.update_latest_pointer_for_nightly = Mock(return_value=True)
-    orch._handle_download_result = Mock()
 
     orch._process_firmware_nightlies()
 
-    assert orch.nightly_run_state == NightlyRunState.FINALIZED
+    assert orch.nightly_run_state == NightlyRunState.FINALIZED_WITH_DOWNLOAD
     assert orch.latest_firmware_nightly_build_id == BUILD_2_8_0
 
 
@@ -2264,7 +2270,7 @@ def test_post_retry_finalization_sets_finalized(tmp_path):
 
     orch._finalize_nightly_transaction_if_complete()
 
-    assert orch.nightly_run_state == NightlyRunState.FINALIZED
+    assert orch.nightly_run_state == NightlyRunState.FINALIZED_WITH_DOWNLOAD
 
 
 # ==================================================================
@@ -2576,3 +2582,583 @@ def test_cleanup_preserves_non_symlink_latest(tmp_path):
 
     assert latest.exists()
     assert latest.read_text() == "not a symlink"
+
+
+# ==================================================================
+# PC: Unified managed-path resolver — non-write mode safety
+# ==================================================================
+
+
+def test_get_nightly_target_path_non_write_rejects_symlinked_download_dir(tmp_path):
+    """Non-write mode must reject a symlinked DOWNLOAD_DIR (not silently trust it)."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+
+    real_downloads = tmp_path / "real_downloads"
+    real_downloads.mkdir()
+    link_downloads = tmp_path / "downloads"
+    try:
+        os.symlink(str(real_downloads), str(link_downloads))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    dl.download_dir = str(link_downloads)
+    with pytest.raises(ValueError, match="symlink ancestor"):
+        dl.get_nightly_target_path(BUILD_2_8_0, "firmware.zip", create=False)
+
+
+def test_get_nightly_target_path_non_write_rejects_symlinked_firmware_parent(
+    tmp_path,
+):
+    """Non-write mode must reject a symlinked firmware/ parent."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+
+    firmware_real = tmp_path / "downloads" / "real_firmware"
+    firmware_real.mkdir(parents=True)
+    firmware_link = tmp_path / "downloads" / FIRMWARE_DIR_NAME
+    try:
+        os.symlink(str(firmware_real), str(firmware_link))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    with pytest.raises(ValueError, match="symlink ancestor"):
+        dl.get_nightly_target_path(BUILD_2_8_0, "firmware.zip", create=False)
+
+
+def test_get_nightly_target_path_non_write_rejects_multi_component_name(tmp_path):
+    """Non-write mode must reject a multi-component asset name (path traversal)."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    with pytest.raises(ValueError):
+        dl.get_nightly_target_path(BUILD_2_8_0, "../../etc/passwd", create=False)
+
+
+def test_get_nightly_target_path_non_write_rejects_symlinked_target(tmp_path):
+    """Non-write mode must reject a symlinked target."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+
+    build_dir = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies" / BUILD_2_8_0
+    build_dir.mkdir(parents=True)
+    real_file = build_dir / "real.bin"
+    real_file.write_bytes(b"x")
+    link = build_dir / "firmware.zip"
+    try:
+        os.symlink(str(real_file), str(link))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    with pytest.raises(ValueError, match="symlink"):
+        dl.get_nightly_target_path(BUILD_2_8_0, "firmware.zip", create=False)
+
+
+def test_get_nightly_target_path_non_write_allows_missing_root(tmp_path):
+    """Non-write mode must return the path (not raise) when the root is simply missing."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    path = dl.get_nightly_target_path(BUILD_2_8_0, "firmware.zip", create=False)
+    assert path.endswith(os.path.join("nightlies", BUILD_2_8_0, "firmware.zip"))
+    # Nothing was created.
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    assert not nightly_root.exists()
+
+
+# ==================================================================
+# PC: Source failures — fetch_firmware_nightlies propagates errors
+# ==================================================================
+
+
+def test_fetch_firmware_nightlies_propagates_request_exception(tmp_path):
+    """Source RequestException must propagate, not collapse to empty list."""
+    import requests as _requests
+
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    dl.cache_manager.get_repo_contents = Mock(
+        side_effect=_requests.RequestException("boom")
+    )
+    with pytest.raises(_requests.RequestException):
+        dl.fetch_firmware_nightlies()
+
+
+def test_fetch_firmware_nightlies_propagates_oserror(tmp_path):
+    """Source OSError must propagate, not collapse to empty list."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    dl.cache_manager.get_repo_contents = Mock(side_effect=OSError("boom"))
+    with pytest.raises(OSError):
+        dl.fetch_firmware_nightlies()
+
+
+def test_fetch_firmware_nightlies_disabled_returns_empty(tmp_path):
+    """Disabled makes no call and returns empty list."""
+    config = _make_config(tmp_path, CHECK_FIRMWARE_NIGHTLIES=False)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    dl.cache_manager.get_repo_contents = Mock()
+    result = dl.fetch_firmware_nightlies()
+    assert result == []
+    dl.cache_manager.get_repo_contents.assert_not_called()
+
+
+def test_fetch_firmware_nightlies_empty_success_returns_empty(tmp_path):
+    """An empty-but-valid listing returns empty list (distinct from error)."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    dl.cache_manager.get_repo_contents = Mock(return_value=[])
+    result = dl.fetch_firmware_nightlies()
+    assert result == []
+
+
+# ==================================================================
+# PC: Coherent generation — get_nightly_build_id strict validation
+# ==================================================================
+
+
+def test_get_nightly_build_id_dedupes_exact_duplicates(downloader):
+    """Exact duplicate manifest entries are deduplicated, not rejected."""
+    listing = _make_nightly_listing()
+    # Duplicate the manifest entry.
+    listing.append(_contents_entry(MANIFEST_2_8_0, size=45_000))
+    build_id = downloader.get_nightly_build_id(listing)
+    assert build_id == BUILD_2_8_0
+
+
+def test_get_nightly_build_id_rejects_multiple_unique(downloader):
+    """Multiple unique build-ids raise ValueError (ambiguous generation)."""
+    listing = _make_nightly_listing(BUILD_2_8_0)
+    other_build = "2.8.1.abcdef0"
+    listing.append(_contents_entry(f"firmware-{other_build}.json", size=45_000))
+    with pytest.raises(ValueError, match="multiple unique build-ids"):
+        downloader.get_nightly_build_id(listing)
+
+
+def test_get_nightly_build_id_nonempty_no_manifest_raises(downloader):
+    """A nonempty listing with no manifest raises ValueError (malformed generation)."""
+    listing = [
+        _contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip", size=1_200_000),
+        _contents_entry("device-install.sh", size=12_000),
+    ]
+    with pytest.raises(ValueError, match="no release-level manifest"):
+        downloader.get_nightly_build_id(listing)
+
+
+def test_get_nightly_build_id_empty_listing_returns_none(downloader):
+    """An empty listing returns None (no candidate published yet, not an error)."""
+    assert downloader.get_nightly_build_id([]) is None
+
+
+# ==================================================================
+# PC: Reporting state — CHECK_FAILED, MAINTENANCE_ONLY, FINALIZED_WITH_DOWNLOAD
+# ==================================================================
+
+
+def test_nightly_run_state_check_failed_on_source_error(tmp_path):
+    """A source fetch error sets CHECK_FAILED, not ATTEMPTED_INCOMPLETE."""
+    import requests as _requests
+
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.fetch_firmware_nightlies = Mock(
+        side_effect=_requests.RequestException("source boom")
+    )
+    orch._handle_download_result = Mock()
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+    assert orch.latest_firmware_nightly_build_id is None
+
+
+def test_nightly_run_state_check_failed_on_malformed_listing(tmp_path):
+    """A nonempty listing with no manifest sets CHECK_FAILED."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.fetch_firmware_nightlies = Mock(
+        return_value=[_contents_entry("firmware-rak4631-2.8.0.f52e2ea.zip")]
+    )
+    fd.get_nightly_build_id = Mock(return_value=None)
+    orch._handle_download_result = Mock()
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+
+
+def test_nightly_run_state_check_failed_on_ambiguous_generation(tmp_path):
+    """Multiple unique build-ids set CHECK_FAILED."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.fetch_firmware_nightlies = Mock(return_value=_make_nightly_listing())
+    fd.get_nightly_build_id = Mock(side_effect=ValueError("ambiguous"))
+    orch._handle_download_result = Mock()
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+
+
+def test_nightly_run_state_maintenance_only_on_all_skipped(tmp_path):
+    """All assets valid + tracking persisted + all was_skipped → MAINTENANCE_ONLY."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    listing = _make_nightly_listing()
+    fd = orch.firmware_downloader
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    fd.should_process_nightly = Mock(return_value=True)
+    selected = [listing[0], listing[4]]
+    fd.get_selected_nightly_assets = Mock(return_value=selected)
+    ftype = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
+
+    def _make_skipped(entry, _build_id=None):
+        return DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=str(tmp_path / entry["name"]),
+            download_url=entry.get("download_url") or entry.get("browser_download_url"),
+            file_size=1,
+            file_type=ftype,
+            was_skipped=True,
+        )
+
+    fd.download_nightly_asset = Mock(side_effect=_make_skipped)
+    fd.get_nightly_target_path = Mock(return_value=str(tmp_path / "x"))
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.MAINTENANCE_ONLY
+    assert orch.latest_firmware_nightly_build_id == BUILD_2_8_0
+
+
+def test_nightly_maintenance_runs_cleanup_pointer_chmod(tmp_path):
+    """Already-complete build runs retention/pointer/chmod, not tracking rewrite."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    listing = _make_nightly_listing()
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    fd.should_process_nightly = Mock(return_value=False)
+    orch._handle_download_result = Mock()
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.recreate_latest_pointer_for_nightly = Mock(return_value=True)
+    fd.repair_nightly_executable_metadata = Mock(return_value=0)
+    fd.update_nightly_tracking = Mock(return_value=True)
+
+    orch._process_firmware_nightlies()
+
+    fd.cleanup_superseded_nightlies.assert_called_once_with(BUILD_2_8_0)
+    fd.recreate_latest_pointer_for_nightly.assert_called_once_with(BUILD_2_8_0)
+    fd.repair_nightly_executable_metadata.assert_called_once()
+    # Tracking must NOT be rewritten during maintenance.
+    fd.update_nightly_tracking.assert_not_called()
+
+
+# ==================================================================
+# PC: repair_nightly_executable_metadata
+# ==================================================================
+
+
+def test_repair_nightly_executable_metadata_chmods_valid_sh(tmp_path):
+    """A valid .sh asset without exec bit gets chmodded; no redownload."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    target = dl.get_nightly_target_path(BUILD_2_8_0, "device-install.sh", create=True)
+    Path(target).write_bytes(b"#!/bin/sh\necho hi\n")
+    # Store a hash so verify_file_integrity passes.
+    from fetchtastic.utils import get_hash_file_path
+
+    hash_path = get_hash_file_path(target)
+    Path(hash_path).parent.mkdir(parents=True, exist_ok=True)
+    import hashlib
+
+    digest = hashlib.sha256(b"#!/bin/sh\necho hi\n").hexdigest()
+    Path(hash_path).write_text(f"{digest}  device-install.sh\n")
+
+    entry = _contents_entry("device-install.sh", size=len(b"#!/bin/sh\necho hi\n"))
+    repaired = dl.repair_nightly_executable_metadata(BUILD_2_8_0, [entry])
+
+    assert repaired == 1
+    import stat as _stat
+
+    mode = _stat.S_IMODE(os.stat(target).st_mode)
+    assert mode & 0o111
+
+
+def test_repair_nightly_executable_metadata_skips_invalid(tmp_path):
+    """An invalid .sh asset is not chmodded."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    target = dl.get_nightly_target_path(BUILD_2_8_0, "bad.sh", create=True)
+    Path(target).write_bytes(b"bad")
+    entry = _contents_entry("bad.sh", size=100)
+    repaired = dl.repair_nightly_executable_metadata(BUILD_2_8_0, [entry])
+    assert repaired == 0
+
+
+def test_repair_nightly_executable_metadata_skips_non_sh(tmp_path):
+    """A valid .zip asset is never chmodded."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    entry = _contents_entry("firmware.zip", size=100)
+    repaired = dl.repair_nightly_executable_metadata(BUILD_2_8_0, [entry])
+    assert repaired == 0
+
+
+# ==================================================================
+# PC: recreate_latest_pointer_for_nightly
+# ==================================================================
+
+
+def test_recreate_latest_pointer_creates_missing(tmp_path):
+    """A missing latest pointer is created for a valid build."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    build_dir = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies" / BUILD_2_8_0
+    build_dir.mkdir(parents=True)
+    (build_dir / "firmware.zip").write_bytes(b"x")
+
+    result = dl.recreate_latest_pointer_for_nightly(BUILD_2_8_0)
+    assert result is True
+    link = (
+        tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies" / LATEST_POINTER_NAME
+    )
+    assert link.is_symlink()
+
+
+def test_recreate_latest_pointer_preserves_non_symlink(tmp_path):
+    """A non-symlink latest entry is preserved, not overwritten."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    nightly_root.mkdir(parents=True)
+    latest = nightly_root / LATEST_POINTER_NAME
+    latest.write_text("not a symlink")
+
+    result = dl.recreate_latest_pointer_for_nightly(BUILD_2_8_0)
+    assert result is False
+    assert latest.read_text() == "not a symlink"
+
+
+# ==================================================================
+# PC: CLI summary — comment 1 (incomplete/failure local summary)
+# ==================================================================
+
+
+def test_cli_summary_nightly_check_failed_emits_message(tmp_path):
+    """Zero downloads + no asset failures + CHECK_FAILED emits a local summary."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.cli_integration import DownloadCLIIntegration
+
+    integration = DownloadCLIIntegration()
+    integration.config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    integration.orchestrator = Mock()
+    integration.orchestrator.nightly_run_state = NightlyRunState.CHECK_FAILED
+    integration.orchestrator.latest_firmware_nightly_build_id = None
+    integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.download_results = []
+    integration.orchestrator.failed_downloads = []
+    integration.orchestrator.available_new_firmware_versions = []
+    integration.orchestrator.available_new_apk_versions = []
+    integration.orchestrator.get_latest_versions = Mock(return_value={})
+
+    mock_log = Mock()
+    with patch(
+        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+    ), patch(
+        "fetchtastic.download.cli_integration.send_up_to_date_notification"
+    ), patch(
+        "fetchtastic.download.cli_integration.get_api_request_summary",
+        return_value={},
+    ):
+        integration.log_download_results_summary(
+            logger_override=mock_log,
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    logged = " ".join(str(c) for c in mock_log.info.call_args_list)
+    assert "nightly check failed" in logged.lower()
+
+
+def test_cli_summary_nightly_incomplete_emits_message(tmp_path):
+    """Zero downloads + no asset failures + ATTEMPTED_INCOMPLETE emits a local summary."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.cli_integration import DownloadCLIIntegration
+
+    integration = DownloadCLIIntegration()
+    integration.config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    integration.orchestrator = Mock()
+    integration.orchestrator.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
+    integration.orchestrator.latest_firmware_nightly_build_id = None
+    integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.download_results = []
+    integration.orchestrator.failed_downloads = []
+    integration.orchestrator.available_new_firmware_versions = []
+    integration.orchestrator.available_new_apk_versions = []
+    integration.orchestrator.get_latest_versions = Mock(return_value={})
+
+    mock_log = Mock()
+    with patch(
+        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+    ), patch(
+        "fetchtastic.download.cli_integration.send_up_to_date_notification"
+    ), patch(
+        "fetchtastic.download.cli_integration.get_api_request_summary",
+        return_value={},
+    ):
+        integration.log_download_results_summary(
+            logger_override=mock_log,
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    logged = " ".join(str(c) for c in mock_log.info.call_args_list)
+    assert "incomplete" in logged.lower()
+
+
+def test_cli_summary_maintenance_only_allows_up_to_date(tmp_path):
+    """MAINTENANCE_ONLY does NOT suppress the up-to-date message."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.cli_integration import DownloadCLIIntegration
+
+    integration = DownloadCLIIntegration()
+    integration.config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    integration.orchestrator = Mock()
+    integration.orchestrator.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
+    integration.orchestrator.latest_firmware_nightly_build_id = BUILD_2_8_0
+    integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.download_results = []
+    integration.orchestrator.failed_downloads = []
+    integration.orchestrator.available_new_firmware_versions = []
+    integration.orchestrator.available_new_apk_versions = []
+    integration.orchestrator.get_latest_versions = Mock(return_value={})
+
+    mock_log = Mock()
+    with patch(
+        "fetchtastic.download.cli_integration.send_up_to_date_notification"
+    ) as mock_uptodate, patch(
+        "fetchtastic.download.cli_integration.get_api_request_summary",
+        return_value={},
+    ):
+        integration.log_download_results_summary(
+            logger_override=mock_log,
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    logged = " ".join(str(c) for c in mock_log.info.call_args_list)
+    assert "up to date" in logged.lower()
+    mock_uptodate.assert_called_once()
+
+
+# ==================================================================
+# PC: Helper extraction — _derive_firmware_prerelease_admission_floor
+# ==================================================================
+
+
+def test_derive_admission_floor_returns_none_for_missing_release(tmp_path):
+    """Missing latest firmware release returns (None, None)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    orch.firmware_downloader.get_latest_release_tag = Mock(return_value=None)
+
+    clean, expected = orch._derive_firmware_prerelease_admission_floor(None)
+    assert clean is None
+    assert expected is None
+
+
+def test_derive_admission_floor_returns_values_for_valid_release(tmp_path):
+    """A valid release tag returns (clean_tag, expected_version)."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    orch.firmware_downloader.get_latest_release_tag = Mock(return_value="v2.7.18")
+
+    clean, expected = orch._derive_firmware_prerelease_admission_floor("v2.7.18")
+    assert clean is not None
+    assert expected is not None
+
+
+def test_derive_admission_floor_used_by_cleanup_deleted_prereleases(tmp_path):
+    """_cleanup_deleted_prereleases routes through the shared helper."""
+    from unittest.mock import patch as _patch
+
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    orch.firmware_downloader.get_latest_release_tag = Mock(return_value="v2.7.18")
+
+    with _patch.object(
+        orch, "_derive_firmware_prerelease_admission_floor", return_value=(None, None)
+    ) as mock_helper:
+        orch._cleanup_deleted_prereleases()
+        mock_helper.assert_called_once_with("v2.7.18")
+
+
+# ==================================================================
+# PC: is_nightly_complete — build_id validation
+# ==================================================================
+
+
+def test_is_nightly_complete_rejects_invalid_build_id(downloader):
+    """An invalid build_id returns False without touching the filesystem."""
+    assert downloader.is_nightly_complete("../../../etc") is False
+    assert downloader.is_nightly_complete("") is False
+    assert downloader.is_nightly_complete("not-a-build-id") is False
+
+
+def test_is_nightly_complete_rejects_symlinked_build_dir(tmp_path):
+    """A symlinked build directory returns False."""
+    config = _make_config(tmp_path)
+    dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    nightly_root.mkdir(parents=True)
+    real_build = nightly_root / "real_build"
+    real_build.mkdir()
+    (real_build / "f.zip").write_bytes(b"x")
+    link = nightly_root / BUILD_2_8_0
+    try:
+        os.symlink(str(real_build), str(link))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    assert dl.is_nightly_complete(BUILD_2_8_0) is False

@@ -75,7 +75,7 @@ fetchtastic setup
 
 **Auto-extraction**: Automatically extract specific files from firmware zip archives
 
-**Pre-releases**: Download pre-release firmware from meshtastic.github.io
+**Prereleases**: Download prerelease firmware from meshtastic.github.io
 
 **Notifications**: Set up NTFY push notifications
 
@@ -294,9 +294,9 @@ Tips:
 - Device patterns like `heltec-` automatically match both firmware files (`firmware-heltec-*`) and LittleFS files (`littlefs-heltec-*`) - no need to specify both.
 - You can adjust patterns later by re-running `fetchtastic setup` and updating your selections.
 
-### Pre-release Downloads
+### Prerelease Downloads
 
-Enable pre-release downloads to get the latest development firmware from meshtastic.github.io. Firmware repo-prerelease selection admits any active prerelease base strictly newer than the latest stable release, including higher minor versions (for example, a `2.8.x` base when stable is `2.7.x`); bases equal to or older than stable are rejected.
+Enable prerelease downloads to get the latest development firmware from meshtastic.github.io. Firmware repo-prerelease selection admits any active prerelease base strictly newer than the latest stable release, including higher minor versions (for example, a `2.8.x` base when stable is `2.7.x`); bases equal to or older than stable are rejected.
 
 ### Firmware Nightly Builds
 

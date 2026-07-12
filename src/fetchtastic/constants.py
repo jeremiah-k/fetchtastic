@@ -333,10 +333,37 @@ class NightlyRunState(Enum):
 
     Reported outcomes are derived from this state rather than from individual
     nightly asset download results, so that only a fully finalized transaction
-    (every asset valid AND tracking persisted) is surfaced as a download.
+    (every asset valid AND tracking persisted) with at least one genuinely
+    downloaded asset (``was_skipped=False``) is surfaced as a download.
+
+    State hierarchy:
+
+    - ``UNCHECKED`` — nightlies not processed (disabled, or pipeline not reached).
+    - ``CHECK_FAILED`` — source fetch error, malformed listing, or ambiguous
+      generation (zero/multiple unique build-ids). Not a download; not
+      "up to date"; distinct from an empty-but-valid listing.
+    - ``MAINTENANCE_ONLY`` — build already tracked and complete; retention,
+      pointer, and executable-metadata repair ran without rewriting tracking
+      or reporting a download. Also set when a transaction finalizes but every
+      selected asset was ``was_skipped=True`` (reconciliation, not download).
+    - ``ALREADY_COMPLETE`` — legacy alias retained for tests that predate
+      ``MAINTENANCE_ONLY``; set when ``should_process_nightly`` returns False
+      before maintenance runs.
+    - ``ATTEMPTED_INCOMPLETE`` — assets were downloaded but at least one
+      failed; tracking, pointer, and cleanup deferred. Tracking failure
+      during finalization also lands here.
+    - ``FINALIZED_WITH_DOWNLOAD`` — every selected asset valid, tracking
+      persisted, and at least one asset was genuinely downloaded
+      (``was_skipped=False``). This is the only state that surfaces as a
+      download in reporting/notifications.
+    - ``FINALIZED`` — retained for backward compatibility with existing
+      tests; production code sets ``FINALIZED_WITH_DOWNLOAD`` instead.
     """
 
     UNCHECKED = "unchecked"
+    CHECK_FAILED = "check_failed"
     ALREADY_COMPLETE = "already_complete"
+    MAINTENANCE_ONLY = "maintenance_only"
     ATTEMPTED_INCOMPLETE = "attempted_incomplete"
+    FINALIZED_WITH_DOWNLOAD = "finalized_with_download"
     FINALIZED = "finalized"

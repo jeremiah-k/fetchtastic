@@ -440,15 +440,16 @@ class DownloadCLIIntegration:
         )
 
         # Firmware nightly builds — reported only when the transaction
-        # finalized (every asset valid AND tracking persisted). Asset-level
-        # DownloadResults remain on the orchestrator for diagnostics but are
-        # NOT reported here, so a partially-downloaded or unfinalized nightly
-        # is never surfaced as a completed build. NTFY inclusion is gated by
+        # finalized WITH an actual download (at least one asset had
+        # ``was_skipped=False``). ``MAINTENANCE_ONLY`` (tracking-only
+        # reconciliation / already-complete maintenance) and ``CHECK_FAILED``
+        # never surface as a download. NTFY inclusion is gated by
         # NOTIFY_ON_FIRMWARE_NIGHTLIES (default False).
         downloaded_firmware_nightlies: list[str] = []
         if (
             self.orchestrator
-            and self.orchestrator.nightly_run_state == NightlyRunState.FINALIZED
+            and self.orchestrator.nightly_run_state
+            == NightlyRunState.FINALIZED_WITH_DOWNLOAD
             and self.orchestrator.latest_firmware_nightly_build_id
         ):
             downloaded_firmware_nightlies.append(
@@ -550,13 +551,18 @@ class DownloadCLIIntegration:
                     f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                 )
 
-        # A nightly transaction that was attempted but not finalized must
-        # suppress the generic up-to-date log/NTFY — it is a distinct failure
-        # state, not "up to date".
+        # A nightly transaction that was attempted but not finalized, or whose
+        # source check failed, must suppress the generic up-to-date log/NTFY —
+        # these are distinct failure states, not "up to date". MAINTENANCE_ONLY
+        # (already-complete reconciliation) is NOT incomplete and allows the
+        # up-to-date message when nothing else was downloaded.
         nightly_incomplete = (
             self.orchestrator is not None
             and self.orchestrator.nightly_run_state
-            == NightlyRunState.ATTEMPTED_INCOMPLETE
+            in (
+                NightlyRunState.ATTEMPTED_INCOMPLETE,
+                NightlyRunState.CHECK_FAILED,
+            )
         )
 
         if downloaded_count == 0 and not failed_downloads and not nightly_incomplete:
@@ -566,6 +572,28 @@ class DownloadCLIIntegration:
             )
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
+        elif (
+            downloaded_count == 0
+            and not failed_downloads
+            and nightly_incomplete
+            and self.orchestrator is not None
+        ):
+            # Zero downloads, no asset-level failures, but the nightly
+            # transaction itself is incomplete or the source check failed.
+            # Emit a local summary so the user sees the distinct state
+            # instead of silence. Up-to-date is excluded; the existing
+            # all-attempted-failed branch above handles asset failures.
+            nightly_state = self.orchestrator.nightly_run_state
+            if nightly_state == NightlyRunState.CHECK_FAILED:
+                log.info(
+                    "Firmware nightly check failed; see logs for details. "
+                    "No new versions downloaded."
+                )
+            else:
+                log.info(
+                    "Firmware nightly build incomplete; tracking, latest "
+                    "pointer, and cleanup deferred. No new versions downloaded."
+                )
 
         new_versions_available = bool(
             (new_firmware_versions or [])
