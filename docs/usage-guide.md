@@ -300,7 +300,7 @@ Enable prerelease downloads to get the latest development firmware from meshtast
 
 ### Firmware Nightly Builds
 
-Separate from prereleases, Fetchtastic can download rolling experimental firmware nightly builds from `meshtastic.github.io/firmware-nightly`. These are not production releases: the rolling directory is replaced on every push to firmware `main`. The feature is opt-in (`CHECK_FIRMWARE_NIGHTLIES`, default off) and stores builds under `firmware/nightlies/<build_id>/`. `FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP` (default `1`) controls how many builds are kept, and `NOTIFY_ON_FIRMWARE_NIGHTLIES` (default off) controls NTFY notifications. See the [Configuration Reference](configuration.md) for details.
+Separate from prereleases, Fetchtastic can download rolling experimental firmware nightly builds from `meshtastic.github.io/firmware-nightly`. Upstream publishes these from the firmware develop branch through its scheduled nightly workflow and may also refresh them manually; each publish replaces the rolling upstream contents. These are not production releases. The feature is opt-in (`CHECK_FIRMWARE_NIGHTLIES`, default off) and stores builds under `firmware/nightlies/<build_id>/`. `FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP` (default `1`) controls how many builds are kept, and `NOTIFY_ON_FIRMWARE_NIGHTLIES` (default off) controls NTFY notifications. See the [Configuration Reference](configuration.md) for details.
 
 ### Multiple Asset Types
 

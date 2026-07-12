@@ -800,7 +800,7 @@ def _disable_asset_downloads(
     """
     Disable downloads for the given asset type and clear related configuration keys.
 
-    Mutates and returns the provided configuration mapping, clears selected-asset lists, and disables related prerelease checks. Prints the provided message or a sensible default.
+    Mutates and returns the provided configuration mapping, clears selected-asset lists, and disables related prerelease checks. For firmware, also disables nightly checks (``CHECK_FIRMWARE_NIGHTLIES``) while preserving the nightly-retention preference (``FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP``). Prints the provided message or a sensible default.
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary to update in place and return.
@@ -825,6 +825,7 @@ def _disable_asset_downloads(
     if asset_type == "firmware":
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
+        config["CHECK_FIRMWARE_NIGHTLIES"] = False
     else:
         config["CHECK_APK_PRERELEASES"] = False
     return config, False
@@ -942,69 +943,9 @@ def _setup_downloads(
         config["SAVE_DESKTOP_APP"] = False
         save_desktop = False
 
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        rerun_menu = True
-        if is_partial_run:
-            if config.get("SELECTED_FIRMWARE_ASSETS"):
-                rerun_menu_choice = _safe_input(
-                    "Re-run the firmware asset selection menu? [y/n] (default: yes): ",
-                    default="y",
-                )
-                if not _coerce_bool(rerun_menu_choice, default=True):
-                    rerun_menu = False
-        if rerun_menu:
-            firmware_selection = menu_firmware.run_menu()
-            selected_assets = (
-                firmware_selection.get("selected_assets")
-                if isinstance(firmware_selection, dict)
-                else None
-            )
-            if not selected_assets:
-                config, save_firmware = _disable_asset_downloads(config, "firmware")
-            else:
-                config["SELECTED_FIRMWARE_ASSETS"] = selected_assets
-        elif not config.get("SELECTED_FIRMWARE_ASSETS"):
-            config, save_firmware = _disable_asset_downloads(
-                config,
-                "firmware",
-                "No existing firmware selection found. Firmware will not be downloaded.",
-            )
-
-    # --- Firmware Pre-release Configuration ---
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        check_prereleases_current = _coerce_bool(config.get("CHECK_PRERELEASES", False))
-        check_prereleases_default = "y" if check_prereleases_current else "n"
-        check_prereleases_input = _safe_input(
-            f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): ",
-            default=check_prereleases_default,
-        )
-        config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
-
-    # --- Firmware Nightly (Rolling Experimental) Configuration ---
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        check_nightlies_current = _coerce_bool(
-            config.get("CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES)
-        )
-        check_nightlies_default = "y" if check_nightlies_current else "n"
-        check_nightlies_input = _safe_input(
-            f"\nWould you like to check for and download rolling experimental firmware nightly builds? "
-            f"These are not production releases, are replaced on every push to firmware main, "
-            f"and are stored separately under firmware/nightlies/. [y/n] (default: {check_nightlies_default}): ",
-            default=check_nightlies_default,
-        )
-        config["CHECK_FIRMWARE_NIGHTLIES"] = _coerce_bool(
-            check_nightlies_input,
-            default=check_nightlies_current,
-        )
-        if config["CHECK_FIRMWARE_NIGHTLIES"]:
-            nightly_keep = config.get(
-                "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP",
-                DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
-            )
-            parsed_keep = _parse_non_negative_int(nightly_keep)
-            if parsed_keep is None or parsed_keep < 1:
-                parsed_keep = DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP
-            config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = parsed_keep
+    # Firmware asset-selection menu is deferred to after the client-app
+    # section so the full setup flow keeps the firmware section contiguous
+    # (asset menu → _setup_firmware prompts with no app prompts between).
 
     app_section_requested = not is_partial_run or wants("app")
 
@@ -1145,22 +1086,38 @@ def _setup_downloads(
     save_apks = save_client_apps
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
-    # --- Channel Suffix Configuration ---
-    if save_firmware:
-        if not is_partial_run or wants("firmware"):
-            add_channel_suffixes_current = _coerce_bool(
-                config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True)
+    # Firmware asset-selection menu — runs after the client-app section so
+    # the full setup flow has a contiguous firmware section: once the firmware
+    # asset menu starts, no client-app prompt appears before _setup_firmware.
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        rerun_menu = True
+        if is_partial_run:
+            if config.get("SELECTED_FIRMWARE_ASSETS"):
+                rerun_menu_choice = _safe_input(
+                    "Re-run the firmware asset selection menu? [y/n] (default: yes): ",
+                    default="y",
+                )
+                if not _coerce_bool(rerun_menu_choice, default=True):
+                    rerun_menu = False
+        if rerun_menu:
+            firmware_selection = menu_firmware.run_menu()
+            selected_assets = (
+                firmware_selection.get("selected_assets")
+                if isinstance(firmware_selection, dict)
+                else None
             )
-            add_channel_suffixes_default = (
-                "yes" if add_channel_suffixes_current else "no"
+            if not selected_assets:
+                config, save_firmware = _disable_asset_downloads(config, "firmware")
+            else:
+                config["SELECTED_FIRMWARE_ASSETS"] = selected_assets
+        elif not config.get("SELECTED_FIRMWARE_ASSETS"):
+            config, save_firmware = _disable_asset_downloads(
+                config,
+                "firmware",
+                "No existing firmware selection found. Firmware will not be downloaded.",
             )
-            add_channel_suffixes_input = _safe_input(
-                f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): ",
-                default=add_channel_suffixes_default,
-            )
-            config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = _coerce_bool(
-                add_channel_suffixes_input
-            )
+
+    # Channel-suffix prompt has moved to _setup_firmware (contiguous firmware section).
 
     # If client app and firmware downloads are both disabled, inform the user and exit setup.
     # During partial runs that only update non-download sections (e.g. automation),
@@ -1312,6 +1269,22 @@ def _setup_firmware(
             - SELECTED_PRERELEASE_ASSETS: list of asset patterns selected for pre-release downloads
     """
 
+    # --- Stable Firmware Releases ---
+    print("\n--- Stable Firmware Releases ---")
+
+    # Channel suffix configuration (e.g., -alpha/-beta/-rc directory suffixes).
+    add_channel_suffixes_current = _coerce_bool(
+        config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True)
+    )
+    add_channel_suffixes_default = "yes" if add_channel_suffixes_current else "no"
+    add_channel_suffixes_input = _safe_input(
+        f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): ",
+        default=add_channel_suffixes_default,
+    )
+    config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = _coerce_bool(
+        add_channel_suffixes_input
+    )
+
     # Prompt for firmware versions to keep
     current_versions = config.get("FIRMWARE_VERSIONS_TO_KEEP", default_versions)
     if is_first_run:
@@ -1350,6 +1323,9 @@ def _setup_firmware(
         config["KEEP_LAST_BETA"] = _coerce_bool(
             keep_last_beta_input, default=keep_last_beta_default_bool
         )
+
+    # --- Firmware Extraction ---
+    print("\n--- Firmware Extraction ---")
 
     # Prompt for automatic extraction
     auto_extract_current = _coerce_bool(config.get("AUTO_EXTRACT", False))
@@ -1459,8 +1435,15 @@ def _setup_firmware(
         config["EXTRACT_PATTERNS"] = []
         config["EXCLUDE_PATTERNS"] = []
 
-    # --- Pre-release Configuration ---
-    config["CHECK_PRERELEASES"] = _coerce_bool(config.get("CHECK_PRERELEASES", False))
+    # --- Firmware Prereleases ---
+    print("\n--- Firmware Prereleases ---")
+    check_prereleases_current = _coerce_bool(config.get("CHECK_PRERELEASES", False))
+    check_prereleases_default = "y" if check_prereleases_current else "n"
+    check_prereleases_input = _safe_input(
+        f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): ",
+        default=check_prereleases_default,
+    )
+    config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
     if config["CHECK_PRERELEASES"]:
         # Use a copy to avoid aliasing EXTRACT_PATTERNS
         prerelease_patterns = list(config.get("EXTRACT_PATTERNS", []))
@@ -1481,6 +1464,50 @@ def _setup_firmware(
     else:
         # Prereleases disabled, clear the setting
         config["SELECTED_PRERELEASE_ASSETS"] = []
+
+    # --- Firmware Nightlies ---
+    print("\n--- Firmware Nightlies ---")
+    check_nightlies_current = _coerce_bool(
+        config.get("CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES)
+    )
+    check_nightlies_default = "y" if check_nightlies_current else "n"
+    check_nightlies_input = _safe_input(
+        f"\nWould you like to check for and download rolling experimental firmware "
+        f"nightly builds? Upstream publishes these from the firmware develop branch "
+        f"through its scheduled nightly workflow and may also refresh them manually. "
+        f"Each publish replaces the rolling upstream contents, and Fetchtastic stores "
+        f"downloaded builds separately under firmware/nightlies/. "
+        f"[y/n] (default: {check_nightlies_default}): ",
+        default=check_nightlies_default,
+    )
+    config["CHECK_FIRMWARE_NIGHTLIES"] = _coerce_bool(
+        check_nightlies_input,
+        default=check_nightlies_current,
+    )
+    if config["CHECK_FIRMWARE_NIGHTLIES"]:
+        # Explicit retention prompt. Minimum 1; Enter preserves the current
+        # valid value; invalid/zero/negative preserves it with a warning.
+        # Disabling nightlies skips this block, so a previously stored valid
+        # preference is retained for a future enable.
+        nightly_keep_raw = config.get(
+            "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP",
+            DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
+        )
+        parsed_current = _parse_non_negative_int(nightly_keep_raw)
+        if parsed_current is None or parsed_current < 1:
+            parsed_current = DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP
+        nightly_input = _safe_input(
+            f"\nHow many firmware nightly builds would you like to keep? (current: {parsed_current}): ",
+            default=str(parsed_current),
+        ).strip()
+        parsed_keep = _parse_non_negative_int(nightly_input)
+        if parsed_keep is not None and parsed_keep >= 1:
+            config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = parsed_keep
+        elif not nightly_input:
+            config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = parsed_current
+        else:
+            print("Invalid value — keeping current value. Minimum is 1.")
+            config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = parsed_current
 
     return config
 
