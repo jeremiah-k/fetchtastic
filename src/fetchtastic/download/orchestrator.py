@@ -1159,6 +1159,18 @@ class DownloadOrchestrator:
                 entries, build_id
             )
             if not selected:
+                # Empty selection after a valid build-id means no extraction
+                # patterns are configured (or none match). Fail closed: do not
+                # fabricate a manifest-only DownloadResult, do not advance
+                # tracking/latest/cleanup, and suppress the generic up-to-date
+                # outcome. The user must configure EXTRACT_PATTERNS.
+                self.nightly_run_state = NightlyRunState.CHECK_FAILED
+                logger.warning(
+                    "Firmware-nightly build %s has no selected assets "
+                    "(no EXTRACT_PATTERNS configured or none match); "
+                    "configure EXTRACT_PATTERNS to select device files",
+                    build_id,
+                )
                 return
 
             logger.info("Downloading firmware-nightly build %s", build_id)

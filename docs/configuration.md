@@ -93,7 +93,7 @@ Firmware `latest` points only to a complete release with at least one selected n
 
 ### Firmware Nightly Builds
 
-When `CHECK_FIRMWARE_NIGHTLIES` is enabled, Fetchtastic checks a rolling experimental firmware source at `meshtastic.github.io/firmware-nightly`. Upstream publishes these from the firmware develop branch through its scheduled nightly workflow and may also refresh them manually; each publish replaces the rolling upstream contents. It is not a GitHub Release, not a tagged release, and not a production release. Existing configurations remain disabled unless you opt in.
+When `CHECK_FIRMWARE_NIGHTLIES` is enabled, Fetchtastic checks a rolling experimental firmware source at `meshtastic.github.io/firmware-nightly`. This directory is published as a flat listing of per-device direct files (firmware images, per-device manifests, and helpers) — the same repo-prerelease-like layout used by prerelease firmware directories, not a GitHub Release or a tagged production release. Each publish replaces the rolling upstream contents. Existing configurations remain disabled unless you opt in.
 
 Nightly builds are stored separately from stable and prerelease firmware under `firmware/nightlies/<build_id>/`, where `<build_id>` is the immutable build identity parsed from the single release-level manifest (`firmware-<version>.<hash>.json`, for example `firmware-2.8.0.f52e2ea.json` → `2.8.0.f52e2ea`). Two distinct artifacts track the newest nightly, and they must not be confused:
 
@@ -104,7 +104,7 @@ Nightly builds are stored separately from stable and prerelease firmware under `
 
 `NOTIFY_ON_FIRMWARE_NIGHTLIES` (default `false`) controls whether nightly downloads trigger NTFY notifications. When disabled, nightly downloads are still logged locally and counted in download summaries, but no push notification is sent.
 
-Nightly asset selection reuses `SELECTED_FIRMWARE_ASSETS` patterns; there is no separate selection key for nightlies.
+Nightly asset selection uses `EXTRACT_PATTERNS` (falling back to `SELECTED_PRERELEASE_ASSETS` when `EXTRACT_PATTERNS` is absent), the same extraction-pattern matcher used by repository prereleases — the firmware-nightly directory is a flat direct-file listing, not a stable archive. `SELECTED_FIRMWARE_ASSETS` (the stable archive selection key) is not used for nightly direct files. The release-level manifest (`firmware-<build_id>.json`) is always included exactly once; matching per-device manifests (`*.mt.json`) and matching payloads (`.uf2`, `.bin`, `-ota.zip`, `.elf`, etc.) are included when their filename matches an extraction pattern. `EXCLUDE_PATTERNS` (case-insensitive) are applied to every non-manifest entry — typical excludes are `*.hex` and `*rak4631_*` (underscore device variants). When no extraction patterns are configured, the nightly check fails closed (no files are selected and the run is marked incomplete); configure `EXTRACT_PATTERNS` to select device files. Stable archive (`SELECTED_FIRMWARE_ASSETS`) selection is separate and applies only to GitHub Release firmware assets.
 
 ## Firmware Extraction
 

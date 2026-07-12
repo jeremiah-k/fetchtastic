@@ -1485,6 +1485,25 @@ def _setup_firmware(
         default=check_nightlies_current,
     )
     if config["CHECK_FIRMWARE_NIGHTLIES"]:
+        # Nightly selection reuses the same extraction patterns as prereleases
+        # (the firmware-nightly directory is a flat direct-file listing, not a
+        # stable archive). Surface the finalized patterns so the user knows what
+        # will be selected; warn clearly when none are configured (fail-closed).
+        nightly_patterns = list(config.get("EXTRACT_PATTERNS", []))
+        if nightly_patterns:
+            print(
+                "Using your extraction patterns for firmware-nightly selection: "
+                f"{' '.join(nightly_patterns)}"
+            )
+        else:
+            print(
+                "No extraction patterns set. No firmware-nightly files will be "
+                "selected for download."
+            )
+            print(
+                "To select specific nightly device files, first set up "
+                "extraction patterns (same patterns used for pre-releases)."
+            )
         # Explicit retention prompt. Minimum 1; Enter preserves the current
         # valid value; invalid/zero/negative preserves it with a warning.
         # Disabling nightlies skips this block, so a previously stored valid
