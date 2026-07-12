@@ -467,8 +467,8 @@ def test_setup_downloads_partial_run(mocker):
             "y",  # Keep downloading client app releases
             "n",  # Skip re-running menu (existing selection kept)
             "2",  # Versions to keep
-            "y",  # Enable prereleases
-            "n",  # No channel suffixes
+            "y",  # Enable app prereleases (NOT firmware — this prompt is app-only)
+            "n",  # Disable snapshots (NOT channel suffixes — those are firmware-gated)
         ],
     )
 
@@ -582,32 +582,28 @@ def test_setup_downloads_partial_run_firmware_keep_existing_skips_menu(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_partial_run_firmware_channel_suffix_config(mocker):
-    """Partial firmware run should persist channel suffix selection."""
+def test_setup_firmware_channel_suffix_config(mocker):
+    """_setup_firmware should persist channel suffix selection (moved from _setup_downloads)."""
+    from fetchtastic.setup_config import _setup_firmware
+
     config = {
-        "SAVE_APKS": False,
-        "SAVE_FIRMWARE": True,
-        "SELECTED_FIRMWARE_ASSETS": ["existing-firmware"],
         "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
     }
 
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",  # Download firmware releases
-            "n",  # Don't rerun menu
-            "n",  # Disable firmware prereleases
-            "n",  # Disable firmware nightlies
-            "n",  # Disable channel suffixes
+            "n",  # channel suffix — disable
+            "2",  # versions
+            "n",  # auto-extract no
+            "n",  # prerelease
+            "n",  # nightly
         ],
     )
+    mocker.patch("sys.stdin.isatty", return_value=False)
 
-    result_config, save_apks, save_firmware = setup_config._setup_downloads(
-        config, is_partial_run=True, wants=lambda section: section == "firmware"
-    )
+    result_config = _setup_firmware(config, is_first_run=False, default_versions=2)
 
-    assert save_apks is False
-    assert save_firmware is True
     assert result_config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] is False
 
 
@@ -1296,9 +1292,9 @@ def test_existing_config_without_nightly_keys_remains_unaffected(mocker, tmp_pat
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_nightly_keep_count_not_prompted_separately(mocker):
-    """Enabling nightlies must not trigger a separate 'how many nightly versions' prompt."""
-    from fetchtastic.setup_config import _setup_downloads
+def test_nightly_keep_count_prompted_when_enabled(mocker):
+    """Enabling nightlies in _setup_firmware now prompts for the keep count."""
+    from fetchtastic.setup_config import _setup_firmware
 
     config: dict = {}
     captured: list[str] = []
@@ -1306,42 +1302,30 @@ def test_nightly_keep_count_not_prompted_separately(mocker):
     def fake_input(prompt: str = "", **_kwargs: object) -> str:
         captured.append(prompt)
         lowered = prompt.lower()
-
-        if "client app assets, firmware, both, or none" in lowered:
-            return "f"
-        if "pre-release firmware" in lowered:
-            return "n"
-        if "nightly" in lowered:
-            return "y"  # opt into nightlies
         if "suffix" in lowered:
             return "n"
-        if "how many" in lowered and "version" in lowered:
+        if "how many versions of the firmware" in lowered:
             return "2"
+        if "automatically extract" in lowered:
+            return "n"
+        if "pre-release firmware" in lowered:
+            return "n"
+        if "how many firmware nightly" in lowered:
+            return "5"
+        if "nightly" in lowered:
+            return "y"  # opt into nightlies
         return "n"
 
     mocker.patch("builtins.input", side_effect=fake_input)
-    mocker.patch(
-        "fetchtastic.menu_firmware.run_menu",
-        return_value={"selected_assets": ["rak4631-"]},
-    )
+    mocker.patch("sys.stdin.isatty", return_value=False)
 
-    result_config, _save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=False, wants=lambda _: True
-    )
+    result_config = _setup_firmware(config, is_first_run=True, default_versions=2)
 
-    assert save_firmware is True
-
-    # Keep-count must default silently to 1.
-    assert "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP" in result_config
-    assert result_config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 1
-
-    # Guard: no separate "how many nightly versions to keep" prompt.
-    # The keep-count must default silently (matching the snapshot precedent
-    # which does not prompt for APP_SNAPSHOT_VERSIONS_TO_KEEP).
+    # Retention prompt must appear and the value must be stored.
     nightly_keep_prompts = [
-        p for p in captured if "nightly" in p.lower() and "how many" in p.lower()
+        p for p in captured if "how many firmware nightly" in p.lower()
     ]
-    assert nightly_keep_prompts == [], (
-        "Nightly keep-count should default silently, not via a separate prompt; "
-        f"got: {nightly_keep_prompts}"
-    )
+    assert (
+        nightly_keep_prompts
+    ), f"Enabling nightlies must prompt for retention; got: {captured}"
+    assert result_config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 5

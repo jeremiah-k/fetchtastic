@@ -479,43 +479,26 @@ def test_setup_downloads_partial_skips_all_prompts(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_full_run_prompts_channel_suffix(mocker):
-    """Full runs should prompt for channel suffixes when downloads are enabled."""
-    from fetchtastic.setup_config import _setup_downloads
-
+def test_setup_firmware_prompts_channel_suffix(mocker):
+    """Channel suffix prompting lives in _setup_firmware (contiguous firmware section)."""
     config = {}
 
-    def wants(_section: str) -> bool:
-        """
-        Indicates that any setup section should be included.
-
-        Parameters:
-            _section (str): Name of the setup section (ignored).
-
-        Returns:
-            bool: `True` for all sections.
-        """
-        return True
-
+    mocker.patch("sys.stdin.isatty", return_value=False)
     mocker.patch(
         "builtins.input",
-        side_effect=["", "2", "n", "n", "n", "n", "n"],
-    )
-    mocker.patch(
-        "fetchtastic.menu_firmware.run_menu",
-        return_value={"selected_assets": ["rak4631"]},
-    )
-    mocker.patch(
-        "fetchtastic.menu_app.run_menu",
-        return_value={"selected_assets": ["meshtastic.apk"]},
+        side_effect=[
+            "n",
+            "2",
+            "n",
+            "n",
+            "n",
+        ],  # suffix, versions, auto-extract, prerelease, nightly
     )
 
-    updated, save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=False, wants=wants
+    updated = setup_config._setup_firmware(
+        config, is_first_run=True, default_versions=2
     )
 
-    assert save_apks is True
-    assert save_firmware is True
     assert updated["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] is False
 
 
@@ -1604,14 +1587,17 @@ def test_run_setup_first_run_linux_simple(
     user_inputs = [
         "",  # Use default base directory
         "b",  # Both APKs and firmware
-        "n",  # Check for firmware prereleases
-        "n",  # Check for firmware nightlies
-        "2",  # Keep 2 versions of client app (now in _setup_downloads)
+        # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
+        "2",  # Keep 2 versions of client app
         "y",  # Check for APK prereleases
         "n",  # Check for app snapshots
+        # _setup_firmware (contiguous firmware section):
         "n",  # Add channel suffixes
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
+        "n",  # No firmware prereleases
+        "n",  # No firmware nightlies
+        # Automation/notification/github:
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
@@ -1693,14 +1679,17 @@ def test_run_setup_first_run_windows(
         "",  # Use default base directory
         "y",  # create menu
         "b",  # Both APKs and firmware
-        "n",  # Check for firmware prereleases
-        "n",  # Check for firmware nightlies
-        "2",  # Keep 2 versions of client app (now in _setup_downloads)
+        # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
+        "2",  # Keep 2 versions of client app
         "y",  # Check for APK prereleases
         "n",  # Check for app snapshots
+        # _setup_firmware (contiguous firmware section):
         "n",  # Add channel suffixes
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
+        "n",  # No firmware prereleases
+        "n",  # No firmware nightlies
+        # Automation/notification/github:
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
@@ -1789,14 +1778,17 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
-        "n",  # Check for firmware prereleases
-        "n",  # Check for firmware nightlies
-        "1",  # Keep 1 version of client app (now in _setup_downloads)
+        # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
+        "1",  # Keep 1 version of client app
         "y",  # Check for APK prereleases
         "n",  # Check for app snapshots
+        # _setup_firmware (contiguous firmware section):
         "n",  # Add channel suffixes
         "1",  # Keep 1 version of firmware
         "n",  # No auto-extract
+        "n",  # No firmware prereleases
+        "n",  # No firmware nightlies
+        # Automation/notification/github:
         "y",  # wifi only
         "h",  # hourly cron job
         "y",  # boot script
@@ -1884,13 +1876,15 @@ def test_run_setup_existing_config(
         "",  # choose full setup at the new prompt
         "/new/base/dir",  # New base directory
         "f",  # Only firmware
-        "y",  # Check for pre-releases
-        "n",  # Check for firmware nightlies
+        # _setup_firmware (contiguous firmware section):
         "n",  # Add channel suffixes
         "5",  # Keep 5 versions of firmware
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
         "y",  # Confirm extraction/exclude summary
+        "y",  # Firmware prereleases
+        "n",  # No firmware nightlies
+        # Automation/notification/github:
         "y",  # reconfigure cron
         "n",  # no cron job
         "n",  # no reboot cron
@@ -2002,12 +1996,14 @@ def test_run_setup_partial_firmware_section(
     mock_input.side_effect = [
         "y",  # Download firmware releases
         "y",  # Re-run firmware menu
-        "y",  # Check for firmware prereleases
-        "n",  # Check for firmware nightlies
+        # _setup_firmware (contiguous firmware section):
         "n",  # Add channel suffixes
         "3",  # Keep 3 versions of firmware
         "y",  # Auto-extract
         "esp32- rak4631-",  # Extraction patterns
+        "y",  # Confirm extraction
+        "y",  # Firmware prereleases
+        "n",  # No firmware nightlies
     ]
 
     with patch("builtins.open", mock_open()):
@@ -2308,8 +2304,8 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     """Test setup wizard prompts for SELECTED_PRERELEASE_ASSETS with new configuration."""
     config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 3 versions, yes to auto-extract, device patterns
-    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "y"]
+    # Inputs: channel suffix, versions, auto-extract, patterns, confirm, prerelease, nightly
+    mock_input.side_effect = ["n", "3", "y", "rak4631- tbeam", "y", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2330,7 +2326,8 @@ def test_setup_firmware_keep_last_beta_non_interactive(mock_input):
     """Non-interactive runs should keep the existing KEEP_LAST_BETA setting."""
     config = {"KEEP_LAST_BETA": True}
 
-    mock_input.side_effect = ["2", "n"]
+    # Inputs: channel suffix, versions, auto-extract, prerelease, nightly
+    mock_input.side_effect = ["n", "2", "n", "n", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2338,7 +2335,6 @@ def test_setup_firmware_keep_last_beta_non_interactive(mock_input):
         )
 
     assert result["KEEP_LAST_BETA"] is True
-    assert mock_input.call_count == 2
 
 
 @pytest.mark.configuration
@@ -2348,7 +2344,8 @@ def test_setup_firmware_keep_last_beta_interactive(mock_input):
     """Interactive runs should prompt for KEEP_LAST_BETA."""
     config = {"KEEP_LAST_BETA": False}
 
-    mock_input.side_effect = ["2", "y", "n"]
+    # Inputs: channel suffix, versions, keep-beta, auto-extract, prerelease, nightly
+    mock_input.side_effect = ["n", "2", "y", "n", "n", "n"]
 
     with (
         patch("sys.stdin.isatty", return_value=True),
@@ -2368,7 +2365,8 @@ def test_setup_firmware_extraction_tips_only_when_enabled(mock_input, capsys):
     """Extraction tips should only appear when auto-extract is enabled."""
     config = {"CHECK_PRERELEASES": False}
 
-    mock_input.side_effect = ["2", "n"]
+    # Inputs: channel suffix, versions, auto-extract(off), prerelease, nightly
+    mock_input.side_effect = ["n", "2", "n", "n", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
@@ -2385,7 +2383,8 @@ def test_setup_firmware_extraction_tips_when_enabled(mock_input, capsys):
     """Extraction tips should appear after auto-extract is enabled."""
     config = {"CHECK_PRERELEASES": False}
 
-    mock_input.side_effect = ["2", "y", "", "y"]
+    # Inputs: suffix, versions, auto-extract, empty-patterns(disables), prerelease, nightly
+    mock_input.side_effect = ["n", "2", "y", "", "n", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
@@ -2407,8 +2406,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns
-    mock_input.side_effect = ["2", "y", "y", "y"]
+    # Inputs: suffix, versions, auto-extract, keep-patterns, confirm, prerelease, nightly
+    mock_input.side_effect = ["n", "2", "y", "y", "y", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2437,8 +2436,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns
-    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-", "y"]
+    # Inputs: suffix, versions, auto-extract, decline-patterns, new-patterns, confirm, prerelease, nightly
+    mock_input.side_effect = ["n", "2", "y", "n", "esp32- rak4631-", "y", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2463,8 +2462,8 @@ def test_setup_firmware_selected_prerelease_assets_existing_keep(mock_input):
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 3 versions, no auto-extract
-    mock_input.side_effect = ["3", "n"]
+    # Inputs: suffix, versions, auto-extract(off), prerelease, nightly
+    mock_input.side_effect = ["n", "3", "n", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2488,8 +2487,8 @@ def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
         "EXTRACT_PATTERNS": ["old-pattern"],
     }
 
-    # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns
-    mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "y"]
+    # Inputs: suffix, versions, auto-extract, decline-patterns, new-patterns, confirm, prerelease, nightly
+    mock_input.side_effect = ["n", "3", "y", "n", "new-pattern device-", "y", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2514,8 +2513,8 @@ def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_inp
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, no auto-extract
-    mock_input.side_effect = ["2", "n"]
+    # Inputs: suffix, versions, auto-extract(off), prerelease(off), nightly
+    mock_input.side_effect = ["n", "2", "n", "n", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2534,8 +2533,8 @@ def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
     """Test handling of empty prerelease asset patterns."""
     config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns
-    mock_input.side_effect = ["2", "y", "", "y"]
+    # Inputs: suffix, versions, auto-extract, empty-patterns(disables), prerelease, nightly
+    mock_input.side_effect = ["n", "2", "y", "", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2559,8 +2558,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input
-    mock_input.side_effect = ["2", "y", "n", "", "y"]
+    # Inputs: suffix, versions, auto-extract, decline-patterns, empty-input(disables), prerelease, nightly
+    mock_input.side_effect = ["n", "2", "y", "n", "", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2583,7 +2582,8 @@ def test_setup_firmware_extract_patterns_string_config(mock_input):
         "EXTRACT_PATTERNS": "tbeam rak4631-",
     }
 
-    mock_input.side_effect = ["2", "y", "y", "y"]
+    # Inputs: suffix, versions, auto-extract, keep-patterns, confirm, prerelease, nightly
+    mock_input.side_effect = ["n", "2", "y", "y", "y", "y", "n"]
 
     with patch("sys.stdin.isatty", return_value=False):
         result = setup_config._setup_firmware(
@@ -2990,93 +2990,339 @@ def test_should_recommend_setup_attribute_error(mock_load_config):
 # ---------------------------------------------------------------------------
 # Firmware nightly (rolling) opt-in setup tests
 #
-# These tests cover the CHECK_FIRMWARE_NIGHTLIES and
-# FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP config keys that gate opt-in firmware
-# nightly downloads.  The nightly question runs after the firmware
-# prerelease prompt.
-# Defaults: CHECK_FIRMWARE_NIGHTLIES=False,
-# FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP=1.
+# These tests cover CHECK_FIRMWARE_NIGHTLIES and FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP.
+# The nightly toggle and retention prompt now live in _setup_firmware (after the
+# firmware extraction and prerelease sections), so _setup_downloads only carries
+# the firmware-disabled guard that force-disables nightlies.
+# Defaults: CHECK_FIRMWARE_NIGHTLIES=False, FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP=1.
 # ---------------------------------------------------------------------------
 
 
-def _make_firmware_only_input_captor(
+def _make_setup_firmware_input_captor(
     prerelease_answer: str = "n",
     nightly_answer: str = "n",
-) -> tuple[list[str], Callable[..., str]]:
-    """Return (captured_prompts, fake_input) for a firmware-only _setup_downloads run.
+    nightly_keep_answer: str = "",
+    suffix_answer: str = "n",
+    versions_answer: str = "2",
+    auto_extract_answer: str = "n",
+    base_config: dict | None = None,
+) -> tuple[list[str], Callable[..., str], dict]:
+    """Return (captured_prompts, fake_input, config) for a _setup_firmware run.
 
-    fake_input inspects the prompt text so it is robust to the nightly
-    question wording.  When the nightly prompt is absent the
-    ``nightly_answer`` is simply never consumed.
+    fake_input routes answers by prompt text so it is robust to wording.
+    Preceding prompts (channel suffix, versions, auto-extract) get sensible
+    defaults so the test can focus on the nightly/prerelease sections.
     """
 
     captured: list[str] = []
+    config: dict = dict(base_config) if base_config else {}
 
     def fake_input(prompt: str = "", **_kwargs: object) -> str:
         captured.append(prompt)
         lowered = prompt.lower()
 
-        # Download-type selection prompt
-        if "client app assets, firmware, both, or none" in lowered:
-            return "f"  # firmware only
+        # Channel suffix prompt
+        if "suffix" in lowered:
+            return suffix_answer
 
-        # Firmware prerelease prompt
+        # Firmware versions to keep
+        if "how many versions of the firmware" in lowered:
+            return versions_answer
+
+        # Auto-extract
+        if "automatically extract" in lowered:
+            return auto_extract_answer
+
+        # Pre-release firmware toggle
         if "pre-release firmware" in lowered:
             return prerelease_answer
 
-        # Firmware nightly prompt
+        # Nightly retention (only reached when nightlies enabled)
+        if "how many firmware nightly" in lowered:
+            return nightly_keep_answer
+
+        # Nightly toggle
         if "nightly" in lowered:
             return nightly_answer
 
-        # Channel suffix prompt
-        if "suffix" in lowered:
+        # Keep-last-beta (interactive only; non-interactive skips)
+        if "beta" in lowered:
             return "n"
 
-        # Versions-to-keep prompts
-        if "how many" in lowered and "version" in lowered:
-            return "2"
-
-        # Safe default for anything else
         return "n"
 
-    return captured, fake_input
+    return captured, fake_input, config
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_disables_firmware_nightlies_by_default(mocker):
-    """Default firmware setup must explicitly set CHECK_FIRMWARE_NIGHTLIES to False."""
-    from fetchtastic.setup_config import _setup_downloads
+def test_setup_firmware_nightly_prompt_no_inaccurate_claims(mocker):
+    """Nightly prompt must not claim 'every push' or 'firmware main'."""
+    captured, fake_input, config = _make_setup_firmware_input_captor()
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
 
-    config: dict = {}
-    _captured, fake_input = _make_firmware_only_input_captor(
-        prerelease_answer="n", nightly_answer="n"
+    setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    nightly_prompts = [p for p in captured if "nightly" in p.lower()]
+    assert nightly_prompts, f"Expected a nightly prompt; got: {captured}"
+    for prompt in nightly_prompts:
+        assert (
+            "every push" not in prompt.lower()
+        ), f"Nightly prompt must not claim 'every push'; got: {prompt}"
+        assert (
+            "firmware main" not in prompt.lower()
+        ), f"Nightly prompt must not reference 'firmware main'; got: {prompt}"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_nightly_prompt_mentions_develop_and_scheduled(mocker):
+    """Nightly prompt must mention develop branch, scheduled publication, separate storage."""
+    captured, fake_input, config = _make_setup_firmware_input_captor()
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    nightly_prompts = [
+        p for p in captured if "nightly" in p.lower() and "how many" not in p.lower()
+    ]
+    assert nightly_prompts, f"Expected a nightly toggle prompt; got: {captured}"
+    prompt_text = nightly_prompts[0].lower()
+    assert (
+        "develop" in prompt_text
+    ), f"Nightly prompt must mention develop branch; got: {nightly_prompts[0]}"
+    assert (
+        "scheduled" in prompt_text or "nightly workflow" in prompt_text
+    ), f"Nightly prompt must mention scheduled publication; got: {nightly_prompts[0]}"
+    assert (
+        "firmware/nightlies" in prompt_text
+    ), f"Nightly prompt must mention separate storage; got: {nightly_prompts[0]}"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_nightly_yes_prompts_retention(mocker):
+    """Enabling nightlies must prompt for FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP."""
+    captured, fake_input, config = _make_setup_firmware_input_captor(
+        nightly_answer="y", nightly_keep_answer="3"
     )
     mocker.patch("builtins.input", side_effect=fake_input)
-    mocker.patch(
-        "fetchtastic.menu_firmware.run_menu",
-        return_value={"selected_assets": ["rak4631-"]},
-    )
+    mocker.patch("sys.stdin.isatty", return_value=False)
 
-    result_config, _save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=False, wants=lambda _: True
-    )
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
 
-    assert save_firmware is True
-    assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
-    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is False
+    nightly_keep_prompts = [
+        p for p in captured if "how many firmware nightly" in p.lower()
+    ]
+    assert (
+        nightly_keep_prompts
+    ), f"Enabling nightlies must prompt for retention; got: {captured}"
+    assert result["CHECK_FIRMWARE_NIGHTLIES"] is True
+    assert result["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 3
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_nightly_prompt_shown_when_firmware_enabled(mocker):
-    """Fresh setup with firmware enabled must ask an experimental rolling-nightly question."""
+def test_setup_firmware_nightly_no_skips_retention(mocker):
+    """Disabling nightlies must skip the retention prompt entirely."""
+    captured, fake_input, config = _make_setup_firmware_input_captor(nightly_answer="n")
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    nightly_keep_prompts = [
+        p for p in captured if "how many firmware nightly" in p.lower()
+    ]
+    assert (
+        nightly_keep_prompts == []
+    ), f"Disabling nightlies must not prompt for retention; got: {captured}"
+    assert result["CHECK_FIRMWARE_NIGHTLIES"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_nightly_retention_enter_preserves_current(mocker):
+    """Pressing Enter preserves the current valid nightly-retention value."""
+    _, fake_input, config = _make_setup_firmware_input_captor(
+        nightly_answer="y",
+        nightly_keep_answer="",  # Enter
+        base_config={"FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 5},
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    assert result["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 5
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_nightly_retention_zero_keeps_current(mocker):
+    """A zero nightly-retention input preserves the current valid value."""
+    _, fake_input, config = _make_setup_firmware_input_captor(
+        nightly_answer="y",
+        nightly_keep_answer="0",
+        base_config={"FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 4},
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    assert result["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 4
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_nightly_retention_negative_keeps_current(mocker):
+    """A negative nightly-retention input preserves the current valid value."""
+    _, fake_input, config = _make_setup_firmware_input_captor(
+        nightly_answer="y",
+        nightly_keep_answer="-1",
+        base_config={"FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 2},
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    assert result["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 2
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_nightly_retention_invalid_falls_back_to_default(mocker):
+    """When the stored nightly-retention value is invalid, the prompt falls back to default."""
+    captured, fake_input, config = _make_setup_firmware_input_captor(
+        nightly_answer="y",
+        nightly_keep_answer="",  # Enter — should use the default fallback
+        base_config={"FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 0},  # invalid
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    # Invalid stored value (0) falls back to DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP (1).
+    assert result["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 1
+    # The prompt must show the fallback default as the current value.
+    nightly_keep_prompts = [
+        p for p in captured if "how many firmware nightly" in p.lower()
+    ]
+    assert nightly_keep_prompts
+    assert "current: 1" in nightly_keep_prompts[0]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_nightly_disabled_preserves_retention_value(mocker):
+    """Disabling nightlies must not erase a previously valid retention preference."""
+    captured, fake_input, config = _make_setup_firmware_input_captor(
+        nightly_answer="n",  # disable
+        base_config={
+            "CHECK_FIRMWARE_NIGHTLIES": True,
+            "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 7,
+        },
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    result = setup_config._setup_firmware(
+        config, is_first_run=False, default_versions=2
+    )
+
+    assert result["CHECK_FIRMWARE_NIGHTLIES"] is False
+    # The retention preference survives disabling.
+    assert result["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 7
+    # No retention prompt when disabled.
+    assert not any("how many firmware nightly" in p.lower() for p in captured)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_firmware_question_order(mocker, capsys):
+    """Firmware questions must appear in the contiguous section order:
+    suffix → retention → (beta) → extraction → prerelease → nightly."""
+    captured: list[str] = []
+
+    def fake_input(prompt: str = "", **_kwargs: object) -> str:
+        captured.append(prompt)
+        lowered = prompt.lower()
+        if "suffix" in lowered:
+            return "n"
+        if "how many versions of the firmware" in lowered:
+            return "2"
+        if "beta" in lowered:
+            return "n"
+        if "automatically extract" in lowered:
+            return "n"
+        if "pre-release firmware" in lowered:
+            return "n"
+        if "nightly" in lowered and "how many" not in lowered:
+            return "n"
+        return "n"
+
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    out = capsys.readouterr()
+    setup_config._setup_firmware({}, is_first_run=True, default_versions=2)
+    out = capsys.readouterr()
+
+    # Section headings must appear in this order.
+    headings = [
+        "--- Stable Firmware Releases ---",
+        "--- Firmware Extraction ---",
+        "--- Firmware Prereleases ---",
+        "--- Firmware Nightlies ---",
+    ]
+    positions = {h: out.out.index(h) for h in headings}
+    assert (
+        positions[headings[0]]
+        < positions[headings[1]]
+        < positions[headings[2]]
+        < positions[headings[3]]
+    ), f"Section headings out of order; positions: {positions}"
+
+    # Channel suffix prompt must precede the retention prompt.
+    suffix_idx = next(i for i, p in enumerate(captured) if "suffix" in p.lower())
+    versions_idx = next(
+        i for i, p in enumerate(captured) if "how many versions" in p.lower()
+    )
+    prerelease_idx = next(
+        i for i, p in enumerate(captured) if "pre-release firmware" in p.lower()
+    )
+    nightly_idx = next(
+        i
+        for i, p in enumerate(captured)
+        if "nightly" in p.lower() and "how many" not in p.lower()
+    )
+    assert suffix_idx < versions_idx < prerelease_idx < nightly_idx, (
+        f"Prompts out of order: suffix={suffix_idx}, versions={versions_idx}, "
+        f"prerelease={prerelease_idx}, nightly={nightly_idx}"
+    )
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_no_longer_prompts_nightly(mocker):
+    """_setup_downloads must NOT prompt for nightlies (moved to _setup_firmware)."""
     from fetchtastic.setup_config import _setup_downloads
 
     config: dict = {}
-    captured, fake_input = _make_firmware_only_input_captor(
-        prerelease_answer="n", nightly_answer="n"
-    )
+    captured: list[str] = []
+
+    def fake_input(prompt: str = "", **_kwargs: object) -> str:
+        captured.append(prompt)
+        lowered = prompt.lower()
+        if "client app assets, firmware, both, or none" in lowered:
+            return "f"
+        return "n"
+
     mocker.patch("builtins.input", side_effect=fake_input)
     mocker.patch(
         "fetchtastic.menu_firmware.run_menu",
@@ -3086,79 +3332,9 @@ def test_setup_downloads_nightly_prompt_shown_when_firmware_enabled(mocker):
     _setup_downloads(config, is_partial_run=False, wants=lambda _: True)
 
     nightly_prompts = [p for p in captured if "nightly" in p.lower()]
-    # A nightly opt-in prompt must appear during firmware setup.
     assert (
-        len(nightly_prompts) >= 1
-    ), f"Expected a firmware nightly prompt; captured prompts: {captured}"
-    # The prompt must signal experimental/rolling status clearly
-    assert any(
-        "experimental" in p.lower() or "rolling" in p.lower() for p in nightly_prompts
-    ), f"Nightly prompt must clearly label itself experimental; got: {nightly_prompts}"
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-def test_setup_downloads_nightly_yes_enables_flag_and_defaults_keep_count(mocker):
-    """Answering yes to the nightly prompt enables the flag and defaults keep-count to 1."""
-    from fetchtastic.setup_config import _setup_downloads
-
-    config: dict = {}
-    captured, fake_input = _make_firmware_only_input_captor(
-        prerelease_answer="n", nightly_answer="y"
-    )
-    mocker.patch("builtins.input", side_effect=fake_input)
-    mocker.patch(
-        "fetchtastic.menu_firmware.run_menu",
-        return_value={"selected_assets": ["rak4631-"]},
-    )
-
-    result_config, _save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=False, wants=lambda _: True
-    )
-
-    assert save_firmware is True
-    # Yes-answer must enable the nightly flag.
-    assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
-    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is True
-
-    # Keep-count must default to 1 silently.
-    assert "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP" in result_config
-    assert result_config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 1
-
-    # Guard: no separate "how many nightly versions to keep" prompt
-    nightly_keep_prompts = [
-        p for p in captured if "nightly" in p.lower() and "how many" in p.lower()
-    ]
-    assert nightly_keep_prompts == [], (
-        "Nightly keep-count should default silently, not via a separate prompt; "
-        f"got: {nightly_keep_prompts}"
-    )
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-def test_setup_downloads_nightly_no_preserves_disabled(mocker):
-    """Answering no to the nightly prompt preserves CHECK_FIRMWARE_NIGHTLIES as False."""
-    from fetchtastic.setup_config import _setup_downloads
-
-    config: dict = {}
-    _captured, fake_input = _make_firmware_only_input_captor(
-        prerelease_answer="n", nightly_answer="n"
-    )
-    mocker.patch("builtins.input", side_effect=fake_input)
-    mocker.patch(
-        "fetchtastic.menu_firmware.run_menu",
-        return_value={"selected_assets": ["rak4631-"]},
-    )
-
-    result_config, _save_apks, save_firmware = _setup_downloads(
-        config, is_partial_run=False, wants=lambda _: True
-    )
-
-    assert save_firmware is True
-    # No-answer must leave nightlies disabled.
-    assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
-    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is False
+        nightly_prompts == []
+    ), f"_setup_downloads must not prompt for nightlies; got: {nightly_prompts}"
 
 
 @pytest.mark.configuration
@@ -3173,7 +3349,6 @@ def test_setup_downloads_firmware_disabled_forces_nightlies_off(mocker):
     def fake_input(prompt: str = "", **_kwargs: object) -> str:
         captured.append(prompt)
         lowered = prompt.lower()
-        # Select client-app-only to disable firmware
         if "client app assets, firmware, both, or none" in lowered:
             return "a"
         if "how many" in lowered and "version" in lowered:
@@ -3191,11 +3366,9 @@ def test_setup_downloads_firmware_disabled_forces_nightlies_off(mocker):
     )
 
     assert save_firmware is False
-    # Firmware disabled must force nightlies off.
     assert "CHECK_FIRMWARE_NIGHTLIES" in result_config
     assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is False
 
-    # Guard: no nightly prompt should appear when firmware is disabled
     nightly_prompts = [p for p in captured if "nightly" in p.lower()]
     assert (
         nightly_prompts == []

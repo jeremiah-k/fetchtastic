@@ -565,9 +565,12 @@ def test_setup_firmware_invalid_number_current_value(mocker, capsys):
     mocker.patch(
         "builtins.input",
         side_effect=[
+            "n",  # channel suffix
             "also_invalid",
-            "n",
-        ],  # User enters invalid, then no to auto-extract
+            "n",  # auto-extract no
+            "n",  # prerelease
+            "n",  # nightly
+        ],
     )
 
     result = _setup_firmware(config, is_first_run=False, default_versions=3)
@@ -593,11 +596,13 @@ def test_setup_firmware_extract_patterns_unexpected_type(mocker, capsys):
     mocker.patch(
         "builtins.input",
         side_effect=[
+            "n",  # channel suffix
             "2",
             "y",
             "",
-            "y",
-        ],  # versions, auto-extract yes, empty patterns, confirm
+            "n",  # prerelease
+            "n",  # nightly
+        ],
     )
 
     result = _setup_firmware(config, is_first_run=True, default_versions=2)
@@ -621,11 +626,13 @@ def test_setup_firmware_no_patterns_disables_auto_extract(mocker, capsys):
     mocker.patch(
         "builtins.input",
         side_effect=[
+            "n",  # channel suffix
             "2",
             "y",
             "",
-            "y",
-        ],  # versions, auto-extract yes, empty patterns, confirm
+            "n",  # prerelease
+            "n",  # nightly
+        ],
     )
 
     result = _setup_firmware(config, is_first_run=True, default_versions=2)
@@ -651,11 +658,14 @@ def test_setup_firmware_reconfigure_patterns(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
+            "n",  # channel suffix
             "2",  # versions
             "y",  # auto-extract yes
             "n",  # don't keep current patterns
             "new-pattern",  # new patterns
             "y",  # confirm correct
+            "n",  # prerelease
+            "n",  # nightly
         ],
     )
 
@@ -679,7 +689,13 @@ def test_setup_firmware_auto_extract_off_clears_patterns(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["2", "n"],  # versions, auto-extract no
+        side_effect=[
+            "n",
+            "2",
+            "n",
+            "n",
+            "n",
+        ],  # suffix, versions, auto-extract no, prerelease, nightly
     )
 
     result = _setup_firmware(config, is_first_run=True, default_versions=2)
@@ -702,7 +718,13 @@ def test_setup_firmware_no_auto_extract_no_exclude_patterns(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["2", "n"],  # versions, auto-extract no
+        side_effect=[
+            "n",
+            "2",
+            "n",
+            "n",
+            "n",
+        ],  # suffix, versions, auto-extract no, prerelease, nightly
     )
 
     result = _setup_firmware(config, is_first_run=True, default_versions=2)
@@ -1254,18 +1276,21 @@ def test_run_setup_windows_cmd_environment(
                 "",  # Use default base directory
                 "n",  # Don't create menu shortcuts
                 "b",  # Both client apps and firmware
-                "n",  # No firmware prereleases
-                "n",  # No firmware nightlies
+                # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
+                "n",  # Client app versions (invalid → keeps current)
                 "n",  # No client app prereleases
                 "n",  # No app snapshots
+                # _setup_firmware (contiguous firmware section):
                 "n",  # No channel suffixes
-                "2",  # Keep 2 versions
-                "2",  # Keep 2 versions
+                "2",  # Keep 2 versions of firmware
                 "n",  # No auto-extract
+                "n",  # No firmware prereleases
+                "n",  # No firmware nightlies
+                # Automation/notification/github:
                 "n",  # No Startup shortcut
                 "n",  # No NTFY
                 "n",  # No GitHub token
-                "",  # Press Enter to close (simulating the pause at end)
+                "",  # Press Enter to close
             ]
             mock_input.side_effect = user_inputs
 
@@ -1599,14 +1624,17 @@ def test_run_setup_version_package_not_found(
         user_inputs = [
             "",  # Use default base directory
             "b",  # Both client apps and firmware
-            "n",  # No firmware prereleases
-            "n",  # No firmware nightlies
+            # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
+            "n",  # Client app versions (invalid → keeps current)
             "n",  # No client app prereleases
             "n",  # No app snapshots
+            # _setup_firmware (contiguous firmware section):
             "n",  # No channel suffixes
-            "2",  # Keep 2 versions
-            "2",  # Keep 2 versions firmware
+            "2",  # Keep 2 versions of firmware
             "n",  # No auto-extract
+            "n",  # No firmware prereleases
+            "n",  # No firmware nightlies
+            # Automation/notification/github:
             "n",  # No cron
             "n",  # No reboot
             "n",  # No NTFY
@@ -1685,14 +1713,17 @@ def test_run_setup_version_other_error(
         user_inputs = [
             "",  # Use default base directory
             "b",  # Both client apps and firmware
-            "n",  # No firmware prereleases
-            "n",  # No firmware nightlies
+            # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
+            "n",  # Client app versions (invalid → keeps current)
             "n",  # No client app prereleases
             "n",  # No app snapshots
+            # _setup_firmware (contiguous firmware section):
             "n",  # No channel suffixes
-            "2",  # Keep 2 versions
-            "2",  # Keep 2 versions firmware
+            "2",  # Keep 2 versions of firmware
             "n",  # No auto-extract
+            "n",  # No firmware prereleases
+            "n",  # No firmware nightlies
+            # Automation/notification/github:
             "n",  # No cron
             "n",  # No reboot
             "n",  # No NTFY
@@ -1772,14 +1803,17 @@ def test_run_setup_config_dir_creation_error(
         user_inputs = [
             "",  # Use default base directory
             "b",  # Both client apps and firmware
-            "n",  # No firmware prereleases
-            "n",  # No firmware nightlies
+            # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
+            "n",  # Client app versions (invalid → keeps current)
             "n",  # No client app prereleases
             "n",  # No app snapshots
+            # _setup_firmware (contiguous firmware section):
             "n",  # No channel suffixes
-            "2",  # Keep 2 versions
-            "2",  # Keep 2 versions firmware
+            "2",  # Keep 2 versions of firmware
             "n",  # No auto-extract
+            "n",  # No firmware prereleases
+            "n",  # No firmware nightlies
+            # Automation/notification/github:
             "n",  # No cron
             "n",  # No reboot
             "n",  # No NTFY
