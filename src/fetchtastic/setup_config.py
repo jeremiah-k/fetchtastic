@@ -333,6 +333,46 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     return coerce_bool(value, default)
 
 
+def _normalize_display_patterns(raw: Any) -> List[str]:
+    """Setup-local safe normalization for display of EXTRACT_PATTERNS.
+
+    Handles ``str`` / ``list`` / ``tuple`` / ``set`` / ``frozenset`` values
+    deterministically: each item is stringified, stripped, deduplicated
+    (first-seen order for sequences; sorted for set/frozenset), and empty
+    fragments are dropped. ``None`` and unsupported types (``int``, ``dict``,
+    etc.) return ``[]`` — callers emit a no-pattern warning in that case.
+
+    This is informational only — the downloader resolves actual selection
+    patterns via its own resolver. Setup never imports that private helper.
+    The input is never mutated.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        return [stripped] if stripped else []
+    if isinstance(raw, (set, frozenset)):
+        items: List[str] = []
+        for item in sorted(raw):
+            if not isinstance(item, str):
+                continue
+            stripped = item.strip()
+            if stripped and stripped not in items:
+                items.append(stripped)
+        return items
+    if isinstance(raw, (list, tuple)):
+        items = []
+        for item in raw:
+            if not isinstance(item, str):
+                continue
+            stripped = item.strip()
+            if stripped and stripped not in items:
+                items.append(stripped)
+        return items
+    # Unsupported scalar / mapping — caller warns.
+    return []
+
+
 def _normalize_latest_symlink_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize the derived latest symlink setting shared by all downloaders."""
     config["CREATE_LATEST_SYMLINKS"] = _coerce_bool(
@@ -1362,19 +1402,19 @@ def _setup_firmware(
                 "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
             )
 
-            current_patterns = config.get("EXTRACT_PATTERNS")
-            if current_patterns is None:
-                current_patterns = []
-            elif isinstance(current_patterns, str):
-                current_patterns = current_patterns.split()
-            elif isinstance(current_patterns, (list, tuple, set)):
-                current_patterns = [str(item) for item in current_patterns]
-            else:
+            current_patterns_raw = config.get("EXTRACT_PATTERNS")
+            current_patterns = _normalize_display_patterns(current_patterns_raw)
+            if current_patterns_raw is not None and not isinstance(
+                current_patterns_raw, (str, list, tuple, set, frozenset)
+            ):
+                # Unsupported type (int, dict, etc.) — surface as a no-pattern
+                # warning so the user can fix it. Informational only; does not
+                # change the question order. None / valid strings / iterables
+                # are silently normalized above.
                 logger.warning(
-                    "Unexpected type for EXTRACT_PATTERNS: %s. Treating as empty.",
-                    type(current_patterns).__name__,
+                    "EXTRACT_PATTERNS has unsupported type %s; treating as empty.",
+                    type(current_patterns_raw).__name__,
                 )
-                current_patterns = []
             config["EXTRACT_PATTERNS"] = current_patterns
             if current_patterns:
                 print(f"Current patterns: {' '.join(current_patterns)}")
@@ -1446,7 +1486,9 @@ def _setup_firmware(
     config["CHECK_PRERELEASES"] = _coerce_bool(check_prereleases_input)
     if config["CHECK_PRERELEASES"]:
         # Use a copy to avoid aliasing EXTRACT_PATTERNS
-        prerelease_patterns = list(config.get("EXTRACT_PATTERNS", []))
+        prerelease_patterns = _normalize_display_patterns(
+            config.get("EXTRACT_PATTERNS", [])
+        )
         config["SELECTED_PRERELEASE_ASSETS"] = prerelease_patterns
 
         if prerelease_patterns:
@@ -1489,7 +1531,9 @@ def _setup_firmware(
         # (the firmware-nightly directory is a flat direct-file listing, not a
         # stable archive). Surface the finalized patterns so the user knows what
         # will be selected; warn clearly when none are configured (fail-closed).
-        nightly_patterns = list(config.get("EXTRACT_PATTERNS", []))
+        nightly_patterns = _normalize_display_patterns(
+            config.get("EXTRACT_PATTERNS", [])
+        )
         if nightly_patterns:
             print(
                 "Using your extraction patterns for firmware-nightly selection: "

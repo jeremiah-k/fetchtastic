@@ -97,26 +97,44 @@ _NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECAS
 _NIGHTLY_BUILD_TOKEN_RX = re.compile(r"(\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE)
 
 
-def _normalize_extract_patterns(raw: Any) -> List[str]:
-    """Normalize an extraction-patterns config value to a deterministic list.
+def _resolve_extract_patterns(raw: Any) -> Optional[List[str]]:
+    """Resolve an extraction-patterns config value, distinguishing
+    absent/unsupported from explicitly empty.
 
-    Accepts ``str``, ``list``, ``tuple``, ``set`` or ``frozenset``. Returns an
-    ordered list of nonempty stripped strings, deduplicated in first-seen order.
-    Returns ``[]`` for ``None``, missing keys, scalars that are not strings, or
-    any other type. The input is never mutated.
+    Returns:
+      * ``None``  — value is absent (``None``) or an unsupported type
+        (e.g. ``int``, ``dict``). Callers may fall back to another key.
+      * ``[]``    — value is a valid string / list / tuple / set / frozenset
+        that resolves to no nonempty patterns (explicit empty). Callers
+        MUST NOT fall back: the user explicitly opted out.
+      * ``[...]`` — nonempty deterministic ordered list of stripped,
+        deduplicated strings.
+
+    The input is never mutated. ``set`` / ``frozenset`` are sorted for
+    determinism. Lists / tuples / strings preserve first-seen order.
     """
     if raw is None:
-        return []
+        return None
     if isinstance(raw, str):
         stripped = raw.strip()
         return [stripped] if stripped else []
-    items: List[str] = []
-    if isinstance(raw, (list, tuple, set, frozenset)):
-        for item in raw:
+    if not isinstance(raw, (list, tuple, set, frozenset)):
+        # Unsupported scalar / mapping → caller may fall back.
+        return None
+    if isinstance(raw, (set, frozenset)):
+        items: List[str] = []
+        for item in sorted(raw):
             if isinstance(item, str):
                 stripped = item.strip()
                 if stripped and stripped not in items:
                     items.append(stripped)
+        return items
+    items = []
+    for item in raw:
+        if isinstance(item, str):
+            stripped = item.strip()
+            if stripped and stripped not in items:
+                items.append(stripped)
     return items
 
 
@@ -3043,26 +3061,37 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def _get_nightly_selection_patterns(self) -> List[str]:
         """Extraction patterns for nightly direct-file selection.
 
-        The firmware-nightly directory is a flat repo-prerelease-like direct-file
-        listing (per-device ``.uf2``/``.bin``/``-ota.zip``/``.mt.json``), not a
-        stable architecture-ZIP release. Selection therefore reuses the same
-        extraction patterns as prereleases:
+        Resolution distinguishes absent/malformed from explicitly empty:
 
-          - ``EXTRACT_PATTERNS`` is the primary source.
-          - When ``EXTRACT_PATTERNS`` is absent or malformed (non-str / non-iterable
-            / empty after normalization), fall back to ``SELECTED_PRERELEASE_ASSETS``.
-          - ``SELECTED_FIRMWARE_ASSETS`` (the stable archive key) is NEVER used for
-            nightly direct files — it follows a different (ZIP-centric) matcher.
+          - ``EXTRACT_PATTERNS`` is the primary source. When the key is
+            missing or its value is ``None`` / an unsupported scalar
+            (e.g. ``int``, ``dict``), resolution falls back to
+            ``SELECTED_PRERELEASE_ASSETS``.
+          - When ``EXTRACT_PATTERNS`` is a valid string / list / tuple /
+            set / frozenset that resolves to no nonempty patterns
+            (explicit empty), the result is ``[]`` and fallback is
+            suppressed — the user explicitly opted out.
+          - A nonempty value always overrides the fallback.
 
-        Accepts ``str``, ``list``, ``tuple``, ``set`` (and ``frozenset``) input and
-        returns a deterministic ordered list of nonempty stripped strings. The
-        configured value is never mutated.
+        ``SELECTED_FIRMWARE_ASSETS`` (the stable archive key) is NEVER
+        used for nightly direct files — it follows a different
+        (ZIP-centric) matcher.
+
+        The configured value is never mutated.
         """
         for key in ("EXTRACT_PATTERNS", "SELECTED_PRERELEASE_ASSETS"):
-            raw = self.config.get(key)
-            normalized = _normalize_extract_patterns(raw)
-            if normalized:
-                return normalized
+            if key not in self.config:
+                continue
+            resolved = _resolve_extract_patterns(self.config.get(key))
+            if resolved is None:
+                logger.warning(
+                    "Config key %s has an unsupported type (%s); "
+                    "falling back to the next selection key",
+                    key,
+                    type(self.config.get(key)).__name__,
+                )
+                continue
+            return resolved
         return []
 
     def get_selected_nightly_assets(
@@ -3082,7 +3111,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
           - ``build_id`` must match the strict nightly build-id regex;
             otherwise the result is empty.
           - The release manifest for *this* build (``firmware-<build_id>.json``)
-            is always included exactly once.
+            is included exactly once — but **only when at least one eligible
+            non-release entry also survives selection**. A manifest-only
+            result is never produced (fail-closed against no-match /
+            excluded-all).
+          - Only entries whose GitHub Contents ``type`` is exactly ``"file"``
+            are eligible. Directories, symlinks, submodules, and unknown
+            types are ignored before manifest/pattern/exclude evaluation.
           - Per-device manifests (``*.mt.json``) for the current build are
             included when their filename matches an extraction pattern and is
             not excluded — they carry the per-device file inventory required to
@@ -3097,8 +3132,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             ``littlefs-*``) are included only when an extraction pattern matches.
             ``index.html`` / ``release_notes.md`` / unrelated files are never
             auto-included.
-          - Directories and malformed entries (non-dict, non-string name,
-            empty name) are ignored.
+          - Malformed entries (non-dict, non-string name, empty name) are
+            ignored.
           - Empty extraction patterns (no ``EXTRACT_PATTERNS`` and no
             ``SELECTED_PRERELEASE_ASSETS``) → empty selection (fail-closed).
             The orchestrator surfaces this as ``CHECK_FAILED``.
@@ -3114,7 +3149,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         exclude_patterns = self._get_exclude_patterns()
 
-        selected: List[Dict[str, Any]] = []
+        # Collect the release manifest (this build) separately from non-release
+        # matches so we can fail-closed when no eligible device file survives.
+        manifest_entry: Optional[Dict[str, Any]] = None
+        non_release: List[Dict[str, Any]] = []
         seen_names: set[str] = set()
         for entry in entries or []:
             if not isinstance(entry, dict):
@@ -3123,9 +3161,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if not isinstance(name, str) or not name or name in seen_names:
                 continue
 
-            # Always include exactly the release manifest for this build.
+            # Only regular GitHub Contents "file" entries are eligible — dirs,
+            # symlinks, submodules, and unknown types are never manifest/assets.
+            if entry.get("type") != "file":
+                continue
+
+            # Always include exactly the release manifest for this build
+            # (deferred until we know at least one non-release entry also
+            # survives — see the manifest-only fail-closed below).
             if self.parse_nightly_build_id(name) == build_id:
-                selected.append(entry)
+                manifest_entry = entry
                 seen_names.add(name)
                 continue
 
@@ -3143,9 +3188,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if matches_extract_patterns(
                 name, patterns, device_manager=self.device_manager
             ):
-                selected.append(entry)
+                non_release.append(entry)
                 seen_names.add(name)
 
+        # Fail-closed: never return a manifest-only result. The release
+        # manifest is included exactly once only when at least one eligible
+        # non-release file also survives type/stale/include/exclude/dedupe.
+        if not non_release:
+            return []
+        selected: List[Dict[str, Any]] = (
+            [manifest_entry] if manifest_entry is not None else []
+        ) + non_release
         selected.sort(key=lambda e: str(e.get("name", "")))
         return selected
 
@@ -3383,8 +3436,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         Rules (all must hold):
           - parses as a JSON object;
-          - ``version`` is a nonempty string equal to the build-id token
-            embedded in the filename (e.g. ``2.8.0.f52e2ea``);
+          - the filename embeds exactly one distinct nightly build token
+            (``<maj>.<min>.<patch>.<hex6+>``). Zero tokens, two or more
+            distinct tokens, or any malformed token is rejected — the
+            manifest's identity is ambiguous otherwise;
+          - ``version`` is a nonempty string equal to that build token
+            (case-insensitive);
           - ``platformioTarget`` is a nonempty string;
           - ``files`` is a list whose every entry is a record (dict) with a
             nonempty string ``name``. An empty list is allowed (a device may
@@ -3400,13 +3457,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not isinstance(data, dict):
             return False, "device manifest is not a JSON object"
 
-        token_match = _NIGHTLY_BUILD_TOKEN_RX.search(name)
-        expected_version = token_match.group(1).lower() if token_match else None
+        # Exactly one distinct build token in the filename. Zero / two-or-more
+        # distinct tokens mean the manifest cannot be reliably identified.
+        tokens = {m.group(1).lower() for m in _NIGHTLY_BUILD_TOKEN_RX.finditer(name)}
+        if len(tokens) != 1:
+            return False, (
+                f"device manifest filename must embed exactly one nightly "
+                f"build token; found {sorted(tokens)}"
+            )
+        expected_version = next(iter(tokens))
 
         version = data.get("version")
         if not isinstance(version, str) or not version:
             return False, "device manifest version is missing or not a nonempty string"
-        if expected_version is not None and version.lower() != expected_version:
+        if version.lower() != expected_version:
             return False, (
                 f"device manifest version {version!r} != build-id {expected_version!r}"
             )

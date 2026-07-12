@@ -134,6 +134,7 @@ def _make_nightly_listing(build: str = BUILD_2_8_0) -> list[dict]:
         _contents_entry(f"firmware-rak4631-{build}.uf2", size=490_000),
         _contents_entry(f"firmware-rak4631-{build}.hex", size=610_000),
         _contents_entry(f"firmware-rak4631-{build}-ota.zip", size=769_000),
+        _contents_entry(f"firmware-rak4631-{build}.elf", size=2_400_000),
         _contents_entry(f"firmware-rak4631-{build}.mt.json", size=3_200),
         # rak4631_eink (underscore variant) — excluded by '*rak4631_*'.
         _contents_entry(f"firmware-rak4631_eink-{build}.uf2", size=495_000),
@@ -162,7 +163,10 @@ def _make_nightly_listing(build: str = BUILD_2_8_0) -> list[dict]:
         # Release notes — never auto-included.
         _contents_entry("release_notes.md", size=5_000),
         # Stale generation entry (different build token) — always excluded.
+        # Includes a stale ELF alongside the stale UF2 to confirm the build-
+        # aware stale-token rejection covers the ELF family too.
         _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.uf2", size=485_000),
+        _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.elf", size=2_380_000),
     ]
 
 
@@ -475,20 +479,20 @@ def test_get_selected_nightly_assets_respects_exclude_patterns(downloader):
 
 
 def test_get_selected_nightly_assets_empty_when_no_match(downloader):
-    """When patterns match no device file, only the release manifest is selected.
+    """Non-matching patterns fail closed — manifest-only is never returned.
 
-    Empty patterns (no EXTRACT_PATTERNS) fail closed with an empty selection;
-    non-empty patterns that match no device file still include the release
-    manifest (always included).
+    When patterns match no device file (or no eligible non-release file
+    survives exclude/stale/type filtering), the selection is empty so the
+    orchestrator surfaces ``CHECK_FAILED`` and never finalizes a
+    manifest-only transaction.
     """
     listing = _make_nightly_listing()
     downloader.config["EXTRACT_PATTERNS"] = ["nonexistent-device-"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
     selected = select(listing, BUILD_2_8_0)
-    names = [e["name"] for e in selected]
-    # Non-matching pattern: only the release manifest survives.
-    assert names == [MANIFEST_2_8_0]
+    # Fail-closed: no eligible non-release file ⇒ empty selection.
+    assert selected == []
 
 
 def test_get_selected_nightly_assets_canonical_key_excludes_unrelated_devices(
@@ -1538,8 +1542,9 @@ def test_retry_single_failure_dispatches_firmware_nightly(tmp_path):
         file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
         is_retryable=True,
     )
-    with patch.object(fd, "download", return_value=True) as mock_download, patch.object(
-        fd, "verify", return_value=True
+    with (
+        patch.object(fd, "download", return_value=True) as mock_download,
+        patch.object(fd, "verify", return_value=True),
     ):
         result = orch._retry_single_failure(failed)
 
@@ -1573,8 +1578,9 @@ def test_retry_single_failure_nightly_bad_size_non_retryable(tmp_path):
         file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
         is_retryable=True,
     )
-    with patch.object(fd, "download", return_value=True), patch.object(
-        fd, "verify", return_value=True
+    with (
+        patch.object(fd, "download", return_value=True),
+        patch.object(fd, "verify", return_value=True),
     ):
         result = orch._retry_single_failure(failed)
 
@@ -1995,8 +2001,9 @@ def test_retry_nightly_wrong_size_removes_hash_and_legacy_sidecars(tmp_path):
         file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
         is_retryable=True,
     )
-    with patch.object(fd, "download", return_value=True), patch.object(
-        fd, "verify", return_value=True
+    with (
+        patch.object(fd, "download", return_value=True),
+        patch.object(fd, "verify", return_value=True),
     ):
         result = orch._retry_single_failure(failed)
 
@@ -2039,8 +2046,9 @@ def test_retry_nightly_invalid_content_removes_hash_sidecars(tmp_path):
         file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
         is_retryable=True,
     )
-    with patch.object(fd, "download", return_value=True), patch.object(
-        fd, "verify", return_value=True
+    with (
+        patch.object(fd, "download", return_value=True),
+        patch.object(fd, "verify", return_value=True),
     ):
         result = orch._retry_single_failure(failed)
 
@@ -2179,8 +2187,13 @@ def test_nightly_run_state_already_complete_when_should_process_false(tmp_path):
     config = _make_config(tmp_path, SAVE_FIRMWARE=True)
     orch = DownloadOrchestrator(config)
     fd = orch.firmware_downloader
-    fd.fetch_firmware_nightlies = Mock(return_value=_make_nightly_listing())
+    listing = _make_nightly_listing()
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
     fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    # Selection is computed before should_process; provide a non-empty set so
+    # the orchestrator proceeds to the maintenance branch (a real selection
+    # would do the same when EXTRACT_PATTERNS matches device files).
+    fd.get_selected_nightly_assets = Mock(return_value=[listing[0], listing[4]])
     fd.should_process_nightly = Mock(return_value=False)
     orch._handle_download_result = Mock()
     fd.cleanup_superseded_nightlies = Mock(return_value=0)
@@ -2933,6 +2946,9 @@ def test_nightly_maintenance_runs_cleanup_pointer_chmod(tmp_path):
     listing = _make_nightly_listing()
     fd.fetch_firmware_nightlies = Mock(return_value=listing)
     fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    # Selection is computed before should_process; provide a non-empty set so
+    # the orchestrator reaches the maintenance branch.
+    fd.get_selected_nightly_assets = Mock(return_value=[listing[0], listing[4]])
     fd.should_process_nightly = Mock(return_value=False)
     orch._handle_download_result = Mock()
     fd.cleanup_superseded_nightlies = Mock(return_value=0)
@@ -3064,13 +3080,15 @@ def test_cli_summary_nightly_check_failed_emits_message(tmp_path):
     integration.orchestrator.get_latest_versions = Mock(return_value={})
 
     mock_log = Mock()
-    with patch(
-        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
-    ), patch(
-        "fetchtastic.download.cli_integration.send_up_to_date_notification"
-    ), patch(
-        "fetchtastic.download.cli_integration.get_api_request_summary",
-        return_value={},
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ),
+        patch("fetchtastic.download.cli_integration.send_up_to_date_notification"),
+        patch(
+            "fetchtastic.download.cli_integration.get_api_request_summary",
+            return_value={},
+        ),
     ):
         integration.log_download_results_summary(
             logger_override=mock_log,
@@ -3104,13 +3122,15 @@ def test_cli_summary_nightly_incomplete_emits_message(tmp_path):
     integration.orchestrator.get_latest_versions = Mock(return_value={})
 
     mock_log = Mock()
-    with patch(
-        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
-    ), patch(
-        "fetchtastic.download.cli_integration.send_up_to_date_notification"
-    ), patch(
-        "fetchtastic.download.cli_integration.get_api_request_summary",
-        return_value={},
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ),
+        patch("fetchtastic.download.cli_integration.send_up_to_date_notification"),
+        patch(
+            "fetchtastic.download.cli_integration.get_api_request_summary",
+            return_value={},
+        ),
     ):
         integration.log_download_results_summary(
             logger_override=mock_log,
@@ -3144,11 +3164,14 @@ def test_cli_summary_maintenance_only_allows_up_to_date(tmp_path):
     integration.orchestrator.get_latest_versions = Mock(return_value={})
 
     mock_log = Mock()
-    with patch(
-        "fetchtastic.download.cli_integration.send_up_to_date_notification"
-    ) as mock_uptodate, patch(
-        "fetchtastic.download.cli_integration.get_api_request_summary",
-        return_value={},
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_uptodate,
+        patch(
+            "fetchtastic.download.cli_integration.get_api_request_summary",
+            return_value={},
+        ),
     ):
         integration.log_download_results_summary(
             logger_override=mock_log,
@@ -3286,7 +3309,11 @@ def test_get_selected_nightly_assets_rejects_mixed_generation(downloader):
 def test_get_selected_nightly_assets_excludes_stale_zip_even_if_pattern_matches(
     downloader,
 ):
-    """A stale file matching the pattern is excluded (different build token)."""
+    """A stale file matching the pattern is excluded (different build token).
+
+    With only a stale device file present (no current-build non-release
+    match), selection fails closed: never returns the manifest alone.
+    """
     listing = [
         _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
         _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.uf2"),
@@ -3297,7 +3324,9 @@ def test_get_selected_nightly_assets_excludes_stale_zip_even_if_pattern_matches(
     selected = select(listing, BUILD_2_8_0)
     names = [e["name"] for e in selected]
 
-    assert names == [f"firmware-{BUILD_2_8_0}.json"]
+    # Fail-closed: only the manifest would survive; no eligible non-release
+    # entry means an empty selection.
+    assert names == []
 
 
 def test_get_selected_nightly_assets_includes_matching_per_device_manifest(downloader):
@@ -4554,3 +4583,484 @@ def test_nightly_transactional_download_live_shaped(tmp_path):
 
     orch2._process_firmware_nightlies()
     assert orch2.nightly_run_state == NightlyRunState.MAINTENANCE_ONLY
+
+
+# ==================================================================
+# PC: Fail-closed selection (PR #232 P1/P2 corrections)
+# ==================================================================
+
+
+def test_get_selected_nightly_assets_includes_live_rak4631_elf(downloader):
+    """The live-shaped fixture's RAK4631 ELF is selected alongside the UF2."""
+    listing = _make_nightly_listing()
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+    downloader.config["EXCLUDE_PATTERNS"] = ["*.hex", "*rak4631_*"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    elf_name = f"firmware-rak4631-{BUILD_2_8_0}.elf"
+    assert elf_name in names
+    # The stale-generation ELF is rejected.
+    assert f"firmware-rak4631-{_STALE_BUILD}.elf" not in names
+
+
+def test_get_selected_nightly_assets_excludes_stale_elf(downloader):
+    """A stale ELF from a different generation is never selected."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+        _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.elf"),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    assert f"firmware-rak4631-{_STALE_BUILD}.elf" not in names
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+
+
+@pytest.mark.parametrize(
+    "entry_type",
+    ["dir", "symlink", "submodule"],
+)
+def test_get_selected_nightly_assets_rejects_non_file_entries(downloader, entry_type):
+    """Only GitHub Contents ``type == "file"`` entries are ever selected."""
+    name = f"firmware-rak4631-{BUILD_2_8_0}.uf2"
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(name, entry_type=entry_type),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+
+    # The non-file entry is rejected; with no eligible non-release file, the
+    # manifest is also dropped (fail-closed — never manifest-only).
+    assert selected == []
+
+
+def test_get_selected_nightly_assets_unknown_type_rejected(downloader):
+    """Unknown GitHub Contents ``type`` values are treated as non-file."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        # Weird type GitHub might add in the future — never selected.
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2", entry_type="blob"),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    assert selected == []
+
+
+def test_get_selected_nightly_assets_all_excluded_returns_empty(downloader):
+    """EXCLUDE_PATTERNS that matches every non-manifest entry ⇒ empty."""
+    listing = _make_nightly_listing()
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+    # Exclude every device file (uf2, hex, ota.zip, elf, mt.json).
+    downloader.config["EXCLUDE_PATTERNS"] = ["*"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    assert selected == []
+
+
+def test_get_selected_nightly_assets_release_manifest_must_have_companion(downloader):
+    """A release manifest alone (no eligible device file) is never selected."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    assert selected == []
+
+
+def test_get_selected_nightly_assets_manifest_included_exactly_once(downloader):
+    """The release manifest is included exactly once when a companion exists."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        # Two exact-duplicate manifest entries (must dedupe to one).
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+    ]
+    downloader.config["EXTRACT_PATTERNS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    assert names.count(f"firmware-{BUILD_2_8_0}.json") == 1
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+
+
+# ==================================================================
+# PC: Pattern policy — absent vs malformed vs explicit empty
+# ==================================================================
+
+
+def test_nightly_patterns_explicit_empty_does_not_fallback(downloader):
+    """An explicit empty EXTRACT_PATTERNS suppresses the prerelease fallback.
+
+    A valid empty value (empty string, empty list/tuple/set/frozenset, or a
+    whitespace-only collection) returns ``[]`` and never falls back to
+    SELECTED_PRERELEASE_ASSETS — the user explicitly opted out.
+    """
+    listing = _make_nightly_listing()
+    select = _require_method(downloader, "get_selected_nightly_assets")
+
+    explicit_empties = [
+        "",
+        [],
+        (),
+        set(),
+        frozenset(),
+        ["   ", ""],
+        ("  ", "\t"),
+    ]
+    for empty_value in explicit_empties:
+        downloader.config["EXTRACT_PATTERNS"] = empty_value
+        downloader.config["SELECTED_PRERELEASE_ASSETS"] = ["rak4631-"]
+        selected = select(listing, BUILD_2_8_0)
+        assert selected == [], (
+            f"explicit empty EXTRACT_PATTERNS={empty_value!r} must not "
+            "fall back to SELECTED_PRERELEASE_ASSETS"
+        )
+
+
+def test_nightly_patterns_absent_falls_back_to_prerelease(downloader):
+    """When EXTRACT_PATTERNS is absent, SELECTED_PRERELEASE_ASSETS is used."""
+    listing = _make_nightly_listing()
+    del downloader.config["EXTRACT_PATTERNS"]
+    downloader.config["SELECTED_PRERELEASE_ASSETS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    assert any("rak4631" in n and n.endswith(".uf2") for n in names)
+    assert f"firmware-{BUILD_2_8_0}.json" in names
+
+
+def test_nightly_patterns_none_falls_back_to_prerelease(downloader):
+    """A None EXTRACT_PATTERNS is treated as absent → fallback."""
+    listing = _make_nightly_listing()
+    downloader.config["EXTRACT_PATTERNS"] = None
+    downloader.config["SELECTED_PRERELEASE_ASSETS"] = ["rak4631-"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    assert any("rak4631" in e["name"] and e["name"].endswith(".uf2") for e in selected)
+
+
+def test_nightly_patterns_unsupported_type_falls_back_with_warning(downloader, caplog):
+    """An int/dict EXTRACT_PATTERNS falls back AND emits a warning."""
+    listing = _make_nightly_listing()
+    downloader.config["EXTRACT_PATTERNS"] = 42
+    downloader.config["SELECTED_PRERELEASE_ASSETS"] = ["rak4631-"]
+
+    import logging
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    with caplog.at_level(logging.WARNING, logger="fetchtastic"):
+        selected = select(listing, BUILD_2_8_0)
+
+    assert any(
+        "EXTRACT_PATTERNS" in rec.getMessage() and "unsupported" in rec.getMessage()
+        for rec in caplog.records
+    )
+    assert any("rak4631" in e["name"] and e["name"].endswith(".uf2") for e in selected)
+
+
+def test_nightly_patterns_set_and_frozenset_are_deterministic(downloader):
+    """``set`` / ``frozenset`` EXTRACT_PATTERNS resolve deterministically."""
+    listing = _make_nightly_listing()
+    select = _require_method(downloader, "get_selected_nightly_assets")
+
+    for collection in ({"rak4631-"}, frozenset({"rak4631-"})):
+        downloader.config["EXTRACT_PATTERNS"] = collection
+        downloader.config["SELECTED_PRERELEASE_ASSETS"] = []
+        selected = select(listing, BUILD_2_8_0)
+        names = [e["name"] for e in selected]
+        assert names == sorted(names)
+        assert any("rak4631" in n and n.endswith(".uf2") for n in names)
+
+
+def test_nightly_patterns_does_not_mutate_input(downloader):
+    """The configured EXTRACT_PATTERNS collection is never mutated."""
+    listing = _make_nightly_listing()
+    patterns = ["rak4631-", "rak4631-", "  ", "tbeam"]
+    downloader.config["EXTRACT_PATTERNS"] = patterns
+    snapshot = list(patterns)
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    select(listing, BUILD_2_8_0)
+
+    assert patterns == snapshot
+
+
+# ==================================================================
+# PC: Orchestrator — selected computed before should_process / maintenance
+# ==================================================================
+
+
+def test_orch_empty_selection_is_check_failed_before_maintenance(tmp_path):
+    """Empty selection ⇒ CHECK_FAILED before should_process/maintenance.
+
+    A tracked-but-empty/nonmatching build must never report
+    MAINTENANCE_ONLY: there is no valid set to reconcile, so cleanup,
+    pointer, and chmod maintenance never run.
+    """
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.fetch_firmware_nightlies = Mock(return_value=_make_nightly_listing())
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    # Real selection with a non-matching pattern → empty.
+    fd.config["EXTRACT_PATTERNS"] = ["nonexistent-device-"]
+    _seed_device_patterns(fd)
+    # If the orchestrator reached maintenance, these would be called.
+    fd.should_process_nightly = Mock(return_value=False)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.recreate_latest_pointer_for_nightly = Mock(return_value=True)
+    fd.repair_nightly_executable_metadata = Mock(return_value=0)
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+    fd.should_process_nightly.assert_not_called()
+    fd.cleanup_superseded_nightlies.assert_not_called()
+    fd.recreate_latest_pointer_for_nightly.assert_not_called()
+    fd.repair_nightly_executable_metadata.assert_not_called()
+    assert orch.latest_firmware_nightly_build_id is None
+
+
+def test_orch_empty_selection_skips_when_tracked(tmp_path):
+    """A tracked build with empty selection still fails closed (no MAINTENANCE_ONLY)."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.config["EXTRACT_PATTERNS"] = ["nonexistent-device-"]
+    _seed_device_patterns(fd)
+
+    # Pretend the build is fully tracked already.
+    tracking = fd.cache_manager.get_cache_file_path(
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
+    )
+    Path(tracking).parent.mkdir(parents=True, exist_ok=True)
+    Path(tracking).write_text(json.dumps({"build_id": BUILD_2_8_0}))
+
+    fd.fetch_firmware_nightlies = Mock(return_value=_make_nightly_listing())
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    fd.should_process_nightly = Mock(return_value=False)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.recreate_latest_pointer_for_nightly = Mock(return_value=True)
+    fd.repair_nightly_executable_metadata = Mock(return_value=0)
+
+    orch._process_firmware_nightlies()
+
+    # Empty selection wins; even a tracked build cannot reach maintenance.
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+    fd.cleanup_superseded_nightlies.assert_not_called()
+    fd.recreate_latest_pointer_for_nightly.assert_not_called()
+    fd.repair_nightly_executable_metadata.assert_not_called()
+
+
+def test_orch_check_failed_on_no_manifest(tmp_path):
+    """A nonempty listing without a release manifest ⇒ CHECK_FAILED."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    listing = [
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.uf2"),
+        _contents_entry("device-install.sh"),
+    ]
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    # Real get_nightly_build_id raises on a nonempty-no-manifest listing;
+    # orchestrator's except clause converts that to CHECK_FAILED.
+    fd.get_selected_nightly_assets = Mock(return_value=[])
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+
+
+def test_orch_no_tracking_advance_on_empty_selection(tmp_path):
+    """Tracking must never advance when the selection is empty."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.config["EXTRACT_PATTERNS"] = ["nonexistent-device-"]
+    _seed_device_patterns(fd)
+
+    fd.fetch_firmware_nightlies = Mock(return_value=_make_nightly_listing())
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+
+    orch._process_firmware_nightlies()
+
+    fd.update_nightly_tracking.assert_not_called()
+    fd.cleanup_superseded_nightlies.assert_not_called()
+    fd.update_latest_pointer_for_nightly.assert_not_called()
+    assert orch.latest_firmware_nightly_build_id is None
+
+
+# ==================================================================
+# PC: Per-device manifest — exactly one valid build token
+# ==================================================================
+
+
+def test_validate_device_manifest_rejects_filename_without_token(tmp_path, downloader):
+    """A device manifest filename with no build token is rejected."""
+    name = "firmware-rak4631.mt.json"  # No version.hash token
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    Path(target).write_text(
+        json.dumps({"version": BUILD_2_8_0, "platformioTarget": "rak4631", "files": []})
+    )
+
+    ok, reason = downloader._validate_nightly_device_manifest(target, name)
+    assert ok is False
+    assert "exactly one" in reason
+
+
+def test_validate_device_manifest_rejects_two_distinct_tokens(tmp_path, downloader):
+    """A device manifest filename with two distinct tokens is rejected."""
+    name = f"firmware-rak4631-{BUILD_2_8_0}-{_STALE_BUILD}.mt.json"
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    Path(target).write_text(
+        json.dumps({"version": BUILD_2_8_0, "platformioTarget": "rak4631", "files": []})
+    )
+
+    ok, reason = downloader._validate_nightly_device_manifest(target, name)
+    assert ok is False
+    assert "exactly one" in reason
+
+
+def test_validate_device_manifest_accepts_repeated_single_token(tmp_path, downloader):
+    """A device manifest filename with the same token twice (deduped) is OK."""
+    name = f"firmware-rak4631-{BUILD_2_8_0}-{BUILD_2_8_0}.mt.json"
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    Path(target).write_text(
+        json.dumps({"version": BUILD_2_8_0, "platformioTarget": "rak4631", "files": []})
+    )
+
+    ok, _reason = downloader._validate_nightly_device_manifest(target, name)
+    assert ok is True
+
+
+def test_validate_device_manifest_rejects_mismatched_version(tmp_path, downloader):
+    """A JSON ``version`` not equal to the filename token is rejected."""
+    name = f"firmware-rak4631-{BUILD_2_8_0}.mt.json"
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    Path(target).write_text(
+        json.dumps(
+            {"version": _STALE_BUILD, "platformioTarget": "rak4631", "files": []}
+        )
+    )
+
+    ok, reason = downloader._validate_nightly_device_manifest(target, name)
+    assert ok is False
+    assert "version" in reason
+
+
+def test_validate_device_manifest_preserves_existing_required_fields(
+    tmp_path, downloader
+):
+    """Existing platformioTarget / files validation remains intact."""
+    name = f"firmware-rak4631-{BUILD_2_8_0}.mt.json"
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    # Missing platformioTarget.
+    Path(target).write_text(json.dumps({"version": BUILD_2_8_0, "files": []}))
+    ok, reason = downloader._validate_nightly_device_manifest(target, name)
+    assert ok is False
+    assert "platformioTarget" in reason
+
+
+# ==================================================================
+# PC: Live RAK4631 ELF included in fixture (no fake archive assumption)
+# ==================================================================
+
+
+def test_fixture_contains_rak4631_elf_and_stale_elf():
+    """The live-shaped fixture must include both a current and a stale ELF.
+
+    Selection / exclusion contracts are locked against real ELF payloads,
+    not fake archive assumptions.
+    """
+    listing = _make_nightly_listing()
+    names = [e["name"] for e in listing]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.elf" in names
+    assert f"firmware-rak4631-{_STALE_BUILD}.elf" in names
+
+
+def test_fixture_elfs_are_type_file():
+    """ELF entries in the fixture have GitHub Contents ``type == 'file'``."""
+    listing = _make_nightly_listing()
+    for entry in listing:
+        if entry["name"].endswith(".elf"):
+            assert entry["type"] == "file"
+
+
+# ==================================================================
+# PC: Setup-local safe display normalization
+# ==================================================================
+
+
+def test_setup_display_normalizer_handles_str_list_tuple_set_frozenset():
+    """The setup-local normalizer handles every supported collection type."""
+    from fetchtastic.setup_config import _normalize_display_patterns
+
+    assert _normalize_display_patterns(None) == []
+    assert _normalize_display_patterns("") == []
+    assert _normalize_display_patterns("   ") == []
+    assert _normalize_display_patterns("rak4631-") == ["rak4631-"]
+    assert _normalize_display_patterns("  rak4631-  ") == ["rak4631-"]
+    assert _normalize_display_patterns(["rak4631-", "tbeam"]) == ["rak4631-", "tbeam"]
+    # Dedupe + trim.
+    assert _normalize_display_patterns(["rak4631-", " rak4631- ", "tbeam"]) == [
+        "rak4631-",
+        "tbeam",
+    ]
+    assert _normalize_display_patterns(("a", "b", "a")) == ["a", "b"]
+    # Sets are sorted for determinism.
+    assert _normalize_display_patterns({"b", "a"}) == ["a", "b"]
+    assert _normalize_display_patterns(frozenset({"b", "a"})) == ["a", "b"]
+    # Unsupported types.
+    assert _normalize_display_patterns(42) == []
+    assert _normalize_display_patterns({"a": 1}) == []
+    # Non-string items in collections are skipped.
+    assert _normalize_display_patterns(["ok", 1, None, "ok"]) == ["ok"]
+
+
+def test_setup_display_normalizer_does_not_mutate_input():
+    """The display normalizer never mutates the input collection."""
+    from fetchtastic.setup_config import _normalize_display_patterns
+
+    patterns = ["rak4631-", "  ", "tbeam", "rak4631-"]
+    snapshot = list(patterns)
+    _normalize_display_patterns(patterns)
+    assert patterns == snapshot
+
+    as_set = {"a", "b"}
+    snapshot = set(as_set)
+    _normalize_display_patterns(as_set)
+    assert as_set == snapshot

@@ -1111,11 +1111,21 @@ class DownloadOrchestrator:
         transaction exactly once after the retry phase, subject to the same
         all-assets-complete + tracking-succeeded conditions.
 
+        Selection is computed exactly once, immediately after the build-id is
+        parsed, and reused for processing, retry, finalization, and
+        maintenance. An empty selection (no ``EXTRACT_PATTERNS`` configured,
+        none match, all excluded, or only directories/symlinks present) fails
+        closed as ``CHECK_FAILED`` BEFORE ``should_process_nightly`` /
+        maintenance run. A tracked-but-empty/nonmatching build therefore never
+        reports ``MAINTENANCE_ONLY``: there is no valid set to reconcile.
+
         State mapping:
           - source fetch error / malformed listing / ambiguous generation
             → ``CHECK_FAILED`` (logged, no fake asset failure, no download
             report, suppresses up-to-date).
           - empty listing (no candidate yet) → ``UNCHECKED`` (not an error).
+          - empty selection (no eligible non-release file) → ``CHECK_FAILED``
+            (no MAINTENANCE_ONLY, no side effects).
           - build already tracked + complete → ``MAINTENANCE_ONLY`` after
             running retention/pointer/chmod repair (no download report).
           - all assets valid + tracking persisted + ≥1 downloaded asset →
@@ -1147,23 +1157,21 @@ class DownloadOrchestrator:
                     "release-level manifest; marking check as failed"
                 )
                 return
-            if not self.firmware_downloader.should_process_nightly(entries, build_id):
-                logger.debug(
-                    "Firmware-nightly build %s already complete; running maintenance",
-                    build_id,
-                )
-                self._run_nightly_maintenance(build_id, entries)
-                self.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
-                return
+            # Compute the selected set exactly once and reuse it for every
+            # downstream path. An empty selection fails closed BEFORE
+            # should_process / maintenance so a tracked but empty/nonmatching
+            # build never reports MAINTENANCE_ONLY.
             selected = self.firmware_downloader.get_selected_nightly_assets(
                 entries, build_id
             )
             if not selected:
                 # Empty selection after a valid build-id means no extraction
-                # patterns are configured (or none match). Fail closed: do not
+                # patterns are configured (or none match, or all eligible
+                # entries were excluded / non-file). Fail closed: do not
                 # fabricate a manifest-only DownloadResult, do not advance
-                # tracking/latest/cleanup, and suppress the generic up-to-date
-                # outcome. The user must configure EXTRACT_PATTERNS.
+                # tracking/latest/cleanup, do not run maintenance on an empty
+                # set, and suppress the generic up-to-date outcome. The user
+                # must configure EXTRACT_PATTERNS.
                 self.nightly_run_state = NightlyRunState.CHECK_FAILED
                 logger.warning(
                     "Firmware-nightly build %s has no selected assets "
@@ -1171,6 +1179,14 @@ class DownloadOrchestrator:
                     "configure EXTRACT_PATTERNS to select device files",
                     build_id,
                 )
+                return
+            if not self.firmware_downloader.should_process_nightly(entries, build_id):
+                logger.debug(
+                    "Firmware-nightly build %s already complete; running maintenance",
+                    build_id,
+                )
+                self._run_nightly_maintenance(build_id, entries)
+                self.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
                 return
 
             logger.info("Downloading firmware-nightly build %s", build_id)
