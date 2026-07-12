@@ -34,6 +34,7 @@ from fetchtastic.constants import (
     ERROR_TYPE_RETRY_FAILURE,
     ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_UNKNOWN,
+    EXECUTABLE_PERMISSIONS,
     FILE_TYPE_APP_SNAPSHOT,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
@@ -55,6 +56,7 @@ from fetchtastic.constants import (
     MAX_RETRY_DELAY,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
+    NightlyRunState,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import is_termux
@@ -189,6 +191,12 @@ class DownloadOrchestrator:
         self.latest_available_firmware_prerelease_dir: Optional[str] = None
         # Run-scoped nightly build-id: set after successful nightly processing.
         self.latest_firmware_nightly_build_id: Optional[str] = None
+        # Run-scoped nightly transaction state. Reported outcomes are derived
+        # from this rather than from per-asset results so only a fully
+        # finalized transaction (all assets valid AND tracking persisted) is
+        # surfaced as a download; attempted-but-incomplete transactions
+        # suppress the generic up-to-date log/NTFY.
+        self.nightly_run_state: NightlyRunState = NightlyRunState.UNCHECKED
         # Run-scoped pending nightly transaction: populated when a nightly build
         # downloads but cannot finalize (failure or tracking pending). The
         # post-retry reconciliation finalizes it exactly once when every
@@ -234,6 +242,7 @@ class DownloadOrchestrator:
         self.wifi_skipped = False
         self.latest_available_firmware_prerelease_dir = None
         self.latest_firmware_nightly_build_id = None
+        self.nightly_run_state = NightlyRunState.UNCHECKED
         self._pending_nightly_build_id = None
         self._pending_nightly_entries = []
         self.available_new_firmware_versions = []
@@ -854,16 +863,23 @@ class DownloadOrchestrator:
         Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
 
         Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and prunes prerelease subdirectories that do not match the managed naming and versioning conventions.
+
+        The stable/prerelease stage and the nightly stage are independent: a
+        stable discovery error or empty stable list cannot suppress nightly,
+        and a nightly error cannot break stable. Nightly is invoked exactly
+        once via ``finally`` so early returns inside the stable stage still
+        reach it; firmware must be enabled (``SAVE_FIRMWARE``) for nightly to
+        run at all.
         """
+        # Reset the selected releases at the start of each run
+        self.firmware_releases_selected = None
+        self.latest_available_firmware_prerelease_dir = None
+
+        if not self.config.get("SAVE_FIRMWARE", False):
+            logger.info("Firmware downloads are disabled in configuration")
+            return
+
         try:
-            # Reset the selected releases at the start of each run
-            self.firmware_releases_selected = None
-            self.latest_available_firmware_prerelease_dir = None
-
-            if not self.config.get("SAVE_FIRMWARE", False):
-                logger.info("Firmware downloads are disabled in configuration")
-                return
-
             logger.info("Scanning Firmware releases")
             keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
             keep_limit = self._get_firmware_keep_limit()
@@ -1003,11 +1019,10 @@ class DownloadOrchestrator:
                         result, FILE_TYPE_FIRMWARE_PRERELEASE_REPO
                     )
 
-            # Opt-in rolling firmware-nightly builds (separate source, transactional).
-            self._process_firmware_nightlies()
-
+            # Stable-only up-to-date indicator. Scoped to releases (not
+            # nightlies) so it cannot contradict a nightly finalize/fail/incomplete.
             if not any_firmware_downloaded and not releases_to_download:
-                logger.info("All Firmware assets are up to date.")
+                logger.info("All Firmware releases are up to date.")
 
             # Remove prerelease directories whose version is <= the latest
             # release to prevent accumulation of old prereleases.
@@ -1068,6 +1083,13 @@ class DownloadOrchestrator:
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
+        finally:
+            # Opt-in rolling firmware-nightly builds (separate source,
+            # transactional). Invoked exactly once via finally so a stable
+            # discovery error, empty stable list, or early return cannot
+            # suppress nightly, and a nightly error (caught inside the method)
+            # cannot break already-completed stable work.
+            self._process_firmware_nightlies()
 
     def _process_firmware_nightlies(self) -> None:
         """
@@ -1108,6 +1130,7 @@ class DownloadOrchestrator:
                 return
             if not self.firmware_downloader.should_process_nightly(entries, build_id):
                 logger.debug("Firmware-nightly build %s already complete", build_id)
+                self.nightly_run_state = NightlyRunState.ALREADY_COMPLETE
                 return
             selected = self.firmware_downloader.get_selected_nightly_assets(entries)
             if not selected:
@@ -1134,11 +1157,13 @@ class DownloadOrchestrator:
                 # ultimately succeeds.
                 self._pending_nightly_build_id = build_id
                 self._pending_nightly_entries = list(selected)
+                self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
                 return
 
             self._finalize_nightly_transaction(build_id, selected)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware nightlies: {e}", exc_info=True)
+            self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
 
     def _finalize_nightly_transaction(
         self, build_id: str, selected: List[Dict[str, Any]]
@@ -1169,6 +1194,7 @@ class DownloadOrchestrator:
                 )
                 self._pending_nightly_build_id = None
                 self._pending_nightly_entries = []
+                self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
                 return False
             ok, reason = self.firmware_downloader._validate_nightly_asset(
                 target_path, name, entry.get("size")
@@ -1183,6 +1209,7 @@ class DownloadOrchestrator:
                 )
                 self._pending_nightly_build_id = None
                 self._pending_nightly_entries = []
+                self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
                 return False
 
         if not self.firmware_downloader.update_nightly_tracking(build_id):
@@ -1193,6 +1220,7 @@ class DownloadOrchestrator:
             )
             self._pending_nightly_build_id = None
             self._pending_nightly_entries = []
+            self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
             return False
 
         self.firmware_downloader.cleanup_superseded_nightlies(build_id)
@@ -1200,6 +1228,7 @@ class DownloadOrchestrator:
         self.latest_firmware_nightly_build_id = build_id
         self._pending_nightly_build_id = None
         self._pending_nightly_entries = []
+        self.nightly_run_state = NightlyRunState.FINALIZED
         return True
 
     def _finalize_nightly_transaction_if_complete(self) -> None:
@@ -1774,6 +1803,14 @@ class DownloadOrchestrator:
             ):
                 downloader = self.firmware_downloader
             if downloader:
+                # Nightly retries are handled as a self-contained branch:
+                # re-derive and validate the canonical managed path, reject
+                # symlinked paths before download, then download + validate +
+                # chmod. Non-nightly retries follow the generic path unchanged.
+                if file_type == FILE_TYPE_FIRMWARE_NIGHTLY:
+                    return self._retry_nightly_failure(
+                        failed_result, url, target_path, file_type
+                    )
                 ok = downloader.download(url, target_path)
                 if ok and downloader.verify(target_path):
                     if file_type in (
@@ -1834,30 +1871,6 @@ class DownloadOrchestrator:
                                 "Downloaded manifest is not valid JSON",
                                 is_retryable_override=False,
                             )
-                    if file_type == FILE_TYPE_FIRMWARE_NIGHTLY:
-                        # Apply the same focused validation the fresh-download
-                        # path uses (regular non-symlink file, exact positive
-                        # size, hash/integrity, ZIP integrity, manifest JSON).
-                        nightly_name = os.path.basename(target_path)
-                        ok, reason = self.firmware_downloader._validate_nightly_asset(
-                            target_path, nightly_name, failed_result.file_size
-                        )
-                        if not ok:
-                            # Remove the bad target plus its current and legacy
-                            # hash sidecars via the nightly-safe cleanup helper
-                            # (cleanup_file alone leaves stale hash metadata).
-                            self.firmware_downloader._remove_nightly_target_and_hash(
-                                target_path
-                            )
-                            return self._create_failure_result(
-                                failed_result,
-                                Path(target_path),
-                                url,
-                                file_type,
-                                "Retry attempt failed",
-                                f"Downloaded nightly asset failed validation: {reason}",
-                                is_retryable_override=False,
-                            )
                     return DownloadResult(
                         success=True,
                         release_tag=failed_result.release_tag,
@@ -1889,6 +1902,138 @@ class DownloadOrchestrator:
                 str(exc),
                 is_retryable_override=False,
             )
+
+    def _retry_nightly_failure(
+        self,
+        failed_result: DownloadResult,
+        url: str,
+        target_path: str,
+        file_type: str,
+    ) -> DownloadResult:
+        """
+        Retry a firmware-nightly asset failure with canonical path re-derivation.
+
+        Validates the failed result's release tag as a build-id, sanitizes the
+        expected basename, re-derives the canonical managed target via the
+        fresh path-safety helpers, and requires ``failed_result.file_path`` to
+        identify that exact canonical target. Root/parent/build/target symlinks
+        are rejected before any download attempt. After download the shared
+        nightly validator runs; on failure the bad target and its hash metadata
+        are removed. A validated ``*.sh`` payload regains executable mode only
+        after validation succeeds. Non-nightly retries are unaffected.
+        """
+        fd = self.firmware_downloader
+        build_id = failed_result.release_tag
+        if not isinstance(build_id, str) or not fd.validate_nightly_build_id(build_id):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Invalid firmware-nightly build-id: {build_id!r}",
+                is_retryable_override=False,
+            )
+
+        basename = os.path.basename(target_path)
+        try:
+            canonical = fd.get_nightly_target_path(build_id, basename, create=False)
+        except ValueError as exc:
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Unsafe firmware-nightly basename: {exc}",
+                is_retryable_override=False,
+            )
+
+        if canonical != target_path:
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                "Firmware-nightly retry target is not the canonical managed path",
+                is_retryable_override=False,
+            )
+
+        # Reject any symlink in the managed path chain (root/build/target)
+        # before any download attempt. A symlink at the target itself is
+        # removed (link only, never followed); deeper symlinks are refused
+        # without removal. Download never proceeds through a symlink.
+        build_dir = os.path.dirname(canonical)
+        nightly_root = os.path.dirname(build_dir)
+        target_was_symlink = os.path.islink(canonical)
+        if target_was_symlink:
+            fd._remove_nightly_target_and_hash(canonical)
+        if (
+            target_was_symlink
+            or os.path.islink(build_dir)
+            or os.path.islink(nightly_root)
+        ):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                "Firmware-nightly retry refused through symlink path",
+                is_retryable_override=False,
+            )
+
+        try:
+            ok = fd.download(url, canonical)
+        except (requests.RequestException, OSError, ValueError) as exc:
+            return self._create_failure_result(
+                failed_result,
+                Path(canonical),
+                url,
+                file_type,
+                "",
+                str(exc),
+            )
+        if not ok or not fd.verify(canonical):
+            return self._create_failure_result(
+                failed_result, Path(canonical), url, file_type, "Retry attempt failed"
+            )
+
+        ok_v, reason = fd._validate_nightly_asset(
+            canonical, basename, failed_result.file_size
+        )
+        if not ok_v:
+            fd._remove_nightly_target_and_hash(canonical)
+            return self._create_failure_result(
+                failed_result,
+                Path(canonical),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Downloaded nightly asset failed validation: {reason}",
+                is_retryable_override=False,
+            )
+
+        # Executable bit only after the file has been validated.
+        if basename.lower().endswith(".sh") and os.name != "nt":
+            try:
+                os.chmod(canonical, EXECUTABLE_PERMISSIONS)
+            except OSError:
+                pass
+
+        return DownloadResult(
+            success=True,
+            release_tag=failed_result.release_tag,
+            file_path=Path(canonical),
+            download_url=url,
+            file_size=failed_result.file_size,
+            file_type=file_type,
+            retry_count=failed_result.retry_count,
+            retry_timestamp=failed_result.retry_timestamp,
+            error_message=None,
+            is_retryable=False,
+        )
 
     def _generate_retry_report(
         self,

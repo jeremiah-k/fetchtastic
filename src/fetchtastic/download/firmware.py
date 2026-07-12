@@ -2796,6 +2796,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         m = _NIGHTLY_MANIFEST_RX.match(name)
         return m.group(1).lower() if m else None
 
+    @staticmethod
+    def validate_nightly_build_id(build_id: Any) -> bool:
+        """Return True only when ``build_id`` matches the strict nightly build-id regex.
+
+        Non-writing check used by the retry path to confirm a failed result's
+        release tag is a genuine build-id before re-deriving its canonical path.
+        """
+        return (
+            isinstance(build_id, str)
+            and _NIGHTLY_BUILD_ID_RX.match(build_id) is not None
+        )
+
     def get_nightly_build_id(self, entries: List[Dict[str, Any]]) -> Optional[str]:
         """
         Scan a nightly listing and return the build-id parsed from the single
@@ -3010,8 +3022,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Short-circuits to False when nightlies are disabled or build_id is
         empty.  Otherwise:
           - identity changed (build_id differs from tracked)  -> True
-          - identity same, all selected assets present          -> False (skip)
-          - identity same, any selected asset missing/empty     -> True (backfill)
+          - identity same, all selected assets fully valid     -> False (skip)
+          - identity same, any selected asset missing/unsafe/
+            corrupt/hash-mismatched/invalid ZIP or manifest    -> True (backfill)
+
+        Same-identity skip uses the shared :meth:`_validate_nightly_asset`
+        against the non-writing managed target path so a tracked build is only
+        skipped when every selected asset passes path/content validation.
         """
         if not self._nightlies_enabled() or not build_id:
             return False
@@ -3027,23 +3044,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if tracked != build_id:
             return True
 
-        # Same identity: backfill if any selected asset is missing or empty.
+        # Same identity: backfill if any selected asset is not fully valid.
         selected = self.get_selected_nightly_assets(entries)
         for entry in selected:
             name = entry.get("name")
             if not isinstance(name, str) or not name:
                 continue
-            target = self.get_nightly_target_path(build_id, name, create=False)
-            if not os.path.exists(target):
-                return True
             try:
-                expected = entry.get("size")
-                actual = os.path.getsize(target)
-                if actual == 0:
-                    return True
-                if isinstance(expected, int) and expected > 0 and actual != expected:
-                    return True
-            except OSError:
+                target = self.get_nightly_target_path(build_id, name, create=False)
+            except ValueError:
+                return True
+            ok, _reason = self._validate_nightly_asset(target, name, entry.get("size"))
+            if not ok:
                 return True
         return False
 
@@ -3385,9 +3397,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             logger.debug("Error scanning nightlies dir %s: %s", base, exc)
             return 0
 
-        if not candidates:
-            return 0
-
         # Sort newest mtime first; stable name tiebreak (descending) so the
         # selection is deterministic regardless of hash chronology.
         candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -3414,28 +3423,33 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 kept_others += 1
 
         removed = 0
-        removed_names: List[str] = []
         for _mtime, name in candidates:
             if name in keep_names:
                 continue
             path = os.path.join(base, name)
             if _safe_rmtree(path, base, name):
                 removed += 1
-                removed_names.append(name)
                 logger.info("Removed old nightly build: %s", name)
 
-        # Drop the managed latest pointer if it no longer points at a retained
-        # build directory. Never remove a non-symlink latest entry.
-        if removed_names:
-            retained = {name for _mtime, name in candidates if name in keep_names}
-            self._cleanup_invalid_nightly_latest_pointer(base, retained)
+        # Always validate the managed latest pointer against the retained set,
+        # even when zero directories were removed or no candidates existed.
+        # Removes unsafe/dangling/unretained symlinks; preserves a valid
+        # retained target and any non-symlink latest entry. Never followed.
+        retained = {name for _mtime, name in candidates if name in keep_names}
+        self._cleanup_invalid_nightly_latest_pointer(base, retained)
 
         return removed
 
     def _cleanup_invalid_nightly_latest_pointer(
         self, base_dir: str, retained_names: set[str]
     ) -> None:
-        """Remove the managed ``latest`` symlink when its target is missing or unsafe."""
+        """Remove the managed ``latest`` symlink when its target is missing or unsafe.
+
+        A non-symlink ``latest`` entry is always preserved. A symlink is removed
+        when its target is unreadable, dangling (target directory absent), or not
+        in the retained set. The link itself is removed; external targets are
+        never followed.
+        """
         link_path = os.path.join(base_dir, LATEST_POINTER_NAME)
         if not os.path.islink(link_path):
             return
@@ -3444,6 +3458,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
         except OSError:
             remove_latest_pointer(base_dir)
             return
-        if target in retained_names:
+        if target not in retained_names:
+            remove_latest_pointer(base_dir)
             return
-        remove_latest_pointer(base_dir)
+        # Target is retained — still confirm the directory actually exists so a
+        # dangling symlink to a deleted-but-retained name is repaired.
+        if not os.path.isdir(os.path.join(base_dir, target)):
+            remove_latest_pointer(base_dir)

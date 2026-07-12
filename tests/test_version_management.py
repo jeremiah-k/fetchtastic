@@ -302,6 +302,28 @@ class TestPrereleaseBaseAdmission:
         assert is_prerelease_base_newer_than_stable("2.7.27", "2.7.26") is True
         assert is_prerelease_base_newer_than_stable("2.7.26", "2.7.26") is False
 
+    def test_tuple_normalization_two_component_equals_three_component(self):
+        """2.7 == 2.7.0 semantically: neither is strictly newer (both directions)."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7", "2.7.0") is False
+        assert vm.is_prerelease_base_newer_than_stable("2.7.0", "2.7") is False
+
+    def test_tuple_normalization_higher_patch_beats_shorter(self):
+        """2.7.1 is strictly newer than 2.7 even though 2.7 has fewer components."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7.1", "2.7") is True
+
+    def test_tuple_normalization_higher_minor_beats_longer(self):
+        """2.8.0 is strictly newer than 2.7.26 (minor dominates patch count)."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.8.0", "2.7.26") is True
+
+    def test_tuple_normalization_rejects_unparseable(self):
+        """Unparseable inputs are still conservatively rejected after normalization."""
+        vm = VersionManager()
+        assert vm.is_prerelease_base_newer_than_stable("2.7", "garbage") is False
+        assert vm.is_prerelease_base_newer_than_stable("garbage", "2.7.0") is False
+
 
 class TestPrereleaseVersionParsing:
     """Test prerelease version parsing."""

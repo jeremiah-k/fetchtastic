@@ -5,6 +5,8 @@ This module contains all hardcoded values, URLs, timeouts, and other constants
 used throughout the application.
 """
 
+from enum import Enum
+
 # GitHub API URLs
 GITHUB_API_BASE = "https://api.github.com/repos"
 MESHTASTIC_ANDROID_RELEASES_URL = (
@@ -324,3 +326,17 @@ ANDROID_ARCHITECTURES = {
 }
 
 DEFAULT_ARCH_PREFERENCE = "universal"
+
+
+class NightlyRunState(Enum):
+    """Run-scoped state of the firmware-nightly transaction.
+
+    Reported outcomes are derived from this state rather than from individual
+    nightly asset download results, so that only a fully finalized transaction
+    (every asset valid AND tracking persisted) is surfaced as a download.
+    """
+
+    UNCHECKED = "unchecked"
+    ALREADY_COMPLETE = "already_complete"
+    ATTEMPTED_INCOMPLETE = "attempted_incomplete"
+    FINALIZED = "finalized"

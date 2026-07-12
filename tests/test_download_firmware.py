@@ -4967,11 +4967,12 @@ class TestPrereleaseAvailabilityVerification:
 @pytest.mark.unit
 @pytest.mark.core_downloads
 class TestPrereleaseCrossBaseAdmission:
-    """RED tests: firmware downloader admits prereleases across higher minor/major bases.
+    """Firmware downloader admits prereleases across higher minor/major bases.
 
-    Stable 2.7.26 should admit 2.8.0.<sha> prereleases. The current gate uses
-    exact equality (expected_version == next_patch "2.7.27") in
-    scan_prerelease_directories, filtering out firmware-2.8.0.abcdef1.
+    The admission gate uses semantic release-tuple comparison
+    (``is_prerelease_base_newer_than_stable``), so a stable like 2.7.26 admits
+    any strictly-newer prerelease base including 2.8.0.<sha>, not just the
+    next patch (2.7.27).
     """
 
     STABLE_TAG = "v2.7.26"

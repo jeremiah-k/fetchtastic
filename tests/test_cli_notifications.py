@@ -3,7 +3,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import FILE_TYPE_APP_SNAPSHOT, FILE_TYPE_FIRMWARE_NIGHTLY
+from fetchtastic.constants import (
+    FILE_TYPE_APP_SNAPSHOT,
+    FILE_TYPE_FIRMWARE_NIGHTLY,
+    NightlyRunState,
+)
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.download.interfaces import DownloadResult
 
@@ -476,6 +480,10 @@ def test_send_download_completion_notification_empty_snapshots_no_notification()
 def test_populated_firmware_nightly_notification_displays_build_id(integration):
     """Populated firmware nightly results produce build-id in notification, deduplicated."""
     integration.config["NOTIFY_ON_FIRMWARE_NIGHTLIES"] = True
+    # Nightly reporting now keys off the finalized transaction state, not
+    # per-asset results. The orchestrator reports one finalized build-id.
+    integration.orchestrator.nightly_run_state = NightlyRunState.FINALIZED
+    integration.orchestrator.latest_firmware_nightly_build_id = "2.7.18.abc123"
     integration.orchestrator.download_results = [
         DownloadResult(
             success=True,
@@ -527,6 +535,9 @@ def test_populated_firmware_nightly_notification_displays_build_id(integration):
 
 def test_firmware_nightly_only_notifications_disabled_sends_nothing(integration):
     """Firmware-nightly-only download with NOTIFY_ON_FIRMWARE_NIGHTLIES unset → no notification."""
+    # Nightly transaction finalized so it counts locally, but NTFY gate is off.
+    integration.orchestrator.nightly_run_state = NightlyRunState.FINALIZED
+    integration.orchestrator.latest_firmware_nightly_build_id = "2.7.18.abc123"
     integration.orchestrator.download_results = [
         DownloadResult(
             success=True,

@@ -34,13 +34,13 @@ from fetchtastic.constants import (
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
-    FILE_TYPE_FIRMWARE_NIGHTLY,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_FILE_TYPES,
     SNAPSHOT_VERSION_CODE_PATTERN,
+    NightlyRunState,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
@@ -439,21 +439,21 @@ class DownloadCLIIntegration:
             else []
         )
 
-        # Firmware nightly builds — collected explicitly (kept out of
-        # FIRMWARE_FILE_TYPES) like app snapshots.  Always counted locally;
-        # NTFY inclusion is gated by NOTIFY_ON_FIRMWARE_NIGHTLIES (default
-        # False).
+        # Firmware nightly builds — reported only when the transaction
+        # finalized (every asset valid AND tracking persisted). Asset-level
+        # DownloadResults remain on the orchestrator for diagnostics but are
+        # NOT reported here, so a partially-downloaded or unfinalized nightly
+        # is never surfaced as a completed build. NTFY inclusion is gated by
+        # NOTIFY_ON_FIRMWARE_NIGHTLIES (default False).
         downloaded_firmware_nightlies: list[str] = []
-        if self.orchestrator:
-            for result in self.orchestrator.download_results:
-                if (
-                    getattr(result, "file_type", "") == FILE_TYPE_FIRMWARE_NIGHTLY
-                    and getattr(result, "success", False)
-                    and not getattr(result, "was_skipped", False)
-                ):
-                    tag = getattr(result, "release_tag", None)
-                    if tag and tag not in downloaded_firmware_nightlies:
-                        downloaded_firmware_nightlies.append(tag)
+        if (
+            self.orchestrator
+            and self.orchestrator.nightly_run_state == NightlyRunState.FINALIZED
+            and self.orchestrator.latest_firmware_nightly_build_id
+        ):
+            downloaded_firmware_nightlies.append(
+                self.orchestrator.latest_firmware_nightly_build_id
+            )
 
         notified_firmware_nightlies = (
             downloaded_firmware_nightlies
@@ -550,7 +550,16 @@ class DownloadCLIIntegration:
                     f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                 )
 
-        if downloaded_count == 0 and not failed_downloads:
+        # A nightly transaction that was attempted but not finalized must
+        # suppress the generic up-to-date log/NTFY — it is a distinct failure
+        # state, not "up to date".
+        nightly_incomplete = (
+            self.orchestrator is not None
+            and self.orchestrator.nightly_run_state
+            == NightlyRunState.ATTEMPTED_INCOMPLETE
+        )
+
+        if downloaded_count == 0 and not failed_downloads and not nightly_incomplete:
             log.info(
                 "All assets are up to date.\n%s",
                 time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -589,7 +598,11 @@ class DownloadCLIIntegration:
                     self.orchestrator.available_new_apk_versions,
                     downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
                 )
-            elif not failed_downloads and not new_versions_available:
+            elif (
+                not failed_downloads
+                and not new_versions_available
+                and not nightly_incomplete
+            ):
                 send_up_to_date_notification(self.config)
 
         summary = get_api_request_summary()
