@@ -613,7 +613,7 @@ def test_setup_firmware_extract_patterns_unexpected_type(mocker, capsys):
     result = _setup_firmware(config, is_first_run=True, default_versions=2)
 
     mock_logger.warning.assert_called_once()
-    assert "Unexpected type" in mock_logger.warning.call_args[0][0]
+    assert "unsupported type" in mock_logger.warning.call_args[0][0]
     assert result["EXTRACT_PATTERNS"] == []
 
 

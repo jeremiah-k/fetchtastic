@@ -2575,11 +2575,18 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
 @pytest.mark.unit
 @patch("builtins.input")
 def test_setup_firmware_extract_patterns_string_config(mock_input):
-    """EXTRACT_PATTERNS should be split when provided as a string."""
+    """EXTRACT_PATTERNS as a string is normalized (trimmed, not split).
+
+    Setup display now mirrors what the downloader actually selects: a single
+    string is treated as one pattern (consistent with the downloader's
+    resolver), not split on whitespace. Whitespace-separated keywords are
+    still split at INPUT time (``extract_patterns_input.split()``); this case
+    only fires when the config file held a pre-existing string value.
+    """
     config = {
         "CHECK_PRERELEASES": True,
         "AUTO_EXTRACT": True,
-        "EXTRACT_PATTERNS": "tbeam rak4631-",
+        "EXTRACT_PATTERNS": "  tbeam rak4631-  ",
     }
 
     # Inputs: suffix, versions, auto-extract, keep-patterns, confirm, prerelease, nightly
@@ -2590,8 +2597,9 @@ def test_setup_firmware_extract_patterns_string_config(mock_input):
             config, is_first_run=False, default_versions=2
         )
 
-    assert result["EXTRACT_PATTERNS"] == ["tbeam", "rak4631-"]
-    assert result["SELECTED_PRERELEASE_ASSETS"] == ["tbeam", "rak4631-"]
+    # String is trimmed to a single pattern (downloader parity).
+    assert result["EXTRACT_PATTERNS"] == ["tbeam rak4631-"]
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["tbeam rak4631-"]
 
 
 @pytest.mark.configuration
