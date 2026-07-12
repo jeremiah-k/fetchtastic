@@ -17,8 +17,10 @@ import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
     DEFAULT_CREATE_LATEST_SYMLINKS,
     DEFAULT_FILTER_REVOKED_RELEASES,
+    DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
     DEFAULT_PRESERVE_LEGACY_FIRMWARE_BASE_DIRS,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
@@ -30,12 +32,17 @@ from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_NIGHTLY,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_MANIFEST_EXTENSION,
+    FIRMWARE_NIGHTLIES_DIR_NAME,
+    FIRMWARE_NIGHTLY_MANIFEST_PATTERN,
+    FIRMWARE_NIGHTLY_SOURCE_DIR,
     FIRMWARE_PRERELEASES_DIR_NAME,
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
+    LATEST_FIRMWARE_NIGHTLY_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     LATEST_POINTER_NAME,
@@ -57,10 +64,17 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager, parse_iso_datetime_utc
-from .files import build_storage_tag_with_channel, get_channel_suffix
+from .files import (
+    _is_within_base,
+    _prepare_for_redownload,
+    _safe_rmtree,
+    build_storage_tag_with_channel,
+    get_channel_suffix,
+    is_zip_intact,
+)
 from .github_source import GithubReleaseSource, create_release_from_github_data
 from .interfaces import Asset, DownloadResult, FirmwareManifest, Release
-from .latest_pointer import update_latest_pointer
+from .latest_pointer import remove_latest_pointer, update_latest_pointer
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
@@ -72,6 +86,15 @@ _FIRMWARE_SUFFIX_PARTS = [
 _FIRMWARE_SUFFIX_PATTERN = re.compile(
     rf"(?:{'|'.join(re.escape(f'-{suffix}') for suffix in _FIRMWARE_SUFFIX_PARTS)})+$"
 )
+
+# Release-level nightly manifest: firmware-<version>.<hash>.json (build-id capture).
+# Device manifests (.mt.json) and zips are rejected.  See FIRMWARE_NIGHTLY_MANIFEST_PATTERN.
+_NIGHTLY_MANIFEST_RX = re.compile(FIRMWARE_NIGHTLY_MANIFEST_PATTERN, re.IGNORECASE)
+# A nightly build-id on its own (used to validate build directories under nightlies/).
+_NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECASE)
+# Detects a nightly build token (e.g. ``2.8.0.f52e2ea``) embedded anywhere in
+# an asset filename so the selector can reject stale generations.
+_NIGHTLY_BUILD_TOKEN_RX = re.compile(r"(\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE)
 
 
 class FirmwareReleaseDownloader(BaseDownloader):
@@ -1474,6 +1497,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     and entry.name
                     not in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
+                        FIRMWARE_NIGHTLIES_DIR_NAME,
                         LATEST_POINTER_NAME,
                         REPO_DOWNLOADS_DIR,
                     }
@@ -1506,6 +1530,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 for entry in entries:
                     if entry.name in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
+                        FIRMWARE_NIGHTLIES_DIR_NAME,
                         REPO_DOWNLOADS_DIR,
                     }:
                         continue
@@ -1900,17 +1925,26 @@ class FirmwareReleaseDownloader(BaseDownloader):
             version_manager.extract_clean_version(latest_release_tag)
             or latest_release_tag
         )
+        # History APIs now admit any prerelease base strictly newer than the
+        # latest stable release, so pass the cleaned stable tag (e.g. "v2.7.26")
+        # rather than the legacy next-patch derivation.  The next-patch value is
+        # retained only as a display label in the summary/log and as a parseability
+        # gate: if it cannot be derived the input tag is too malformed to admit.
         expected_version = version_manager.calculate_expected_prerelease_version(
             clean_latest_release
         )
         if not expected_version:
             return [], [], None, None
 
-        logger.debug("Expected prerelease version: %s", expected_version)
+        logger.debug(
+            "Prerelease admission floor: stable=%s (next-patch label=%s)",
+            clean_latest_release,
+            expected_version,
+        )
 
         latest_active_dir, history_entries = (
             prerelease_manager.get_latest_active_prerelease_from_history(
-                expected_version,
+                clean_latest_release,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
                 allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
@@ -1950,7 +1984,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 else:
                     fallback_repo_dirs = [d for d in dirs if isinstance(d, str)]
                 matches = prerelease_manager.scan_prerelease_directories(
-                    [d for d in dirs if isinstance(d, str)], expected_version
+                    [d for d in dirs if isinstance(d, str)], clean_latest_release
                 )
                 if matches:
                     # Choose newest by tuple then string
@@ -2015,7 +2049,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 matching_repo_dirs = [
                     f"{FIRMWARE_DIR_PREFIX}{identifier}"
                     for identifier in prerelease_manager.scan_prerelease_directories(
-                        repo_dirs, expected_version
+                        repo_dirs, clean_latest_release
                     )
                 ]
                 active_dirs_set = set(active_dirs)
@@ -2376,15 +2410,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
         )
 
         deleted_dirs = self._get_deleted_prerelease_dirs_from_history(history_entries)
-        active_candidate_dirs = [
-            entry.get("directory")
-            for entry in history_entries
-            if isinstance(entry.get("directory"), str)
-            and entry.get("directory") not in deleted_dirs
-            and (entry.get("status") == "active" or entry.get("active") is True)
-            and entry.get("status") != "deleted"
-            and not entry.get("removed_at")
-        ]
+        active_candidate_dirs: List[str] = []
+        for entry in history_entries:
+            directory_value: Any = entry.get("directory")
+            if not isinstance(directory_value, str):
+                continue
+            if directory_value in deleted_dirs:
+                continue
+            if not (entry.get("status") == "active" or entry.get("active") is True):
+                continue
+            if entry.get("status") == "deleted":
+                continue
+            if entry.get("removed_at"):
+                continue
+            active_candidate_dirs.append(directory_value)
         latest_active_dir = self._select_latest_prerelease_dir(
             active_candidate_dirs, history_entries
         )
@@ -2704,4 +2743,963 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         except (OSError, ValueError) as e:
             logger.error(f"Error cleaning up superseded prereleases: {e}")
+            return False
+
+    # ==================================================================
+    # Firmware-nightly: rolling build published at firmware-nightly/
+    # ==================================================================
+
+    def _nightlies_enabled(self) -> bool:
+        """Return True when CHECK_FIRMWARE_NIGHTLIES is enabled (opt-in, default off)."""
+        return coerce_bool(
+            self.config.get(
+                "CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES
+            ),
+            DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
+        )
+
+    def _nightly_tracking_path(self) -> str:
+        """Cache path to the latest firmware-nightly tracking JSON."""
+        return self.cache_manager.get_cache_file_path(LATEST_FIRMWARE_NIGHTLY_JSON_FILE)
+
+    def fetch_firmware_nightlies(self) -> List[Dict[str, Any]]:
+        """
+        Fetch the flat GitHub Contents listing of the rolling firmware-nightly directory.
+
+        Returns an empty list when the feature is disabled (no API call is made)
+        or when the listing is genuinely empty (``None`` or ``[]``). Each entry
+        preserves the live GitHub Contents API shape (``name``, ``download_url``,
+        ``size``, ``type``).
+
+        **Fail-closed policy for malformed source responses:** a non-list
+        response or a nonempty list containing any malformed entry (non-dict
+        or dict with a non-string ``name``) raises ``ValueError`` rather than
+        silently filtering. The orchestrator catches this and marks the run
+        ``CHECK_FAILED`` so a corrupt listing is never mistaken for "no
+        candidate published yet" (which an empty list represents). This is
+        a strict mixed-list fail-closed: one bad entry rejects the entire
+        listing, because silently dropping entries could hide a missing
+        release manifest and produce an incoherent download set.
+        """
+        if not self._nightlies_enabled():
+            return []
+        contents = self.cache_manager.get_repo_contents(
+            FIRMWARE_NIGHTLY_SOURCE_DIR,
+            force_refresh=False,
+            github_token=self.config.get("GITHUB_TOKEN"),
+            allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
+        )
+        # Validate type before emptiness: a falsy non-list response ("", {},
+        # 0, False, (), set()) must NOT be collapsed into a successful empty
+        # listing. Only ``None`` and ``[]`` are valid empty source results.
+        if contents is None:
+            return []
+        if not isinstance(contents, list):
+            raise ValueError("firmware-nightly source response is not a list")
+        if not contents:
+            return []
+        validated: List[Dict[str, Any]] = []
+        for entry in contents:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"firmware-nightly source response has non-dict entry: {entry!r}"
+                )
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    "firmware-nightly source response has entry with invalid name"
+                )
+            validated.append(entry)
+        return validated
+
+    @staticmethod
+    def parse_nightly_build_id(name: str) -> Optional[str]:
+        """
+        Extract the immutable build-id (e.g. ``2.8.0.f52e2ea``) from a release-level
+        nightly manifest filename (``firmware-<build-id>.json``).
+
+        Returns ``None`` for per-device manifests (``*.mt.json``), firmware zips,
+        helper scripts, and any other non-manifest filename.  Matching is
+        case-insensitive.
+        """
+        if not isinstance(name, str) or not name:
+            return None
+        m = _NIGHTLY_MANIFEST_RX.match(name)
+        return m.group(1).lower() if m else None
+
+    @staticmethod
+    def validate_nightly_build_id(build_id: Any) -> bool:
+        """Return True only when ``build_id`` matches the strict nightly build-id regex.
+
+        Non-writing check used by the retry path to confirm a failed result's
+        release tag is a genuine build-id before re-deriving its canonical path.
+        """
+        return (
+            isinstance(build_id, str)
+            and _NIGHTLY_BUILD_ID_RX.match(build_id) is not None
+        )
+
+    def get_nightly_build_id(self, entries: List[Dict[str, Any]]) -> Optional[str]:
+        """
+        Scan a nightly listing and return the build-id parsed from the single
+        release-level manifest.
+
+        Returns ``None`` when no manifest is present **and the listing is
+        empty** (no candidate published yet). For a nonempty listing with zero
+        manifests, raises ``ValueError`` (malformed generation). For multiple
+        unique build-ids, raises ``ValueError`` (ambiguous generation). Exact
+        duplicate manifest entries (same build-id) are deduplicated and treated
+        as one.
+        """
+        listing = entries or []
+        build_ids: list[str] = []
+        seen: set[str] = set()
+        for entry in listing:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str):
+                continue
+            build_id = self.parse_nightly_build_id(name)
+            if build_id and build_id not in seen:
+                seen.add(build_id)
+                build_ids.append(build_id)
+
+        if not build_ids:
+            if not listing:
+                return None
+            raise ValueError("firmware-nightly listing has no release-level manifest")
+        if len(build_ids) > 1:
+            raise ValueError(
+                f"firmware-nightly listing has multiple unique build-ids: {build_ids}"
+            )
+        return build_ids[0]
+
+    def _ensure_nightly_base_dir(self) -> str:
+        """Create (if absent) and return ``firmware/nightlies/`` after safety checks."""
+        base = self._nightly_root_for_safety()
+        firmware_parent = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        for ancestor in (base, firmware_parent, self.download_dir):
+            if os.path.islink(ancestor):
+                raise ValueError(
+                    f"Refusing firmware-nightly path through symlink ancestor: {ancestor}"
+                )
+        os.makedirs(base, exist_ok=True)
+        return base
+
+    def _nightly_root_for_safety(self) -> str:
+        """Return the nightly root path without creating it (for safety checks)."""
+        return os.path.join(
+            self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_NIGHTLIES_DIR_NAME
+        )
+
+    def _resolve_nightly_target(self, build_id: str, name: str, *, create: bool) -> str:
+        """
+        Unified managed-path resolver for nightly assets.
+
+        Returns the canonical target path
+        ``firmware/nightlies/<build_id>/<safe_name>`` after validating every
+        managed ancestor. In write mode (``create=True``) the nightly root and
+        build directory are created; in non-write mode (``create=False``)
+        nothing is created and missing ancestors are allowed (the caller will
+        detect the missing file separately), but any **unsafe** condition
+        still raises ``ValueError`` so non-write callers never trust a path
+        through a symlink or an escaped build directory.
+
+        Safety rules (enforced in both modes):
+          - ``build_id`` must match the strict nightly build-id regex;
+          - ``DOWNLOAD_DIR``, ``firmware/``, ``firmware/nightlies/`` must not
+            be symlinks;
+          - the build directory must not be a symlink;
+          - the resolved build path must remain under the resolved nightly root
+            (containment);
+          - ``name`` must be a single safe path component (no separators,
+            no ``..``).
+
+        Raises ``ValueError`` on any violation.
+        """
+        if not isinstance(build_id, str) or not _NIGHTLY_BUILD_ID_RX.match(build_id):
+            raise ValueError(f"Unsafe firmware-nightly build_id: {build_id!r}")
+
+        safe_name = self._sanitize_required(name, "nightly asset name")
+        # Reject multi-component names (path traversal).
+        if safe_name != os.path.basename(safe_name) or safe_name in ("", ".", ".."):
+            raise ValueError(
+                f"Unsafe firmware-nightly asset name (multi-component): {name!r}"
+            )
+
+        root = self._nightly_root_for_safety()
+        firmware_parent = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        # Reject any symlink in the managed ancestor chain (download dir,
+        # firmware parent, nightly root). Do not follow — that would allow
+        # escapes.
+        for ancestor in (root, firmware_parent, self.download_dir):
+            if os.path.islink(ancestor):
+                raise ValueError(
+                    f"Refusing firmware-nightly path through symlink ancestor: {ancestor}"
+                )
+
+        build_dir = os.path.join(root, build_id)
+        if os.path.islink(build_dir):
+            raise ValueError(
+                f"Refusing firmware-nightly build path that is a symlink: {build_dir}"
+            )
+
+        # Containment: the realpath of the build dir must stay under the
+        # realpath of the nightly root. In non-write mode the root may not
+        # exist yet — compute realpath of the parent chain that does exist.
+        if create:
+            os.makedirs(root, exist_ok=True)
+            real_root = os.path.realpath(root)
+            os.makedirs(build_dir, exist_ok=True)
+            real_build = os.path.realpath(build_dir)
+        else:
+            # Non-write: validate containment without creating anything.
+            # If the root doesn't exist yet, the build is "missing" (not
+            # unsafe) — return the path so the caller can check existence.
+            if not os.path.isdir(root):
+                return os.path.join(build_dir, safe_name)
+            real_root = os.path.realpath(root)
+            real_build = os.path.realpath(build_dir)
+        if not _is_within_base(real_root, real_build):
+            raise ValueError(
+                f"Refusing firmware-nightly build path outside managed tree: {build_dir}"
+            )
+
+        target_path = os.path.join(build_dir, safe_name)
+        # Reject a symlink at the target itself in non-write mode. In write
+        # mode the caller (download_nightly_asset / _retry_nightly_failure)
+        # is responsible for detecting and removing the symlink before
+        # downloading — checking here would prevent that cleanup.
+        if not create and os.path.islink(target_path):
+            raise ValueError(
+                f"Refusing firmware-nightly target that is a symlink: {target_path}"
+            )
+
+        return target_path
+
+    def _resolve_nightly_dir(self, build_id: str) -> str:
+        """Create (if absent) and safely return ``firmware/nightlies/<build_id>/``."""
+        if not isinstance(build_id, str) or not _NIGHTLY_BUILD_ID_RX.match(build_id):
+            raise ValueError(f"Unsafe firmware-nightly build_id: {build_id!r}")
+        root = self._nightly_root_for_safety()
+        firmware_parent = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        for ancestor in (root, firmware_parent, self.download_dir):
+            if os.path.islink(ancestor):
+                raise ValueError(
+                    f"Refusing firmware-nightly path through symlink ancestor: {ancestor}"
+                )
+        os.makedirs(root, exist_ok=True)
+        real_root = os.path.realpath(root)
+        build_dir = os.path.join(root, build_id)
+        if os.path.islink(build_dir):
+            raise ValueError(
+                f"Refusing firmware-nightly build path that is a symlink: {build_dir}"
+            )
+        real_build = os.path.realpath(build_dir)
+        if not _is_within_base(real_root, real_build):
+            raise ValueError(
+                f"Refusing firmware-nightly build path outside managed tree: {build_dir}"
+            )
+        os.makedirs(build_dir, exist_ok=True)
+        return build_dir
+
+    def get_nightly_target_path(
+        self, build_id: str, name: str, *, create: bool = False
+    ) -> str:
+        """
+        Resolve the storage path for a nightly asset under
+        ``firmware/nightlies/<build_id>/<name>``.  When ``create`` is True the
+        build directory is created after passing path-safety validation;
+        otherwise the path is computed via the shared resolver without
+        creating anything — but symlink/containment/name violations still
+        raise ``ValueError`` so non-write callers never trust an unsafe path.
+        """
+        return self._resolve_nightly_target(build_id, name, create=create)
+
+    def _get_nightly_selection_patterns(self) -> List[str]:
+        """Selection patterns from SELECTED_FIRMWARE_ASSETS (same key as stable/prerelease)."""
+        patterns = self.config.get("SELECTED_FIRMWARE_ASSETS", [])
+        if isinstance(patterns, str):
+            return [patterns]
+        return list(patterns) if isinstance(patterns, list) else []
+
+    def get_selected_nightly_assets(
+        self, entries: List[Dict[str, Any]], build_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Select nightly entries for a single build generation.
+
+        Selection rules (build-aware, deterministic):
+          - ``build_id`` must match the strict nightly build-id regex;
+            otherwise the result is empty.
+          - The release manifest for *this* build (``firmware-<build_id>.json``)
+            is always included exactly once, even when no pattern matches.
+          - Per-device manifests (``*.mt.json``) are always excluded — they
+            are never individually selected for nightly download.
+          - Any versioned asset whose embedded build token differs from
+            ``build_id`` is excluded (stale generation), even if it matches
+            a selection pattern.
+          - ZIP archives from the same build remain eligible under
+            ``SELECTED_FIRMWARE_ASSETS`` / ``EXCLUDE_PATTERNS``.
+          - Build-agnostic helper files (no build token, e.g. ``device-install.sh``)
+            remain eligible under the same patterns.
+          - Results are deduplicated by name and sorted alphabetically.
+        """
+        if not isinstance(build_id, str) or not _NIGHTLY_BUILD_ID_RX.match(build_id):
+            return []
+
+        patterns = self._get_nightly_selection_patterns()
+        exclude_patterns = self._get_exclude_patterns()
+
+        selected: List[Dict[str, Any]] = []
+        seen_names: set[str] = set()
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name or name in seen_names:
+                continue
+            lower = name.lower()
+
+            # Always include exactly the release manifest for this build.
+            if self.parse_nightly_build_id(name) == build_id:
+                selected.append(entry)
+                seen_names.add(name)
+                continue
+
+            # Per-device manifests are never individually selected.
+            if lower.endswith(".mt.json"):
+                continue
+
+            # Reject stale versioned assets from a different build generation.
+            token_match = _NIGHTLY_BUILD_TOKEN_RX.search(name)
+            if token_match and token_match.group(1).lower() != build_id:
+                continue
+
+            if exclude_patterns and self._matches_exclude_patterns(
+                name, exclude_patterns
+            ):
+                continue
+            if matches_selected_patterns(name, patterns):
+                selected.append(entry)
+                seen_names.add(name)
+
+        selected.sort(key=lambda e: str(e.get("name", "")))
+        return selected
+
+    def is_nightly_complete(self, build_id: str) -> bool:
+        """
+        Lightweight on-disk completeness probe: returns True iff the build
+        directory exists and contains at least one non-empty regular file.
+
+        Uses the shared non-writing root/build policy: rejects any symlink
+        in the managed ancestor chain (``DOWNLOAD_DIR``, ``firmware/``,
+        ``firmware/nightlies/``, build dir), rejects containment escapes,
+        and never creates directories. File entries are checked with
+        ``follow_symlinks=False`` so a symlink inside the build dir is
+        never counted as a real asset.
+
+        The strict selected-set check is performed by
+        :meth:`should_process_nightly`, which has the listing in hand.
+        """
+        if not isinstance(build_id, str) or not _NIGHTLY_BUILD_ID_RX.match(build_id):
+            return False
+        root = self._nightly_root_for_safety()
+        firmware_parent = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        for ancestor in (self.download_dir, firmware_parent, root):
+            if os.path.islink(ancestor):
+                return False
+        build_dir = os.path.join(root, build_id)
+        if os.path.islink(build_dir):
+            return False
+        if not os.path.isdir(build_dir):
+            return False
+        try:
+            real_root = os.path.realpath(root)
+            real_build = os.path.realpath(build_dir)
+            if not _is_within_base(real_root, real_build):
+                return False
+        except (OSError, ValueError):
+            return False
+        try:
+            with os.scandir(build_dir) as it:
+                for entry in it:
+                    if entry.name == LATEST_POINTER_NAME:
+                        continue
+                    if entry.is_symlink():
+                        continue
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    try:
+                        if entry.stat(follow_symlinks=False).st_size > 0:
+                            return True
+                    except OSError:
+                        continue
+        except (FileNotFoundError, NotADirectoryError):
+            return False
+        except OSError as exc:
+            logger.debug("Error scanning nightly build dir %s: %s", build_dir, exc)
+            return False
+        return False
+
+    def should_download_nightly(self, build_id: str) -> bool:
+        """
+        Return True when nightlies are enabled AND the supplied build-id differs
+        from the tracked one.  A missing or unreadable tracking file is treated
+        as "download" (identity unknown).
+        """
+        if not self._nightlies_enabled() or not build_id:
+            return False
+        tracking_file = self._nightly_tracking_path()
+        try:
+            data = self.cache_manager.read_json(tracking_file)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return True
+        if not isinstance(data, dict):
+            return True
+        tracked = data.get("build_id")
+        return tracked != build_id
+
+    def should_process_nightly(
+        self, entries: List[Dict[str, Any]], build_id: str
+    ) -> bool:
+        """
+        Decide whether a nightly build should be processed.
+
+        Short-circuits to False when nightlies are disabled or build_id is
+        empty.  Otherwise:
+          - identity changed (build_id differs from tracked)  -> True
+          - identity same, all selected assets fully valid     -> False (skip)
+          - identity same, any selected asset missing/unsafe/
+            corrupt/hash-mismatched/invalid ZIP or manifest    -> True (backfill)
+
+        Same-identity skip uses the shared :meth:`_validate_nightly_asset`
+        against the non-writing managed target path so a tracked build is only
+        skipped when every selected asset passes path/content validation.
+        """
+        if not self._nightlies_enabled() or not build_id:
+            return False
+        tracking_file = self._nightly_tracking_path()
+        tracked: Optional[str] = None
+        try:
+            data = self.cache_manager.read_json(tracking_file)
+            if isinstance(data, dict):
+                tracked = data.get("build_id")
+        except (OSError, ValueError, json.JSONDecodeError):
+            tracked = None
+
+        if tracked != build_id:
+            return True
+
+        # Same identity: backfill if any selected asset is not fully valid.
+        selected = self.get_selected_nightly_assets(entries, build_id)
+        for entry in selected:
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            try:
+                target = self.get_nightly_target_path(build_id, name, create=False)
+            except ValueError:
+                return True
+            ok, _reason = self._validate_nightly_asset(target, name, entry.get("size"))
+            if not ok:
+                return True
+        return False
+
+    def update_nightly_tracking(self, build_id: str) -> bool:
+        """
+        Persist the supplied build-id to the nightly tracking JSON.  Callers must
+        only invoke this after all selected assets have downloaded successfully.
+        """
+        if not build_id:
+            return False
+        data = {
+            "build_id": build_id,
+            "file_type": FILE_TYPE_FIRMWARE_NIGHTLY,
+            "last_updated": self._get_current_iso_timestamp(),
+        }
+        return self.cache_manager.atomic_write_json(self._nightly_tracking_path(), data)
+
+    def _remove_nightly_target_and_hash(self, target_path: str) -> None:
+        """Remove a nightly asset target and its hash metadata without following symlinks.
+
+        A symlink at ``target_path`` (dangling or pointing outside the build
+        directory) is unlinked directly via ``os.unlink`` — the link itself is
+        removed, the external target is never touched or followed. After the
+        symlink (if any) is gone, the shared ``_prepare_for_redownload`` helper
+        removes any remaining regular file plus the current and legacy hash
+        sidecars and orphaned temp files so the next download starts clean.
+
+        This is the nightly-scoped cleanup seam: it does not alter the behavior
+        of ``_prepare_for_redownload`` for non-nightly callers, and it closes
+        the dangling-symlink gap (``_prepare_for_redownload`` alone uses
+        ``os.path.exists`` which follows symlinks and reports False for a
+        dangling link, leaving the link in place).
+        """
+        if os.path.islink(target_path):
+            try:
+                os.unlink(target_path)
+                logger.debug(
+                    "Removed nightly symlink target (link only): %s", target_path
+                )
+            except OSError as exc:
+                logger.warning(
+                    "Could not remove nightly symlink target %s: %s",
+                    target_path,
+                    exc,
+                )
+        _prepare_for_redownload(target_path)
+
+    def _validate_nightly_asset(
+        self, target_path: str, name: str, expected_size: Any
+    ) -> Tuple[bool, str]:
+        """
+        Validate a nightly asset on disk. Shared by the skip, fresh-download,
+        and retry paths so they apply identical rules.
+
+        Rules (all must hold):
+          - target must be a regular file and not a symlink;
+          - when ``expected_size`` is a positive int, the on-disk size must
+            match exactly;
+          - existing integrity / hash verification must pass;
+          - ZIP archives must pass ZIP integrity;
+          - release-level manifests (``firmware-<build>.json``) must be valid
+            JSON objects.
+
+        Returns ``(True, "")`` on success, otherwise ``(False, reason)``. The
+        caller is responsible for removing the target and any stored hash when
+        validation fails.
+        """
+        if os.path.islink(target_path) or not os.path.isfile(target_path):
+            return False, "target is not a regular file (symlink or missing)"
+
+        try:
+            actual_size = os.path.getsize(target_path)
+        except OSError as exc:
+            return False, f"could not stat target: {exc}"
+
+        if isinstance(expected_size, int) and expected_size > 0:
+            if actual_size != expected_size:
+                return False, (
+                    f"size mismatch: expected {expected_size}, got {actual_size}"
+                )
+
+        lower = name.lower()
+
+        if lower.endswith(".zip"):
+            if not is_zip_intact(target_path):
+                return False, "ZIP integrity check failed"
+
+        if self.parse_nightly_build_id(name) is not None:
+            try:
+                with open(target_path, "r", encoding="utf-8") as manifest_file:
+                    data = json.load(manifest_file)
+                if not isinstance(data, dict):
+                    return False, "release manifest is not a JSON object"
+            except (json.JSONDecodeError, OSError, ValueError) as exc:
+                return False, f"release manifest is not valid JSON: {exc}"
+
+        if not verify_file_integrity(target_path):
+            return False, "hash/integrity verification failed"
+
+        return True, ""
+
+    def download_nightly_asset(
+        self, entry: Dict[str, Any], build_id: str
+    ) -> DownloadResult:
+        """
+        Download a single firmware-nightly entry into the build's directory and
+        return a structured DownloadResult.
+
+        Path-safety, size, ZIP, manifest-JSON, and hash integrity are all
+        validated through :meth:`_validate_nightly_asset`. On any validation
+        failure the target and its stored hash are removed and the result is
+        marked non-retryable (``ERROR_TYPE_VALIDATION``). Network/download
+        failures remain retryable. The executable bit for ``*.sh`` payloads is
+        applied only after validation succeeds.
+        """
+        name = str(entry.get("name") or "")
+        url = entry.get("download_url") or entry.get("browser_download_url")
+        size = entry.get("size")
+        nightly_root = os.path.join(
+            self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_NIGHTLIES_DIR_NAME
+        )
+        if not name or not url:
+            return self.create_download_result(
+                success=False,
+                release_tag=build_id,
+                file_path=nightly_root,
+                error_message="nightly entry missing name or download_url",
+                download_url=str(url) if url else None,
+                file_size=size,
+                file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+                is_retryable=False,
+                error_type=ERROR_TYPE_VALIDATION,
+            )
+
+        try:
+            target_path = self.get_nightly_target_path(build_id, name, create=True)
+        except ValueError as exc:
+            logger.error("Unsafe firmware-nightly path for %s: %s", name, exc)
+            return self.create_download_result(
+                success=False,
+                release_tag=build_id,
+                file_path=nightly_root,
+                error_message=f"unsafe nightly path: {exc}",
+                download_url=str(url),
+                file_size=size,
+                file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+                is_retryable=False,
+                error_type=ERROR_TYPE_VALIDATION,
+            )
+
+        # Reject any pre-existing symlink target before touching it. Unlink the
+        # link directly (never following it) so a dangling or escaping symlink is
+        # gone before any download could write through it.
+        if os.path.islink(target_path):
+            self._remove_nightly_target_and_hash(target_path)
+            return self.create_download_result(
+                success=False,
+                release_tag=build_id,
+                file_path=target_path,
+                error_message="nightly target is a symlink; refused and removed",
+                download_url=str(url),
+                file_size=size,
+                file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+                is_retryable=False,
+                error_type=ERROR_TYPE_VALIDATION,
+            )
+
+        # Skip if already present and fully valid.
+        if os.path.exists(target_path):
+            ok, reason = self._validate_nightly_asset(target_path, name, size)
+            if ok:
+                logger.debug("Nightly asset already present and valid: %s", name)
+                return self.create_download_result(
+                    success=True,
+                    release_tag=build_id,
+                    file_path=target_path,
+                    download_url=str(url),
+                    file_size=size,
+                    file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+                    was_skipped=True,
+                )
+            logger.warning(
+                "Existing nightly asset %s failed validation (%s); re-downloading",
+                name,
+                reason,
+            )
+            self._remove_nightly_target_and_hash(target_path)
+
+        try:
+            downloaded = download_file_with_retry(str(url), target_path)
+        except (requests.RequestException, OSError, ValueError) as exc:
+            if isinstance(exc, requests.RequestException):
+                error_type = ERROR_TYPE_NETWORK
+                is_retryable = True
+            elif isinstance(exc, OSError):
+                error_type = ERROR_TYPE_FILESYSTEM
+                is_retryable = False
+            else:
+                error_type = ERROR_TYPE_VALIDATION
+                is_retryable = False
+            return self.create_download_result(
+                success=False,
+                release_tag=build_id,
+                file_path=target_path,
+                error_message=str(exc),
+                download_url=str(url),
+                file_size=size,
+                file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+                is_retryable=is_retryable,
+                error_type=error_type,
+            )
+
+        if not downloaded:
+            logger.error("Download failed for nightly asset %s", name)
+            return self.create_download_result(
+                success=False,
+                release_tag=build_id,
+                file_path=target_path,
+                error_message="download_file_with_retry returned False",
+                download_url=str(url),
+                file_size=size,
+                file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+                is_retryable=True,
+                error_type=ERROR_TYPE_NETWORK,
+            )
+
+        # Deterministic post-download validation. A failure here means the
+        # response itself was wrong; remove the bad file + stored hash and
+        # treat it as non-retryable so a retry cannot silently replace it.
+        ok, reason = self._validate_nightly_asset(target_path, name, size)
+        if not ok:
+            self._remove_nightly_target_and_hash(target_path)
+            logger.error(
+                "Nightly asset %s failed post-download validation: %s", name, reason
+            )
+            return self.create_download_result(
+                success=False,
+                release_tag=build_id,
+                file_path=target_path,
+                error_message=f"nightly validation failed: {reason}",
+                download_url=str(url),
+                file_size=size,
+                file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+                is_retryable=False,
+                error_type=ERROR_TYPE_VALIDATION,
+            )
+
+        # Executable bit only after the file has been validated.
+        if name.lower().endswith(".sh") and os.name != "nt":
+            try:
+                os.chmod(target_path, EXECUTABLE_PERMISSIONS)
+            except OSError:
+                pass
+        logger.info("Downloaded nightly asset %s", name)
+        return self.create_download_result(
+            success=True,
+            release_tag=build_id,
+            file_path=target_path,
+            download_url=str(url),
+            file_size=size,
+            file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+        )
+
+    def update_latest_pointer_for_nightly(self, build_id: str) -> bool:
+        """Best-effort update of the ``latest`` pointer inside ``nightlies/``."""
+        if not coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
+        ):
+            return False
+        try:
+            parent = self._ensure_nightly_base_dir()
+            return update_latest_pointer(parent, build_id, LATEST_POINTER_NAME)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug("Skipping firmware-nightly latest pointer: %s", exc)
+            return False
+
+    def cleanup_superseded_nightlies(
+        self, current_build_id: Optional[str] = None
+    ) -> int:
+        """
+        Remove old nightly build directories under ``firmware/nightlies/``,
+        keeping an exact maximum of ``FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP``
+        (floor 1). The current build always occupies one slot.
+
+        Selection: at most ``keep_limit`` managed build directories survive,
+        selected by deterministic directory mtime (newest first) with a stable
+        name tiebreak — never hash chronology. When ``current_build_id`` is
+        supplied it reserves one slot; at most ``keep_limit - 1`` other
+        directories are retained alongside it.
+
+        Safety rules:
+          - never follow the ``nightlies/`` root if it is a symlink;
+          - never delete the ``latest`` pointer or any non-build-id directory;
+          - never follow per-entry symlinks (uses ``_safe_rmtree``);
+          - never delete ``current_build_id``;
+          - remove an invalid managed ``latest`` symlink via
+            ``remove_latest_pointer`` when its target is gone.
+
+        Returns the number of build directories removed.
+        """
+        base = os.path.join(
+            self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_NIGHTLIES_DIR_NAME
+        )
+        firmware_parent = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        # Validate the full non-writing managed ancestor chain before any
+        # scan/delete/latest mutation. Reject any symlink, containment
+        # ambiguity, or missing unsafe root. Create nothing; return 0 and
+        # do not alter latest.
+        for ancestor in (self.download_dir, firmware_parent, base):
+            if os.path.islink(ancestor):
+                return 0
+        if not os.path.isdir(base):
+            return 0
+        try:
+            real_download = os.path.realpath(self.download_dir)
+            real_base = os.path.realpath(base)
+            if not _is_within_base(real_download, real_base):
+                return 0
+        except (OSError, ValueError):
+            return 0
+
+        keep_limit = self.config.get(
+            "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP",
+            DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
+        )
+        try:
+            keep_limit = int(keep_limit)
+        except (TypeError, ValueError):
+            keep_limit = DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP
+        if keep_limit < 1:
+            keep_limit = 1
+
+        # Collect managed build directories with deterministic (mtime, name)
+        # ordering metadata. Non-build directories and symlinks are preserved.
+        candidates: List[Tuple[float, str]] = []
+        try:
+            with os.scandir(base) as it:
+                for entry in it:
+                    if entry.is_symlink():
+                        continue
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                    if not _NIGHTLY_BUILD_ID_RX.match(entry.name):
+                        continue
+                    try:
+                        mtime = entry.stat().st_mtime
+                    except OSError:
+                        mtime = 0.0
+                    candidates.append((mtime, entry.name))
+        except (FileNotFoundError, NotADirectoryError):
+            return 0
+        except OSError as exc:
+            logger.debug("Error scanning nightlies dir %s: %s", base, exc)
+            return 0
+
+        # Sort newest mtime first; stable name tiebreak (descending) so the
+        # selection is deterministic regardless of hash chronology.
+        candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+        current = (
+            current_build_id
+            if isinstance(current_build_id, str)
+            and _NIGHTLY_BUILD_ID_RX.match(current_build_id)
+            else None
+        )
+
+        other_budget = keep_limit - 1 if current else keep_limit
+        other_budget = max(0, other_budget)
+
+        keep_names: set[str] = set()
+        if current:
+            keep_names.add(current)
+        kept_others = 0
+        for _mtime, name in candidates:
+            if name == current:
+                continue
+            if kept_others < other_budget:
+                keep_names.add(name)
+                kept_others += 1
+
+        removed = 0
+        for _mtime, name in candidates:
+            if name in keep_names:
+                continue
+            path = os.path.join(base, name)
+            if _safe_rmtree(path, base, name):
+                removed += 1
+                logger.info("Removed old nightly build: %s", name)
+
+        # Always validate the managed latest pointer against the retained set,
+        # even when zero directories were removed or no candidates existed.
+        # Removes unsafe/dangling/unretained symlinks; preserves a valid
+        # retained target and any non-symlink latest entry. Never followed.
+        retained = {name for _mtime, name in candidates if name in keep_names}
+        self._cleanup_invalid_nightly_latest_pointer(base, retained)
+
+        return removed
+
+    def _cleanup_invalid_nightly_latest_pointer(
+        self, base_dir: str, retained_names: set[str]
+    ) -> None:
+        """Remove the managed ``latest`` symlink when its target is missing or unsafe.
+
+        A non-symlink ``latest`` entry is always preserved. A symlink is removed
+        when its target is unreadable, dangling (target directory absent), or not
+        in the retained set. The link itself is removed; external targets are
+        never followed.
+        """
+        link_path = os.path.join(base_dir, LATEST_POINTER_NAME)
+        if not os.path.islink(link_path):
+            return
+        try:
+            target = os.readlink(link_path)
+        except OSError:
+            remove_latest_pointer(base_dir)
+            return
+        if target not in retained_names:
+            remove_latest_pointer(base_dir)
+            return
+        # Target is retained — still confirm the directory actually exists so a
+        # dangling symlink to a deleted-but-retained name is repaired.
+        if not os.path.isdir(os.path.join(base_dir, target)):
+            remove_latest_pointer(base_dir)
+
+    def repair_nightly_executable_metadata(
+        self, build_id: str, entries: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Best-effort repair of the executable bit on ``*.sh`` nightly assets
+        that are already present and fully valid. Does NOT redownload — the
+        file is only chmodded when it passes content validation. Invalid or
+        missing assets are left untouched. Windows is unchanged.
+
+        Only assets in the build-aware selected set (same generation as
+        ``build_id``) are examined, so stale or unmanaged files are never
+        touched.
+
+        Returns the number of assets repaired.
+        """
+        if os.name == "nt":
+            return 0
+        selected = self.get_selected_nightly_assets(entries, build_id)
+        repaired = 0
+        for entry in selected:
+            name = entry.get("name")
+            if not isinstance(name, str) or not name.lower().endswith(".sh"):
+                continue
+            try:
+                target = self.get_nightly_target_path(build_id, name, create=False)
+            except ValueError:
+                continue
+            ok, _reason = self._validate_nightly_asset(target, name, entry.get("size"))
+            if not ok:
+                continue
+            try:
+                current_mode = os.stat(target).st_mode
+                if not (current_mode & 0o111):
+                    os.chmod(target, EXECUTABLE_PERMISSIONS)
+                    repaired += 1
+            except OSError:
+                continue
+        return repaired
+
+    def recreate_latest_pointer_for_nightly(self, build_id: str) -> bool:
+        """
+        Recreate the ``latest`` pointer for a build when it is missing or
+        points to a different build. Preserves a non-symlink ``latest`` entry.
+
+        Returns True when the pointer was created or already correct.
+        """
+        if not coerce_bool(
+            self.config.get("CREATE_LATEST_SYMLINKS", DEFAULT_CREATE_LATEST_SYMLINKS),
+            DEFAULT_CREATE_LATEST_SYMLINKS,
+        ):
+            return False
+        try:
+            parent = self._ensure_nightly_base_dir()
+        except (OSError, ValueError) as exc:
+            logger.debug("Skipping firmware-nightly latest pointer repair: %s", exc)
+            return False
+        link_path = os.path.join(parent, LATEST_POINTER_NAME)
+        if os.path.islink(link_path):
+            try:
+                target = os.readlink(link_path)
+            except OSError:
+                remove_latest_pointer(parent)
+                target = None
+            if target == build_id:
+                return True
+            remove_latest_pointer(parent)
+        elif os.path.exists(link_path):
+            # Non-symlink latest: preserve, do not overwrite.
+            return False
+        try:
+            return update_latest_pointer(parent, build_id, LATEST_POINTER_NAME)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug("Failed to recreate firmware-nightly latest pointer: %s", exc)
             return False

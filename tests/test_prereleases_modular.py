@@ -20,6 +20,8 @@ from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 from fetchtastic.download.version import VersionManager
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 @pytest.fixture
 def test_config():
@@ -235,8 +237,14 @@ def test_cache_manager_commit_timestamp(cache_manager):
 
 
 def test_prerelease_history_build_simplified_history(prerelease_manager):
-    """Test building simplified prerelease history."""
-    # Sample commit data that mimics real GitHub API response
+    """Build simplified prerelease history including a real deletion event.
+
+    Stable 2.7.13 admits prerelease bases strictly newer than it (2.7.14).
+    Both the add commit for 2.7.14 and the delete commit for an admitted
+    2.7.14 base are recorded; deletion of a non-admitted base (2.7.13) is
+    rejected. ``seen_shas`` is asserted to contain every scanned SHA.
+    """
+    # Sample commit data that mimics real GitHub API response (newest first).
     sample_commits = [
         {
             "sha": "abc123def456",
@@ -248,7 +256,7 @@ def test_prerelease_history_build_simplified_history(prerelease_manager):
         {
             "sha": "def456ghi789",
             "commit": {
-                "message": "Delete firmware-2.7.13.ffb168b directory",
+                "message": "Delete firmware-2.7.14.1c0c6b2 directory",
                 "committer": {"date": "2025-01-03T10:00:00Z"},
             },
         },
@@ -261,13 +269,20 @@ def test_prerelease_history_build_simplified_history(prerelease_manager):
         },
     ]
 
-    # Test with expected version "2.7.14"
+    # Stable 2.7.13 admits prerelease bases strictly newer (2.7.14); the
+    # 2.7.14 add and the 2.7.14 delete are both admitted and recorded.
     result, seen_shas = prerelease_manager.build_simplified_prerelease_history(
-        "2.7.14", sample_commits
+        "2.7.13", sample_commits
     )
 
-    # Should have 2 entries for version 2.7.14 (one added, one deleted)
+    # Every scanned SHA must be observable via seen_shas.
+    assert seen_shas == {"abc123def456", "def456ghi789", "ghi789jkl012"}
+
+    # Two distinct directories, one active and one deleted.
     assert len(result) == 2
+    statuses = {e["directory"]: e["status"] for e in result}
+    assert statuses.get("firmware-2.7.14.e959000") == "active"
+    assert statuses.get("firmware-2.7.14.1c0c6b2") == "deleted"
 
     # Check that entries have the expected structure
     for entry in result:
@@ -469,7 +484,7 @@ def test_find_latest_remote_prerelease_dir_prefers_commit_history(
         ),
     ):
         result = prerelease_manager.find_latest_remote_prerelease_dir(
-            "2.7.17",
+            "2.7.16",
             cache_manager=cache_manager,
             github_token="token",
             allow_env_token=False,
@@ -502,3 +517,109 @@ def test_find_latest_remote_prerelease_dir_returns_none_when_no_match(
         )
 
     assert result is None
+
+
+@pytest.mark.unit
+@pytest.mark.core_downloads
+class TestPrereleaseBaseAdmission:
+    """Prerelease admission across higher minor/major bases.
+
+    Policy: a prerelease base is admitted iff its parsed release is strictly
+    newer than the latest stable release. Stable 2.7.26 therefore admits
+    2.7.27.<sha>, 2.8.0.<sha>, and 3.0.0.<sha> while rejecting <= 2.7.26.
+    `calculate_expected_prerelease_version` (legacy next-patch normalization)
+    remains unchanged and is asserted for regression.
+    """
+
+    STABLE_TAG = "v2.7.26"
+    STABLE = "2.7.26"
+    EXPECTED_NEXT_PATCH = "2.7.27"
+
+    def test_scan_admits_next_patch_and_higher_minor_base(
+        self, prerelease_manager, version_manager
+    ):
+        """Stable 2.7.26 admits next-patch 2.7.27.<sha> and higher-minor 2.8.0.<sha>."""
+        # Legacy next-patch normalization is unchanged.
+        assert (
+            version_manager.calculate_expected_prerelease_version(self.STABLE_TAG)
+            == self.EXPECTED_NEXT_PATCH
+        )
+
+        dirs = [
+            "firmware-2.7.27.abc123",
+            "firmware-2.8.0.abcdef1",
+            "firmware-2.7.26.deadbee",
+            "firmware-2.7.25.oldhash",
+        ]
+        admitted = prerelease_manager.scan_prerelease_directories(dirs, self.STABLE)
+
+        assert "2.7.27.abc123" in admitted
+        assert "2.8.0.abcdef1" in admitted
+        assert "2.7.26.deadbee" not in admitted
+        assert "2.7.25.oldhash" not in admitted
+
+    def test_scan_admits_multiple_newer_bases(self, prerelease_manager):
+        """Admission scans across next-patch, higher minor, and higher major bases."""
+        dirs = [
+            "firmware-2.7.27.aaaaaa",
+            "firmware-2.8.0.bbbbbb",
+            "firmware-3.0.0.cccccc",
+        ]
+        admitted = prerelease_manager.scan_prerelease_directories(dirs, self.STABLE)
+
+        assert "2.7.27.aaaaaa" in admitted
+        assert "2.8.0.bbbbbb" in admitted
+        assert "3.0.0.cccccc" in admitted
+
+    def test_build_history_preserves_add_delete_across_bases(self, prerelease_manager):
+        """Add/delete history recorded for next-patch and higher-minor bases; <= stable dropped."""
+        # Commits in GitHub API order (newest first); reversed internally to oldest-first.
+        commits = [
+            {
+                "sha": "sha0005",
+                "commit": {
+                    "message": "Delete firmware-2.8.0.abcdef1 directory",
+                    "committer": {"date": "2025-01-05T00:00:00Z"},
+                },
+            },
+            {
+                "sha": "sha0004",
+                "commit": {
+                    "message": "2.7.26.deadbee meshtastic/firmware@deadbee",
+                    "committer": {"date": "2025-01-04T00:00:00Z"},
+                },
+            },
+            {
+                "sha": "sha0003",
+                "commit": {
+                    "message": "Delete firmware-2.7.27.aaa0001 directory",
+                    "committer": {"date": "2025-01-03T00:00:00Z"},
+                },
+            },
+            {
+                "sha": "sha0002",
+                "commit": {
+                    "message": "2.8.0.abcdef1 meshtastic/firmware@abcdef1",
+                    "committer": {"date": "2025-01-02T00:00:00Z"},
+                },
+            },
+            {
+                "sha": "sha0001",
+                "commit": {
+                    "message": "2.7.27.aaa0001 meshtastic/firmware@aaa0001",
+                    "committer": {"date": "2025-01-01T00:00:00Z"},
+                },
+            },
+        ]
+        entries, _seen = prerelease_manager.build_simplified_prerelease_history(
+            self.STABLE, commits
+        )
+
+        directories = {e["directory"] for e in entries}
+        assert "firmware-2.7.27.aaa0001" in directories
+        assert "firmware-2.8.0.abcdef1" in directories
+        assert "firmware-2.7.26.deadbee" not in directories
+
+        eight = [e for e in entries if e["directory"] == "firmware-2.8.0.abcdef1"]
+        assert len(eight) == 1
+        assert eight[0]["status"] == "deleted"

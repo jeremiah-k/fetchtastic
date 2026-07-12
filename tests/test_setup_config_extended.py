@@ -247,6 +247,7 @@ def test_setup_downloads_firmware_only(mocker, capsys):
         side_effect=[
             "f",  # Choose firmware only
             "n",  # Check firmware prereleases
+            "n",  # Check firmware nightlies
             "n",  # Add channel suffixes
         ],
     )
@@ -275,7 +276,8 @@ def test_setup_downloads_both_selected(mocker, capsys):
         "builtins.input",
         side_effect=[
             "b",
-            "n",
+            "n",  # Check firmware prereleases
+            "n",  # Check firmware nightlies
             "2",
             "y",
             "n",
@@ -560,6 +562,7 @@ def test_setup_downloads_partial_run_firmware_keep_existing_skips_menu(mocker):
             "y",  # Download firmware releases
             "n",  # Don't rerun menu
             "n",  # Disable firmware prereleases
+            "n",  # Disable firmware nightlies
             "n",  # Add channel suffixes
         ],
     )
@@ -594,6 +597,7 @@ def test_setup_downloads_partial_run_firmware_channel_suffix_config(mocker):
             "y",  # Download firmware releases
             "n",  # Don't rerun menu
             "n",  # Disable firmware prereleases
+            "n",  # Disable firmware nightlies
             "n",  # Disable channel suffixes
         ],
     )
@@ -1202,3 +1206,142 @@ def test_prompt_for_migration(mocker):
     result = setup_config.prompt_for_migration()
 
     assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Firmware nightly (rolling) opt-in — backward-compatibility guard tests
+#
+# These tests guard the CHECK_FIRMWARE_NIGHTLIES and
+# FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP keys in the setup flow.  They verify
+# that:
+#   - Partial runs not targeting firmware preserve an existing nightly value
+#   - Existing configs without nightly keys remain unaffected after load
+#   - The nightly keep-count is never prompted separately (defaults silently)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_partial_non_firmware_run_preserves_existing_nightly_value(mocker):
+    """A partial run for a non-firmware section must not change CHECK_FIRMWARE_NIGHTLIES."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": False,
+        "SELECTED_APK_ASSETS": ["meshtastic.apk"],
+        "CHECK_APK_PRERELEASES": False,
+        # Simulate a config where the user previously opted into nightlies
+        "CHECK_FIRMWARE_NIGHTLIES": True,
+        "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 3,
+    }
+
+    mocker.patch(
+        "builtins.input",
+        side_effect=[
+            "y",  # Keep downloading client app releases
+            "n",  # Skip re-running menu (existing selection kept)
+            "2",  # Versions to keep
+            "n",  # Disable prereleases
+            "n",  # No channel suffixes
+        ],
+    )
+
+    result_config, _save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=True, wants=lambda section: section == "app"
+    )
+
+    # Firmware section was not touched; nightly value must be preserved
+    assert save_firmware is False
+    assert result_config.get("CHECK_FIRMWARE_NIGHTLIES") is True
+    assert result_config.get("FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP") == 3
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_existing_config_without_nightly_keys_remains_unaffected(mocker, tmp_path):
+    """load_config must not silently enable nightlies for existing configs lacking the keys."""
+    config_path = tmp_path / "fetchtastic.yaml"
+    old_config_path = tmp_path / "old_fetchtastic.yaml"
+
+    existing_config_data = {
+        "BASE_DIR": str(tmp_path / "downloads"),
+        "SAVE_FIRMWARE": True,
+        "SAVE_APKS": True,
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": False,
+    }
+    with open(config_path, "w") as f:
+        yaml.safe_dump(existing_config_data, f)
+
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
+
+    config = setup_config.load_config()
+
+    assert config is not None
+    # Nightly keys must not be silently enabled (True) on upgrade.
+    # They may be absent (pre-feature) or explicitly False (post-feature),
+    # but must never be True for an existing config that never opted in.
+    nightly_value = config.get("CHECK_FIRMWARE_NIGHTLIES", False)
+    assert (
+        nightly_value is not True
+    ), f"Existing config must not silently enable nightlies; got: {nightly_value}"
+
+    nightly_keep = config.get("FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP", 1)
+    assert (
+        nightly_keep != 0
+    ), f"Nightly keep-count must floor at 1, not 0; got: {nightly_keep}"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_nightly_keep_count_not_prompted_separately(mocker):
+    """Enabling nightlies must not trigger a separate 'how many nightly versions' prompt."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config: dict = {}
+    captured: list[str] = []
+
+    def fake_input(prompt: str = "", **_kwargs: object) -> str:
+        captured.append(prompt)
+        lowered = prompt.lower()
+
+        if "client app assets, firmware, both, or none" in lowered:
+            return "f"
+        if "pre-release firmware" in lowered:
+            return "n"
+        if "nightly" in lowered:
+            return "y"  # opt into nightlies
+        if "suffix" in lowered:
+            return "n"
+        if "how many" in lowered and "version" in lowered:
+            return "2"
+        return "n"
+
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": ["rak4631-"]},
+    )
+
+    result_config, _save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_firmware is True
+
+    # Keep-count must default silently to 1.
+    assert "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP" in result_config
+    assert result_config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 1
+
+    # Guard: no separate "how many nightly versions to keep" prompt.
+    # The keep-count must default silently (matching the snapshot precedent
+    # which does not prompt for APP_SNAPSHOT_VERSIONS_TO_KEEP).
+    nightly_keep_prompts = [
+        p for p in captured if "nightly" in p.lower() and "how many" in p.lower()
+    ]
+    assert nightly_keep_prompts == [], (
+        "Nightly keep-count should default silently, not via a separate prompt; "
+        f"got: {nightly_keep_prompts}"
+    )

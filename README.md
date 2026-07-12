@@ -107,7 +107,8 @@ Downloads are organized in a clean structure:
 │   ├── v2.3.2/
 │   ├── v2.3.1/
 │   ├── repo-dls/      # Repository browser downloads
-│   └── prerelease/    # Prerelease firmware (optional)
+│   ├── prerelease/    # Prerelease firmware (optional)
+│   └── nightlies/     # Rolling experimental firmware nightlies (opt-in)
 ```
 
 APKs and desktop installers intentionally share `app/<version>/` because they are treated as client app assets from the same release pipeline.

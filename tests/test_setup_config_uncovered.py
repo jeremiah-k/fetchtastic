@@ -173,6 +173,7 @@ def test_setup_downloads_full_run_multiple_selection(mocker):
             "y",
             "y",
             "y",
+            "n",  # No firmware nightlies
             "n",
             "n",
             "n",
@@ -1254,6 +1255,7 @@ def test_run_setup_windows_cmd_environment(
                 "n",  # Don't create menu shortcuts
                 "b",  # Both client apps and firmware
                 "n",  # No firmware prereleases
+                "n",  # No firmware nightlies
                 "n",  # No client app prereleases
                 "n",  # No app snapshots
                 "n",  # No channel suffixes
@@ -1598,6 +1600,7 @@ def test_run_setup_version_package_not_found(
             "",  # Use default base directory
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
+            "n",  # No firmware nightlies
             "n",  # No client app prereleases
             "n",  # No app snapshots
             "n",  # No channel suffixes
@@ -1683,6 +1686,7 @@ def test_run_setup_version_other_error(
             "",  # Use default base directory
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
+            "n",  # No firmware nightlies
             "n",  # No client app prereleases
             "n",  # No app snapshots
             "n",  # No channel suffixes
@@ -1769,6 +1773,7 @@ def test_run_setup_config_dir_creation_error(
             "",  # Use default base directory
             "b",  # Both client apps and firmware
             "n",  # No firmware prereleases
+            "n",  # No firmware nightlies
             "n",  # No client app prereleases
             "n",  # No app snapshots
             "n",  # No channel suffixes

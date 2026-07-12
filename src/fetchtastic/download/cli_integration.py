@@ -22,6 +22,7 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
     CLIENT_APP_FILE_TYPES,
+    DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES,
     DEFAULT_NOTIFY_ON_SNAPSHOTS,
     DESKTOP_FILE_TYPES,
     FILE_TYPE_ANDROID,
@@ -39,6 +40,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_FILE_TYPES,
     SNAPSHOT_VERSION_CODE_PATTERN,
+    NightlyRunState,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
@@ -437,7 +439,39 @@ class DownloadCLIIntegration:
             else []
         )
 
-        # Actual download count includes snapshots for local reporting.
+        # Firmware nightly builds — reported only when the transaction
+        # finalized WITH an actual download (at least one asset had
+        # ``was_skipped=False``). ``MAINTENANCE_ONLY`` (tracking-only
+        # reconciliation / already-complete maintenance) and ``CHECK_FAILED``
+        # never surface as a download. NTFY inclusion is gated by
+        # NOTIFY_ON_FIRMWARE_NIGHTLIES (default False).
+        downloaded_firmware_nightlies: list[str] = []
+        if (
+            self.orchestrator
+            and self.orchestrator.nightly_run_state
+            == NightlyRunState.FINALIZED_WITH_DOWNLOAD
+            and self.orchestrator.latest_firmware_nightly_build_id
+        ):
+            downloaded_firmware_nightlies.append(
+                self.orchestrator.latest_firmware_nightly_build_id
+            )
+
+        notified_firmware_nightlies = (
+            downloaded_firmware_nightlies
+            if (
+                self.config
+                and coerce_bool(
+                    self.config.get(
+                        "NOTIFY_ON_FIRMWARE_NIGHTLIES",
+                        DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES,
+                    )
+                )
+            )
+            else []
+        )
+
+        # Actual download count includes snapshots and firmware nightlies for
+        # local reporting.
         downloaded_count = (
             len(downloaded_firmwares)
             + len(downloaded_apks)
@@ -446,12 +480,15 @@ class DownloadCLIIntegration:
             + len(downloaded_apk_prereleases)
             + len(downloaded_desktop_prereleases)
             + len(downloaded_app_snapshots)
+            + len(downloaded_firmware_nightlies)
         )
-        # Notifiable count excludes snapshots when NOTIFY_ON_SNAPSHOTS is False.
+        # Notifiable count excludes snapshots/nightlies when their gates are False.
         notifiable_count = (
             downloaded_count
             - len(downloaded_app_snapshots)
             + len(notified_app_snapshots)
+            - len(downloaded_firmware_nightlies)
+            + len(notified_firmware_nightlies)
         )
         if downloaded_count > 0:
             log.info(f"Downloaded {downloaded_count} new versions")
@@ -495,6 +532,12 @@ class DownloadCLIIntegration:
                 ", ".join(downloaded_app_snapshots),
             )
 
+        if downloaded_firmware_nightlies:
+            log.info(
+                "Downloaded firmware nightly builds: %s",
+                ", ".join(downloaded_firmware_nightlies),
+            )
+
         if failed_downloads:
             log.info(f"{len(failed_downloads)} downloads failed:")
             for failure in failed_downloads:
@@ -508,13 +551,49 @@ class DownloadCLIIntegration:
                     f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                 )
 
-        if downloaded_count == 0 and not failed_downloads:
+        # A nightly transaction that was attempted but not finalized, or whose
+        # source check failed, must suppress the generic up-to-date log/NTFY —
+        # these are distinct failure states, not "up to date". MAINTENANCE_ONLY
+        # (already-complete reconciliation) is NOT incomplete and allows the
+        # up-to-date message when nothing else was downloaded.
+        nightly_incomplete = (
+            self.orchestrator is not None
+            and self.orchestrator.nightly_run_state
+            in (
+                NightlyRunState.ATTEMPTED_INCOMPLETE,
+                NightlyRunState.CHECK_FAILED,
+            )
+        )
+
+        if downloaded_count == 0 and not failed_downloads and not nightly_incomplete:
             log.info(
                 "All assets are up to date.\n%s",
                 time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             )
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
+        elif (
+            downloaded_count == 0
+            and not failed_downloads
+            and nightly_incomplete
+            and self.orchestrator is not None
+        ):
+            # Zero downloads, no asset-level failures, but the nightly
+            # transaction itself is incomplete or the source check failed.
+            # Emit a local summary so the user sees the distinct state
+            # instead of silence. Up-to-date is excluded; the existing
+            # all-attempted-failed branch above handles asset failures.
+            nightly_state = self.orchestrator.nightly_run_state
+            if nightly_state == NightlyRunState.CHECK_FAILED:
+                log.info(
+                    "Firmware nightly check failed; see logs for details. "
+                    "No new versions downloaded."
+                )
+            else:
+                log.info(
+                    "Firmware nightly build incomplete; tracking, latest "
+                    "pointer, and cleanup deferred. No new versions downloaded."
+                )
 
         new_versions_available = bool(
             (new_firmware_versions or [])
@@ -534,6 +613,7 @@ class DownloadCLIIntegration:
                     downloaded_desktop,
                     downloaded_desktop_prereleases,
                     downloaded_app_snapshots=notified_app_snapshots,
+                    downloaded_firmware_nightlies=notified_firmware_nightlies,
                 )
             elif downloaded_count > 0:
                 # Downloads occurred (e.g. snapshot-only with notifications
@@ -546,7 +626,11 @@ class DownloadCLIIntegration:
                     self.orchestrator.available_new_apk_versions,
                     downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
                 )
-            elif not failed_downloads and not new_versions_available:
+            elif (
+                not failed_downloads
+                and not new_versions_available
+                and not nightly_incomplete
+            ):
                 send_up_to_date_notification(self.config)
 
         summary = get_api_request_summary()

@@ -26,6 +26,7 @@ from fetchtastic.client_release_discovery import (
 from fetchtastic.constants import (
     APKS_DIR_NAME,
     DEFAULT_APP_VERSIONS_TO_KEEP,
+    DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
     DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_KEEP_LAST_BETA,
@@ -33,6 +34,7 @@ from fetchtastic.constants import (
     ERROR_TYPE_RETRY_FAILURE,
     ERROR_TYPE_REVOKED_RELEASE,
     ERROR_TYPE_UNKNOWN,
+    EXECUTABLE_PERMISSIONS,
     FILE_TYPE_APP_SNAPSHOT,
     FILE_TYPE_CLIENT_APP,
     FILE_TYPE_CLIENT_APP_PRERELEASE,
@@ -40,6 +42,7 @@ from fetchtastic.constants import (
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_NIGHTLY,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
@@ -48,10 +51,12 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_MANIFEST_EXTENSION,
     FIRMWARE_PRERELEASES_DIR_NAME,
+    LATEST_FIRMWARE_NIGHTLY_JSON_FILE,
     LATEST_POINTER_NAME,
     MAX_RETRY_DELAY,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
+    NightlyRunState,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import is_termux
@@ -184,6 +189,20 @@ class DownloadOrchestrator:
         # Single-run only: cleared after _log_prerelease_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
         self.latest_available_firmware_prerelease_dir: Optional[str] = None
+        # Run-scoped nightly build-id: set after successful nightly processing.
+        self.latest_firmware_nightly_build_id: Optional[str] = None
+        # Run-scoped nightly transaction state. Reported outcomes are derived
+        # from this rather than from per-asset results so only a fully
+        # finalized transaction (all assets valid AND tracking persisted) is
+        # surfaced as a download; attempted-but-incomplete transactions
+        # suppress the generic up-to-date log/NTFY.
+        self.nightly_run_state: NightlyRunState = NightlyRunState.UNCHECKED
+        # Run-scoped pending nightly transaction: populated when a nightly build
+        # downloads but cannot finalize (failure or tracking pending). The
+        # post-retry reconciliation finalizes it exactly once when every
+        # selected asset is successful and on-disk complete.
+        self._pending_nightly_build_id: Optional[str] = None
+        self._pending_nightly_entries: List[Dict[str, Any]] = []
         # Run-scoped selected set: reset at start of _process_firmware_downloads()
         self.firmware_releases_selected: Optional[List[Release]] = None
         self._client_app_downloads_processed = False
@@ -222,6 +241,10 @@ class DownloadOrchestrator:
         start_time = time.time()
         self.wifi_skipped = False
         self.latest_available_firmware_prerelease_dir = None
+        self.latest_firmware_nightly_build_id = None
+        self.nightly_run_state = NightlyRunState.UNCHECKED
+        self._pending_nightly_build_id = None
+        self._pending_nightly_entries = []
         self.available_new_firmware_versions = []
         self.available_new_apk_versions = []
         self._client_app_downloads_processed = False
@@ -255,6 +278,10 @@ class DownloadOrchestrator:
 
         # Retry failed downloads
         self._retry_failed_downloads()
+
+        # Finalize any in-flight firmware-nightly transaction now that retries
+        # have run. No-op unless a nightly build is pending finalization.
+        self._finalize_nightly_transaction_if_complete()
 
         # Log summary
         self._log_download_summary(start_time)
@@ -836,16 +863,23 @@ class DownloadOrchestrator:
         Ensure configured firmware releases and repository prereleases are present locally and remove unmanaged prerelease directories.
 
         Scans firmware releases according to retention and filtering settings, downloads missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and prunes prerelease subdirectories that do not match the managed naming and versioning conventions.
+
+        The stable/prerelease stage and the nightly stage are independent: a
+        stable discovery error or empty stable list cannot suppress nightly,
+        and a nightly error cannot break stable. Nightly is invoked exactly
+        once via ``finally`` so early returns inside the stable stage still
+        reach it; firmware must be enabled (``SAVE_FIRMWARE``) for nightly to
+        run at all.
         """
+        # Reset the selected releases at the start of each run
+        self.firmware_releases_selected = None
+        self.latest_available_firmware_prerelease_dir = None
+
+        if not self.config.get("SAVE_FIRMWARE", False):
+            logger.info("Firmware downloads are disabled in configuration")
+            return
+
         try:
-            # Reset the selected releases at the start of each run
-            self.firmware_releases_selected = None
-            self.latest_available_firmware_prerelease_dir = None
-
-            if not self.config.get("SAVE_FIRMWARE", False):
-                logger.info("Firmware downloads are disabled in configuration")
-                return
-
             logger.info("Scanning Firmware releases")
             keep_last_beta = self.config.get("KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA)
             keep_limit = self._get_firmware_keep_limit()
@@ -985,8 +1019,10 @@ class DownloadOrchestrator:
                         result, FILE_TYPE_FIRMWARE_PRERELEASE_REPO
                     )
 
+            # Stable-only up-to-date indicator. Scoped to releases (not
+            # nightlies) so it cannot contradict a nightly finalize/fail/incomplete.
             if not any_firmware_downloaded and not releases_to_download:
-                logger.info("All Firmware assets are up to date.")
+                logger.info("All Firmware releases are up to date.")
 
             # Remove prerelease directories whose version is <= the latest
             # release to prevent accumulation of old prereleases.
@@ -1047,6 +1083,275 @@ class DownloadOrchestrator:
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
+        finally:
+            # Opt-in rolling firmware-nightly builds (separate source,
+            # transactional). Invoked exactly once via finally so a stable
+            # discovery error, empty stable list, or early return cannot
+            # suppress nightly, and a nightly error (caught inside the method)
+            # cannot break already-completed stable work.
+            self._process_firmware_nightlies()
+
+    def _process_firmware_nightlies(self) -> None:
+        """
+        Process opt-in rolling firmware-nightly builds transactionally.
+
+        When ``CHECK_FIRMWARE_NIGHTLIES`` is disabled (the default) this method
+        returns without touching the network.  When enabled it fetches the
+        firmware-nightly listing, parses the build-id, and — only when the
+        build should be processed — downloads every selected asset.
+
+        Tracking, latest-pointer, cleanup, and the run-scoped build-id are
+        advanced **only after all selected assets download successfully AND
+        tracking is persisted**.  Any failure defers all four so the next run
+        can retry the same build from a clean state.
+
+        When assets fail but are eligible for retry, the pending build-id and
+        selected entries are stashed in ``_pending_nightly_*`` so that
+        :meth:`_finalize_nightly_transaction_if_complete` can finalize the
+        transaction exactly once after the retry phase, subject to the same
+        all-assets-complete + tracking-succeeded conditions.
+
+        State mapping:
+          - source fetch error / malformed listing / ambiguous generation
+            → ``CHECK_FAILED`` (logged, no fake asset failure, no download
+            report, suppresses up-to-date).
+          - empty listing (no candidate yet) → ``UNCHECKED`` (not an error).
+          - build already tracked + complete → ``MAINTENANCE_ONLY`` after
+            running retention/pointer/chmod repair (no download report).
+          - all assets valid + tracking persisted + ≥1 downloaded asset →
+            ``FINALIZED_WITH_DOWNLOAD``.
+          - all assets valid + tracking persisted + all skipped →
+            ``MAINTENANCE_ONLY`` (reconciliation, not download).
+          - any asset failure or tracking failure →
+            ``ATTEMPTED_INCOMPLETE``.
+        """
+        if not coerce_bool(
+            self.config.get(
+                "CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES
+            ),
+            DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
+        ):
+            return
+        try:
+            entries = self.firmware_downloader.fetch_firmware_nightlies()
+            if not entries:
+                # Empty-but-valid listing: no candidate published yet. Not a
+                # failure — leave state as UNCHECKED.
+                return
+            build_id = self.firmware_downloader.get_nightly_build_id(entries)
+            if not build_id:
+                # Nonempty listing with no manifest: malformed generation.
+                self.nightly_run_state = NightlyRunState.CHECK_FAILED
+                logger.warning(
+                    "Firmware-nightly listing is nonempty but has no "
+                    "release-level manifest; marking check as failed"
+                )
+                return
+            if not self.firmware_downloader.should_process_nightly(entries, build_id):
+                logger.debug(
+                    "Firmware-nightly build %s already complete; running maintenance",
+                    build_id,
+                )
+                self._run_nightly_maintenance(build_id, entries)
+                self.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
+                return
+            selected = self.firmware_downloader.get_selected_nightly_assets(
+                entries, build_id
+            )
+            if not selected:
+                return
+
+            logger.info("Downloading firmware-nightly build %s", build_id)
+            all_success = True
+            for entry in selected:
+                result = self.firmware_downloader.download_nightly_asset(
+                    entry, build_id
+                )
+                self._handle_download_result(result, FILE_TYPE_FIRMWARE_NIGHTLY)
+                if not result.success:
+                    all_success = False
+
+            if not all_success:
+                logger.warning(
+                    "Firmware-nightly build %s has failed assets; "
+                    "tracking, latest pointer, and cleanup deferred",
+                    build_id,
+                )
+                # Remember the in-flight transaction so the post-retry
+                # reconciliation can finalize it if every selected asset
+                # ultimately succeeds.
+                self._pending_nightly_build_id = build_id
+                self._pending_nightly_entries = list(selected)
+                self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
+                return
+
+            self._finalize_nightly_transaction(build_id, selected)
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.error(f"Error processing firmware nightlies: {e}", exc_info=True)
+            self.nightly_run_state = NightlyRunState.CHECK_FAILED
+
+    def _finalize_nightly_transaction(
+        self, build_id: str, selected: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Finalize a nightly transaction exactly once: every selected asset must
+        be successful and on-disk complete, tracking must succeed, then
+        retention cleanup, the latest pointer, and the run-scoped build-id are
+        advanced together. Returns True only when the whole transaction was
+        finalized.
+
+        On any failure (partial assets, wrong size, tracking failure) nothing
+        is finalized and the pending transaction is cleared so the next run
+        retries from a clean state.
+
+        The run state is set to ``FINALIZED_WITH_DOWNLOAD`` only when at least
+        one selected asset was genuinely downloaded (``was_skipped=False``) in
+        this run. When every selected asset was already present and valid
+        (all ``was_skipped=True``), the state is ``MAINTENANCE_ONLY`` — the
+        transaction reconciled tracking/pointer/cleanup but no download is
+        reported.
+        """
+        # Every selected asset must be successful AND currently on-disk valid.
+        for entry in selected:
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            try:
+                target_path = self.firmware_downloader.get_nightly_target_path(
+                    build_id, name, create=False
+                )
+            except ValueError as exc:
+                logger.warning(
+                    "Firmware-nightly build %s cannot be finalized: %s", build_id, exc
+                )
+                self._pending_nightly_build_id = None
+                self._pending_nightly_entries = []
+                self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
+                return False
+            ok, reason = self.firmware_downloader._validate_nightly_asset(
+                target_path, name, entry.get("size")
+            )
+            if not ok:
+                logger.warning(
+                    "Firmware-nightly build %s not complete (%s: %s); "
+                    "deferring tracking, latest pointer, and cleanup",
+                    build_id,
+                    name,
+                    reason,
+                )
+                self._pending_nightly_build_id = None
+                self._pending_nightly_entries = []
+                self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
+                return False
+
+        if not self.firmware_downloader.update_nightly_tracking(build_id):
+            logger.warning(
+                "Failed to update firmware-nightly tracking for %s; "
+                "deferring latest pointer, cleanup, and run-scoped id",
+                build_id,
+            )
+            self._pending_nightly_build_id = None
+            self._pending_nightly_entries = []
+            self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
+            return False
+
+        self.firmware_downloader.cleanup_superseded_nightlies(build_id)
+        self.firmware_downloader.update_latest_pointer_for_nightly(build_id)
+        self.latest_firmware_nightly_build_id = build_id
+        self._pending_nightly_build_id = None
+        self._pending_nightly_entries = []
+
+        # Determine whether at least one asset was genuinely downloaded in
+        # this run (not skipped). Only then is this a "download" outcome.
+        any_downloaded = self._nightly_had_actual_download(selected)
+        if any_downloaded:
+            self.nightly_run_state = NightlyRunState.FINALIZED_WITH_DOWNLOAD
+        else:
+            self.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
+        return True
+
+    def _nightly_had_actual_download(self, selected: List[Dict[str, Any]]) -> bool:
+        """Return True iff at least one nightly asset result in this run has
+        ``success=True`` and ``was_skipped=False`` for a URL in ``selected``."""
+        selected_urls = {
+            str(entry.get("download_url") or entry.get("browser_download_url") or "")
+            for entry in selected
+        }
+        for result in self.download_results:
+            if (
+                getattr(result, "file_type", None) == FILE_TYPE_FIRMWARE_NIGHTLY
+                and result.success
+                and not getattr(result, "was_skipped", False)
+                and str(result.download_url or "") in selected_urls
+            ):
+                return True
+        return False
+
+    def _run_nightly_maintenance(
+        self, build_id: str, entries: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Run retention cleanup, latest-pointer repair/recreate, and executable-
+        metadata repair for an already-complete nightly build. Does NOT rewrite
+        tracking and does NOT report a download. Preserves a non-symlink
+        ``latest`` entry.
+        """
+        try:
+            self.firmware_downloader.cleanup_superseded_nightlies(build_id)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug("Nightly retention cleanup failed for %s: %s", build_id, exc)
+        try:
+            self.firmware_downloader.recreate_latest_pointer_for_nightly(build_id)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug(
+                "Nightly latest pointer repair failed for %s: %s", build_id, exc
+            )
+        try:
+            repaired = self.firmware_downloader.repair_nightly_executable_metadata(
+                build_id, entries
+            )
+            if repaired:
+                logger.info(
+                    "Repaired executable metadata for %d nightly .sh asset(s)",
+                    repaired,
+                )
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug(
+                "Nightly executable metadata repair failed for %s: %s", build_id, exc
+            )
+
+    def _finalize_nightly_transaction_if_complete(self) -> None:
+        """
+        Post-retry reconciliation for the in-flight nightly transaction.
+
+        If a nightly build was downloaded but could not be finalized before the
+        retry phase, attempt finalization now. The transaction finalizes
+        exactly once, only when every selected asset is successful and on-disk
+        complete and tracking persists. Partial retries, wrong-size retries, or
+        tracking failures finalize nothing.
+        """
+        build_id = self._pending_nightly_build_id
+        selected = self._pending_nightly_entries
+        if not build_id or not selected:
+            return
+
+        # Confirm every selected asset is now in the success set.
+        successful_urls = {
+            str(r.download_url)
+            for r in self.download_results
+            if r.success and r.file_type == FILE_TYPE_FIRMWARE_NIGHTLY
+        }
+        all_selected_successful = True
+        for entry in selected:
+            url = entry.get("download_url") or entry.get("browser_download_url")
+            if not url or str(url) not in successful_urls:
+                all_selected_successful = False
+                break
+        if not all_selected_successful:
+            # Leave the pending state in place; nothing to finalize yet.
+            return
+
+        self._finalize_nightly_transaction(build_id, selected)
 
     def _select_latest_release_by_version(
         self, releases: List[Release]
@@ -1583,9 +1888,18 @@ class DownloadOrchestrator:
                 FILE_TYPE_FIRMWARE_PRERELEASE,
                 FILE_TYPE_FIRMWARE_MANIFEST,
                 FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                FILE_TYPE_FIRMWARE_NIGHTLY,
             ):
                 downloader = self.firmware_downloader
             if downloader:
+                # Nightly retries are handled as a self-contained branch:
+                # re-derive and validate the canonical managed path, reject
+                # symlinked paths before download, then download + validate +
+                # chmod. Non-nightly retries follow the generic path unchanged.
+                if file_type == FILE_TYPE_FIRMWARE_NIGHTLY:
+                    return self._retry_nightly_failure(
+                        failed_result, url, target_path, file_type
+                    )
                 ok = downloader.download(url, target_path)
                 if ok and downloader.verify(target_path):
                     if file_type in (
@@ -1677,6 +1991,182 @@ class DownloadOrchestrator:
                 str(exc),
                 is_retryable_override=False,
             )
+
+    def _retry_nightly_failure(
+        self,
+        failed_result: DownloadResult,
+        url: str,
+        target_path: str,
+        file_type: str,
+    ) -> DownloadResult:
+        """
+        Retry a firmware-nightly asset failure with canonical path re-derivation.
+
+        Mutation order (outside paths are never touched until canonical proof):
+          1. Validate build-id and sanitize the basename.
+          2. Derive the canonical managed target (non-writing) and compare
+             the normalized failed path to it. If they differ, reject
+             immediately — nothing is removed, created, or downloaded.
+          3. Only after exact canonical proof: if the canonical target is a
+             symlink, unlink it link-only (never following it). External
+             targets are never touched.
+          4. Run the full resolver for ancestor/containment validation.
+          5. Reject any symlink in the managed ancestor chain.
+          6. Download + validate + chmod (same as the initial download path).
+
+        Non-nightly retries are unaffected.
+        """
+        fd = self.firmware_downloader
+        build_id = failed_result.release_tag
+        if not isinstance(build_id, str) or not fd.validate_nightly_build_id(build_id):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Invalid firmware-nightly build-id: {build_id!r}",
+                is_retryable_override=False,
+            )
+
+        basename = os.path.basename(target_path)
+        # Sanitize name so we can compute the canonical path for comparison
+        # without calling the full resolver (which raises on a symlinked
+        # target in non-write mode).
+        try:
+            safe_name = fd._sanitize_required(basename, "nightly asset name")
+        except ValueError as exc:
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Unsafe firmware-nightly asset name: {exc}",
+                is_retryable_override=False,
+            )
+        if safe_name != basename or safe_name in ("", ".", ".."):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                "Firmware-nightly retry target has unsafe multi-component name",
+                is_retryable_override=False,
+            )
+
+        # Derive the canonical managed target (non-writing) for comparison.
+        canonical_expected = os.path.join(
+            fd._nightly_root_for_safety(), build_id, safe_name
+        )
+
+        # Compare normalized paths FIRST. Outside regular and symlink paths
+        # are untouched — nothing is removed or created until canonical proof.
+        if os.path.normpath(canonical_expected) != os.path.normpath(target_path):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                "Firmware-nightly retry target is not the canonical managed path",
+                is_retryable_override=False,
+            )
+
+        # Only after exact canonical proof may the canonical symlink be
+        # unlinked (link-only, never following it). External targets are
+        # never touched.
+        target_was_symlink = os.path.islink(target_path)
+        if target_was_symlink:
+            fd._remove_nightly_target_and_hash(target_path)
+
+        # Full validation via the shared resolver (ancestor checks,
+        # containment, target symlink). The target symlink was already
+        # removed above, so this validates the remaining ancestor chain.
+        try:
+            canonical = fd.get_nightly_target_path(build_id, basename, create=False)
+        except ValueError as exc:
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Unsafe firmware-nightly path: {exc}",
+                is_retryable_override=False,
+            )
+
+        # Reject any symlink in the managed path chain (build dir, nightly
+        # root). The target symlink was already removed above; if it was
+        # present, reject the retry so the next run downloads fresh.
+        build_dir = os.path.dirname(canonical)
+        nightly_root = os.path.dirname(build_dir)
+        if (
+            target_was_symlink
+            or os.path.islink(build_dir)
+            or os.path.islink(nightly_root)
+        ):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                "Firmware-nightly retry refused through symlink path",
+                is_retryable_override=False,
+            )
+
+        try:
+            ok = fd.download(url, canonical)
+        except (requests.RequestException, OSError, ValueError) as exc:
+            return self._create_failure_result(
+                failed_result,
+                Path(canonical),
+                url,
+                file_type,
+                "",
+                str(exc),
+            )
+        if not ok or not fd.verify(canonical):
+            return self._create_failure_result(
+                failed_result, Path(canonical), url, file_type, "Retry attempt failed"
+            )
+
+        ok_v, reason = fd._validate_nightly_asset(
+            canonical, basename, failed_result.file_size
+        )
+        if not ok_v:
+            fd._remove_nightly_target_and_hash(canonical)
+            return self._create_failure_result(
+                failed_result,
+                Path(canonical),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Downloaded nightly asset failed validation: {reason}",
+                is_retryable_override=False,
+            )
+
+        # Executable bit only after the file has been validated.
+        if basename.lower().endswith(".sh") and os.name != "nt":
+            try:
+                os.chmod(canonical, EXECUTABLE_PERMISSIONS)
+            except OSError:
+                pass
+
+        return DownloadResult(
+            success=True,
+            release_tag=failed_result.release_tag,
+            file_path=Path(canonical),
+            download_url=url,
+            file_size=failed_result.file_size,
+            file_type=file_type,
+            retry_count=failed_result.retry_count,
+            retry_timestamp=failed_result.retry_timestamp,
+            error_message=None,
+            is_retryable=False,
+        )
 
     def _generate_retry_report(
         self,
@@ -1886,6 +2376,7 @@ class DownloadOrchestrator:
                 if r.file_type
                 in (
                     FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_NIGHTLY,
                     FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                     FILE_TYPE_FIRMWARE_MANIFEST,
@@ -1909,6 +2400,7 @@ class DownloadOrchestrator:
                 if f.file_type
                 in (
                     FILE_TYPE_FIRMWARE,
+                    FILE_TYPE_FIRMWARE_NIGHTLY,
                     FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                     FILE_TYPE_FIRMWARE_MANIFEST,
@@ -2327,6 +2819,33 @@ class DownloadOrchestrator:
         except (OSError, ValueError, TypeError) as e:
             logger.error(f"Error cleaning up old versions: {e}")
 
+    def _derive_firmware_prerelease_admission_floor(
+        self, latest_firmware_release: Optional[str]
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Derive the clean stable release tag and the expected prerelease base
+        version used as the admission floor for firmware prerelease cleanup
+        and status display.
+
+        Takes ``latest_firmware_release`` (the raw tag from
+        ``get_latest_release_tag()``) so callers that already fetched it do not
+        pay a second call. Returns ``(clean_latest_release, expected_version)``
+        where either may be ``None`` when the tag is missing or too malformed
+        to derive a next-patch base. Callers use ``expected_version`` as a
+        parseability gate: a ``None`` value means the tag is too malformed to
+        admit any prerelease base, so the caller should early-return.
+        """
+        if not latest_firmware_release:
+            return None, None
+        clean_latest_release = (
+            self.version_manager.extract_clean_version(latest_firmware_release)
+            or latest_firmware_release
+        )
+        expected_version = self.version_manager.calculate_expected_prerelease_version(
+            clean_latest_release
+        )
+        return clean_latest_release, expected_version
+
     def _cleanup_deleted_prereleases(self) -> None:
         """
         Remove local firmware prerelease directories that are recorded as deleted in prerelease history.
@@ -2338,17 +2857,16 @@ class DownloadOrchestrator:
             latest_firmware_release = self.firmware_downloader.get_latest_release_tag()
             if not latest_firmware_release:
                 return
-
-            expected_version = (
-                self.version_manager.calculate_expected_prerelease_version(
+            clean_latest_release, expected_version = (
+                self._derive_firmware_prerelease_admission_floor(
                     latest_firmware_release
                 )
             )
-            if not expected_version:
+            if not clean_latest_release or not expected_version:
                 return
 
             history = self.prerelease_manager.get_prerelease_commit_history(
-                expected_version,
+                clean_latest_release,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
                 allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
@@ -2402,6 +2920,7 @@ class DownloadOrchestrator:
                 - "android": latest client app release tag (legacy compat key) or None
                 - "firmware": latest firmware release tag or None
                 - "firmware_prerelease": active firmware prerelease identifier (without "firmware-" prefix when applicable) or None
+                - "firmware_nightly": tracked firmware-nightly build-id or None
                 - "android_prerelease": latest client app prerelease tag (legacy compat key) or None
                 - "desktop": latest client app release tag (Desktop-classified, legacy compat key) or None
                 - "desktop_prerelease": latest client app prerelease tag (Desktop-classified, legacy compat key) or None
@@ -2416,20 +2935,16 @@ class DownloadOrchestrator:
             firmware_prerelease = active_dir
 
         if latest_firmware_release and firmware_prerelease is None:
-            clean_latest_release = (
-                self.version_manager.extract_clean_version(latest_firmware_release)
-                or latest_firmware_release
-            )
-            expected_version = (
-                self.version_manager.calculate_expected_prerelease_version(
-                    clean_latest_release
+            clean_latest_release, expected_version = (
+                self._derive_firmware_prerelease_admission_floor(
+                    latest_firmware_release
                 )
             )
-            if expected_version:
+            if expected_version and clean_latest_release:
                 # Do not force refresh here to avoid API calls just for status display
                 active_dir, _ = (
                     self.prerelease_manager.get_latest_active_prerelease_from_history(
-                        expected_version,
+                        clean_latest_release,
                         cache_manager=self.cache_manager,
                         github_token=self.config.get("GITHUB_TOKEN"),
                         allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
@@ -2440,6 +2955,8 @@ class DownloadOrchestrator:
                     firmware_prerelease = active_dir[len(FIRMWARE_DIR_PREFIX) :]
                 else:
                     firmware_prerelease = active_dir
+
+        firmware_nightly = self._get_latest_firmware_nightly_build_id()
 
         app_releases = (
             self.client_app_releases
@@ -2467,10 +2984,27 @@ class DownloadOrchestrator:
             "android": latest_app_release,
             "firmware": latest_firmware_release,
             "firmware_prerelease": firmware_prerelease,
+            "firmware_nightly": firmware_nightly,
             "android_prerelease": latest_app_prerelease,
             "desktop": latest_app_release,
             "desktop_prerelease": latest_app_prerelease,
         }
+
+    def _get_latest_firmware_nightly_build_id(self) -> Optional[str]:
+        """Return the tracked firmware-nightly build-id, preferring the run-scoped value."""
+        if self.latest_firmware_nightly_build_id:
+            return self.latest_firmware_nightly_build_id
+        try:
+            tracking_path = self.cache_manager.get_cache_file_path(
+                LATEST_FIRMWARE_NIGHTLY_JSON_FILE
+            )
+            data = self.cache_manager.read_json(tracking_path)
+        except (OSError, ValueError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        build_id = data.get("build_id")
+        return build_id if isinstance(build_id, str) and build_id else None
 
     def update_version_tracking(self) -> None:
         """

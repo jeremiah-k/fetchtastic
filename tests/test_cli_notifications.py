@@ -3,7 +3,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import FILE_TYPE_APP_SNAPSHOT
+from fetchtastic.constants import (
+    FILE_TYPE_APP_SNAPSHOT,
+    FILE_TYPE_FIRMWARE_NIGHTLY,
+    NightlyRunState,
+)
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.download.interfaces import DownloadResult
 
@@ -92,6 +96,7 @@ def test_summary_sends_completion_notification(integration):
             [],
             [],
             downloaded_app_snapshots=[],
+            downloaded_firmware_nightlies=[],
         )
         mock_up_to_date.assert_not_called()
 
@@ -464,3 +469,189 @@ def test_send_download_completion_notification_empty_snapshots_no_notification()
         )
 
     mock_ntfy.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Firmware nightly build reporting (collect release_tag, gate by
+# NOTIFY_ON_FIRMWARE_NIGHTLIES)
+# ------------------------------------------------------------------
+
+
+def test_populated_firmware_nightly_notification_displays_build_id(integration):
+    """Populated firmware nightly results produce build-id in notification, deduplicated."""
+    integration.config["NOTIFY_ON_FIRMWARE_NIGHTLIES"] = True
+    # Nightly reporting now keys off the finalized transaction state, not
+    # per-asset results. The orchestrator reports one finalized build-id.
+    integration.orchestrator.nightly_run_state = NightlyRunState.FINALIZED_WITH_DOWNLOAD
+    integration.orchestrator.latest_firmware_nightly_build_id = "2.7.18.abc123"
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag="2.7.18.abc123",
+            file_path="/data/firmware-nightly/2.7.18.abc123/firmware.zip",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+            was_skipped=False,
+        ),
+        DownloadResult(
+            success=True,
+            release_tag="2.7.18.abc123",
+            file_path="/data/firmware-nightly/2.7.18.abc123/firmware-esp32.bin",
+            download_url="http://y",
+            file_size=1,
+            file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+            was_skipped=False,
+        ),
+        DownloadResult(
+            success=True,
+            release_tag="2.7.18.abc123",
+            file_path="/data/firmware-nightly/2.7.18.abc123/firmware-nrf52840.bin",
+            download_url="http://z",
+            file_size=1,
+            file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+            was_skipped=True,
+        ),
+    ]
+
+    with patch(
+        "fetchtastic.download.cli_integration.send_download_completion_notification"
+    ) as mock_notify:
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["downloaded_firmware_nightlies"] == [
+        "2.7.18.abc123"
+    ]
+
+
+def test_firmware_nightly_only_notifications_disabled_sends_nothing(integration):
+    """Firmware-nightly-only download with NOTIFY_ON_FIRMWARE_NIGHTLIES unset → no notification."""
+    # Nightly transaction finalized so it counts locally, but NTFY gate is off.
+    integration.orchestrator.nightly_run_state = NightlyRunState.FINALIZED_WITH_DOWNLOAD
+    integration.orchestrator.latest_firmware_nightly_build_id = "2.7.18.abc123"
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=True,
+            release_tag="2.7.18.abc123",
+            file_path="/data/firmware-nightly/2.7.18.abc123/firmware.zip",
+            download_url="https://example.invalid/firmware.zip",
+            file_size=1,
+            file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+            was_skipped=False,
+        ),
+    ]
+
+    mock_log = Mock()
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ) as mock_new_releases,
+    ):
+        integration.log_download_results_summary(
+            logger_override=mock_log,
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+
+    # No NTFY notifications at all
+    mock_completion.assert_not_called()
+    mock_up_to_date.assert_not_called()
+    mock_new_releases.assert_not_called()
+
+    # Local accounting still works: nonzero download count and nightly build logged
+    log_calls = [str(c) for c in mock_log.info.call_args_list]
+    assert any("Downloaded 1 new versions" in c for c in log_calls)
+    assert any("Downloaded firmware nightly builds:" in c for c in log_calls)
+    assert any("2.7.18.abc123" in c for c in log_calls)
+
+
+def test_failed_firmware_nightly_not_reported_as_downloaded(integration):
+    """Failed firmware nightly results must NOT appear in downloaded_firmware_nightlies."""
+    integration.orchestrator = Mock()
+    integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=False,
+            release_tag="2.7.18.abc123",
+            file_path="/data/firmware-nightly/2.7.18.abc123/firmware.zip",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+            was_skipped=False,
+        ),
+    ]
+    integration.orchestrator.log_firmware_release_history_summary = Mock()
+    integration.orchestrator.get_latest_versions = Mock(return_value={})
+
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_notify,
+        patch("fetchtastic.download.cli_integration.send_up_to_date_notification"),
+    ):
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=[],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="",
+            latest_apk_version="",
+        )
+    # No successful downloads → completion notification must not fire.
+    mock_notify.assert_not_called()
+
+
+def test_failed_firmware_nightly_plus_successful_firmware(integration):
+    """A failed nightly must not appear in the notification when firmware succeeded."""
+    integration.orchestrator = Mock()
+    integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.download_results = [
+        DownloadResult(
+            success=False,
+            release_tag="2.7.18.abc123",
+            file_path="/data/firmware-nightly/2.7.18.abc123/firmware.zip",
+            download_url="http://x",
+            file_size=1,
+            file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
+            was_skipped=False,
+        ),
+    ]
+    integration.orchestrator.log_firmware_release_history_summary = Mock()
+    integration.orchestrator.get_latest_versions = Mock(return_value={})
+
+    with patch(
+        "fetchtastic.download.cli_integration.send_download_completion_notification"
+    ) as mock_notify:
+        integration.log_download_results_summary(
+            logger_override=Mock(),
+            elapsed_seconds=1.0,
+            downloaded_firmwares=["v2.8.0"],
+            downloaded_apks=[],
+            failed_downloads=[],
+            latest_firmware_version="v2.8.0",
+            latest_apk_version="",
+        )
+
+    mock_notify.assert_called_once()
+    # The failed nightly must NOT be counted — nightly list stays empty.
+    assert mock_notify.call_args.kwargs["downloaded_firmware_nightlies"] == []

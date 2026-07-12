@@ -483,3 +483,75 @@ class TestNotificationEdgeCases:
         call_args = mock_send.call_args
         assert "2.7.4-alpha+build.123" in call_args[0][2]
         assert "1.2.3-rc.1" in call_args[0][2]
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    @patch("fetchtastic.notifications.datetime")
+    def test_send_completion_notification_with_firmware_nightlies(
+        self, mock_datetime, mock_send
+    ):
+        """Firmware nightly build-ids appear in the notification message."""
+        mock_datetime.now.return_value.astimezone.return_value.isoformat.return_value = (
+            "2024-01-01T12:00:00"
+        )
+
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_download_completion_notification(
+            config,
+            ["2.7.4"],
+            ["1.2.3"],
+            downloaded_firmware_nightlies=["2.7.18.abc123", "2.7.18.def456"],
+        )
+
+        expected_message = (
+            "Downloaded Firmware versions: 2.7.4\n"
+            "Downloaded Meshtastic Client versions: 1.2.3\n"
+            "Downloaded firmware nightly builds: 2.7.18.abc123, 2.7.18.def456\n"
+            "2024-01-01T12:00:00"
+        )
+        mock_send.assert_called_once_with(
+            "https://ntfy.sh",
+            "test",
+            expected_message,
+            title="Fetchtastic Download Completed",
+        )
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    @patch("fetchtastic.notifications.datetime")
+    def test_send_completion_notification_only_firmware_nightlies(
+        self, mock_datetime, mock_send
+    ):
+        """Nightly-only downloads still send a notification when passed non-empty."""
+        mock_datetime.now.return_value.astimezone.return_value.isoformat.return_value = (
+            "2024-01-01T12:00:00"
+        )
+
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+        notifications.send_download_completion_notification(
+            config,
+            [],
+            [],
+            downloaded_firmware_nightlies=["2.7.18.abc123"],
+        )
+
+        expected_message = (
+            "Downloaded firmware nightly builds: 2.7.18.abc123\n" "2024-01-01T12:00:00"
+        )
+        mock_send.assert_called_once_with(
+            "https://ntfy.sh",
+            "test",
+            expected_message,
+            title="Fetchtastic Download Completed",
+        )
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
+    def test_send_completion_notification_empty_firmware_nightlies_no_notification(
+        self, mock_send
+    ):
+        """Empty firmware nightlies (like all-empty lists) → no notification sent."""
+        config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+
+        notifications.send_download_completion_notification(
+            config, [], [], downloaded_firmware_nightlies=[]
+        )
+
+        mock_send.assert_not_called()

@@ -30,6 +30,19 @@ from fetchtastic.log_utils import logger
 from .files import _atomic_write_json
 
 
+def _strip_trailing_zeros(t: Tuple[int, ...]) -> Tuple[int, ...]:
+    """Normalize a release tuple by removing trailing zero components.
+
+    Ensures semantically equal releases compare equal regardless of component
+    count: ``(2, 7, 0)`` and ``(2, 7)`` both reduce to ``(2, 7)``. An all-zero
+    tuple reduces to ``(0,)`` so the result is never empty.
+    """
+    stripped = t
+    while len(stripped) > 1 and stripped[-1] == 0:
+        stripped = stripped[:-1]
+    return stripped
+
+
 class VersionManager:
     """
     Manages version parsing, comparison, and tracking for Meshtastic releases.
@@ -202,6 +215,35 @@ class VersionManager:
         elif k1 < k2:
             return -1
         return 0
+
+    def is_prerelease_base_newer_than_stable(
+        self, base_version: str, stable_version: str
+    ) -> bool:
+        """
+        Admit a prerelease base only when its parsed release is strictly newer than the stable release.
+
+        Both inputs are parsed to integer release tuples via :meth:`get_release_tuple`
+        and normalized by stripping trailing zero components so that semantically
+        equal releases compare equal regardless of component count (``2.7`` ==
+        ``2.7.0``). If either value cannot be parsed the result is conservative
+        (``False``) so unparsable bases are never admitted. This is the single
+        semantic rule for prerelease admission: every base strictly newer than
+        stable is admitted; bases equal to or older than stable are rejected.
+
+        Parameters:
+            base_version (str): Prerelease base version to admit or reject (e.g., "2.7.27").
+            stable_version (str): Latest stable release used as the admission floor
+                (e.g., "2.7.26" or "v2.7.26").
+
+        Returns:
+            bool: ``True`` only when ``base_version`` parses to a release tuple strictly
+            greater than ``stable_version``'s normalized release tuple.
+        """
+        base_tuple = self.get_release_tuple(base_version)
+        stable_tuple = self.get_release_tuple(stable_version)
+        if base_tuple is None or stable_tuple is None:
+            return False
+        return _strip_trailing_zeros(base_tuple) > _strip_trailing_zeros(stable_tuple)
 
     def ensure_v_prefix_if_missing(self, version: Optional[str]) -> Optional[str]:
         """
@@ -1166,6 +1208,25 @@ def calculate_expected_prerelease_version(latest_version: str) -> Optional[str]:
         expected_base_version (Optional[str]): The computed base version for prereleases (for example "1.2.4"); returns None if an expected version cannot be determined.
     """
     return _version_manager.calculate_expected_prerelease_version(latest_version)
+
+
+def is_prerelease_base_newer_than_stable(
+    base_version: str, stable_version: str
+) -> bool:
+    """
+    Admit a prerelease base only when it is strictly newer than the stable release.
+
+    Parameters:
+        base_version (str): Prerelease base version to admit or reject.
+        stable_version (str): Latest stable release used as the admission floor.
+
+    Returns:
+        bool: ``True`` only when ``base_version`` is strictly newer than ``stable_version``;
+        ``False`` when either value cannot be parsed.
+    """
+    return _version_manager.is_prerelease_base_newer_than_stable(
+        base_version, stable_version
+    )
 
 
 def is_prerelease_directory(dir_name: str) -> bool:
