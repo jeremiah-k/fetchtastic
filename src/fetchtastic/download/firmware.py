@@ -2789,10 +2789,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
             github_token=self.config.get("GITHUB_TOKEN"),
             allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
         )
-        if not contents:
+        # Validate type before emptiness: a falsy non-list response ("", {},
+        # 0, False, (), set()) must NOT be collapsed into a successful empty
+        # listing. Only ``None`` and ``[]`` are valid empty source results.
+        if contents is None:
             return []
         if not isinstance(contents, list):
             raise ValueError("firmware-nightly source response is not a list")
+        if not contents:
+            return []
         validated: List[Dict[str, Any]] = []
         for entry in contents:
             if not isinstance(entry, dict):

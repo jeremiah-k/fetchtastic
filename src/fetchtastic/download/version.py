@@ -226,7 +226,7 @@ class VersionManager:
         and normalized by stripping trailing zero components so that semantically
         equal releases compare equal regardless of component count (``2.7`` ==
         ``2.7.0``). If either value cannot be parsed the result is conservative
-        (``False``) so unparseable bases are never admitted. This is the single
+        (``False``) so unparsable bases are never admitted. This is the single
         semantic rule for prerelease admission: every base strictly newer than
         stable is admitted; bases equal to or older than stable are rejected.
 

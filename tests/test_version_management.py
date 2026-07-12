@@ -288,12 +288,12 @@ class TestPrereleaseBaseAdmission:
         assert vm.is_prerelease_base_newer_than_stable("2.7.27", "v2.7.26") is True
 
     def test_rejects_unparseable_base(self):
-        """An unparseable base is conservatively rejected."""
+        """An unparsable base is conservatively rejected."""
         vm = VersionManager()
         assert vm.is_prerelease_base_newer_than_stable("garbage", "2.7.26") is False
 
     def test_rejects_unparseable_stable(self):
-        """An unparseable stable is conservatively rejected."""
+        """An unparsable stable is conservatively rejected."""
         vm = VersionManager()
         assert vm.is_prerelease_base_newer_than_stable("2.7.27", "garbage") is False
 
@@ -319,7 +319,7 @@ class TestPrereleaseBaseAdmission:
         assert vm.is_prerelease_base_newer_than_stable("2.8.0", "2.7.26") is True
 
     def test_tuple_normalization_rejects_unparseable(self):
-        """Unparseable inputs are still conservatively rejected after normalization."""
+        """Unparsable inputs are still conservatively rejected after normalization."""
         vm = VersionManager()
         assert vm.is_prerelease_base_newer_than_stable("2.7", "garbage") is False
         assert vm.is_prerelease_base_newer_than_stable("garbage", "2.7.0") is False

@@ -1988,7 +1988,7 @@ def test_should_process_nightly_returns_true_when_hash_missing(
 ):
     """Same identity but a selected asset has no stored hash -> must process (re-validate)."""
     tracking_path = cache_manager.get_cache_file_path(
-        getattr(constants, "LATEST_FIRMWARE_NIGHTLY_JSON_FILE")
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
     )
     Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
     Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
@@ -2013,7 +2013,7 @@ def test_should_process_nightly_returns_true_when_zip_corrupt(
     from fetchtastic.utils import save_file_hash
 
     tracking_path = cache_manager.get_cache_file_path(
-        getattr(constants, "LATEST_FIRMWARE_NIGHTLY_JSON_FILE")
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
     )
     Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
     Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
@@ -2038,7 +2038,7 @@ def test_should_process_nightly_returns_true_when_target_is_symlink(
 ):
     """Same identity but a selected asset is a symlink -> must process."""
     tracking_path = cache_manager.get_cache_file_path(
-        getattr(constants, "LATEST_FIRMWARE_NIGHTLY_JSON_FILE")
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
     )
     Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
     Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
@@ -2068,7 +2068,7 @@ def test_should_process_nightly_same_identity_all_valid_skips(
 ):
     """Same identity and every selected asset passes _validate_nightly_asset -> skip."""
     tracking_path = cache_manager.get_cache_file_path(
-        getattr(constants, "LATEST_FIRMWARE_NIGHTLY_JSON_FILE")
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
     )
     Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
     Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
@@ -3284,7 +3284,7 @@ def test_should_process_nightly_uses_build_aware_set(downloader, cache_manager):
     listing = _make_nightly_listing()
     # Track the current build so should_process_nightly checks same-identity.
     tracking_path = cache_manager.get_cache_file_path(
-        getattr(constants, "LATEST_FIRMWARE_NIGHTLY_JSON_FILE")
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
     )
     Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
     Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
@@ -3506,6 +3506,130 @@ def test_orch_nightly_malformed_source_sets_check_failed(tmp_path):
 
     assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
     assert orch.latest_firmware_nightly_build_id is None
+
+
+# ------------------------------------------------------------------
+# Falsy non-list source responses: None/[] are valid empty; every
+# other falsy value ("", {}, 0, False, (), set()) must fail closed.
+# ------------------------------------------------------------------
+
+
+def test_fetch_firmware_nightlies_none_returns_empty(downloader, mock_cache_manager):
+    """None from the source is a valid empty listing."""
+    mock_cache_manager.get_repo_contents.return_value = None
+    downloader.cache_manager = mock_cache_manager
+    assert downloader.fetch_firmware_nightlies() == []
+
+
+def test_fetch_firmware_nightlies_empty_list_returns_empty(
+    downloader, mock_cache_manager
+):
+    """[] from the source is a valid empty listing (distinct from malformed)."""
+    mock_cache_manager.get_repo_contents.return_value = []
+    downloader.cache_manager = mock_cache_manager
+    assert downloader.fetch_firmware_nightlies() == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", {}, 0, False, (), set()],
+    ids=["empty-str", "empty-dict", "zero", "false", "empty-tuple", "empty-set"],
+)
+def test_fetch_firmware_nightlies_falsy_non_list_raises(
+    downloader, mock_cache_manager, value
+):
+    """A falsy non-list source response raises ValueError (fail closed).
+
+    Only ``None`` and ``[]`` are valid empty results; every other falsy
+    value is a malformed source response that must not be collapsed into
+    a successful empty listing.
+    """
+    mock_cache_manager.get_repo_contents.return_value = value
+    downloader.cache_manager = mock_cache_manager
+    with pytest.raises(ValueError, match="not a list"):
+        downloader.fetch_firmware_nightlies()
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        ["bad"],
+        [None, 1],
+        [{"name": "ok.bin"}, "bad"],
+        [{"name": "ok.bin"}, {"name": 123}],
+    ],
+    ids=[
+        "string-entry",
+        "non-dict-entries",
+        "mixed-valid-and-string",
+        "mixed-valid-and-bad-name",
+    ],
+)
+def test_fetch_firmware_nightlies_malformed_entries_raise(
+    downloader, mock_cache_manager, entries
+):
+    """Malformed list entries (non-dict or invalid name) raise ValueError."""
+    mock_cache_manager.get_repo_contents.return_value = entries
+    downloader.cache_manager = mock_cache_manager
+    with pytest.raises(ValueError):
+        downloader.fetch_firmware_nightlies()
+
+
+def test_fetch_firmware_nightlies_valid_list_unchanged(downloader, mock_cache_manager):
+    """A valid nonempty list is returned with every entry intact."""
+    listing = _make_nightly_listing()
+    mock_cache_manager.get_repo_contents.return_value = listing
+    downloader.cache_manager = mock_cache_manager
+    assert downloader.fetch_firmware_nightlies() == listing
+
+
+@pytest.mark.parametrize(
+    "value",
+    [{}, "", False],
+    ids=["empty-dict", "empty-str", "false"],
+)
+def test_orch_nightly_falsy_non_list_sets_check_failed(tmp_path, value):
+    """A falsy non-list source response sets CHECK_FAILED end-to-end.
+
+    The real ``fetch_firmware_nightlies`` runs against a mocked source
+    returning the falsy value; it raises ``ValueError``; the orchestrator
+    catches it and marks the run ``CHECK_FAILED``. No fake asset failure
+    is added, no build-id is recorded, and tracking/retention/latest-pointer
+    finalization are never invoked. The ``CHECK_FAILED`` state is the
+    signal ``cli_integration`` uses to suppress the generic "All assets
+    are up to date" log and NTFY.
+    """
+    from fetchtastic.constants import (
+        FILE_TYPE_FIRMWARE_NIGHTLY,
+        NightlyRunState,
+    )
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.cache_manager.get_repo_contents = Mock(return_value=value)
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+    orch._handle_download_result = Mock()
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+    # No fake asset DownloadResult (success or failure) was added.
+    assert not any(
+        r.file_type == FILE_TYPE_FIRMWARE_NIGHTLY for r in orch.download_results
+    )
+    assert not any(
+        r.file_type == FILE_TYPE_FIRMWARE_NIGHTLY for r in orch.failed_downloads
+    )
+    # build-id never recorded.
+    assert orch.latest_firmware_nightly_build_id is None
+    # Tracking, retention, latest-pointer finalization never invoked.
+    fd.update_nightly_tracking.assert_not_called()
+    fd.cleanup_superseded_nightlies.assert_not_called()
+    fd.update_latest_pointer_for_nightly.assert_not_called()
 
 
 # ==================================================================
