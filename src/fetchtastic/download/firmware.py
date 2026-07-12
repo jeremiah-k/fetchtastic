@@ -92,6 +92,9 @@ _FIRMWARE_SUFFIX_PATTERN = re.compile(
 _NIGHTLY_MANIFEST_RX = re.compile(FIRMWARE_NIGHTLY_MANIFEST_PATTERN, re.IGNORECASE)
 # A nightly build-id on its own (used to validate build directories under nightlies/).
 _NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECASE)
+# Detects a nightly build token (e.g. ``2.8.0.f52e2ea``) embedded anywhere in
+# an asset filename so the selector can reject stale generations.
+_NIGHTLY_BUILD_TOKEN_RX = re.compile(r"(\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE)
 
 
 class FirmwareReleaseDownloader(BaseDownloader):
@@ -2764,15 +2767,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Fetch the flat GitHub Contents listing of the rolling firmware-nightly directory.
 
         Returns an empty list when the feature is disabled (no API call is made)
-        or when the listing is genuinely empty. Each entry preserves the live
-        GitHub Contents API shape (``name``, ``download_url``, ``size``,
-        ``type``).
+        or when the listing is genuinely empty (``None`` or ``[]``). Each entry
+        preserves the live GitHub Contents API shape (``name``, ``download_url``,
+        ``size``, ``type``).
 
-        Source failures (``RequestException``, ``OSError``, ``ValueError``) are
-        **not** collapsed into an empty list — they propagate so the orchestrator
-        can mark the run ``CHECK_FAILED`` and log context. An empty success
-        (listing is ``None`` or ``[]``) is distinct from a failure: the
-        orchestrator treats it as "no candidate published yet" (not an error).
+        **Fail-closed policy for malformed source responses:** a non-list
+        response or a nonempty list containing any malformed entry (non-dict
+        or dict with a non-string ``name``) raises ``ValueError`` rather than
+        silently filtering. The orchestrator catches this and marks the run
+        ``CHECK_FAILED`` so a corrupt listing is never mistaken for "no
+        candidate published yet" (which an empty list represents). This is
+        a strict mixed-list fail-closed: one bad entry rejects the entire
+        listing, because silently dropping entries could hide a missing
+        release manifest and produce an incoherent download set.
         """
         if not self._nightlies_enabled():
             return []
@@ -2782,7 +2789,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
             github_token=self.config.get("GITHUB_TOKEN"),
             allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
         )
-        return [c for c in contents if isinstance(c, dict)] if contents else []
+        if not contents:
+            return []
+        if not isinstance(contents, list):
+            raise ValueError("firmware-nightly source response is not a list")
+        validated: List[Dict[str, Any]] = []
+        for entry in contents:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"firmware-nightly source response has non-dict entry: {entry!r}"
+                )
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    "firmware-nightly source response has entry with invalid name"
+                )
+            validated.append(entry)
+        return validated
 
     @staticmethod
     def parse_nightly_build_id(name: str) -> Optional[str]:
@@ -2997,18 +3020,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
         return list(patterns) if isinstance(patterns, list) else []
 
     def get_selected_nightly_assets(
-        self, entries: List[Dict[str, Any]]
+        self, entries: List[Dict[str, Any]], build_id: str
     ) -> List[Dict[str, Any]]:
         """
-        Select nightly entries by configured patterns, plus the release-level
-        manifest (always included so target metadata stays available).
+        Select nightly entries for a single build generation.
 
-        Selection rules:
-          - ``SELECTED_FIRMWARE_ASSETS`` — the same production key used by
-            stable and prerelease firmware downloads.
-          - ``EXCLUDE_PATTERNS`` removes case-insensitive glob matches.
-          - The release manifest is always included even when no pattern matches.
+        Selection rules (build-aware, deterministic):
+          - ``build_id`` must match the strict nightly build-id regex;
+            otherwise the result is empty.
+          - The release manifest for *this* build (``firmware-<build_id>.json``)
+            is always included exactly once, even when no pattern matches.
+          - Per-device manifests (``*.mt.json``) are always excluded — they
+            are never individually selected for nightly download.
+          - Any versioned asset whose embedded build token differs from
+            ``build_id`` is excluded (stale generation), even if it matches
+            a selection pattern.
+          - ZIP archives from the same build remain eligible under
+            ``SELECTED_FIRMWARE_ASSETS`` / ``EXCLUDE_PATTERNS``.
+          - Build-agnostic helper files (no build token, e.g. ``device-install.sh``)
+            remain eligible under the same patterns.
+          - Results are deduplicated by name and sorted alphabetically.
         """
+        if not isinstance(build_id, str) or not _NIGHTLY_BUILD_ID_RX.match(build_id):
+            return []
+
         patterns = self._get_nightly_selection_patterns()
         exclude_patterns = self._get_exclude_patterns()
 
@@ -3020,6 +3055,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
             name = entry.get("name")
             if not isinstance(name, str) or not name or name in seen_names:
                 continue
+            lower = name.lower()
+
+            # Always include exactly the release manifest for this build.
+            if self.parse_nightly_build_id(name) == build_id:
+                selected.append(entry)
+                seen_names.add(name)
+                continue
+
+            # Per-device manifests are never individually selected.
+            if lower.endswith(".mt.json"):
+                continue
+
+            # Reject stale versioned assets from a different build generation.
+            token_match = _NIGHTLY_BUILD_TOKEN_RX.search(name)
+            if token_match and token_match.group(1).lower() != build_id:
+                continue
+
             if exclude_patterns and self._matches_exclude_patterns(
                 name, exclude_patterns
             ):
@@ -3028,51 +3080,57 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 selected.append(entry)
                 seen_names.add(name)
 
-        # Always include the release-level manifest if it is present in the listing.
-        for entry in entries or []:
-            if not isinstance(entry, dict):
-                continue
-            name = entry.get("name")
-            if (
-                isinstance(name, str)
-                and name not in seen_names
-                and self.parse_nightly_build_id(name) is not None
-            ):
-                selected.append(entry)
-                seen_names.add(name)
-                break
-
+        selected.sort(key=lambda e: str(e.get("name", "")))
         return selected
 
     def is_nightly_complete(self, build_id: str) -> bool:
         """
         Lightweight on-disk completeness probe: returns True iff the build
-        directory exists and contains at least one non-empty asset.
+        directory exists and contains at least one non-empty regular file.
 
-        The strict selected-set check (``all selected files present with expected
-        size``) is performed by :meth:`should_process_nightly`, which has the
-        listing in hand.  This helper is the side-effect-free predicate used by
-        callers that only know the build-id.
+        Uses the shared non-writing root/build policy: rejects any symlink
+        in the managed ancestor chain (``DOWNLOAD_DIR``, ``firmware/``,
+        ``firmware/nightlies/``, build dir), rejects containment escapes,
+        and never creates directories. File entries are checked with
+        ``follow_symlinks=False`` so a symlink inside the build dir is
+        never counted as a real asset.
+
+        The strict selected-set check is performed by
+        :meth:`should_process_nightly`, which has the listing in hand.
         """
         if not isinstance(build_id, str) or not _NIGHTLY_BUILD_ID_RX.match(build_id):
             return False
-        build_dir = os.path.join(
-            self.download_dir,
-            FIRMWARE_DIR_NAME,
-            FIRMWARE_NIGHTLIES_DIR_NAME,
-            build_id,
-        )
-        if not os.path.isdir(build_dir) or os.path.islink(build_dir):
+        root = self._nightly_root_for_safety()
+        firmware_parent = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        for ancestor in (self.download_dir, firmware_parent, root):
+            if os.path.islink(ancestor):
+                return False
+        build_dir = os.path.join(root, build_id)
+        if os.path.islink(build_dir):
+            return False
+        if not os.path.isdir(build_dir):
+            return False
+        try:
+            real_root = os.path.realpath(root)
+            real_build = os.path.realpath(build_dir)
+            if not _is_within_base(real_root, real_build):
+                return False
+        except (OSError, ValueError):
             return False
         try:
             with os.scandir(build_dir) as it:
                 for entry in it:
-                    if entry.is_file() and entry.name != LATEST_POINTER_NAME:
-                        try:
-                            if entry.stat().st_size > 0:
-                                return True
-                        except OSError:
-                            continue
+                    if entry.name == LATEST_POINTER_NAME:
+                        continue
+                    if entry.is_symlink():
+                        continue
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    try:
+                        if entry.stat(follow_symlinks=False).st_size > 0:
+                            return True
+                    except OSError:
+                        continue
         except (FileNotFoundError, NotADirectoryError):
             return False
         except OSError as exc:
@@ -3130,7 +3188,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return True
 
         # Same identity: backfill if any selected asset is not fully valid.
-        selected = self.get_selected_nightly_assets(entries)
+        selected = self.get_selected_nightly_assets(entries, build_id)
         for entry in selected:
             name = entry.get("name")
             if not isinstance(name, str) or not name:
@@ -3445,7 +3503,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
         base = os.path.join(
             self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_NIGHTLIES_DIR_NAME
         )
-        if not os.path.isdir(base) or os.path.islink(base):
+        firmware_parent = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        # Validate the full non-writing managed ancestor chain before any
+        # scan/delete/latest mutation. Reject any symlink, containment
+        # ambiguity, or missing unsafe root. Create nothing; return 0 and
+        # do not alter latest.
+        for ancestor in (self.download_dir, firmware_parent, base):
+            if os.path.islink(ancestor):
+                return 0
+        if not os.path.isdir(base):
+            return 0
+        try:
+            real_download = os.path.realpath(self.download_dir)
+            real_base = os.path.realpath(base)
+            if not _is_within_base(real_download, real_base):
+                return 0
+        except (OSError, ValueError):
             return 0
 
         keep_limit = self.config.get(
@@ -3560,14 +3633,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
         file is only chmodded when it passes content validation. Invalid or
         missing assets are left untouched. Windows is unchanged.
 
+        Only assets in the build-aware selected set (same generation as
+        ``build_id``) are examined, so stale or unmanaged files are never
+        touched.
+
         Returns the number of assets repaired.
         """
         if os.name == "nt":
             return 0
+        selected = self.get_selected_nightly_assets(entries, build_id)
         repaired = 0
-        for entry in entries or []:
-            if not isinstance(entry, dict):
-                continue
+        for entry in selected:
             name = entry.get("name")
             if not isinstance(name, str) or not name.lower().endswith(".sh"):
                 continue

@@ -1155,7 +1155,9 @@ class DownloadOrchestrator:
                 self._run_nightly_maintenance(build_id, entries)
                 self.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
                 return
-            selected = self.firmware_downloader.get_selected_nightly_assets(entries)
+            selected = self.firmware_downloader.get_selected_nightly_assets(
+                entries, build_id
+            )
             if not selected:
                 return
 
@@ -2000,14 +2002,19 @@ class DownloadOrchestrator:
         """
         Retry a firmware-nightly asset failure with canonical path re-derivation.
 
-        Validates the failed result's release tag as a build-id, sanitizes the
-        expected basename, re-derives the canonical managed target via the
-        fresh path-safety helpers, and requires ``failed_result.file_path`` to
-        identify that exact canonical target. Root/parent/build/target symlinks
-        are rejected before any download attempt. After download the shared
-        nightly validator runs; on failure the bad target and its hash metadata
-        are removed. A validated ``*.sh`` payload regains executable mode only
-        after validation succeeds. Non-nightly retries are unaffected.
+        Mutation order (outside paths are never touched until canonical proof):
+          1. Validate build-id and sanitize the basename.
+          2. Derive the canonical managed target (non-writing) and compare
+             the normalized failed path to it. If they differ, reject
+             immediately — nothing is removed, created, or downloaded.
+          3. Only after exact canonical proof: if the canonical target is a
+             symlink, unlink it link-only (never following it). External
+             targets are never touched.
+          4. Run the full resolver for ancestor/containment validation.
+          5. Reject any symlink in the managed ancestor chain.
+          6. Download + validate + chmod (same as the initial download path).
+
+        Non-nightly retries are unaffected.
         """
         fd = self.firmware_downloader
         build_id = failed_result.release_tag
@@ -2023,15 +2030,60 @@ class DownloadOrchestrator:
             )
 
         basename = os.path.basename(target_path)
+        # Sanitize name so we can compute the canonical path for comparison
+        # without calling the full resolver (which raises on a symlinked
+        # target in non-write mode).
+        try:
+            safe_name = fd._sanitize_required(basename, "nightly asset name")
+        except ValueError as exc:
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                f"Unsafe firmware-nightly asset name: {exc}",
+                is_retryable_override=False,
+            )
+        if safe_name != basename or safe_name in ("", ".", ".."):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                "Firmware-nightly retry target has unsafe multi-component name",
+                is_retryable_override=False,
+            )
 
-        # Reject any symlink at the target itself before calling the resolver.
-        # The non-write resolver raises ValueError on a symlinked target; we
-        # need to remove the link (never following it) before the resolver
-        # so the retry reports the right failure and the link is cleaned up.
+        # Derive the canonical managed target (non-writing) for comparison.
+        canonical_expected = os.path.join(
+            fd._nightly_root_for_safety(), build_id, safe_name
+        )
+
+        # Compare normalized paths FIRST. Outside regular and symlink paths
+        # are untouched — nothing is removed or created until canonical proof.
+        if os.path.normpath(canonical_expected) != os.path.normpath(target_path):
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "Retry attempt failed",
+                "Firmware-nightly retry target is not the canonical managed path",
+                is_retryable_override=False,
+            )
+
+        # Only after exact canonical proof may the canonical symlink be
+        # unlinked (link-only, never following it). External targets are
+        # never touched.
         target_was_symlink = os.path.islink(target_path)
         if target_was_symlink:
             fd._remove_nightly_target_and_hash(target_path)
 
+        # Full validation via the shared resolver (ancestor checks,
+        # containment, target symlink). The target symlink was already
+        # removed above, so this validates the remaining ancestor chain.
         try:
             canonical = fd.get_nightly_target_path(build_id, basename, create=False)
         except ValueError as exc:
@@ -2045,20 +2097,9 @@ class DownloadOrchestrator:
                 is_retryable_override=False,
             )
 
-        if canonical != target_path:
-            return self._create_failure_result(
-                failed_result,
-                Path(target_path),
-                url,
-                file_type,
-                "Retry attempt failed",
-                "Firmware-nightly retry target is not the canonical managed path",
-                is_retryable_override=False,
-            )
-
         # Reject any symlink in the managed path chain (build dir, nightly
-        # root) before any download attempt. The target symlink was already
-        # removed above. Download never proceeds through a symlink.
+        # root). The target symlink was already removed above; if it was
+        # present, reject the retry so the next run downloads fresh.
         build_dir = os.path.dirname(canonical)
         nightly_root = os.path.dirname(build_dir)
         if (

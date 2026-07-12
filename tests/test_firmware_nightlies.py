@@ -58,7 +58,7 @@ pytestmark = [pytest.mark.core_downloads, pytest.mark.unit]
 #   should_download_nightly(build_id) -> bool
 #   should_process_nightly(entries, build_id) -> bool
 #   update_nightly_tracking(build_id) -> bool
-#   get_selected_nightly_assets(entries) -> list[dict]
+#   get_selected_nightly_assets(entries, build_id) -> list[dict]
 #   is_nightly_complete(build_id) -> bool
 #   get_nightly_target_path(build_id, name, *, create=False) -> str
 #   download_nightly_asset(entry, build_id) -> DownloadResult
@@ -386,7 +386,7 @@ def test_get_selected_nightly_assets_uses_selected_firmware_assets(
     downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["rak4631"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(listing)
+    selected = select(listing, BUILD_2_8_0)
     # Must include the rak4631 zip but not other devices.
     names = [e["name"] for e in selected]
     assert any("rak4631" in n and n.endswith(".zip") for n in names)
@@ -402,7 +402,7 @@ def test_get_selected_nightly_assets_ignores_dead_keys(downloader):
     downloader.config["SELECTED_ASSETS"] = ["heltec"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(listing)
+    selected = select(listing, BUILD_2_8_0)
     names = [e["name"] for e in selected]
     assert any("rak4631" in n and n.endswith(".zip") for n in names)
     assert not any("tbeam" in n for n in names)
@@ -415,7 +415,7 @@ def test_get_selected_nightly_assets_includes_release_manifest(downloader):
     downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["rak4631"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(listing)
+    selected = select(listing, BUILD_2_8_0)
     names = [e["name"] for e in selected]
     assert MANIFEST_2_8_0 in names
 
@@ -427,7 +427,7 @@ def test_get_selected_nightly_assets_respects_exclude_patterns(downloader):
     downloader.config["EXCLUDE_PATTERNS"] = ["*.zip"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(listing)
+    selected = select(listing, BUILD_2_8_0)
     names = [e["name"] for e in selected]
     # The manifest survives; the zip is excluded.
     assert MANIFEST_2_8_0 in names
@@ -440,7 +440,7 @@ def test_get_selected_nightly_assets_empty_when_no_match(downloader):
     downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["nonexistent-device"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(listing)
+    selected = select(listing, BUILD_2_8_0)
     # The release manifest is always included, so this is exactly the manifest.
     names = [e["name"] for e in selected]
     assert names == [MANIFEST_2_8_0]
@@ -461,7 +461,7 @@ def test_get_selected_nightly_assets_canonical_key_excludes_unrelated_devices(
     downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["rak4631"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(listing)
+    selected = select(listing, BUILD_2_8_0)
     names = [e["name"] for e in selected]
 
     # The rak4631 zip and the release manifest are selected.
@@ -602,7 +602,7 @@ def test_should_process_nightly_same_identity_complete_skips(downloader, cache_m
     # Write all selected assets as fully valid (real zip/manifest + hash) so
     # _validate_nightly_asset passes on the skip path.
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(entries)
+    selected = select(entries, BUILD_2_8_0)
     for entry in selected:
         _write_valid_nightly_asset(downloader, BUILD_2_8_0, entry)
 
@@ -614,7 +614,7 @@ def test_is_nightly_complete_when_all_present(downloader):
     """is_nightly_complete returns True when all selected assets are present."""
     entries = _make_nightly_listing()
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(entries)
+    selected = select(entries, BUILD_2_8_0)
     get_path = _require_method(downloader, "get_nightly_target_path")
     for entry in selected:
         target = get_path(BUILD_2_8_0, entry["name"], create=True)
@@ -665,7 +665,7 @@ def test_should_process_nightly_partial_files_backfills(downloader, cache_manage
 
     entries = _make_nightly_listing()
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(entries)
+    selected = select(entries, BUILD_2_8_0)
     get_path = _require_method(downloader, "get_nightly_target_path")
     # Write only the first selected asset — leave the rest missing.
     if selected:
@@ -1225,7 +1225,7 @@ def test_production_2_8_nightly_selected_assets(downloader):
     downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["rak4631"]
 
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(listing)
+    selected = select(listing, BUILD_2_8_0)
     names = [e["name"] for e in selected]
 
     # Must include the rak4631 zip and the release manifest.
@@ -1995,7 +1995,7 @@ def test_should_process_nightly_returns_true_when_hash_missing(
 
     entries = _make_nightly_listing()
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(entries)
+    selected = select(entries, BUILD_2_8_0)
     get_path = _require_method(downloader, "get_nightly_target_path")
     # Write files with correct size but NO hash -> integrity check fails.
     for entry in selected:
@@ -2020,7 +2020,7 @@ def test_should_process_nightly_returns_true_when_zip_corrupt(
 
     entries = _make_nightly_listing()
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(entries)
+    selected = select(entries, BUILD_2_8_0)
     get_path = _require_method(downloader, "get_nightly_target_path")
     for entry in selected:
         target = get_path(BUILD_2_8_0, entry["name"], create=True)
@@ -2045,7 +2045,7 @@ def test_should_process_nightly_returns_true_when_target_is_symlink(
 
     entries = _make_nightly_listing()
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(entries)
+    selected = select(entries, BUILD_2_8_0)
     get_path = _require_method(downloader, "get_nightly_target_path")
     # Point the first selected asset at a symlink.
     first = selected[0]
@@ -2075,7 +2075,7 @@ def test_should_process_nightly_same_identity_all_valid_skips(
 
     entries = _make_nightly_listing()
     select = _require_method(downloader, "get_selected_nightly_assets")
-    selected = select(entries)
+    selected = select(entries, BUILD_2_8_0)
     for entry in selected:
         _write_valid_nightly_asset(downloader, BUILD_2_8_0, entry)
 
@@ -2883,7 +2883,7 @@ def test_nightly_maintenance_runs_cleanup_pointer_chmod(tmp_path):
 
 def test_repair_nightly_executable_metadata_chmods_valid_sh(tmp_path):
     """A valid .sh asset without exec bit gets chmodded; no redownload."""
-    config = _make_config(tmp_path)
+    config = _make_config(tmp_path, SELECTED_FIRMWARE_ASSETS=[])
     dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
     target = dl.get_nightly_target_path(BUILD_2_8_0, "device-install.sh", create=True)
     Path(target).write_bytes(b"#!/bin/sh\necho hi\n")
@@ -2909,7 +2909,7 @@ def test_repair_nightly_executable_metadata_chmods_valid_sh(tmp_path):
 
 def test_repair_nightly_executable_metadata_skips_invalid(tmp_path):
     """An invalid .sh asset is not chmodded."""
-    config = _make_config(tmp_path)
+    config = _make_config(tmp_path, SELECTED_FIRMWARE_ASSETS=[])
     dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
     target = dl.get_nightly_target_path(BUILD_2_8_0, "bad.sh", create=True)
     Path(target).write_bytes(b"bad")
@@ -2920,7 +2920,7 @@ def test_repair_nightly_executable_metadata_skips_invalid(tmp_path):
 
 def test_repair_nightly_executable_metadata_skips_non_sh(tmp_path):
     """A valid .zip asset is never chmodded."""
-    config = _make_config(tmp_path)
+    config = _make_config(tmp_path, SELECTED_FIRMWARE_ASSETS=[])
     dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
     entry = _contents_entry("firmware.zip", size=100)
     repaired = dl.repair_nightly_executable_metadata(BUILD_2_8_0, [entry])
@@ -3162,3 +3162,570 @@ def test_is_nightly_complete_rejects_symlinked_build_dir(tmp_path):
         pytest.skip("Symlinks not supported")
 
     assert dl.is_nightly_complete(BUILD_2_8_0) is False
+
+
+# ==================================================================
+# PC P1-1: Coherent build-aware selection (no mixed generations)
+# ==================================================================
+
+
+_STALE_BUILD = "2.7.99.abc123"
+
+
+def _make_mixed_generation_listing() -> list[dict]:
+    """A listing with files from two build generations."""
+    return [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", size=45_000),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.zip", size=1_200_000),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.mt.json", size=3_200),
+        _contents_entry("device-install.sh", size=12_000),
+        # Stale generation entries.
+        _contents_entry(f"firmware-{_STALE_BUILD}.json", size=44_000),
+        _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.zip", size=1_100_000),
+        _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.mt.json", size=3_100),
+    ]
+
+
+def test_get_selected_nightly_assets_rejects_mixed_generation(downloader):
+    """Only the current build's assets are selected; stale generation excluded."""
+    listing = _make_mixed_generation_listing()
+    downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["rak4631"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    # Current build manifest + rak4631 zip are selected.
+    assert f"firmware-{BUILD_2_8_0}.json" in names
+    assert any(BUILD_2_8_0 in n and n.endswith(".zip") for n in names)
+    # Stale generation entries are never selected.
+    assert not any(_STALE_BUILD in n for n in names)
+    # Per-device manifests are never selected.
+    assert not any(n.endswith(".mt.json") for n in names)
+
+
+def test_get_selected_nightly_assets_excludes_stale_zip_even_if_pattern_matches(
+    downloader,
+):
+    """A stale ZIP matching the pattern is excluded (different build token)."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.zip"),
+    ]
+    downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["rak4631"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    assert names == [f"firmware-{BUILD_2_8_0}.json"]
+
+
+def test_get_selected_nightly_assets_excludes_per_device_manifest(downloader):
+    """Per-device manifests are excluded even if they match the pattern."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.mt.json"),
+    ]
+    downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["rak4631"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    assert f"firmware-{BUILD_2_8_0}.json" in names
+    assert not any(n.endswith(".mt.json") for n in names)
+
+
+def test_get_selected_nightly_assets_build_agnostic_helper_eligible(downloader):
+    """A build-agnostic helper (no build token) is eligible under patterns."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry("device-install.sh"),
+    ]
+    downloader.config["SELECTED_FIRMWARE_ASSETS"] = ["device-install"]
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    assert "device-install.sh" in names
+    assert f"firmware-{BUILD_2_8_0}.json" in names
+
+
+def test_get_selected_nightly_assets_deterministic_order(downloader):
+    """Selection is sorted alphabetically and deduplicated by name."""
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),
+        _contents_entry("device-install.sh"),
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json"),  # duplicate
+        _contents_entry("bleota.bin"),
+    ]
+    downloader.config["SELECTED_FIRMWARE_ASSETS"] = []
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    names = [e["name"] for e in selected]
+
+    assert names == sorted(names)
+    assert len(names) == len(set(names))
+
+
+def test_get_selected_nightly_assets_rejects_invalid_build_id(downloader):
+    """An invalid build_id yields an empty selection."""
+    listing = _make_nightly_listing()
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    assert select(listing, "../../../etc") == []
+    assert select(listing, "") == []
+
+
+def test_should_process_nightly_uses_build_aware_set(downloader, cache_manager):
+    """should_process_nightly skips only when the build-aware set is complete."""
+    listing = _make_nightly_listing()
+    # Track the current build so should_process_nightly checks same-identity.
+    tracking_path = cache_manager.get_cache_file_path(
+        getattr(constants, "LATEST_FIRMWARE_NIGHTLY_JSON_FILE")
+    )
+    Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
+
+    select = _require_method(downloader, "get_selected_nightly_assets")
+    selected = select(listing, BUILD_2_8_0)
+    for entry in selected:
+        _write_valid_nightly_asset(downloader, BUILD_2_8_0, entry)
+
+    should = _require_method(downloader, "should_process_nightly")
+    assert should(listing, BUILD_2_8_0) is False
+
+
+def test_orch_nightly_mixed_generation_selects_only_current(tmp_path):
+    """Orchestrator with stale-generation assets downloads only current build.
+
+    The listing has one manifest (BUILD_2_8_0) but also stale zips from a
+    previous generation (no manifest for the stale build). The build-aware
+    selector must exclude the stale zips even if they match the pattern.
+    """
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    listing = [
+        _contents_entry(f"firmware-{BUILD_2_8_0}.json", size=45_000),
+        _contents_entry(f"firmware-rak4631-{BUILD_2_8_0}.zip", size=1_200_000),
+        # Stale zip from a previous generation (no manifest for this build).
+        _contents_entry(f"firmware-rak4631-{_STALE_BUILD}.zip", size=1_100_000),
+    ]
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    fd.should_process_nightly = Mock(return_value=True)
+
+    downloaded_names: list[str] = []
+
+    def _fake_download(entry, build_id):
+        downloaded_names.append(entry["name"])
+        target = fd.get_nightly_target_path(build_id, entry["name"], create=True)
+        Path(target).write_bytes(b"payload")
+        # Store hash so validation passes.
+        import hashlib
+
+        from fetchtastic.utils import get_hash_file_path
+
+        digest = hashlib.sha256(b"payload").hexdigest()
+        hash_path = get_hash_file_path(target)
+        Path(hash_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(hash_path).write_text(f"{digest}  {entry['name']}\n")
+        return DownloadResult(
+            success=True,
+            release_tag=build_id,
+            file_path=Path(target),
+            download_url=entry.get("download_url"),
+            file_size=len(b"payload"),
+            file_type=getattr(
+                constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"
+            ),
+        )
+
+    fd.download_nightly_asset = Mock(side_effect=_fake_download)
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+
+    orch._process_firmware_nightlies()
+
+    # Only current-build assets were downloaded; stale zip excluded.
+    assert all(_STALE_BUILD not in n for n in downloaded_names)
+    assert any(BUILD_2_8_0 in n for n in downloaded_names)
+    assert orch.nightly_run_state == NightlyRunState.FINALIZED_WITH_DOWNLOAD
+
+
+# ==================================================================
+# PC P1-2: Cleanup boundary — ancestor validation
+# ==================================================================
+
+
+def test_cleanup_nightly_rejects_symlinked_download_dir(downloader, tmp_path):
+    """A symlinked DOWNLOAD_DIR returns 0 without scanning or deleting."""
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    nightly_root.mkdir(parents=True)
+    build_dir = nightly_root / BUILD_2_8_0
+    build_dir.mkdir()
+    (build_dir / "f.zip").write_bytes(b"x")
+
+    # Replace download_dir with a symlink.
+    real_downloads = tmp_path / "downloads"
+    link_downloads = tmp_path / "link_downloads"
+    try:
+        os.symlink(str(real_downloads), str(link_downloads))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+    downloader.config["DOWNLOAD_DIR"] = str(link_downloads)
+
+    removed = downloader.cleanup_superseded_nightlies(BUILD_2_8_0)
+    assert removed == 0
+    assert build_dir.exists()
+
+
+def test_cleanup_nightly_rejects_symlinked_firmware_parent(downloader, tmp_path):
+    """A symlinked firmware/ parent returns 0 without deleting."""
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    nightly_root.mkdir(parents=True)
+    build_dir = nightly_root / BUILD_2_8_0
+    build_dir.mkdir()
+    (build_dir / "f.zip").write_bytes(b"x")
+
+    firmware_dir = tmp_path / "downloads" / FIRMWARE_DIR_NAME
+    link_firmware = tmp_path / "downloads" / "link_firmware"
+    try:
+        os.symlink(str(firmware_dir), str(link_firmware))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+    # Point DOWNLOAD_DIR at parent so firmware/ is the symlink.
+    downloader.config["DOWNLOAD_DIR"] = str(tmp_path / "downloads")
+    # Monkey-patch FIRMWARE_DIR_NAME lookup by replacing the dir structure.
+    # Actually simpler: just swap firmware/ itself for a symlink.
+    import shutil as _shutil
+
+    _shutil.rmtree(str(firmware_dir))
+    os.symlink(str(tmp_path / "real_firmware"), str(firmware_dir))
+    (tmp_path / "real_firmware").mkdir()
+
+    removed = downloader.cleanup_superseded_nightlies(BUILD_2_8_0)
+    assert removed == 0
+
+
+def test_cleanup_nightly_path_swap_parent_before_cleanup(downloader, tmp_path):
+    """Replacing the nightlies parent immediately before cleanup is safe.
+
+    A path-swap (replace the nightlies directory with a symlink to an
+    external dir right before cleanup) must not delete anything outside.
+    """
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    nightly_root.mkdir(parents=True)
+    build_dir = nightly_root / BUILD_2_8_0
+    build_dir.mkdir()
+    (build_dir / "f.zip").write_bytes(b"x")
+
+    # External dir with sensitive content.
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "important.txt").write_bytes(b"do-not-delete")
+
+    # Swap: replace nightlies with a symlink to external.
+    import shutil as _shutil
+
+    _shutil.rmtree(str(nightly_root))
+    try:
+        os.symlink(str(external), str(nightly_root))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    removed = downloader.cleanup_superseded_nightlies(BUILD_2_8_0)
+    assert removed == 0
+    # External content is untouched.
+    assert (external / "important.txt").exists()
+    assert (external / "important.txt").read_bytes() == b"do-not-delete"
+
+
+# ==================================================================
+# PC P2-1: Source response — malformed entries fail closed
+# ==================================================================
+
+
+def test_fetch_firmware_nightlies_empty_is_valid(downloader, mock_cache_manager):
+    """None/[] from the source is a valid empty listing, not an error."""
+    mock_cache_manager.get_repo_contents.return_value = []
+    downloader.cache_manager = mock_cache_manager
+    assert downloader.fetch_firmware_nightlies() == []
+
+
+def test_fetch_firmware_nightlies_non_dict_entry_raises(downloader, mock_cache_manager):
+    """A non-dict entry in the listing raises ValueError (fail closed)."""
+    mock_cache_manager.get_repo_contents.return_value = [
+        {"name": "ok.bin"},
+        "not-a-dict",
+    ]
+    downloader.cache_manager = mock_cache_manager
+    with pytest.raises(ValueError, match="non-dict entry"):
+        downloader.fetch_firmware_nightlies()
+
+
+def test_fetch_firmware_nightlies_invalid_name_raises(downloader, mock_cache_manager):
+    """An entry with a non-string name raises ValueError (fail closed)."""
+    mock_cache_manager.get_repo_contents.return_value = [
+        {"name": 123},
+    ]
+    downloader.cache_manager = mock_cache_manager
+    with pytest.raises(ValueError, match="invalid name"):
+        downloader.fetch_firmware_nightlies()
+
+
+def test_fetch_firmware_nightlies_missing_name_raises(downloader, mock_cache_manager):
+    """An entry without a name key raises ValueError (fail closed)."""
+    mock_cache_manager.get_repo_contents.return_value = [
+        {"size": 100},
+    ]
+    downloader.cache_manager = mock_cache_manager
+    with pytest.raises(ValueError, match="invalid name"):
+        downloader.fetch_firmware_nightlies()
+
+
+def test_orch_nightly_malformed_source_sets_check_failed(tmp_path):
+    """A malformed source response sets CHECK_FAILED, not UNCHECKED."""
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.fetch_firmware_nightlies = Mock(side_effect=ValueError("malformed"))
+    orch._handle_download_result = Mock()
+
+    orch._process_firmware_nightlies()
+
+    assert orch.nightly_run_state == NightlyRunState.CHECK_FAILED
+    assert orch.latest_firmware_nightly_build_id is None
+
+
+# ==================================================================
+# PC P2-2: Retry mutation order — outside paths untouched
+# ==================================================================
+
+
+def test_retry_nightly_outside_regular_path_untouched(tmp_path):
+    """An outside regular path is not touched; retry fails non-retryable."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.download = Mock()
+    fd.verify = Mock()
+
+    # An outside regular file.
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"secret")
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(str(outside)),
+        download_url="http://x",
+        file_size=1,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+    )
+    result = orch._retry_single_failure(failed)
+
+    assert result.success is False
+    assert result.is_retryable is False
+    fd.download.assert_not_called()
+    # The outside file is untouched.
+    assert outside.exists()
+    assert outside.read_bytes() == b"secret"
+
+
+def test_retry_nightly_outside_symlink_untouched(tmp_path):
+    """An outside symlink path is not unlinked; retry fails non-retryable."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    fd.download = Mock()
+    fd.verify = Mock()
+
+    # Create an outside symlink (not in the managed nightly tree).
+    target = tmp_path / "target.bin"
+    target.write_bytes(b"data")
+    link = tmp_path / "rogue_link.bin"
+    try:
+        os.symlink(str(target), str(link))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(str(link)),
+        download_url="http://x",
+        file_size=1,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+    )
+    result = orch._retry_single_failure(failed)
+
+    assert result.success is False
+    assert result.is_retryable is False
+    fd.download.assert_not_called()
+    # The outside symlink is NOT removed — it was never proven canonical.
+    assert os.path.islink(str(link))
+    assert target.exists()
+
+
+def test_retry_nightly_coherent_set_reconciliation(tmp_path):
+    """Post-retry reconciliation finalizes when the coherent set is complete.
+
+    A nightly download with one retryable failure stashes the pending
+    transaction. After the failed asset is retried successfully (simulated
+    by adding its success to download_results and removing the failure),
+    _finalize_nightly_transaction_if_complete finalizes the build.
+    """
+    from fetchtastic.constants import NightlyRunState
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+    listing = _make_nightly_listing()
+    fd.fetch_firmware_nightlies = Mock(return_value=listing)
+    fd.get_nightly_build_id = Mock(return_value=BUILD_2_8_0)
+    fd.should_process_nightly = Mock(return_value=True)
+
+    selected = fd.get_selected_nightly_assets(listing, BUILD_2_8_0)
+    ftype = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
+    failed_entry = selected[-1]
+
+    # First pass: one asset fails (retryable), rest succeed.
+    def _first_pass(entry, _build_id):
+        target = fd.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+        if entry is failed_entry:
+            return DownloadResult(
+                success=False,
+                release_tag=BUILD_2_8_0,
+                file_path=Path(target),
+                download_url=entry.get("download_url"),
+                file_size=entry.get("size"),
+                file_type=ftype,
+                is_retryable=True,
+                error_type=getattr(constants, "ERROR_TYPE_NETWORK", "network"),
+            )
+        Path(target).write_bytes(b"payload")
+        return DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=Path(target),
+            download_url=entry.get("download_url"),
+            file_size=entry.get("size"),
+            file_type=ftype,
+        )
+
+    fd.download_nightly_asset = Mock(side_effect=_first_pass)
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+    fd.update_nightly_tracking = Mock(return_value=True)
+    fd.cleanup_superseded_nightlies = Mock(return_value=0)
+    fd.update_latest_pointer_for_nightly = Mock(return_value=True)
+
+    orch._process_firmware_nightlies()
+
+    # Transaction is pending (one failed asset).
+    assert orch.nightly_run_state == NightlyRunState.ATTEMPTED_INCOMPLETE
+    assert orch._pending_nightly_build_id == BUILD_2_8_0
+
+    # Simulate retry success: remove the nightly failure, add a success result.
+    orch.failed_downloads = [
+        r for r in orch.failed_downloads if not (r.file_type == ftype and not r.success)
+    ]
+    # Write the file for the previously failed asset.
+    target = fd.get_nightly_target_path(BUILD_2_8_0, failed_entry["name"], create=True)
+    Path(target).write_bytes(b"payload")
+    orch.download_results.append(
+        DownloadResult(
+            success=True,
+            release_tag=BUILD_2_8_0,
+            file_path=Path(target),
+            download_url=failed_entry.get("download_url"),
+            file_size=failed_entry.get("size"),
+            file_type=ftype,
+        )
+    )
+
+    # Reconciliation finalizes.
+    orch._finalize_nightly_transaction_if_complete()
+
+    assert orch.nightly_run_state == NightlyRunState.FINALIZED_WITH_DOWNLOAD
+    fd.update_nightly_tracking.assert_called_once_with(BUILD_2_8_0)
+
+
+# ==================================================================
+# PC P2-3: is_nightly_complete — path/symlink safety
+# ==================================================================
+
+
+def test_is_nightly_complete_rejects_symlinked_ancestor(downloader, tmp_path):
+    """A symlink in the ancestor chain returns False."""
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    nightly_root.mkdir(parents=True)
+    build_dir = nightly_root / BUILD_2_8_0
+    build_dir.mkdir()
+    (build_dir / "f.zip").write_bytes(b"x")
+
+    # Replace nightlies root with a symlink.
+    import shutil as _shutil
+
+    real_nightlies = tmp_path / "real_nightlies"
+    real_nightlies.mkdir()
+    _shutil.move(str(build_dir), str(real_nightlies / BUILD_2_8_0))
+    _shutil.rmtree(str(nightly_root))
+    try:
+        os.symlink(str(real_nightlies), str(nightly_root))
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    assert downloader.is_nightly_complete(BUILD_2_8_0) is False
+
+
+def test_is_nightly_complete_rejects_file_symlink_inside_build(downloader, tmp_path):
+    """A symlink file inside the build dir is not counted as a real asset."""
+    build_dir = downloader.get_nightly_target_path(BUILD_2_8_0, "real.bin", create=True)
+    build_dir = os.path.dirname(build_dir)
+    real_file = os.path.join(build_dir, "real.bin")
+    Path(real_file).write_bytes(b"x")
+    link_file = os.path.join(build_dir, "link.bin")
+    try:
+        os.symlink(real_file, link_file)
+    except OSError:
+        pytest.skip("Symlinks not supported")
+
+    # The symlink should not be counted; but real.bin should make it True.
+    assert downloader.is_nightly_complete(BUILD_2_8_0) is True
+
+    # Now remove the real file — only the symlink remains.
+    os.remove(real_file)
+    assert downloader.is_nightly_complete(BUILD_2_8_0) is False
+
+
+def test_is_nightly_complete_false_on_missing_root(downloader):
+    """Missing nightly root returns False."""
+    assert downloader.is_nightly_complete(BUILD_2_8_0) is False
+
+
+def test_is_nightly_complete_does_not_create_directories(downloader, tmp_path):
+    """is_nightly_complete never creates directories."""
+    nightly_root = tmp_path / "downloads" / FIRMWARE_DIR_NAME / "nightlies"
+    assert not nightly_root.exists()
+
+    downloader.is_nightly_complete(BUILD_2_8_0)
+
+    assert not nightly_root.exists()
+    assert not (nightly_root / BUILD_2_8_0).exists()
