@@ -20,7 +20,7 @@ lint:
   enabled:
     - pinact@4.1.0
     - grype@0.115.0
-    - renovate@43.259.0
+    - renovate@43.259.3
     - shellcheck@0.11.0
     - shfmt@3.6.0
     - gitleaks@8.30.1
