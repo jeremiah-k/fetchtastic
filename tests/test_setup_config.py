@@ -3195,6 +3195,27 @@ def test_setup_firmware_nightly_retention_negative_keeps_current(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_firmware_nightly_retention_non_numeric_keeps_current_and_warns(
+    mocker, capsys
+):
+    """A non-numeric nightly-retention input preserves the current value and warns."""
+    _, fake_input, config = _make_setup_firmware_input_captor(
+        nightly_answer="y",
+        nightly_keep_answer="abc",
+        base_config={"FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 3},
+    )
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    assert result["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 3
+    captured = capsys.readouterr()
+    assert "Invalid value — keeping current value. Minimum is 1." in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_firmware_nightly_retention_invalid_falls_back_to_default(mocker):
     """When the stored nightly-retention value is invalid, the prompt falls back to default."""
     captured, fake_input, config = _make_setup_firmware_input_captor(
@@ -3373,3 +3394,117 @@ def test_setup_downloads_firmware_disabled_forces_nightlies_off(mocker):
     assert (
         nightly_prompts == []
     ), f"Nightly prompt must not appear when firmware is disabled; got: {nightly_prompts}"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_full_flow_firmware_section_contiguous(mocker):
+    """Full setup selecting both: firmware asset menu must come AFTER all
+    client-app prompts, so the firmware section is contiguous when
+    _setup_firmware runs next in run_setup."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    events: list[tuple[str, str]] = []
+
+    def fake_input(prompt: str = "", **_kwargs: object) -> str:
+        lowered = prompt.lower()
+        if "client app assets, firmware, both, or none" in lowered:
+            events.append(("event", "download-choice"))
+            return "b"
+        if "how many versions of the client app" in lowered:
+            events.append(("event", "app-retention"))
+            return "2"
+        if "pre-release client app" in lowered:
+            events.append(("event", "app-prerelease"))
+            return "n"
+        if "snapshot debug builds" in lowered:
+            events.append(("event", "app-snapshot"))
+            return "n"
+        return "n"
+
+    def mock_app_menu():
+        events.append(("event", "app-menu"))
+        return {"selected_assets": ["meshtastic.apk"]}
+
+    def mock_firmware_menu():
+        events.append(("event", "firmware-menu"))
+        return {"selected_assets": ["rak4631-"]}
+
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch("fetchtastic.menu_app.run_menu", side_effect=mock_app_menu)
+    mocker.patch("fetchtastic.menu_firmware.run_menu", side_effect=mock_firmware_menu)
+
+    _setup_downloads({}, is_partial_run=False, wants=lambda _: True)
+
+    # Extract event labels in order.
+    labels = [label for _, label in events]
+    app_menu_idx = labels.index("app-menu")
+    fw_menu_idx = labels.index("firmware-menu")
+
+    # App menu before firmware menu.
+    assert (
+        app_menu_idx < fw_menu_idx
+    ), f"app-menu must precede firmware-menu; got: {labels}"
+
+    # All app-specific prompts must occur before firmware-menu.
+    for app_event in ("app-retention", "app-prerelease", "app-snapshot"):
+        idx = labels.index(app_event)
+        assert (
+            idx < fw_menu_idx
+        ), f"{app_event} must precede firmware-menu; got: {labels}"
+
+    # No app-specific event after firmware-menu.
+    app_events_after_fw = [
+        label
+        for i, label in enumerate(labels)
+        if i > fw_menu_idx and label.startswith("app-")
+    ]
+    assert (
+        app_events_after_fw == []
+    ), f"No app events after firmware-menu; got: {app_events_after_fw}"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_downloads_empty_firmware_selection_disables_nightlies(mocker):
+    """Empty firmware asset selection must disable CHECK_FIRMWARE_NIGHTLIES
+    while preserving the retention preference."""
+    from fetchtastic.setup_config import _setup_downloads
+
+    config = {
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["rak4631-"],
+        "CHECK_PRERELEASES": True,
+        "SELECTED_PRERELEASE_ASSETS": ["rak4631-"],
+        "CHECK_FIRMWARE_NIGHTLIES": True,
+        "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 3,
+    }
+
+    def fake_input(prompt: str = "", **_kwargs: object) -> str:
+        lowered = prompt.lower()
+        if "both, or none" in lowered:
+            return "b"
+        return "n"
+
+    mocker.patch("builtins.input", side_effect=fake_input)
+    mocker.patch(
+        "fetchtastic.menu_app.run_menu",
+        return_value={"selected_assets": ["meshtastic.apk"]},
+    )
+    mocker.patch(
+        "fetchtastic.menu_firmware.run_menu",
+        return_value={"selected_assets": []},  # empty selection
+    )
+
+    result_config, _save_apks, save_firmware = _setup_downloads(
+        config, is_partial_run=False, wants=lambda _: True
+    )
+
+    assert save_firmware is False
+    assert result_config["SAVE_FIRMWARE"] is False
+    assert result_config["SELECTED_FIRMWARE_ASSETS"] == []
+    assert result_config["CHECK_PRERELEASES"] is False
+    assert result_config["SELECTED_PRERELEASE_ASSETS"] == []
+    assert result_config["CHECK_FIRMWARE_NIGHTLIES"] is False
+    # Retention preference preserved for future re-enable.
+    assert result_config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 3

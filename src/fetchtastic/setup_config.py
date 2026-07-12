@@ -800,7 +800,7 @@ def _disable_asset_downloads(
     """
     Disable downloads for the given asset type and clear related configuration keys.
 
-    Mutates and returns the provided configuration mapping, clears selected-asset lists, and disables related prerelease checks. Prints the provided message or a sensible default.
+    Mutates and returns the provided configuration mapping, clears selected-asset lists, and disables related prerelease checks. For firmware, also disables nightly checks (``CHECK_FIRMWARE_NIGHTLIES``) while preserving the nightly-retention preference (``FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP``). Prints the provided message or a sensible default.
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary to update in place and return.
@@ -825,6 +825,7 @@ def _disable_asset_downloads(
     if asset_type == "firmware":
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
+        config["CHECK_FIRMWARE_NIGHTLIES"] = False
     else:
         config["CHECK_APK_PRERELEASES"] = False
     return config, False
@@ -942,39 +943,9 @@ def _setup_downloads(
         config["SAVE_DESKTOP_APP"] = False
         save_desktop = False
 
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        rerun_menu = True
-        if is_partial_run:
-            if config.get("SELECTED_FIRMWARE_ASSETS"):
-                rerun_menu_choice = _safe_input(
-                    "Re-run the firmware asset selection menu? [y/n] (default: yes): ",
-                    default="y",
-                )
-                if not _coerce_bool(rerun_menu_choice, default=True):
-                    rerun_menu = False
-        if rerun_menu:
-            firmware_selection = menu_firmware.run_menu()
-            selected_assets = (
-                firmware_selection.get("selected_assets")
-                if isinstance(firmware_selection, dict)
-                else None
-            )
-            if not selected_assets:
-                config, save_firmware = _disable_asset_downloads(config, "firmware")
-            else:
-                config["SELECTED_FIRMWARE_ASSETS"] = selected_assets
-        elif not config.get("SELECTED_FIRMWARE_ASSETS"):
-            config, save_firmware = _disable_asset_downloads(
-                config,
-                "firmware",
-                "No existing firmware selection found. Firmware will not be downloaded.",
-            )
-
-    # Firmware pre-release, nightly, and channel-suffix prompts now live in
-    # _setup_firmware so the firmware section is contiguous (see run_setup).
-    # This function only sets the download toggle and runs the asset menus;
-    # the firmware-disabled guard below still force-disables the related
-    # flags so stale values cannot survive a firmware-off choice.
+    # Firmware asset-selection menu is deferred to after the client-app
+    # section so the full setup flow keeps the firmware section contiguous
+    # (asset menu → _setup_firmware prompts with no app prompts between).
 
     app_section_requested = not is_partial_run or wants("app")
 
@@ -1114,6 +1085,37 @@ def _setup_downloads(
     normalize_client_app_config(config)
     save_apks = save_client_apps
     save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
+
+    # Firmware asset-selection menu — runs after the client-app section so
+    # the full setup flow has a contiguous firmware section: once the firmware
+    # asset menu starts, no client-app prompt appears before _setup_firmware.
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        rerun_menu = True
+        if is_partial_run:
+            if config.get("SELECTED_FIRMWARE_ASSETS"):
+                rerun_menu_choice = _safe_input(
+                    "Re-run the firmware asset selection menu? [y/n] (default: yes): ",
+                    default="y",
+                )
+                if not _coerce_bool(rerun_menu_choice, default=True):
+                    rerun_menu = False
+        if rerun_menu:
+            firmware_selection = menu_firmware.run_menu()
+            selected_assets = (
+                firmware_selection.get("selected_assets")
+                if isinstance(firmware_selection, dict)
+                else None
+            )
+            if not selected_assets:
+                config, save_firmware = _disable_asset_downloads(config, "firmware")
+            else:
+                config["SELECTED_FIRMWARE_ASSETS"] = selected_assets
+        elif not config.get("SELECTED_FIRMWARE_ASSETS"):
+            config, save_firmware = _disable_asset_downloads(
+                config,
+                "firmware",
+                "No existing firmware selection found. Firmware will not be downloaded.",
+            )
 
     # Channel-suffix prompt has moved to _setup_firmware (contiguous firmware section).
 
@@ -1504,7 +1506,7 @@ def _setup_firmware(
         elif not nightly_input:
             config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = parsed_current
         else:
-            print("Invalid value — keeping current value. " "Minimum is 1.")
+            print("Invalid value — keeping current value. Minimum is 1.")
             config["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] = parsed_current
 
     return config

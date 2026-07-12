@@ -460,6 +460,8 @@ def test_disable_asset_downloads_firmware_with_message():
         "SAVE_FIRMWARE": True,
         "SELECTED_FIRMWARE_ASSETS": ["test"],
         "CHECK_PRERELEASES": True,
+        "CHECK_FIRMWARE_NIGHTLIES": True,
+        "FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP": 3,
     }
 
     updated, result = _disable_asset_downloads(
@@ -469,6 +471,9 @@ def test_disable_asset_downloads_firmware_with_message():
     assert updated["SAVE_FIRMWARE"] is False
     assert updated["SELECTED_FIRMWARE_ASSETS"] == []
     assert updated["CHECK_PRERELEASES"] is False
+    assert updated["CHECK_FIRMWARE_NIGHTLIES"] is False
+    # Retention preference is preserved for a future re-enable.
+    assert updated["FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP"] == 3
     assert result is False
 
 
