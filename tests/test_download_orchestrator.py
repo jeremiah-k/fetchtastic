@@ -692,7 +692,6 @@ class TestDownloadOrchestrator:
         mock_android.cleanup_old_versions.assert_called_once_with(
             2,
             cached_releases=orchestrator.android_releases,
-            keep_last_beta=False,
         )
         mock_firmware.cleanup_old_versions.assert_called_once()
 

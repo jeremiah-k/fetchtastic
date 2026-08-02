@@ -101,6 +101,36 @@ def test_stable_release_supersedes_matching_prerelease_dirs(tmp_path):
     assert next_expected.exists()
 
 
+def test_stable_release_removes_matching_prerelease_despite_firmware_beta_pref(
+    tmp_path,
+):
+    """Client cleanup is independent of the firmware-only KEEP_LAST_BETA preference."""
+    dl = _make_downloader(tmp_path)
+    prerelease_base = tmp_path / APP_DIR_NAME / "prerelease"
+    leftover = prerelease_base / "v3.1.0-open.5"
+    leftover.mkdir(parents=True)
+    (leftover / "androidApp-google-release.apk").write_bytes(b"apk")
+
+    dl.cleanup_old_versions(
+        keep_limit=1,
+        cached_releases=[
+            Release(
+                tag_name="v3.1.0",
+                prerelease=False,
+                published_at="2026-07-29T00:00:00Z",
+            ),
+            Release(
+                tag_name="v3.1.0-open.5",
+                prerelease=True,
+                published_at="2026-07-27T00:00:00Z",
+            ),
+        ],
+        keep_last_beta=True,
+    )
+
+    assert not leftover.exists()
+
+
 def test_unknown_non_version_entries_under_app_are_preserved(tmp_path):
     dl = _make_downloader(tmp_path)
     unknown_dir = tmp_path / APP_DIR_NAME / "manual-files"
