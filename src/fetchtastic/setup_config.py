@@ -37,6 +37,8 @@ from fetchtastic.constants import (
     DEFAULT_EXTRACTION_PATTERNS,
     DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
     DEFAULT_KEEP_LAST_BETA,
+    DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES,
+    DEFAULT_NOTIFY_ON_SNAPSHOTS,
     MESHTASTIC_DIR_NAME,
     NTFY_REQUEST_TIMEOUT,
     WINDOWS_SHORTCUT_FILE,
@@ -1864,11 +1866,35 @@ def _setup_automation(
     return config
 
 
+def _prompt_experimental_notification_preference(
+    config: Dict[str, Any],
+    *,
+    check_key: str,
+    check_default: bool,
+    notify_key: str,
+    notify_default: bool,
+    build_label: str,
+) -> None:
+    """Prompt for one experimental-build notification preference when enabled."""
+    if not _coerce_bool(config.get(check_key, check_default)):
+        return
+    current = _coerce_bool(config.get(notify_key, notify_default))
+    default_text = "yes" if current else "no"
+    config[notify_key] = _coerce_bool(
+        _safe_input(
+            f"Notify when {build_label} are downloaded? [y/n] "
+            f"(default: {default_text}): ",
+            default=default_text,
+        ),
+        default=current,
+    )
+
+
 def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Configure NTFY notifications interactively.
 
-    Prompts the user to enable or disable NTFY-based notifications, collect the NTFY server URL and topic when enabling, and set whether notifications should be sent only for new downloads. Updates the configuration dictionary in place — setting or clearing the keys `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_REQUEST_TIMEOUT`, and `NOTIFY_ON_DOWNLOAD_ONLY` as appropriate.
+    Prompts the user to enable or disable NTFY-based notifications, collect the NTFY server URL and topic when enabling, and configure download-only and experimental-build notification preferences. Updates the configuration dictionary in place, including `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_REQUEST_TIMEOUT`, `NOTIFY_ON_DOWNLOAD_ONLY`, `NOTIFY_ON_SNAPSHOTS`, and `NOTIFY_ON_FIRMWARE_NIGHTLIES` as applicable.
 
     Parameters:
         config (dict): Current configuration dictionary to modify.
@@ -1964,6 +1990,23 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             default=config.get("NOTIFY_ON_DOWNLOAD_ONLY", False),
         )
         config["NOTIFY_ON_DOWNLOAD_ONLY"] = notify_on_download_only
+
+        _prompt_experimental_notification_preference(
+            config,
+            check_key="CHECK_APP_SNAPSHOTS",
+            check_default=DEFAULT_CHECK_APP_SNAPSHOTS,
+            notify_key="NOTIFY_ON_SNAPSHOTS",
+            notify_default=DEFAULT_NOTIFY_ON_SNAPSHOTS,
+            build_label="Android snapshot debug builds",
+        )
+        _prompt_experimental_notification_preference(
+            config,
+            check_key="CHECK_FIRMWARE_NIGHTLIES",
+            check_default=DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
+            notify_key="NOTIFY_ON_FIRMWARE_NIGHTLIES",
+            notify_default=DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES,
+            build_label="firmware nightly builds",
+        )
 
     else:
         # User chose not to use notifications
