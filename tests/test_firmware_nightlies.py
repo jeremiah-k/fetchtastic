@@ -333,8 +333,10 @@ def test_fetch_firmware_nightlies_queries_firmware_nightly_dir(
     fetch()
     mock_cache_manager.get_repo_contents.assert_called_once()
     call_args = mock_cache_manager.get_repo_contents.call_args
-    # The first positional arg must be the source directory name.
+    # The rolling upstream directory is replaced in place, so each enabled check
+    # must bypass the long-lived repository-contents cache.
     assert call_args.args[0] == source_dir
+    assert call_args.kwargs["force_refresh"] is True
 
 
 def test_listing_contains_release_manifest(downloader, mock_cache_manager):
