@@ -443,6 +443,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._process_firmware_downloads()
 
+        assert orchestrator.firmware_prerelease_availability_checked is True
         orchestrator.firmware_downloader.get_releases.assert_called_once()
         orchestrator.firmware_downloader.is_release_complete.assert_called_once_with(
             mock_release
@@ -2725,6 +2726,29 @@ class TestDownloadOrchestrator:
 
         orchestrator.firmware_downloader.log_prerelease_summary.assert_called_once()
 
+    def test_log_prerelease_summary_respects_verified_empty_availability(
+        self, orchestrator
+    ):
+        """Verified empty availability must not fall back to stale history entries."""
+        orchestrator.firmware_prerelease_summary = {
+            "history_entries": [
+                {
+                    "directory": "firmware-2.8.0.c800fc8",
+                    "identifier": "2.8.0.c800fc8",
+                    "status": "active",
+                }
+            ],
+            "available_history_entries": [],
+            "clean_latest_release": "v2.7.26.54e0d8d",
+            "expected_version": "2.7.27",
+        }
+        orchestrator.firmware_downloader.log_prerelease_summary = Mock()
+
+        orchestrator._log_prerelease_summary()
+
+        orchestrator.firmware_downloader.log_prerelease_summary.assert_not_called()
+        assert orchestrator.firmware_prerelease_summary is None
+
     def test_log_prerelease_summary_prefers_available_entries(self, orchestrator):
         """_log_prerelease_summary should omit missing active dirs after availability filtering."""
         available_entries = [{"directory": "firmware-2.7.23.7be5426"}]
@@ -2910,6 +2934,25 @@ class TestDownloadOrchestrator:
 
         assert versions["firmware_prerelease"] == "1.0.1.abcdef"
 
+    def test_get_latest_versions_respects_verified_no_prerelease(self, orchestrator):
+        """Verified no-prerelease state must suppress history fallback."""
+        orchestrator.android_releases = []
+        orchestrator.desktop_releases = []
+        orchestrator.latest_available_firmware_prerelease_dir = None
+        orchestrator.firmware_prerelease_availability_checked = True
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value="v2.7.26.54e0d8d"
+        )
+        history_lookup = (
+            orchestrator.prerelease_manager.get_latest_active_prerelease_from_history
+        )
+        history_lookup.return_value = ("firmware-2.8.0.c800fc8", [])
+
+        versions = orchestrator.get_latest_versions()
+
+        assert versions["firmware_prerelease"] is None
+        history_lookup.assert_not_called()
+
     def test_get_latest_versions_prefers_available_prerelease_dir(self, orchestrator):
         """Verified available prerelease dir should win over stale commit-history latest."""
         orchestrator.android_releases = []
@@ -2992,6 +3035,7 @@ class TestDownloadOrchestrator:
         """Stale pipeline state must be cleared at the start of a subsequent run."""
         orchestrator.wifi_skipped = True
         orchestrator.latest_available_firmware_prerelease_dir = "firmware-2.0.0.stale"
+        orchestrator.firmware_prerelease_availability_checked = True
         orchestrator._process_firmware_downloads = Mock()
         orchestrator._process_client_app_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
@@ -3003,6 +3047,7 @@ class TestDownloadOrchestrator:
 
         assert orchestrator.wifi_skipped is False
         assert orchestrator.latest_available_firmware_prerelease_dir is None
+        assert orchestrator.firmware_prerelease_availability_checked is False
 
     def test_run_download_pipeline_wifi_only_not_connected(self, orchestrator):
         """Pipeline should skip when WIFI_ONLY and not connected."""

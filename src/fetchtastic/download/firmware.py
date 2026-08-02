@@ -97,6 +97,18 @@ _NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECAS
 _NIGHTLY_BUILD_TOKEN_RX = re.compile(r"(\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE)
 
 
+def _normalize_repo_directory_listing(raw: Any, *, source: str) -> list[str]:
+    """Return string directory names from a repository listing response."""
+    if not isinstance(raw, list):
+        logger.debug(
+            "Expected list of repo directories from %s, got %s",
+            source,
+            type(raw).__name__,
+        )
+        return []
+    return [directory for directory in raw if isinstance(directory, str)]
+
+
 def _resolve_extract_patterns(raw: Any) -> Optional[List[str]]:
     """Resolve an extraction-patterns config value, distinguishing
     absent/unsupported/malformed from explicitly empty.
@@ -2024,16 +2036,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     github_token=self.config.get("GITHUB_TOKEN"),
                     allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                 )
-                if not isinstance(dirs, list):
-                    logger.debug(
-                        "Expected list of repo directories from cache manager, got %s",
-                        type(dirs).__name__,
-                    )
-                    dirs = []
-                else:
-                    fallback_repo_dirs = [d for d in dirs if isinstance(d, str)]
+                dirs = _normalize_repo_directory_listing(dirs, source="cache manager")
+                fallback_repo_dirs = dirs
                 matches = prerelease_manager.scan_prerelease_directories(
-                    [d for d in dirs if isinstance(d, str)], clean_latest_release
+                    dirs, clean_latest_release
                 )
                 if matches:
                     # Choose newest by tuple then string
@@ -2075,24 +2081,69 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         exc,
                     )
                     repo_dirs = []
-            if not isinstance(repo_dirs, list):
-                logger.debug(
-                    "Expected list of repo directories from cache manager, got %s",
-                    type(repo_dirs).__name__,
-                )
-                repo_dirs = []
+            repo_dirs = _normalize_repo_directory_listing(
+                repo_dirs, source="cache manager"
+            )
+            if repo_dirs:
+                repo_availability_verified = True
             else:
-                repo_dirs = [d for d in repo_dirs if isinstance(d, str)]
-                if repo_dirs:
-                    repo_availability_verified = True
-                else:
-                    logger.debug(
-                        "Repo availability scan returned no directories; "
-                        "cannot verify availability of history-derived prereleases"
-                    )
+                logger.debug(
+                    "Repo availability scan returned no usable directories; "
+                    "cannot verify availability of history-derived prereleases"
+                )
             deleted_dirs = self._get_deleted_prerelease_dirs_from_history(
                 history_entries
             )
+            if repo_availability_verified and not force_refresh:
+                history_active_dirs = [
+                    directory
+                    for directory in active_dirs
+                    if directory not in deleted_dirs
+                ]
+                cached_repo_dir_set = set(repo_dirs)
+                missing_history_dirs = [
+                    directory
+                    for directory in history_active_dirs
+                    if directory not in cached_repo_dir_set
+                ]
+                if missing_history_dirs:
+                    logger.debug(
+                        "History-derived prereleases are missing from the cached "
+                        "repository directory listing; refreshing availability before "
+                        "treating them as deleted: %s",
+                        ", ".join(missing_history_dirs),
+                    )
+                    try:
+                        refreshed_repo_dirs = self.cache_manager.get_repo_directories(
+                            "",
+                            force_refresh=True,
+                            github_token=self.config.get("GITHUB_TOKEN"),
+                            allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
+                        )
+                    except (
+                        requests.RequestException,
+                        OSError,
+                        ValueError,
+                        TypeError,
+                    ) as exc:
+                        logger.debug(
+                            "Fresh repo availability scan failed; preserving "
+                            "history-derived active prereleases: %s",
+                            exc,
+                        )
+                        refreshed_repo_dirs = []
+                    refreshed_repo_dirs = _normalize_repo_directory_listing(
+                        refreshed_repo_dirs, source="fresh availability scan"
+                    )
+                    if refreshed_repo_dirs:
+                        repo_dirs = refreshed_repo_dirs
+                    else:
+                        logger.debug(
+                            "Fresh repo availability scan returned no usable directories; "
+                            "preserving history-derived active prereleases"
+                        )
+                        repo_availability_verified = False
+
             if repo_availability_verified:
                 repo_dir_set = set(repo_dirs)
                 matching_repo_dirs = [
@@ -2738,6 +2789,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             cleaned_up = False
 
+            # Names left on disk after cleanup are the only valid targets for the
+            # managed prerelease/latest pointer. Removal failures remain valid targets.
+            valid_latest_target_names: set[str] = set()
             try:
                 # Check for matching pre-release directories
                 with os.scandir(prerelease_dir) as it:
@@ -2745,7 +2799,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         if entry.is_symlink():
                             if entry.name == LATEST_POINTER_NAME:
                                 logger.debug(
-                                    "Skipping expected symlink in prerelease folder: %s",
+                                    "Validating expected symlink in prerelease folder: %s",
                                     entry.name,
                                 )
                             else:
@@ -2782,9 +2836,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                                 logger.error(
                                                     f"Error removing superseded prerelease {entry.name}: {e}"
                                                 )
+                                                valid_latest_target_names.add(
+                                                    entry.name
+                                                )
+                                        else:
+                                            valid_latest_target_names.add(entry.name)
 
                                     except ValueError:
                                         continue
+                self._cleanup_invalid_prerelease_latest_pointer(
+                    prerelease_dir, valid_latest_target_names
+                )
             except FileNotFoundError:
                 return False
 
@@ -2793,6 +2855,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
         except (OSError, ValueError) as e:
             logger.error(f"Error cleaning up superseded prereleases: {e}")
             return False
+
+    def _cleanup_invalid_prerelease_latest_pointer(
+        self, base_dir: str, retained_names: set[str]
+    ) -> None:
+        """Remove a managed prerelease ``latest`` symlink when it is dangling or stale.
+
+        Non-symlink entries named ``latest`` are preserved. The symlink target must be
+        a retained prerelease directory name and must still exist as a directory.
+        """
+        link_path = os.path.join(base_dir, LATEST_POINTER_NAME)
+        if not os.path.islink(link_path):
+            return
+        try:
+            target = os.readlink(link_path)
+        except OSError:
+            remove_latest_pointer(base_dir)
+            return
+        target_name = os.path.basename(target.rstrip(os.sep))
+        if target != target_name or target_name not in retained_names:
+            remove_latest_pointer(base_dir)
+            return
+        target_path = os.path.join(base_dir, target_name)
+        if not os.path.isdir(target_path):
+            remove_latest_pointer(base_dir)
 
     # ==================================================================
     # Firmware-nightly: rolling build published at firmware-nightly/

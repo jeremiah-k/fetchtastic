@@ -189,6 +189,10 @@ class DownloadOrchestrator:
         # Single-run only: cleared after _log_prerelease_summary()
         self.firmware_prerelease_summary: Optional[Dict[str, Any]] = None
         self.latest_available_firmware_prerelease_dir: Optional[str] = None
+        # Run-scoped availability state. False means no availability-aware prerelease
+        # scan has completed yet; True means latest_available_firmware_prerelease_dir
+        # is authoritative for this run, including an explicit None (none available).
+        self.firmware_prerelease_availability_checked = False
         # Run-scoped nightly build-id: set after successful nightly processing.
         self.latest_firmware_nightly_build_id: Optional[str] = None
         # Run-scoped nightly transaction state. Reported outcomes are derived
@@ -241,6 +245,7 @@ class DownloadOrchestrator:
         start_time = time.time()
         self.wifi_skipped = False
         self.latest_available_firmware_prerelease_dir = None
+        self.firmware_prerelease_availability_checked = False
         self.latest_firmware_nightly_build_id = None
         self.nightly_run_state = NightlyRunState.UNCHECKED
         self._pending_nightly_build_id = None
@@ -874,6 +879,7 @@ class DownloadOrchestrator:
         # Reset the selected releases at the start of each run
         self.firmware_releases_selected = None
         self.latest_available_firmware_prerelease_dir = None
+        self.firmware_prerelease_availability_checked = False
 
         if not self.config.get("SAVE_FIRMWARE", False):
             logger.info("Firmware downloads are disabled in configuration")
@@ -1004,6 +1010,12 @@ class DownloadOrchestrator:
                     prerelease_summary,
                 ) = self.firmware_downloader.download_repo_prerelease_firmware(
                     latest_release.tag_name, force_refresh=False
+                )
+                self.firmware_prerelease_availability_checked = coerce_bool(
+                    self.config.get(
+                        "CHECK_FIRMWARE_PRERELEASES",
+                        self.config.get("CHECK_PRERELEASES", False),
+                    )
                 )
                 self.latest_available_firmware_prerelease_dir = active_dir
                 if prerelease_summary:
@@ -2551,16 +2563,20 @@ class DownloadOrchestrator:
 
         self.firmware_prerelease_summary = None
 
-        history_entries = (
-            summary.get("available_history_entries")
-            or summary.get("history_entries")
-            or []
-        )
+        if "available_history_entries" in summary:
+            history_entries = summary.get("available_history_entries") or []
+        else:
+            history_entries = summary.get("history_entries") or []
         clean_latest_release = summary.get("clean_latest_release")
         expected_version = summary.get("expected_version")
 
         if not history_entries:
-            logger.debug("Skipping prerelease summary: missing history_entries")
+            if "available_history_entries" in summary:
+                logger.debug(
+                    "Skipping prerelease summary: no verified available prereleases"
+                )
+            else:
+                logger.debug("Skipping prerelease summary: missing history_entries")
             return
         if not isinstance(clean_latest_release, str):
             logger.debug(
@@ -2971,7 +2987,11 @@ class DownloadOrchestrator:
         elif active_dir:
             firmware_prerelease = active_dir
 
-        if latest_firmware_release and firmware_prerelease is None:
+        if (
+            latest_firmware_release
+            and firmware_prerelease is None
+            and not self.firmware_prerelease_availability_checked
+        ):
             clean_latest_release, expected_version = (
                 self._derive_firmware_prerelease_admission_floor(
                     latest_firmware_release
