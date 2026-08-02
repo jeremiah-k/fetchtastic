@@ -22,7 +22,10 @@ from fetchtastic.constants import (
     RELEASE_SCAN_COUNT,
 )
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.firmware import FirmwareReleaseDownloader
+from fetchtastic.download.firmware import (
+    FirmwareReleaseDownloader,
+    _normalize_repo_directory_listing,
+)
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.version import VersionManager
 
@@ -4136,6 +4139,21 @@ class TestFirmwarePrereleaseBaselineDerivation:
 class TestPrereleaseAvailabilityVerification:
     """Tests for prerelease repo availability verification (force_refresh and fallback reuse)."""
 
+    def test_repo_directory_listing_normalization_filters_invalid_entries(self):
+        assert _normalize_repo_directory_listing(
+            ["firmware-2.8.0.aaaaaaa", None, 42], source="test"
+        ) == ["firmware-2.8.0.aaaaaaa"]
+
+    def test_repo_directory_listing_normalization_rejects_non_list(self):
+        with patch("fetchtastic.download.firmware.logger") as mock_logger:
+            assert (
+                _normalize_repo_directory_listing(
+                    {"name": "firmware-2.8.0.aaaaaaa"}, source="test"
+                )
+                == []
+            )
+        mock_logger.debug.assert_called_once()
+
     def test_second_scan_uses_force_refresh_false_by_default(
         self, downloader, tmp_path
     ):
@@ -4169,6 +4187,175 @@ class TestPrereleaseAvailabilityVerification:
         # Should call get_repo_directories once (availability scan) with force_refresh=False
         assert mock_get_dirs.call_count == 1
         assert mock_get_dirs.call_args[1].get("force_refresh") is False
+
+    def test_missing_history_dirs_force_refresh_before_pruning(
+        self, downloader, tmp_path
+    ):
+        """A cached root listing cannot veto newer commit-history prereleases."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+        active_dirs = [
+            "firmware-2.7.27.d250d89",
+            "firmware-2.8.0.b00d76f",
+            "firmware-2.8.0.8adc7c3",
+            "firmware-2.8.0.c800fc8",
+        ]
+        history_entries = [
+            {
+                "identifier": directory.removeprefix("firmware-"),
+                "directory": directory,
+                "status": "active",
+                "added_at": f"2026-08-01T0{index}:00:00Z",
+            }
+            for index, directory in enumerate(active_dirs)
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dirs[-1], history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                side_effect=[["firmware-2.7.25.oldcache"], active_dirs],
+            ) as mock_get_dirs,
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.26.54e0d8d")
+
+        assert mock_get_dirs.call_count == 2
+        assert mock_get_dirs.call_args_list[0].kwargs["force_refresh"] is False
+        assert mock_get_dirs.call_args_list[1].kwargs["force_refresh"] is True
+        downloaded_dirs = [call.args[0] for call in download_assets.call_args_list]
+        assert set(downloaded_dirs) == set(active_dirs)
+        assert result[2] == active_dirs[-1]
+
+    def test_failed_fresh_availability_scan_preserves_history_dirs(
+        self, downloader, tmp_path
+    ):
+        """An inconclusive refresh fails open to fresh history instead of deleting candidates."""
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+        active_dir = "firmware-2.8.0.c800fc8"
+        history_entries = [
+            {
+                "identifier": "2.8.0.c800fc8",
+                "directory": active_dir,
+                "status": "active",
+                "added_at": "2026-08-01T04:00:00Z",
+            }
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                side_effect=[["firmware-2.7.25.oldcache"], []],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.26.54e0d8d")
+
+        download_assets.assert_called_once()
+        assert download_assets.call_args.args[0] == active_dir
+        assert result[2] == active_dir
+
+    @pytest.mark.parametrize(
+        "refresh_result",
+        [None, {"name": "firmware-2.8.0.c800fc8"}],
+    )
+    def test_invalid_fresh_availability_response_preserves_history_dirs(
+        self, downloader, tmp_path, refresh_result
+    ):
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+        active_dir = "firmware-2.8.0.c800fc8"
+        history_entries = [
+            {
+                "identifier": "2.8.0.c800fc8",
+                "directory": active_dir,
+                "status": "active",
+            }
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                side_effect=[["firmware-2.7.25.oldcache"], refresh_result],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+            patch("fetchtastic.download.firmware.logger") as mock_logger,
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.26.54e0d8d")
+
+        download_assets.assert_called_once()
+        assert download_assets.call_args.args[0] == active_dir
+        assert result[2] == active_dir
+        assert any(
+            "preserving history-derived active prereleases" in call.args[0]
+            for call in mock_logger.debug.call_args_list
+            if call.args
+        )
+
+    def test_fresh_availability_exception_preserves_history_dirs(
+        self, downloader, tmp_path
+    ):
+        downloader.config["CHECK_FIRMWARE_PRERELEASES"] = True
+        downloader.download_dir = str(tmp_path)
+        active_dir = "firmware-2.8.0.c800fc8"
+        history_entries = [
+            {
+                "identifier": "2.8.0.c800fc8",
+                "directory": active_dir,
+                "status": "active",
+            }
+        ]
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.PrereleaseHistoryManager.get_latest_active_prerelease_from_history",
+                return_value=(active_dir, history_entries),
+            ),
+            patch.object(
+                downloader.cache_manager,
+                "get_repo_directories",
+                side_effect=[
+                    ["firmware-2.7.25.oldcache"],
+                    requests.RequestException("temporary API failure"),
+                ],
+            ),
+            patch.object(
+                downloader,
+                "_download_prerelease_assets",
+                return_value=([], [], False),
+            ) as download_assets,
+        ):
+            result = downloader.download_repo_prerelease_firmware("v2.7.26.54e0d8d")
+
+        download_assets.assert_called_once()
+        assert result[2] == active_dir
 
     def test_second_scan_uses_force_refresh_true_when_requested(
         self, downloader, tmp_path
@@ -4713,10 +4900,10 @@ class TestPrereleaseAvailabilityVerification:
     # Tests for expected-symlink warning suppression in cleanup
     # =========================================================================
 
-    def test_cleanup_superseded_prereleases_silently_skips_latest_symlink(
+    def test_cleanup_superseded_prereleases_removes_dangling_latest_symlink(
         self, downloader, tmp_path
     ):
-        """The expected 'latest' symlink in prerelease folder should not produce a warning."""
+        """Removing a superseded prerelease also removes its now-dangling latest pointer."""
         downloader.download_dir = str(tmp_path)
         prerelease_dir = tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME
         prerelease_dir.mkdir(parents=True)
@@ -4725,28 +4912,136 @@ class TestPrereleaseAvailabilityVerification:
         old_prerelease.mkdir()
         latest_link = prerelease_dir / LATEST_POINTER_NAME
         try:
-            latest_link.symlink_to(old_prerelease, target_is_directory=True)
+            latest_link.symlink_to(old_prerelease.name, target_is_directory=True)
         except (OSError, NotImplementedError):
             pytest.skip("Symlinks not supported on this platform")
-        original_target = latest_link.readlink()
 
-        with (
-            patch.object(
-                downloader,
-                "_get_release_storage_tag",
-                return_value="v2.7.22",
-                create=True,
-            ),
-            patch.object(log_utils, "logger") as mock_logger,
-        ):
+        with patch.object(log_utils, "logger") as mock_logger:
             downloader.cleanup_superseded_prereleases("v2.7.22")
 
         assert not any(
             LATEST_POINTER_NAME in str(call)
             for call in mock_logger.warning.call_args_list
         )
+        assert not latest_link.is_symlink()
+        assert not latest_link.exists()
+
+    def test_cleanup_superseded_prereleases_preserves_latest_when_removal_fails(
+        self, downloader, tmp_path
+    ):
+        """A failed removal leaves the directory as a valid latest-pointer target."""
+        downloader.download_dir = str(tmp_path)
+        prerelease_dir = tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME
+        prerelease_dir.mkdir(parents=True)
+        retained = prerelease_dir / "firmware-2.7.20.aaaaaaa"
+        retained.mkdir()
+        latest_link = prerelease_dir / LATEST_POINTER_NAME
+        try:
+            latest_link.symlink_to(retained.name, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+
+        with patch(
+            "fetchtastic.download.firmware.shutil.rmtree",
+            side_effect=OSError("busy"),
+        ):
+            cleaned = downloader.cleanup_superseded_prereleases("v2.7.22")
+
+        assert cleaned is False
+        assert retained.is_dir()
         assert latest_link.is_symlink()
-        assert latest_link.readlink() == original_target
+        assert latest_link.readlink().as_posix() == retained.name
+
+    def test_cleanup_superseded_prereleases_preserves_valid_latest_symlink(
+        self, downloader, tmp_path
+    ):
+        """A latest pointer to a retained prerelease remains intact."""
+        downloader.download_dir = str(tmp_path)
+        prerelease_dir = tmp_path / FIRMWARE_DIR_NAME / FIRMWARE_PRERELEASES_DIR_NAME
+        prerelease_dir.mkdir(parents=True)
+        retained = prerelease_dir / "firmware-2.8.0.aaaaaaa"
+        retained.mkdir()
+        latest_link = prerelease_dir / LATEST_POINTER_NAME
+        try:
+            latest_link.symlink_to(retained.name, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+
+        downloader.cleanup_superseded_prereleases("v2.7.26")
+
+        assert latest_link.is_symlink()
+        assert latest_link.readlink().as_posix() == retained.name
+
+    def test_cleanup_invalid_prerelease_latest_pointer_preserves_regular_entry(
+        self, downloader, tmp_path
+    ):
+        latest_path = tmp_path / LATEST_POINTER_NAME
+        latest_path.mkdir()
+
+        downloader._cleanup_invalid_prerelease_latest_pointer(
+            str(tmp_path), {LATEST_POINTER_NAME}
+        )
+
+        assert latest_path.is_dir()
+        assert not latest_path.is_symlink()
+
+    def test_cleanup_invalid_prerelease_latest_pointer_removes_unsafe_target(
+        self, downloader, tmp_path
+    ):
+        retained = tmp_path / "firmware-2.8.0.aaaaaaa"
+        retained.mkdir()
+        latest_path = tmp_path / LATEST_POINTER_NAME
+        try:
+            latest_path.symlink_to(retained.resolve(), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+
+        downloader._cleanup_invalid_prerelease_latest_pointer(
+            str(tmp_path), {retained.name}
+        )
+
+        assert not latest_path.is_symlink()
+
+    def test_cleanup_invalid_prerelease_latest_pointer_removes_missing_target(
+        self, downloader, tmp_path
+    ):
+        latest_path = tmp_path / LATEST_POINTER_NAME
+        target_name = "firmware-2.8.0.missing"
+        try:
+            latest_path.symlink_to(target_name, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+
+        downloader._cleanup_invalid_prerelease_latest_pointer(
+            str(tmp_path), {target_name}
+        )
+
+        assert not latest_path.is_symlink()
+
+    def test_cleanup_invalid_prerelease_latest_pointer_handles_readlink_error(
+        self, downloader, tmp_path
+    ):
+        latest_path = tmp_path / LATEST_POINTER_NAME
+        target = tmp_path / "firmware-2.8.0.aaaaaaa"
+        target.mkdir()
+        try:
+            latest_path.symlink_to(target.name, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+
+        with (
+            patch(
+                "fetchtastic.download.firmware.os.readlink", side_effect=OSError("race")
+            ),
+            patch(
+                "fetchtastic.download.firmware.remove_latest_pointer"
+            ) as remove_pointer,
+        ):
+            downloader._cleanup_invalid_prerelease_latest_pointer(
+                str(tmp_path), {target.name}
+            )
+
+        remove_pointer.assert_called_once_with(str(tmp_path))
 
     # =========================================================================
     # Tests for summary/latest consistency (log_prerelease_summary chronology)
