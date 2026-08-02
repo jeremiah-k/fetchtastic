@@ -2918,9 +2918,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         if not self._nightlies_enabled():
             return []
+        # firmware-nightly/ is a rolling directory that upstream replaces in place.
+        # A cached Contents response can therefore describe a superseded generation,
+        # so enabled nightly checks must read the live listing each run.
         contents = self.cache_manager.get_repo_contents(
             FIRMWARE_NIGHTLY_SOURCE_DIR,
-            force_refresh=False,
+            force_refresh=True,
             github_token=self.config.get("GITHUB_TOKEN"),
             allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
         )
