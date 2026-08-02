@@ -753,6 +753,70 @@ def test_setup_notifications_enable_custom(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_notifications_configures_enabled_experimental_build_channels(
+    monkeypatch,
+):
+    config = {
+        "CHECK_APP_SNAPSHOTS": True,
+        "CHECK_FIRMWARE_NIGHTLIES": True,
+    }
+    answers = iter(
+        [
+            "y",
+            "ntfy.sh",
+            "test-topic",
+            "n",
+            "n",
+            "y",
+            "y",
+        ]
+    )
+    prompts = []
+
+    def fake_safe_input(prompt, *, default=""):
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(setup_config, "_safe_input", fake_safe_input)
+    monkeypatch.setattr(setup_config, "is_termux", lambda: False)
+
+    result = setup_config._setup_notifications(config)
+
+    assert result["NOTIFY_ON_SNAPSHOTS"] is True
+    assert result["NOTIFY_ON_FIRMWARE_NIGHTLIES"] is True
+    assert any("Android snapshot" in prompt for prompt in prompts)
+    assert any("firmware nightly" in prompt for prompt in prompts)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_notifications_skips_disabled_experimental_build_channels(monkeypatch):
+    config = {
+        "CHECK_APP_SNAPSHOTS": False,
+        "CHECK_FIRMWARE_NIGHTLIES": False,
+        "NOTIFY_ON_SNAPSHOTS": True,
+        "NOTIFY_ON_FIRMWARE_NIGHTLIES": True,
+    }
+    answers = iter(["y", "ntfy.sh", "test-topic", "n", "n"])
+    prompts = []
+
+    def fake_safe_input(prompt, *, default=""):
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(setup_config, "_safe_input", fake_safe_input)
+    monkeypatch.setattr(setup_config, "is_termux", lambda: False)
+
+    result = setup_config._setup_notifications(config)
+
+    assert result["NOTIFY_ON_SNAPSHOTS"] is True
+    assert result["NOTIFY_ON_FIRMWARE_NIGHTLIES"] is True
+    assert not any("Android snapshot" in prompt for prompt in prompts)
+    assert not any("firmware nightly" in prompt for prompt in prompts)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_notifications_disable_existing(mocker):
     """Test _setup_notifications disabling existing notifications."""
     config = {
