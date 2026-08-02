@@ -1081,6 +1081,12 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         keep_limit_override: int | None = None,
         keep_last_beta: bool = False,
     ) -> None:
+        """Remove client-app prereleases that are no longer retained.
+
+        ``keep_last_beta`` is deprecated compatibility input. ``KEEP_LAST_BETA``
+        controls firmware retention only and intentionally has no effect here.
+        """
+        del keep_last_beta
         if not cached_releases:
             return
         app_dir = os.path.join(self.download_dir, APP_DIR_NAME)
@@ -1133,23 +1139,6 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
         expected_stable = _safe_tags(stable_releases[:keep_limit], "release")
         expected_prerelease = _safe_tags(prerelease_releases, "prerelease")
-        if keep_last_beta:
-            latest_prerelease = next(
-                (
-                    release
-                    for release in sorted(
-                        cached_releases,
-                        key=lambda item: item.published_at or "",
-                        reverse=True,
-                    )
-                    if self._is_client_app_prerelease(release)
-                ),
-                None,
-            )
-            if latest_prerelease:
-                expected_prerelease.update(
-                    _safe_tags([latest_prerelease], "prerelease")
-                )
         self._remove_unexpected_entries(
             app_dir, expected_stable | {APK_PRERELEASES_DIR_NAME}
         )

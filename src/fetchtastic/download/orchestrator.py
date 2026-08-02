@@ -2828,9 +2828,6 @@ class DownloadOrchestrator:
             app_cleanup_downloader.cleanup_old_versions(
                 app_keep,
                 cached_releases=cached_app_releases,
-                keep_last_beta=self.config.get(
-                    "KEEP_LAST_BETA", DEFAULT_KEEP_LAST_BETA
-                ),
             )
             if (
                 self.config.get("SAVE_DESKTOP_APP", False)
