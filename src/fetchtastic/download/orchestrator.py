@@ -411,6 +411,18 @@ class DownloadOrchestrator:
                 return
 
             self.client_app_downloader.migrate_legacy_layout()
+            snapshots_enabled = coerce_bool(
+                self.config.get("CHECK_APP_SNAPSHOTS", False)
+            )
+            if (
+                not snapshots_enabled
+                and self.client_app_downloader.has_local_snapshot_builds()
+            ):
+                logger.info(
+                    "Android snapshot downloads are disabled; existing app/snapshots "
+                    "builds will not refresh. Run 'fetchtastic setup app' to enable them."
+                )
+
             logger.info("Scanning client app releases")
             app_releases = self._ensure_client_app_releases()
             if not app_releases:
@@ -580,7 +592,7 @@ class DownloadOrchestrator:
                 self.client_app_downloader.cleanup_superseded_snapshots()
 
             # --- Snapshot Debug Builds (rolling "snapshot" tag) ---
-            if coerce_bool(self.config.get("CHECK_APP_SNAPSHOTS", False)):
+            if snapshots_enabled:
                 logger.info("Checking for Android snapshot debug builds...")
                 snapshot_release = self.client_app_downloader.fetch_snapshot_release()
                 handled_snapshot = self.client_app_downloader.handle_snapshots(

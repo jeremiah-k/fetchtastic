@@ -334,6 +334,92 @@ def test_setup_downloads_apk_snapshot_enabled(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_client_app_prompts_for_snapshot_retention(monkeypatch):
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "SAVE_APKS": True,
+        "SELECTED_APP_ASSETS": ["androidApp-google-universal-debug-*.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "APP_SNAPSHOT_VERSIONS_TO_KEEP": 1,
+    }
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "3")
+
+    result = setup_config._setup_client_app(
+        config, _is_first_run=False, default_versions=3
+    )
+
+    assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] == 3
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@pytest.mark.parametrize("existing_value", [None, 0, -2, "not-a-number"])
+def test_setup_client_app_normalizes_invalid_existing_snapshot_retention(
+    monkeypatch, existing_value
+):
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "SAVE_APKS": True,
+        "SELECTED_APP_ASSETS": ["androidApp-google-universal-debug-*.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "APP_SNAPSHOT_VERSIONS_TO_KEEP": existing_value,
+    }
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+
+    result = setup_config._setup_client_app(
+        config, _is_first_run=False, default_versions=3
+    )
+
+    assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] == 1
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@pytest.mark.parametrize("entered_value", ["0", "-1", "not-a-number"])
+def test_setup_client_app_rejects_invalid_snapshot_retention_input(
+    monkeypatch, capsys, entered_value
+):
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "SAVE_APKS": True,
+        "SELECTED_APP_ASSETS": ["androidApp-google-universal-debug-*.apk"],
+        "CHECK_APP_SNAPSHOTS": True,
+        "APP_SNAPSHOT_VERSIONS_TO_KEEP": 4,
+    }
+    monkeypatch.setattr("builtins.input", lambda _prompt="": entered_value)
+
+    result = setup_config._setup_client_app(
+        config, _is_first_run=False, default_versions=3
+    )
+
+    assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] == 4
+    assert "Invalid value" in capsys.readouterr().out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_client_app_preserves_snapshot_retention_when_disabled(monkeypatch):
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "SAVE_APKS": True,
+        "SELECTED_APP_ASSETS": ["androidApp-google-release.apk"],
+        "CHECK_APP_SNAPSHOTS": False,
+        "APP_SNAPSHOT_VERSIONS_TO_KEEP": 4,
+    }
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt="": (_ for _ in ()).throw(AssertionError("unexpected prompt")),
+    )
+
+    result = setup_config._setup_client_app(
+        config, _is_first_run=False, default_versions=3
+    )
+
+    assert result["APP_SNAPSHOT_VERSIONS_TO_KEEP"] == 4
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_setup_downloads_desktop_no_snapshot_prompt(mocker):
     """Desktop-only client app selection must not trigger a snapshot prompt."""
     config = {}
