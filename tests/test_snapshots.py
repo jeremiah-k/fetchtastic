@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.constants import (
@@ -1109,6 +1110,101 @@ def test_orch_snapshot_disabled_skips_entirely(tmp_path, cache_manager):
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=None)
     orch._process_client_app_downloads()
     orch.client_app_downloader.fetch_snapshot_release.assert_not_called()
+
+
+@pytest.mark.integration
+def test_orch_snapshot_disabled_reports_existing_snapshot_state_before_empty_release_return(
+    tmp_path,
+):
+    """Existing snapshots are reported even when client release discovery is empty."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, CHECK_APP_SNAPSHOTS=False)
+    snapshot_dir = (
+        Path(orch.client_app_downloader.download_dir)
+        / APP_DIR_NAME
+        / APP_SNAPSHOTS_DIR_NAME
+        / "20260711-030352-29321457"
+    )
+    snapshot_dir.mkdir(parents=True)
+    orch._ensure_client_app_releases = Mock(return_value=[])
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=None)
+
+    with patch("fetchtastic.download.orchestrator.logger") as mock_logger:
+        orch._process_client_app_downloads()
+
+    orch.client_app_downloader.fetch_snapshot_release.assert_not_called()
+    assert any(
+        "snapshot downloads are disabled" in call.args[0].lower()
+        for call in mock_logger.info.call_args_list
+        if call.args
+    )
+
+
+@pytest.mark.integration
+def test_orch_snapshot_disabled_reports_existing_snapshot_state_before_release_error(
+    tmp_path,
+):
+    """Existing snapshots are reported even when client release discovery fails."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, CHECK_APP_SNAPSHOTS=False)
+    snapshot_dir = (
+        Path(orch.client_app_downloader.download_dir)
+        / APP_DIR_NAME
+        / APP_SNAPSHOTS_DIR_NAME
+        / "29321457"
+    )
+    snapshot_dir.mkdir(parents=True)
+    orch._ensure_client_app_releases = Mock(
+        side_effect=requests.RequestException("release API unavailable")
+    )
+
+    with patch("fetchtastic.download.orchestrator.logger") as mock_logger:
+        orch._process_client_app_downloads()
+
+    assert any(
+        "snapshot downloads are disabled" in call.args[0].lower()
+        for call in mock_logger.info.call_args_list
+        if call.args
+    )
+    mock_logger.error.assert_called_once()
+
+
+@pytest.mark.integration
+def test_orch_snapshot_disabled_ignores_unmanaged_child_directories(tmp_path):
+    """Unrelated directories under app/snapshots do not trigger stale-state warnings."""
+    orch = _make_orchestrator_for_snapshots(tmp_path, CHECK_APP_SNAPSHOTS=False)
+    snapshot_root = (
+        Path(orch.client_app_downloader.download_dir)
+        / APP_DIR_NAME
+        / APP_SNAPSHOTS_DIR_NAME
+    )
+    (snapshot_root / "partial-download").mkdir(parents=True)
+    orch._ensure_client_app_releases = Mock(return_value=[])
+
+    with patch("fetchtastic.download.orchestrator.logger") as mock_logger:
+        orch._process_client_app_downloads()
+
+    assert not any(
+        "snapshot downloads are disabled" in call.args[0].lower()
+        for call in mock_logger.info.call_args_list
+        if call.args
+    )
+
+
+@pytest.mark.unit
+def test_has_local_snapshot_builds_without_snapshot_directory_returns_false(downloader):
+    assert downloader.has_local_snapshot_builds() is False
+
+
+@pytest.mark.unit
+def test_has_local_snapshot_builds_handles_scan_error(downloader, tmp_path):
+    snapshot_root = (
+        Path(downloader.download_dir) / APP_DIR_NAME / APP_SNAPSHOTS_DIR_NAME
+    )
+    snapshot_root.mkdir(parents=True)
+
+    with patch(
+        "fetchtastic.download.client_app.os.scandir", side_effect=OSError("race")
+    ):
+        assert downloader.has_local_snapshot_builds() is False
 
 
 @pytest.mark.integration

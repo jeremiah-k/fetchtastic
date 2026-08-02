@@ -23,6 +23,7 @@ from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
+    DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
     DEFAULT_APP_VERSIONS_TO_KEEP,
     DEFAULT_CHECK_APP_PRERELEASES,
     DEFAULT_CHECK_APP_SNAPSHOTS,
@@ -1205,15 +1206,30 @@ def _setup_downloads(
 def _setup_client_app(
     config: Dict[str, Any], _is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
-    """
-    Normalize client app version retention.
-
-    The prompt is now handled in _setup_downloads. This function ensures the
-    config keys are consistent for backward compatibility.
-    """
+    """Normalize client-app retention and configure snapshot retention when enabled."""
     if "APP_VERSIONS_TO_KEEP" not in config:
         config["APP_VERSIONS_TO_KEEP"] = default_versions
-    return normalize_client_app_config(config)
+    normalize_client_app_config(config)
+
+    if _coerce_bool(config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)):
+        current_keep = int(
+            config.get(
+                "APP_SNAPSHOT_VERSIONS_TO_KEEP",
+                DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
+            )
+        )
+        snapshot_keep_input = _safe_input(
+            f"How many Android snapshot builds would you like to keep? "
+            f"(current: {current_keep}): ",
+            default=str(current_keep),
+        ).strip()
+        parsed_keep = _parse_non_negative_int(snapshot_keep_input)
+        if parsed_keep is not None and parsed_keep >= 1:
+            config["APP_SNAPSHOT_VERSIONS_TO_KEEP"] = parsed_keep
+        else:
+            print("Invalid value — keeping current value. Minimum is 1.")
+
+    return config
 
 
 def _setup_android(

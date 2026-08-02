@@ -1877,6 +1877,21 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 error_type=error_type,
             )
 
+    def has_local_snapshot_builds(self) -> bool:
+        """Return whether the managed snapshot tree contains a valid snapshot build."""
+        base_dir = os.path.join(self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
+        if not self._is_safe_managed_dir(base_dir):
+            return False
+        try:
+            with os.scandir(base_dir) as entries:
+                return any(
+                    entry.is_dir(follow_symlinks=False)
+                    and _parse_snapshot_vc_from_dirname(entry.name) is not None
+                    for entry in entries
+                )
+        except OSError:
+            return False
+
     def cleanup_superseded_snapshots(self) -> int:
         """Remove old snapshot dirs beyond the retention limit. Returns count deleted."""
         base_dir = os.path.join(self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
