@@ -204,6 +204,42 @@ class TestRepositoryDownloader:
             result = downloader.clean_repository_directory()
             assert result is True
 
+    def test_clean_repository_directory_checks_symlink_before_target_type(
+        self, tmp_path
+    ):
+        """Cleanup should unlink symlinks without stat'ing their targets first."""
+        downloader = RepositoryDownloader({"DOWNLOAD_DIR": str(tmp_path)})
+        repo_dir = Path(tmp_path) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR
+        repo_dir.mkdir(parents=True)
+
+        symlink_entry = MagicMock()
+        symlink_entry.path = str(repo_dir / "external-link")
+        symlink_entry.is_symlink.return_value = True
+        symlink_entry.is_file.side_effect = OSError("target metadata denied")
+
+        scandir = MagicMock()
+        scandir.__enter__.return_value = [symlink_entry]
+        scandir.__exit__.return_value = False
+
+        with (
+            patch(
+                "fetchtastic.download.repository.os.scandir",
+                return_value=scandir,
+            ),
+            patch(
+                "fetchtastic.download.repository._safe_rmtree",
+                return_value=True,
+            ) as safe_rmtree,
+        ):
+            assert downloader.clean_repository_directory() is True
+
+        symlink_entry.is_file.assert_not_called()
+        safe_rmtree.assert_called_once_with(
+            symlink_entry.path,
+            str(repo_dir),
+            "external-link",
+        )
+
     def test_clean_repository_directory_continues_after_metadata_error(self, tmp_path):
         """An unreadable entry should not prevent cleanup of later entries."""
         downloader = RepositoryDownloader({"DOWNLOAD_DIR": str(tmp_path)})
@@ -212,6 +248,7 @@ class TestRepositoryDownloader:
 
         unreadable = MagicMock()
         unreadable.path = str(repo_dir / "unreadable")
+        unreadable.is_symlink.return_value = False
         unreadable.is_file.side_effect = OSError("metadata denied")
 
         removable = MagicMock()

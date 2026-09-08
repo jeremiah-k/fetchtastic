@@ -7,7 +7,7 @@ import os
 import zipfile
 from pathlib import Path
 from typing import ClassVar
-from unittest.mock import ANY, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
 import requests
@@ -1577,6 +1577,35 @@ class TestFirmwareReleaseDownloader:
             "Skipping unsafe beta release tag during cleanup: %s",
             beta.tag_name,
         )
+
+    def test_cleanup_old_versions_inventory_checks_symlink_before_directory(
+        self, downloader
+    ):
+        """Firmware cleanup should not stat a symlink target while inventorying versions."""
+        entry = Mock()
+        entry.name = "v1.0.0"
+        entry.path = "/mock/firmware/v1.0.0"
+        entry.is_symlink.return_value = True
+        entry.is_dir.side_effect = OSError("target metadata denied")
+
+        scandir = MagicMock()
+        scandir.__enter__.return_value = [entry]
+        scandir.__exit__.return_value = False
+
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v2.0.0")])
+        downloader.collect_non_revoked_releases = Mock(
+            return_value=([Release(tag_name="v2.0.0")], [Release(tag_name="v2.0.0")], 1)
+        )
+
+        with (
+            patch("os.path.exists", return_value=True),
+            patch("os.scandir", return_value=scandir),
+            patch("fetchtastic.download.firmware._safe_rmtree") as safe_rmtree,
+        ):
+            downloader.cleanup_old_versions(keep_limit=1)
+
+        entry.is_dir.assert_not_called()
+        safe_rmtree.assert_not_called()
 
     @pytest.mark.unit
     @patch("os.path.exists")

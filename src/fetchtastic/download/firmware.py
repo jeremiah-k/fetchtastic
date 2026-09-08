@@ -1565,8 +1565,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 existing_versions = {
                     entry.name
                     for entry in entries
-                    if entry.is_dir()
-                    and not entry.is_symlink()
+                    if not entry.is_symlink()
+                    and entry.is_dir()
                     and entry.name
                     not in {
                         FIRMWARE_PRERELEASES_DIR_NAME,

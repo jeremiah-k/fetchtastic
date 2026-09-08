@@ -409,7 +409,7 @@ class RepositoryDownloader(BaseDownloader):
                 for entry in it:
                     entry_display = _format_entry_path(entry.path)
                     try:
-                        if entry.is_file() or entry.is_symlink():
+                        if entry.is_symlink() or entry.is_file():
                             if _safe_rmtree(entry.path, repo_dir, entry_display):
                                 logger.info("Removed file: %s", entry_display)
                                 self._cleanup_summary["removed_files"] += 1
