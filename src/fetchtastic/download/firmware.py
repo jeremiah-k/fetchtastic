@@ -5,6 +5,7 @@ This module implements the specific downloader for Meshtastic firmware releases.
 """
 
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -18,6 +19,7 @@ import requests  # type: ignore[import-untyped]
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
     DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
+    DEFAULT_CHUNK_SIZE,
     DEFAULT_CREATE_LATEST_SYMLINKS,
     DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
@@ -3567,7 +3569,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         _prepare_for_redownload(target_path)
 
     def _validate_nightly_asset(
-        self, target_path: str, name: str, expected_size: Any
+        self,
+        target_path: str,
+        name: str,
+        expected_size: Any,
+        expected_md5: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
         Validate a nightly asset on disk. Shared by the skip, fresh-download,
@@ -3575,6 +3581,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         Rules (all must hold):
           - target must be a regular file and not a symlink;
+          - when ``expected_md5`` is provided, the on-disk MD5 must match
+            (case-insensitive);
           - when ``expected_size`` is a positive int, the on-disk size must
             match exactly;
           - existing integrity / hash verification must pass;
@@ -3592,6 +3600,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         if os.path.islink(target_path) or not os.path.isfile(target_path):
             return False, "target is not a regular file (symlink or missing)"
+
+        # MD5 check first so a mismatch short-circuits the size and hash work;
+        # the manifest publishes a per-file md5 for every binary in
+        # firmware-<board>-<version>.<hash>.mt.json (see
+        # meshtastic/firmware#11719).
+        if isinstance(expected_md5, str) and expected_md5:
+            try:
+                hasher = hashlib.md5(usedforsecurity=False)
+                with open(target_path, "rb") as md5_file:
+                    for chunk in iter(
+                        lambda: md5_file.read(DEFAULT_CHUNK_SIZE), b""
+                    ):
+                        hasher.update(chunk)
+                actual_md5 = hasher.hexdigest()
+            except OSError as exc:
+                return False, f"could not read target for MD5: {exc}"
+            if actual_md5.lower() != expected_md5.lower():
+                return False, (
+                    f"MD5 mismatch: expected {expected_md5.lower()}, "
+                    f"got {actual_md5}"
+                )
 
         try:
             actual_size = os.path.getsize(target_path)
@@ -3764,7 +3793,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Skip if already present and fully valid.
         if os.path.exists(target_path):
-            ok, reason = self._validate_nightly_asset(target_path, name, size)
+            ok, reason = self._validate_nightly_asset(
+                target_path, name, size, expected_md5=entry.get("expected_md5")
+            )
             if ok:
                 logger.debug("Nightly asset already present and valid: %s", name)
                 return self.create_download_result(
@@ -3824,7 +3855,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # Deterministic post-download validation. A failure here means the
         # response itself was wrong; remove the bad file + stored hash and
         # treat it as non-retryable so a retry cannot silently replace it.
-        ok, reason = self._validate_nightly_asset(target_path, name, size)
+        ok, reason = self._validate_nightly_asset(
+            target_path, name, size, expected_md5=entry.get("expected_md5")
+        )
         if not ok:
             self._remove_nightly_target_and_hash(target_path)
             logger.error(

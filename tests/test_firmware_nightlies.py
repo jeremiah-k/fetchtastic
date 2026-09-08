@@ -20,6 +20,7 @@ behavior changed).  Each symbol is accessed via ``getattr``/``hasattr`` so
 the module collects cleanly even when an API is partially absent.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -1674,6 +1675,129 @@ def test_validate_nightly_asset_rejects_symlink_target(downloader):
     ok, reason = downloader._validate_nightly_asset(link, entry["name"], 5)
     assert ok is False
     assert "symlink" in reason.lower() or "regular" in reason.lower()
+
+
+# --- MD5 verification (meshtastic/firmware#11719 publishes md5 per file) ---
+
+
+def test_validate_nightly_asset_accepts_matching_md5(downloader):
+    """A file whose MD5 matches the expected value must validate cleanly."""
+    payload = b"hello nightly"
+    expected = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=expected
+    )
+    assert ok is True
+    assert reason == ""
+
+
+def test_validate_nightly_asset_rejects_mismatched_md5(downloader):
+    """A file whose MD5 doesn't match the expected value must fail validation."""
+    payload = b"hello nightly"
+    wrong = "f" * 32
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=wrong
+    )
+    assert ok is False
+    assert "MD5" in reason
+
+
+def test_validate_nightly_asset_md5_check_is_case_insensitive(downloader):
+    """MD5 comparison must be case-insensitive (manifests sometimes uppercase)."""
+    payload = b"hello nightly"
+    expected = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=expected.upper()
+    )
+    assert ok is True
+    assert reason == ""
+
+
+def test_validate_nightly_asset_no_md5_check_when_not_provided(downloader):
+    """When expected_md5 is None/empty, no MD5 check runs (legacy path preserved)."""
+    payload = b"hello nightly"
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=None
+    )
+    assert ok is True
+
+
+def test_download_nightly_asset_md5_mismatch_fails_non_retryable(
+    downloader, mock_cache_manager
+):
+    """A downloaded file whose MD5 doesn't match expected_md5 must fail non-retryably."""
+    payload = b"corrupted-bytes"
+    wrong_md5 = "0" * 32
+    entry = _contents_entry(
+        "firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload)
+    )
+    entry["expected_md5"] = wrong_md5
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    if os.path.exists(target):
+        os.remove(target)
+
+    def _fake_download(url, path):
+        Path(path).write_bytes(payload)
+        return True
+
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry",
+        side_effect=_fake_download,
+    ):
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    from fetchtastic.constants import ERROR_TYPE_VALIDATION
+
+    assert result.success is False
+    assert result.is_retryable is False
+    assert result.error_type == ERROR_TYPE_VALIDATION
+    assert "MD5" in (result.error_message or "")
+    # Bad file must have been removed.
+    assert not os.path.exists(target)
+
+
+def test_download_nightly_asset_md5_match_succeeds(
+    downloader, mock_cache_manager
+):
+    """A downloaded file whose MD5 matches expected_md5 must succeed."""
+    payload = b"good-bytes"
+    expected = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    entry = _contents_entry(
+        "firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload)
+    )
+    entry["expected_md5"] = expected
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    if os.path.exists(target):
+        os.remove(target)
+
+    def _fake_download(url, path):
+        Path(path).write_bytes(payload)
+        return True
+
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry",
+        side_effect=_fake_download,
+    ):
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    assert result.success is True
+    assert os.path.exists(target)
 
 
 def test_download_nightly_asset_executable_only_after_validation(
