@@ -447,6 +447,10 @@ def test_fetch_firmware_nightlies_queries_nightly_manifests(
     mock_cache_manager.get_nightly_release_manifest.assert_called_once_with(
         BUILD_2_8_0, force_refresh=True
     )
+    target_calls = mock_cache_manager.get_nightly_target_manifest.call_args_list
+    assert target_calls
+    assert all(call.kwargs.get("force_refresh", False) is False for call in target_calls)
+    assert len({id(call.kwargs["session"]) for call in target_calls}) == 1
 
 
 def test_listing_contains_release_manifest(downloader, mock_cache_manager):

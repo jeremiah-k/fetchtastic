@@ -566,7 +566,11 @@ class CacheManager:
         )
 
     def get_nightly_target_manifest(
-        self, target_id: str, *, force_refresh: bool = False
+        self,
+        target_id: str,
+        *,
+        force_refresh: bool = False,
+        session: Optional[requests.Session] = None,
     ) -> dict[str, Any]:
         """
         Fetch firmware-<target_id>.mt.json from nightly.meshtastic.org.
@@ -597,6 +601,7 @@ class CacheManager:
             force_refresh=force_refresh,
             cache_key=f"nightly:target:{target_id}",
             path_description=f"nightly target manifest firmware-{target_id}.mt.json",
+            session=session,
         )
 
     def _fetch_nightly_json(
@@ -606,6 +611,7 @@ class CacheManager:
         force_refresh: bool,
         cache_key: str,
         path_description: str,
+        session: Optional[requests.Session] = None,
     ) -> dict[str, Any]:
         """
         Fetch a JSON document from nightly.meshtastic.org through a TTL
@@ -644,6 +650,7 @@ class CacheManager:
                     url,
                     max_retries=_NIGHTLY_HTTP_MAX_RETRIES,
                     retry_statuses=_NIGHTLY_HTTP_RETRY_STATUSES,
+                    session=session,
                 )
             except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
                 captured.append(exc)
@@ -705,6 +712,7 @@ class CacheManager:
         *,
         max_retries: int,
         retry_statuses: tuple[int, ...],
+        session: Optional[requests.Session] = None,
     ) -> dict[str, Any]:
         """
         GET ``url`` and return the parsed JSON body.
@@ -722,18 +730,16 @@ class CacheManager:
         ``Session.request`` — without disabling the project-wide network
         blocker in tests/conftest.py.
 
-        Note: ``requests.Session.get()`` already pools connections, but
-        a fresh session per call is acceptable here because these
-        fetches run at most a handful of times per fetchtastic run. The
-        session is closed via ``with`` so pooled connections are
-        released deterministically rather than when the session is GC'd.
+        A caller may pass a shared ``requests.Session`` to reuse connections
+        across the release's many target-manifest requests. When no session is
+        supplied, this helper owns a short-lived session and closes it on exit.
         """
-        attempt = 0
-        delay = DEFAULT_BACKOFF_FACTOR
-        with requests.Session() as session:
+        def request_json(active_session: requests.Session) -> dict[str, Any]:
+            attempt = 0
+            delay = DEFAULT_BACKOFF_FACTOR
             while True:
                 try:
-                    response = session.request(
+                    response = active_session.request(
                         "GET", url, timeout=DEFAULT_REQUEST_TIMEOUT
                     )
                 except requests.RequestException:
@@ -757,6 +763,11 @@ class CacheManager:
                     # exhausted). Surface to the caller.
                     response.raise_for_status()
                 return response.json()
+
+        if session is not None:
+            return request_json(session)
+        with requests.Session() as owned_session:
+            return request_json(owned_session)
 
     def clear_cache(self, cache_file: str) -> bool:
         """

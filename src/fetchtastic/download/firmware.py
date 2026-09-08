@@ -3002,48 +3002,52 @@ class FirmwareReleaseDownloader(BaseDownloader):
             }
         )
 
-        for target in targets:
-            if not isinstance(target, dict):
-                raise ValueError(
-                    f"firmware-nightly release manifest has non-dict target: {target!r}"
-                )
-            board = target.get("board")
-            if not isinstance(board, str) or not board:
-                raise ValueError(
-                    f"firmware-nightly release manifest target missing 'board': {target!r}"
-                )
-            target_id = f"{board}-{version}"
-            target_manifest = self.cache_manager.get_nightly_target_manifest(
-                target_id, force_refresh=True
-            )
-            if not isinstance(target_manifest, dict) or not target_manifest:
-                raise ValueError(
-                    f"firmware-nightly target manifest missing for {target_id}"
-                )
-            files = target_manifest.get("files")
-            if not isinstance(files, list):
-                raise ValueError(
-                    f"firmware-nightly target manifest {target_id} has non-list 'files'"
-                )
-            for f in files:
-                if not isinstance(f, dict) or not isinstance(f.get("name"), str):
+        # Target manifests are immutable for a build id. Reuse their TTL cache
+        # and one HTTP session so a fresh nightly does not pay a TCP/TLS setup
+        # cost for every board in the release manifest.
+        with requests.Session() as target_session:
+            for target in targets:
+                if not isinstance(target, dict):
                     raise ValueError(
-                        f"firmware-nightly target manifest {target_id} has invalid file entry: {f!r}"
+                        f"firmware-nightly release manifest has non-dict target: {target!r}"
                     )
-                name = f["name"]
-                entries.append(
-                    {
-                        "name": name,
-                        "download_url": f"{FIRMWARE_NIGHTLY_BASE_URL}/{name}",
-                        "size": f.get("bytes"),
-                        "type": "file",
-                        **(
-                            {"expected_md5": str(f["md5"]).lower()}
-                            if isinstance(f.get("md5"), str) and f["md5"]
-                            else {}
-                        ),
-                    }
+                board = target.get("board")
+                if not isinstance(board, str) or not board:
+                    raise ValueError(
+                        f"firmware-nightly release manifest target missing 'board': {target!r}"
+                    )
+                target_id = f"{board}-{version}"
+                target_manifest = self.cache_manager.get_nightly_target_manifest(
+                    target_id, session=target_session
                 )
+                if not isinstance(target_manifest, dict) or not target_manifest:
+                    raise ValueError(
+                        f"firmware-nightly target manifest missing for {target_id}"
+                    )
+                files = target_manifest.get("files")
+                if not isinstance(files, list):
+                    raise ValueError(
+                        f"firmware-nightly target manifest {target_id} has non-list 'files'"
+                    )
+                for f in files:
+                    if not isinstance(f, dict) or not isinstance(f.get("name"), str):
+                        raise ValueError(
+                            f"firmware-nightly target manifest {target_id} has invalid file entry: {f!r}"
+                        )
+                    name = f["name"]
+                    entries.append(
+                        {
+                            "name": name,
+                            "download_url": f"{FIRMWARE_NIGHTLY_BASE_URL}/{name}",
+                            "size": f.get("bytes"),
+                            "type": "file",
+                            **(
+                                {"expected_md5": str(f["md5"]).lower()}
+                                if isinstance(f.get("md5"), str) and f["md5"]
+                                else {}
+                            ),
+                        }
+                    )
 
         # Synthetic helper-script entries. The nightly R2 bucket doesn't
         # publish device-install.sh / device-update.sh (they live in
