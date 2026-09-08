@@ -2789,8 +2789,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             # Get version tuple for comparison
             version_manager = VersionManager()
             release_tuple = version_manager.get_release_tuple(clean_release_tag)
-            if not release_tuple:
+            if release_tuple is None or len(release_tuple) < 3:
                 return False
+            release_tuple = release_tuple[:3]
 
             # Path to prerelease directory
             prerelease_dir = os.path.join(
@@ -2823,15 +2824,21 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         if entry.name.startswith(FIRMWARE_DIR_PREFIX):
                             dir_name = entry.name[len(FIRMWARE_DIR_PREFIX) :]
 
-                            # Extract version from directory name
                             if "." in dir_name:
                                 parts = dir_name.split(".")
                                 if len(parts) >= 3:
                                     try:
-                                        dir_major, dir_minor, dir_patch = map(
-                                            int, parts[:3]
+                                        parsed_dir_tuple = (
+                                            version_manager.get_release_tuple(dir_name)
                                         )
-                                        dir_tuple = (dir_major, dir_minor, dir_patch)
+                                        if (
+                                            parsed_dir_tuple is None
+                                            or len(parsed_dir_tuple) < 3
+                                        ):
+                                            raise ValueError(
+                                                "unparsable prerelease version"
+                                            )
+                                        dir_tuple = parsed_dir_tuple[:3]
 
                                         # Check if this prerelease is superseded
                                         if dir_tuple <= release_tuple:
@@ -2853,7 +2860,26 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                             valid_latest_target_names.add(entry.name)
 
                                     except ValueError:
+                                        logger.debug(
+                                            "Preserving unparsable firmware prerelease "
+                                            "directory: %s",
+                                            entry.name,
+                                        )
+                                        valid_latest_target_names.add(entry.name)
                                         continue
+                                else:
+                                    logger.debug(
+                                        "Preserving unparsable firmware prerelease "
+                                        "directory: %s",
+                                        entry.name,
+                                    )
+                                    valid_latest_target_names.add(entry.name)
+                            else:
+                                logger.debug(
+                                    "Preserving unparsable firmware prerelease directory: %s",
+                                    entry.name,
+                                )
+                                valid_latest_target_names.add(entry.name)
                 self._cleanup_invalid_prerelease_latest_pointer(
                     prerelease_dir, valid_latest_target_names
                 )
