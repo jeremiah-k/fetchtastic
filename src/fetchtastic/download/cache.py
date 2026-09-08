@@ -511,9 +511,7 @@ class CacheManager:
             )
             return []
 
-    def get_nightly_index(
-        self, *, force_refresh: bool = False
-    ) -> dict[str, Any]:
+    def get_nightly_index(self, *, force_refresh: bool = False) -> dict[str, Any]:
         """
         Fetch and parse nightly.meshtastic.org/index.json.
 
@@ -595,9 +593,7 @@ class CacheManager:
         Raises:
             ValueError: If ``target_id`` is not a valid nightly target id.
         """
-        if not isinstance(target_id, str) or not _NIGHTLY_TARGET_ID_RX.match(
-            target_id
-        ):
+        if not isinstance(target_id, str) or not _NIGHTLY_TARGET_ID_RX.match(target_id):
             raise ValueError(f"Unsafe nightly target id: {target_id!r}")
         return self._fetch_nightly_json(
             f"{FIRMWARE_NIGHTLY_BASE_URL}/firmware-{target_id}.mt.json",
@@ -649,7 +645,9 @@ class CacheManager:
         # caller's failure semantics are correct.
         captured: list[BaseException] = []
 
-        def fetcher() -> Any:  # Any: returns dict[str, Any] on success, [] on transport failure
+        def fetcher() -> (
+            Any
+        ):  # Any: returns dict[str, Any] on success, [] on transport failure
             try:
                 return self._http_get_json_with_retry(
                     url,
@@ -739,6 +737,7 @@ class CacheManager:
         across the release's many target-manifest requests. When no session is
         supplied, this helper owns a short-lived session and closes it on exit.
         """
+
         def request_json(active_session: requests.Session) -> dict[str, Any]:
             attempt = 0
             delay = DEFAULT_BACKOFF_FACTOR

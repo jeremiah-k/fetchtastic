@@ -44,7 +44,6 @@ from fetchtastic.constants import (
     FIRMWARE_NIGHTLY_HELPER_BASE_URL,
     FIRMWARE_NIGHTLY_HELPER_SCRIPTS,
     FIRMWARE_NIGHTLY_MANIFEST_PATTERN,
-    FIRMWARE_NIGHTLY_SOURCE_DIR,
     FIRMWARE_PRERELEASES_DIR_NAME,
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
     LATEST_FIRMWARE_NIGHTLY_JSON_FILE,
@@ -2975,9 +2974,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # build still works.
         commit = index.get("commit")
         commit_pinned = (
-            isinstance(commit, str) and bool(commit) and all(
-                c in "0123456789abcdef" for c in commit.lower()
-            )
+            isinstance(commit, str)
+            and bool(commit)
+            and all(c in "0123456789abcdef" for c in commit.lower())
             and len(commit) >= 7
         )
 
@@ -2985,9 +2984,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             version, force_refresh=True
         )
         if not isinstance(release, dict) or not release:
-            raise ValueError(
-                f"firmware-nightly release manifest missing for {version}"
-            )
+            raise ValueError(f"firmware-nightly release manifest missing for {version}")
         targets = release.get("targets")
         if not isinstance(targets, list) or not targets:
             raise ValueError(
@@ -3697,9 +3694,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             try:
                 hasher = hashlib.md5(usedforsecurity=False)
                 with open(target_path, "rb") as md5_file:
-                    for chunk in iter(
-                        lambda: md5_file.read(DEFAULT_CHUNK_SIZE), b""
-                    ):
+                    for chunk in iter(lambda: md5_file.read(DEFAULT_CHUNK_SIZE), b""):
                         hasher.update(chunk)
                 actual_md5 = hasher.hexdigest()
             except OSError as exc:

@@ -165,29 +165,50 @@ def _make_nightly_target_bodies(
     for board in boards:
         if board == "rak4631":
             files = [
-                {"name": f"firmware-rak4631-{build}.uf2",
-                 "md5": "11111111111111111111111111111111", "bytes": 490_000},
-                {"name": f"firmware-rak4631-{build}.hex",
-                 "md5": "22222222222222222222222222222222", "bytes": 610_000},
-                {"name": f"firmware-rak4631-{build}-ota.zip",
-                 "md5": "33333333333333333333333333333333", "bytes": 769_000},
+                {
+                    "name": f"firmware-rak4631-{build}.uf2",
+                    "md5": "11111111111111111111111111111111",
+                    "bytes": 490_000,
+                },
+                {
+                    "name": f"firmware-rak4631-{build}.hex",
+                    "md5": "22222222222222222222222222222222",
+                    "bytes": 610_000,
+                },
+                {
+                    "name": f"firmware-rak4631-{build}-ota.zip",
+                    "md5": "33333333333333333333333333333333",
+                    "bytes": 769_000,
+                },
                 # The build manifest inventories this debug output, but the
                 # nightly publish job packages ELFs separately and does not
                 # copy them to the public bucket root.
-                {"name": f"firmware-rak4631-{build}.elf",
-                 "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bytes": 2_400_000},
+                {
+                    "name": f"firmware-rak4631-{build}.elf",
+                    "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "bytes": 2_400_000,
+                },
             ]
         elif board == "tbeam":
             files = [
-                {"name": f"firmware-tbeam-{build}.bin",
-                 "md5": "44444444444444444444444444444444", "bytes": 1_100_000},
-                {"name": f"firmware-tbeam-{build}.factory.bin",
-                 "md5": "55555555555555555555555555555555", "bytes": 1_050_000},
+                {
+                    "name": f"firmware-tbeam-{build}.bin",
+                    "md5": "44444444444444444444444444444444",
+                    "bytes": 1_100_000,
+                },
+                {
+                    "name": f"firmware-tbeam-{build}.factory.bin",
+                    "md5": "55555555555555555555555555555555",
+                    "bytes": 1_050_000,
+                },
             ]
         else:  # heltec-v3
             files = [
-                {"name": f"firmware-heltec-v3-{build}.bin",
-                 "md5": "66666666666666666666666666666666", "bytes": 1_150_000},
+                {
+                    "name": f"firmware-heltec-v3-{build}.bin",
+                    "md5": "66666666666666666666666666666666",
+                    "bytes": 1_150_000,
+                },
             ]
         bodies[f"{board}-{build}"] = {
             "version": build,
@@ -464,13 +485,17 @@ def test_fetch_firmware_nightlies_queries_nightly_manifests(
     # Index and release manifest are both fetched with force_refresh=True so
     # the in-place upstream replacement is observed each enabled check.
     mock_cache_manager.get_nightly_index.assert_called_once()
-    assert mock_cache_manager.get_nightly_index.call_args.kwargs["force_refresh"] is True
+    assert (
+        mock_cache_manager.get_nightly_index.call_args.kwargs["force_refresh"] is True
+    )
     mock_cache_manager.get_nightly_release_manifest.assert_called_once_with(
         BUILD_2_8_0, force_refresh=True
     )
     target_calls = mock_cache_manager.get_nightly_target_manifest.call_args_list
     assert target_calls
-    assert all(call.kwargs.get("force_refresh", False) is False for call in target_calls)
+    assert all(
+        call.kwargs.get("force_refresh", False) is False for call in target_calls
+    )
     assert len({id(call.kwargs["session"]) for call in target_calls}) == 1
 
 
@@ -603,9 +628,7 @@ def test_fetch_firmware_nightlies_appends_helper_scripts_pinned_to_commit(
 
     by_name = {e["name"]: e for e in entries}
     for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
-        assert script_name in by_name, (
-            f"{script_name} missing from listing"
-        )
+        assert script_name in by_name, f"{script_name} missing from listing"
         entry = by_name[script_name]
         # URL is pinned to the firmware repo's commit SHA.
         assert entry["download_url"] == (
@@ -619,40 +642,36 @@ def test_fetch_firmware_nightlies_appends_helper_scripts_pinned_to_commit(
         assert entry["size"] is None
 
 
+@pytest.mark.parametrize("bad_commit", [None, "", "not-a-sha", "abc"])
 def test_fetch_firmware_nightlies_omits_helpers_when_commit_missing_or_malformed(
-    downloader, mock_cache_manager
+    downloader, mock_cache_manager, bad_commit
 ):
     """When index.json has no usable commit, helpers are omitted (not fetched stale)."""
     from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
 
-    for bad_commit in (None, "", "not-a-sha", "abc"):
-        index_body = _make_nightly_index_body()
-        index_body["commit"] = bad_commit
-        release_body = _make_nightly_release_body()
-        target_bodies = _make_nightly_target_bodies()
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = bad_commit
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
 
-        mock_cache_manager = Mock(spec=CacheManager)
-        mock_cache_manager.cache_dir = downloader.cache_manager.cache_dir
-        mock_cache_manager.get_cache_file_path.side_effect = (
-            lambda file_name: os.path.join(
-                mock_cache_manager.cache_dir, file_name
-            )
-        )
-        mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
-        mock_cache_manager.get_nightly_release_manifest = Mock(
-            return_value=release_body
-        )
-        mock_cache_manager.get_nightly_target_manifest = Mock(
-            side_effect=lambda target_id, **_: target_bodies[target_id]
-        )
-        downloader.cache_manager = mock_cache_manager
+    mock_cache_manager = Mock(spec=CacheManager)
+    mock_cache_manager.cache_dir = downloader.cache_manager.cache_dir
+    mock_cache_manager.get_cache_file_path.side_effect = lambda file_name: os.path.join(
+        mock_cache_manager.cache_dir, file_name
+    )
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
 
-        entries = downloader.fetch_firmware_nightlies()
-        names = {e["name"] for e in entries}
-        for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
-            assert script_name not in names, (
-                f"{script_name} should be omitted when commit is {bad_commit!r}"
-            )
+    entries = downloader.fetch_firmware_nightlies()
+    names = {e["name"] for e in entries}
+    for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+        assert (
+            script_name not in names
+        ), f"{script_name} should be omitted when commit is {bad_commit!r}"
 
 
 def test_helper_scripts_selected_by_device_pattern(downloader, mock_cache_manager):
@@ -678,9 +697,9 @@ def test_helper_scripts_selected_by_device_pattern(downloader, mock_cache_manage
 
     selected_names = {e["name"] for e in selected}
     for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
-        assert script_name in selected_names, (
-            f"{script_name} not selected by 'device-' pattern; got {sorted(selected_names)}"
-        )
+        assert (
+            script_name in selected_names
+        ), f"{script_name} not selected by 'device-' pattern; got {sorted(selected_names)}"
 
 
 def test_helper_scripts_omitted_from_selection_without_device_pattern(
@@ -710,9 +729,7 @@ def test_helper_scripts_omitted_from_selection_without_device_pattern(
     assert "device-update.sh" not in selected_names
 
 
-def test_fetch_firmware_nightlies_raises_on_bad_target(
-    downloader, mock_cache_manager
-):
+def test_fetch_firmware_nightlies_raises_on_bad_target(downloader, mock_cache_manager):
     """A target with missing 'board' rejects the whole listing."""
     index_body = _make_nightly_index_body()
     release_body = {
@@ -1934,9 +1951,7 @@ def test_download_nightly_asset_md5_mismatch_fails_non_retryable(
     """A downloaded file whose MD5 doesn't match expected_md5 must fail non-retryably."""
     payload = b"corrupted-bytes"
     wrong_md5 = "0" * 32
-    entry = _contents_entry(
-        "firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload)
-    )
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
     entry["expected_md5"] = wrong_md5
     target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
     if os.path.exists(target):
@@ -1962,15 +1977,11 @@ def test_download_nightly_asset_md5_mismatch_fails_non_retryable(
     assert not os.path.exists(target)
 
 
-def test_download_nightly_asset_md5_match_succeeds(
-    downloader, mock_cache_manager
-):
+def test_download_nightly_asset_md5_match_succeeds(downloader, mock_cache_manager):
     """A downloaded file whose MD5 matches expected_md5 must succeed."""
     payload = b"good-bytes"
     expected = hashlib.md5(payload, usedforsecurity=False).hexdigest()
-    entry = _contents_entry(
-        "firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload)
-    )
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
     entry["expected_md5"] = expected
     target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
     if os.path.exists(target):
@@ -2676,9 +2687,7 @@ def test_should_process_nightly_same_identity_all_valid_skips(
     assert should(entries, BUILD_2_8_0) is False
 
 
-def test_should_process_nightly_enforces_manifest_md5(
-    downloader, cache_manager
-):
+def test_should_process_nightly_enforces_manifest_md5(downloader, cache_manager):
     """Same-build validation must pass the upstream MD5 into the validator."""
     tracking_path = cache_manager.get_cache_file_path(
         constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE

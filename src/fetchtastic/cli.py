@@ -33,9 +33,7 @@ from fetchtastic.utils import (
     display_banner,
 )
 from fetchtastic.utils import get_api_request_summary as _get_api_request_summary
-from fetchtastic.utils import (
-    reset_api_tracking,
-)
+from fetchtastic.utils import reset_api_tracking
 
 get_api_request_summary = _get_api_request_summary
 
