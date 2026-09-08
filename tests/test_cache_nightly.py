@@ -2,16 +2,15 @@
 
 These exercise the new CacheManager.get_nightly_index /
 get_nightly_release_manifest / get_nightly_target_manifest surface area
-added in support of meshtastic/firmware#11719. Real HTTP semantics are
-covered by spinning up a stdlib http.server on an ephemeral port so that
-404 short-circuit, 503-then-200 retry, and bad-target-id rejection all
-hit actual request handling.
+added in support of meshtastic/firmware#11719. The HTTP boundary is
+mocked via ``mocker.patch`` on ``requests.Session.request`` so the
+project-wide network blocker in tests/conftest.py stays in effect.
+
+Each test stages a queue of response objects (status_code, json_data).
+A queue with mixed 503/200 entries exercises the retry path; a queue
+with a single 404 exercises the short-circuit; etc.
 """
 
-import http.server
-import json
-import socketserver
-import threading
 from typing import Any
 
 import pytest
@@ -50,94 +49,42 @@ TARGET_BODY: dict[str, Any] = {
 }
 
 
-class _Handler(http.server.BaseHTTPRequestHandler):
-    """Routes nightly-manifest GETs to canned JSON responses.
+class _FakeResponse:
+    """Minimal requests.Response stand-in carrying only what the fetcher reads."""
 
-    Subclass and override ``index_status`` / ``release_status`` /
-    ``target_status`` to drive error-path tests. The first matching path
-    wins, so the test can mix 200 and non-200 responses on the same
-    server (used by the 503-then-200 retry test).
-    """
+    def __init__(self, status_code: int, json_data: Any = None) -> None:
+        self.status_code = status_code
+        self._json_data = json_data if json_data is not None else {}
 
-    server_state: dict[str, Any] = {}
+    def json(self) -> Any:
+        return self._json_data
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
-        # Silence stderr noise during tests; failures surface via assertions.
-        return
+    def raise_for_status(self) -> None:
+        import requests
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib signature
-        path = self.path.lstrip("/")
-        state = self.server_state
-
-        # Optional 503-then-200 counter; consumed once per request.
-        if state.get("next_status"):
-            code = int(state["next_status"].pop(0))
-            if code != 200:
-                self.send_response(code)
-                self.end_headers()
-                return
-
-        if path == "index.json":
-            self._send_json(state.get("index_status", 200), INDEX_BODY)
-            return
-        if path.startswith("firmware-") and path.endswith(".json") and ".mt." not in path:
-            self._send_json(state.get("release_status", 200), RELEASE_BODY)
-            return
-        if path.endswith(".mt.json"):
-            self._send_json(state.get("target_status", 200), TARGET_BODY)
-            return
-        self.send_response(404)
-        self.end_headers()
-
-    def _send_json(self, status: int, body: dict[str, Any]) -> None:
-        payload = json.dumps(body).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        if 400 <= self.status_code < 600:
+            raise requests.HTTPError(f"{self.status_code} simulated error")
 
 
-class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads = True
-    allow_reuse_address = True
-
-
-@pytest.fixture
-def nightly_server(monkeypatch):
-    """Spin up a stdlib http.server bound to a random localhost port.
-
-    Yields the base URL. The test can mutate ``server_state`` (a class
-    attribute on the handler) to drive error paths.
-    """
-    _Handler.server_state = {}
-    server = _ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    port = server.server_address[1]
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def _cache_pointing_at(monkeypatch, base_url: str, tmp_path) -> CacheManager:
-    """Build a CacheManager whose nightly fetcher talks to the test server."""
-    monkeypatch.setattr(
-        "fetchtastic.download.cache.FIRMWARE_NIGHTLY_BASE_URL", base_url
+def _enqueue(mocker, *responses: _FakeResponse) -> None:
+    """Stage a sequence of fake responses, consumed one per Session.request call."""
+    queue = list(responses)
+    mocker.patch(
+        "requests.Session.request",
+        side_effect=queue,
     )
+
+
+def _cache(monkeypatch, tmp_path, base_url: str = "https://nightly.meshtastic.org") -> CacheManager:
     return CacheManager(cache_dir=str(tmp_path))
 
 
 # ---------- happy path ----------
 
 
-def test_get_nightly_index_returns_parsed_payload(
-    nightly_server, monkeypatch, tmp_path
-) -> None:
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+def test_get_nightly_index_returns_parsed_payload(mocker, monkeypatch, tmp_path) -> None:
+    _enqueue(mocker, _FakeResponse(200, INDEX_BODY))
+    cm = _cache(monkeypatch, tmp_path)
     out = cm.get_nightly_index(force_refresh=True)
     assert out == INDEX_BODY
     assert out["version"] == "2.8.1.0becda3"
@@ -145,55 +92,58 @@ def test_get_nightly_index_returns_parsed_payload(
 
 
 def test_get_nightly_release_manifest_returns_targets(
-    nightly_server, monkeypatch, tmp_path
+    mocker, monkeypatch, tmp_path
 ) -> None:
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+    _enqueue(mocker, _FakeResponse(200, RELEASE_BODY))
+    cm = _cache(monkeypatch, tmp_path)
     out = cm.get_nightly_release_manifest("2.8.1.0becda3", force_refresh=True)
     assert out == RELEASE_BODY
     assert [t["board"] for t in out["targets"]] == ["tbeam", "rak4631"]
 
 
 def test_get_nightly_target_manifest_returns_files(
-    nightly_server, monkeypatch, tmp_path
+    mocker, monkeypatch, tmp_path
 ) -> None:
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+    _enqueue(mocker, _FakeResponse(200, TARGET_BODY))
+    cm = _cache(monkeypatch, tmp_path)
     out = cm.get_nightly_target_manifest("tbeam-2.8.1.0becda3", force_refresh=True)
     assert out == TARGET_BODY
     assert out["files"][0]["name"].endswith(".bin")
 
 
-# ---------- fail-closed: bad id / 404 / non-retriable client error ----------
+# ---------- fail-closed: bad id ----------
 
 
 def test_get_nightly_target_manifest_rejects_path_traversal(
-    nightly_server, monkeypatch, tmp_path
+    mocker, monkeypatch, tmp_path
 ) -> None:
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+    cm = _cache(monkeypatch, tmp_path)
     with pytest.raises(ValueError):
         cm.get_nightly_target_manifest("../../../etc/passwd", force_refresh=True)
 
 
 def test_get_nightly_target_manifest_rejects_empty_string(
-    nightly_server, monkeypatch, tmp_path
+    mocker, monkeypatch, tmp_path
 ) -> None:
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+    cm = _cache(monkeypatch, tmp_path)
     with pytest.raises(ValueError):
         cm.get_nightly_target_manifest("", force_refresh=True)
 
 
 def test_get_nightly_release_manifest_rejects_bad_version(
-    nightly_server, monkeypatch, tmp_path
+    mocker, monkeypatch, tmp_path
 ) -> None:
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+    cm = _cache(monkeypatch, tmp_path)
     with pytest.raises(ValueError):
         cm.get_nightly_release_manifest("not-a-version", force_refresh=True)
 
 
-def test_get_nightly_index_returns_empty_on_404(
-    nightly_server, monkeypatch, tmp_path
-) -> None:
-    _Handler.server_state["index_status"] = 404
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+# ---------- 404 short-circuit ----------
+
+
+def test_get_nightly_index_returns_empty_on_404(mocker, monkeypatch, tmp_path) -> None:
+    _enqueue(mocker, _FakeResponse(404))
+    cm = _cache(monkeypatch, tmp_path)
     assert cm.get_nightly_index(force_refresh=True) == {}
 
 
@@ -201,21 +151,20 @@ def test_get_nightly_index_returns_empty_on_404(
 
 
 def test_get_nightly_index_retries_on_503_then_succeeds(
-    nightly_server, monkeypatch, tmp_path
+    mocker, monkeypatch, tmp_path
 ) -> None:
-    # First request -> 503; second -> default 200 with INDEX_BODY.
-    _Handler.server_state["next_status"] = [503]
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+    _enqueue(mocker, _FakeResponse(503), _FakeResponse(200, INDEX_BODY))
+    cm = _cache(monkeypatch, tmp_path)
     out = cm.get_nightly_index(force_refresh=True)
     assert out == INDEX_BODY
 
 
 def test_get_nightly_index_surfaces_503_after_retry_budget(
-    nightly_server, monkeypatch, tmp_path
+    mocker, monkeypatch, tmp_path
 ) -> None:
     # Two 503s exhausts the 1-retry budget.
-    _Handler.server_state["next_status"] = [503, 503]
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
+    _enqueue(mocker, _FakeResponse(503), _FakeResponse(503))
+    cm = _cache(monkeypatch, tmp_path)
     with pytest.raises(Exception):
         cm.get_nightly_index(force_refresh=True)
 
@@ -223,16 +172,24 @@ def test_get_nightly_index_surfaces_503_after_retry_budget(
 # ---------- caching ----------
 
 
-def test_get_nightly_index_uses_cache_within_ttl(
-    nightly_server, monkeypatch, tmp_path
-) -> None:
-    cm = _cache_pointing_at(monkeypatch, nightly_server, tmp_path)
-    # First call populates cache; on second call the cache must be hit
-    # before the server (the server would 500 if hit, since we don't reset state).
-    _Handler.server_state["index_status"] = 500  # would raise if reached
+def test_get_nightly_index_uses_cache_within_ttl(mocker, monkeypatch, tmp_path) -> None:
+    _enqueue(mocker, _FakeResponse(200, INDEX_BODY))
+    cm = _cache(monkeypatch, tmp_path)
     first = cm.get_nightly_index(force_refresh=True)
     assert first == INDEX_BODY
-    # Now flip to a server-side failure that should never be reached:
-    _Handler.server_state["index_status"] = 500
+    # A second non-force_refresh call must hit the cache, not the network.
+    # If the second call attempted a request, the queue (now empty) would
+    # raise StopIteration; the test therefore asserts the cached value.
     second = cm.get_nightly_index(force_refresh=False)
     assert second == INDEX_BODY
+
+
+def test_get_nightly_index_force_refresh_re_reads(mocker, monkeypatch, tmp_path) -> None:
+    _enqueue(
+        mocker,
+        _FakeResponse(200, INDEX_BODY),
+        _FakeResponse(200, {**INDEX_BODY, "title": "updated"}),
+    )
+    cm = _cache(monkeypatch, tmp_path)
+    assert cm.get_nightly_index(force_refresh=True)["title"].startswith("Meshtastic")
+    assert cm.get_nightly_index(force_refresh=True)["title"] == "updated"

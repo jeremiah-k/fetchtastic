@@ -7,6 +7,8 @@ commit timestamps, and other download-related data.
 
 import json
 import os
+import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import IO, Any, Callable, Optional, cast
 from urllib.parse import urlencode
@@ -15,10 +17,16 @@ import requests  # type: ignore[import-untyped]
 
 from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
+    DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_REQUEST_TIMEOUT,
+    FIRMWARE_NIGHTLY_BASE_URL,
+    FIRMWARE_NIGHTLY_INDEX_FILENAME,
+    FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS,
     FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     GITHUB_RELEASES_CACHE_SCHEMA_VERSION,
+    HTTP_STATUS_ERROR_THRESHOLD,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     RELEASES_CACHE_EXPIRY_HOURS,
 )
@@ -30,6 +38,24 @@ from fetchtastic.utils import (
 )
 
 from .files import _atomic_write, _atomic_write_json
+
+# Nightly build-id (e.g. "2.8.1.0becda3") — same shape as
+# firmware.py's _NIGHTLY_BUILD_ID_RX. Duplicated here so the cache
+# module has no dependency on firmware.py (and so the URL builder can
+# validate before constructing a path that would 404).
+_NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECASE)
+# Per-target id ("<board>-<version>.<hash>") used to validate the
+# firmware-<board>-<version>.<hash>.mt.json request URL.
+_NIGHTLY_TARGET_ID_RX = re.compile(
+    r"^[A-Za-z0-9_.-]+-\d+\.\d+\.\d+\.[a-f0-9]{6,}$"
+)
+# Retry posture for nightly.meshtastic.org fetches. Keep this short:
+# transient Cloudflare/R2 blips are common, but the nightly cron
+# refreshes upstream every few hours so a longer retry budget would
+# just delay the obvious "no candidate published" outcome. Q4 decision:
+# 1 retry on 408/429/5xx, then fail closed.
+_NIGHTLY_HTTP_RETRY_STATUSES: tuple[int, ...] = (408, 429, 500, 502, 503, 504)
+_NIGHTLY_HTTP_MAX_RETRIES: int = 1
 
 
 def parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
@@ -483,6 +509,209 @@ class CacheManager:
                 "Invalid JSON or structure in GitHub response for %s: %s", api_url, e
             )
             return []
+
+    def get_nightly_index(
+        self, *, force_refresh: bool = False
+    ) -> dict[str, Any]:
+        """
+        Fetch and parse nightly.meshtastic.org/index.json.
+
+        The nightly index is a small pointer document of shape
+        ``{version, id, title, commit}``. It is replaced in place on
+        every nightly cron, so enabled nightly checks should call this
+        with ``force_refresh=True`` to bypass any TTL cache.
+
+        Parameters:
+            force_refresh (bool): If True, bypass the on-disk cache.
+
+        Returns:
+            dict[str, Any]: The parsed JSON document. An empty dict when
+            the host returns 404 (no candidate published yet).
+        """
+        return self._fetch_nightly_json(
+            f"{FIRMWARE_NIGHTLY_BASE_URL}/{FIRMWARE_NIGHTLY_INDEX_FILENAME}",
+            force_refresh=force_refresh,
+            cache_key="nightly:index",
+            path_description="nightly index.json",
+        )
+
+    def get_nightly_release_manifest(
+        self, version: str, *, force_refresh: bool = False
+    ) -> dict[str, Any]:
+        """
+        Fetch firmware-<version>.<hash>.json from nightly.meshtastic.org.
+
+        The release-level manifest lists the per-target manifests that
+        belong to a single nightly build.
+
+        Parameters:
+            version (str): The nightly build id (e.g. ``"2.8.1.0becda3"``).
+                Must match the strict nightly build-id regex.
+            force_refresh (bool): If True, bypass the on-disk cache.
+
+        Returns:
+            dict[str, Any]: The parsed JSON document. An empty dict when
+            the host returns 404.
+
+        Raises:
+            ValueError: If ``version`` is not a valid nightly build id.
+        """
+        if not isinstance(version, str) or not _NIGHTLY_BUILD_ID_RX.match(version):
+            raise ValueError(f"Unsafe nightly version id: {version!r}")
+        return self._fetch_nightly_json(
+            f"{FIRMWARE_NIGHTLY_BASE_URL}/firmware-{version}.json",
+            force_refresh=force_refresh,
+            cache_key=f"nightly:release:{version}",
+            path_description=f"nightly release manifest firmware-{version}.json",
+        )
+
+    def get_nightly_target_manifest(
+        self, target_id: str, *, force_refresh: bool = False
+    ) -> dict[str, Any]:
+        """
+        Fetch firmware-<target_id>.mt.json from nightly.meshtastic.org.
+
+        The per-target manifest lists the concrete binary artifacts
+        (``.bin``, ``.elf``, ``.factory.bin``) for a single device, with
+        their MD5 and byte size.
+
+        Parameters:
+            target_id (str): ``"<board>-<build-id>"`` (e.g.
+                ``"tbeam-2.8.1.0becda3"``). Must match the strict
+                target-id regex to prevent path traversal.
+            force_refresh (bool): If True, bypass the on-disk cache.
+
+        Returns:
+            dict[str, Any]: The parsed JSON document. An empty dict when
+            the host returns 404.
+
+        Raises:
+            ValueError: If ``target_id`` is not a valid nightly target id.
+        """
+        if not isinstance(target_id, str) or not _NIGHTLY_TARGET_ID_RX.match(
+            target_id
+        ):
+            raise ValueError(f"Unsafe nightly target id: {target_id!r}")
+        return self._fetch_nightly_json(
+            f"{FIRMWARE_NIGHTLY_BASE_URL}/firmware-{target_id}.mt.json",
+            force_refresh=force_refresh,
+            cache_key=f"nightly:target:{target_id}",
+            path_description=f"nightly target manifest firmware-{target_id}.mt.json",
+        )
+
+    def _fetch_nightly_json(
+        self,
+        url: str,
+        *,
+        force_refresh: bool,
+        cache_key: str,
+        path_description: str,
+    ) -> dict[str, Any]:
+        """
+        Fetch a JSON document from nightly.meshtastic.org through a TTL
+        cache, with bounded retries.
+
+        404 short-circuits to an empty dict: the nightly bucket is empty
+        before the first nightly is published, and an absent release or
+        target manifest is a normal "not yet" condition rather than an
+        error. Other non-2xx responses (after retries exhaust) propagate
+        so the caller can fail closed.
+
+        Returns:
+            dict[str, Any]: Parsed JSON document, or ``{}`` on 404.
+        """
+        cache_file = self.get_cache_file_path("firmware_nightly")
+
+        def fetcher() -> dict[str, Any]:
+            return self._http_get_json_with_retry(
+                url,
+                max_retries=_NIGHTLY_HTTP_MAX_RETRIES,
+                retry_statuses=_NIGHTLY_HTTP_RETRY_STATUSES,
+            )
+
+        try:
+            result = self._get_cached_github_data(
+                cache_key=cache_key,
+                cache_file=cache_file,
+                data_field_name="payload",
+                fetcher_func=fetcher,
+                force_refresh=force_refresh,
+                cache_expiry_seconds=FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS,
+                path_description=path_description,
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.error(
+                "Invalid JSON or structure in nightly response for %s: %s",
+                url,
+                exc,
+            )
+            return {}
+
+        # 404 short-circuit returns from inside the fetcher; the cache
+        # wrapper then round-trips it through _get_cached_github_data.
+        # A None result means "fetcher said not present" — treat as {}.
+        if result is None:
+            return {}
+        if not isinstance(result, dict):
+            raise ValueError(
+                f"Unexpected non-dict nightly payload for {url}: {type(result).__name__}"
+            )
+        return result
+
+    @staticmethod
+    def _http_get_json_with_retry(
+        url: str,
+        *,
+        max_retries: int,
+        retry_statuses: tuple[int, ...],
+    ) -> dict[str, Any]:
+        """
+        GET ``url`` and return the parsed JSON body.
+
+        Special semantics:
+          - 404 returns ``{}`` (caller treats it as "absent").
+          - Responses in ``retry_statuses`` are retried up to
+            ``max_retries`` times with exponential backoff.
+          - Any other non-2xx raises ``requests.HTTPError`` after the
+            retry budget is exhausted.
+          - Connection / timeout errors follow the same retry budget.
+
+        Uses ``requests.Session().request(...)`` (not the module-level
+        ``requests.get``) so tests can mock a single entry point —
+        ``Session.request`` — without disabling the project-wide network
+        blocker in tests/conftest.py.
+
+        Note: ``requests.Session.get()`` already pools connections, but
+        a fresh session per call is acceptable here because these
+        fetches run at most a handful of times per fetchtastic run.
+        """
+        session = requests.Session()
+        attempt = 0
+        delay = DEFAULT_BACKOFF_FACTOR
+        while True:
+            try:
+                response = session.request("GET", url, timeout=DEFAULT_REQUEST_TIMEOUT)
+            except requests.RequestException:
+                if attempt < max_retries:
+                    attempt += 1
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise
+
+            if response.status_code == 404:
+                return {}
+            if response.status_code in retry_statuses and attempt < max_retries:
+                attempt += 1
+                time.sleep(delay)
+                delay *= 2
+                continue
+
+            if response.status_code >= HTTP_STATUS_ERROR_THRESHOLD:
+                # Non-retriable client error (or retriable but budget
+                # exhausted). Surface to the caller.
+                response.raise_for_status()
+            return response.json()
 
     def clear_cache(self, cache_file: str) -> bool:
         """
