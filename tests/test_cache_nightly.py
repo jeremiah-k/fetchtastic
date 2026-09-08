@@ -78,14 +78,18 @@ def _enqueue(mocker, *responses) -> None:
     )
 
 
-def _cache(monkeypatch, tmp_path, base_url: str = "https://nightly.meshtastic.org") -> CacheManager:
+def _cache(
+    monkeypatch, tmp_path, base_url: str = "https://nightly.meshtastic.org"
+) -> CacheManager:
     return CacheManager(cache_dir=str(tmp_path))
 
 
 # ---------- happy path ----------
 
 
-def test_get_nightly_index_returns_parsed_payload(mocker, monkeypatch, tmp_path) -> None:
+def test_get_nightly_index_returns_parsed_payload(
+    mocker, monkeypatch, tmp_path
+) -> None:
     _enqueue(mocker, _FakeResponse(200, INDEX_BODY))
     cm = _cache(monkeypatch, tmp_path)
     out = cm.get_nightly_index(force_refresh=True)
@@ -249,7 +253,9 @@ def test_get_nightly_index_uses_cache_within_ttl(mocker, monkeypatch, tmp_path) 
     assert second == INDEX_BODY
 
 
-def test_get_nightly_index_force_refresh_re_reads(mocker, monkeypatch, tmp_path) -> None:
+def test_get_nightly_index_force_refresh_re_reads(
+    mocker, monkeypatch, tmp_path
+) -> None:
     _enqueue(
         mocker,
         _FakeResponse(200, INDEX_BODY),
@@ -288,9 +294,7 @@ def test_target_manifest_cache_survives_generic_five_minute_ttl(
     assert calls == 1
 
 
-def test_target_manifest_cache_remains_bounded(
-    monkeypatch, tmp_path
-) -> None:
+def test_target_manifest_cache_remains_bounded(monkeypatch, tmp_path) -> None:
     """The longer target-manifest cache still refreshes after one day."""
     updated = {**TARGET_BODY, "build_epoch": TARGET_BODY["build_epoch"] + 1}
     responses = iter([_FakeResponse(200, TARGET_BODY), _FakeResponse(200, updated)])
