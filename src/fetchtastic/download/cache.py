@@ -615,19 +615,41 @@ class CacheManager:
         before the first nightly is published, and an absent release or
         target manifest is a normal "not yet" condition rather than an
         error. Other non-2xx responses (after retries exhaust) propagate
-        so the caller can fail closed.
+        as ``requests.HTTPError`` so the caller can fail closed. JSON
+        decode and shape errors propagate as ``ValueError`` /
+        ``TypeError`` so the orchestrator can mark the run
+        ``CHECK_FAILED`` rather than treating a malformed payload as
+        "no candidate published yet". ``requests.RequestException`` from
+        connection / timeout failures is re-raised after the cache
+        wrapper returns, so network failures aren't collapsed into the
+        "empty dict" path that the 404 short-circuit uses.
 
         Returns:
             dict[str, Any]: Parsed JSON document, or ``{}`` on 404.
         """
         cache_file = self.get_cache_file_path("firmware_nightly")
 
-        def fetcher() -> dict[str, Any]:
-            return self._http_get_json_with_retry(
-                url,
-                max_retries=_NIGHTLY_HTTP_MAX_RETRIES,
-                retry_statuses=_NIGHTLY_HTTP_RETRY_STATUSES,
-            )
+        # _get_cached_github_data swallows ``requests.RequestException``
+        # (line in its body) and ``ValueError``/``KeyError``/``TypeError``
+        # (its outer except) for its historical GitHub-API behavior. For
+        # nightly endpoints that swallow would misclassify both transport
+        # failures and JSON decode errors as "missing payload"; capture
+        # both here and re-raise after the cache wrapper returns so the
+        # caller's failure semantics are correct.
+        captured: list[BaseException] = []
+
+        def fetcher() -> Any:  # Any: returns dict[str, Any] on success, [] on transport failure
+            try:
+                return self._http_get_json_with_retry(
+                    url,
+                    max_retries=_NIGHTLY_HTTP_MAX_RETRIES,
+                    retry_statuses=_NIGHTLY_HTTP_RETRY_STATUSES,
+                )
+            except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+                captured.append(exc)
+                # Return a sentinel the wrapper will turn into []; the
+                # exception is re-raised below.
+                return []
 
         try:
             result = self._get_cached_github_data(
@@ -640,12 +662,24 @@ class CacheManager:
                 path_description=path_description,
             )
         except (ValueError, KeyError, TypeError) as exc:
+            # Last-resort safety net: a parse or shape error that
+            # somehow escaped the fetcher closure. Propagate so the
+            # orchestrator marks the run CHECK_FAILED rather than
+            # treating a malformed payload as "no candidate published
+            # yet" and skipping tracking / cleanup.
             logger.error(
                 "Invalid JSON or structure in nightly response for %s: %s",
                 url,
                 exc,
             )
-            return {}
+            raise
+
+        # Captured exception (transport / decode / shape) re-raised
+        # after the cache wrapper returns so the caller's failure path
+        # sees the real cause, not a misleading "non-dict payload"
+        # ValueError.
+        if captured:
+            raise captured[0]
 
         # 404 short-circuit returns from inside the fetcher; the cache
         # wrapper then round-trips it through _get_cached_github_data.
@@ -683,35 +717,39 @@ class CacheManager:
 
         Note: ``requests.Session.get()`` already pools connections, but
         a fresh session per call is acceptable here because these
-        fetches run at most a handful of times per fetchtastic run.
+        fetches run at most a handful of times per fetchtastic run. The
+        session is closed via ``with`` so pooled connections are
+        released deterministically rather than when the session is GC'd.
         """
-        session = requests.Session()
         attempt = 0
         delay = DEFAULT_BACKOFF_FACTOR
-        while True:
-            try:
-                response = session.request("GET", url, timeout=DEFAULT_REQUEST_TIMEOUT)
-            except requests.RequestException:
-                if attempt < max_retries:
+        with requests.Session() as session:
+            while True:
+                try:
+                    response = session.request(
+                        "GET", url, timeout=DEFAULT_REQUEST_TIMEOUT
+                    )
+                except requests.RequestException:
+                    if attempt < max_retries:
+                        attempt += 1
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    raise
+
+                if response.status_code == 404:
+                    return {}
+                if response.status_code in retry_statuses and attempt < max_retries:
                     attempt += 1
                     time.sleep(delay)
                     delay *= 2
                     continue
-                raise
 
-            if response.status_code == 404:
-                return {}
-            if response.status_code in retry_statuses and attempt < max_retries:
-                attempt += 1
-                time.sleep(delay)
-                delay *= 2
-                continue
-
-            if response.status_code >= HTTP_STATUS_ERROR_THRESHOLD:
-                # Non-retriable client error (or retriable but budget
-                # exhausted). Surface to the caller.
-                response.raise_for_status()
-            return response.json()
+                if response.status_code >= HTTP_STATUS_ERROR_THRESHOLD:
+                    # Non-retriable client error (or retriable but budget
+                    # exhausted). Surface to the caller.
+                    response.raise_for_status()
+                return response.json()
 
     def clear_cache(self, cache_file: str) -> bool:
         """

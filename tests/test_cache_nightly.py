@@ -17,6 +17,8 @@ import pytest
 
 from fetchtastic.download.cache import CacheManager
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 INDEX_BODY: dict[str, Any] = {
     "version": "2.8.1.0becda3",
     "id": "v2.8.1.0becda3",
@@ -66,7 +68,7 @@ class _FakeResponse:
             raise requests.HTTPError(f"{self.status_code} simulated error")
 
 
-def _enqueue(mocker, *responses: _FakeResponse) -> None:
+def _enqueue(mocker, *responses) -> None:
     """Stage a sequence of fake responses, consumed one per Session.request call."""
     queue = list(responses)
     mocker.patch(
@@ -162,10 +164,57 @@ def test_get_nightly_index_retries_on_503_then_succeeds(
 def test_get_nightly_index_surfaces_503_after_retry_budget(
     mocker, monkeypatch, tmp_path
 ) -> None:
-    # Two 503s exhausts the 1-retry budget.
+    # Two 503s exhausts the 1-retry budget. The fetch raises HTTPError;
+    # _fetch_nightly_json must propagate it so the orchestrator
+    # classifies the failure as a transport error, not as a
+    # "no candidate published yet" empty listing.
     _enqueue(mocker, _FakeResponse(503), _FakeResponse(503))
     cm = _cache(monkeypatch, tmp_path)
-    with pytest.raises(Exception):
+    import requests as _requests
+
+    with pytest.raises(_requests.HTTPError):
+        cm.get_nightly_index(force_refresh=True)
+
+
+def test_get_nightly_index_propagates_connection_error(
+    mocker, monkeypatch, tmp_path
+) -> None:
+    # requests.RequestException raised by the underlying HTTP call
+    # (e.g. ConnectionError) must propagate through _fetch_nightly_json.
+    # _get_cached_github_data swallows RequestException internally for
+    # its GitHub callers; the nightly path captures and re-raises.
+    import requests as _requests
+
+    mocker.patch(
+        "requests.Session.request",
+        side_effect=_requests.ConnectionError("dns down"),
+    )
+    cm = _cache(monkeypatch, tmp_path)
+    with pytest.raises(_requests.RequestException):
+        cm.get_nightly_index(force_refresh=True)
+
+
+def test_get_nightly_index_propagates_malformed_json(
+    mocker, monkeypatch, tmp_path
+) -> None:
+    # A 200 response whose body is not valid JSON must surface as a
+    # decode error, not be collapsed into the {} "no candidate" path.
+    class _BrokenJsonResponse:
+        status_code = 200
+
+        def json(self) -> None:
+            import json as _json
+
+            raise _json.JSONDecodeError("bad", "x", 0)
+
+        def raise_for_status(self) -> None:
+            return
+
+    _enqueue(mocker, _BrokenJsonResponse())
+    cm = _cache(monkeypatch, tmp_path)
+    import json as _json
+
+    with pytest.raises(_json.JSONDecodeError):
         cm.get_nightly_index(force_refresh=True)
 
 
