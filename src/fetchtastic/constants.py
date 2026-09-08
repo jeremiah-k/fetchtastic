@@ -67,9 +67,10 @@ FIRMWARE_NIGHTLIES_DIR_NAME = "nightlies"
 #   /firmware-<version>.<hash>.json            # release-level manifest
 #   /firmware-<board>-<version>.<hash>.mt.json # per-target manifest
 #   /firmware-<board>-<version>.<hash>.bin
-#   /firmware-<board>-<version>.<hash>.elf
 #   /firmware-<board>-<version>.<hash>.factory.bin
 #   /release_notes.md                          # manually maintained
+# Per-target manifests may mention debug ``.elf`` build outputs, but upstream
+# packages those separately and does not publish them at the nightly root.
 # No directory listing is served at the bucket root; callers must drive
 # off index.json + the manifest files, never enumerate the bucket.
 FIRMWARE_NIGHTLY_BASE_URL = "https://nightly.meshtastic.org"

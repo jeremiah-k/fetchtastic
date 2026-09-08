@@ -171,6 +171,11 @@ def _make_nightly_target_bodies(
                  "md5": "22222222222222222222222222222222", "bytes": 610_000},
                 {"name": f"firmware-rak4631-{build}-ota.zip",
                  "md5": "33333333333333333333333333333333", "bytes": 769_000},
+                # The build manifest inventories this debug output, but the
+                # nightly publish job packages ELFs separately and does not
+                # copy them to the public bucket root.
+                {"name": f"firmware-rak4631-{build}.elf",
+                 "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bytes": 2_400_000},
             ]
         elif board == "tbeam":
             files = [
@@ -422,9 +427,13 @@ def test_fetch_firmware_nightlies_returns_flat_listing(downloader, mock_cache_ma
         for target in release_body["targets"]
     }
     assert target_manifest_names <= {entry["name"] for entry in entries}
-    # Each device file from the per-target manifests is present.
+    # Every target-manifest file that is actually published at the nightly
+    # bucket root is present. Debug ELFs are inventory-only in the manifest.
     expected_file_count = sum(
-        len(target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"])
+        sum(
+            not item["name"].lower().endswith(".elf")
+            for item in target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"]
+        )
         for t in release_body["targets"]
     )
     assert len(entries) == (
@@ -540,6 +549,29 @@ def test_fetch_firmware_nightlies_records_md5_on_entries(
     assert file_entry["expected_md5"] == sample_file["md5"].lower()
     assert file_entry["size"] == sample_file["bytes"]
     assert file_entry["download_url"] == f"{NIGHTLY_BASE}/{sample_file['name']}"
+
+
+def test_fetch_firmware_nightlies_omits_unpublished_elf_outputs(
+    downloader, mock_cache_manager
+):
+    """Manifest-listed debug ELFs are not exposed as nightly download URLs."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body(boards=("rak4631",))
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631",))
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    names = {entry["name"] for entry in entries}
+
+    assert f"firmware-rak4631-{BUILD_2_8_0}.elf" not in names
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert f"firmware-rak4631-{BUILD_2_8_0}.mt.json" in names
 
 
 # --- Synthetic helper-script entries (device-install.sh / device-update.sh) ---
@@ -4298,7 +4330,10 @@ def test_fetch_firmware_nightlies_valid_list_unchanged(downloader, mock_cache_ma
     from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
 
     expected_file_count = sum(
-        len(target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"])
+        sum(
+            not item["name"].lower().endswith(".elf")
+            for item in target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"]
+        )
         for t in release_body["targets"]
     )
     assert len(entries) == (

@@ -575,9 +575,11 @@ class CacheManager:
         """
         Fetch firmware-<target_id>.mt.json from nightly.meshtastic.org.
 
-        The per-target manifest lists the concrete binary artifacts
-        (``.bin``, ``.elf``, ``.factory.bin``) for a single device, with
-        their MD5 and byte size.
+        The per-target manifest lists build outputs (for example ``.bin``,
+        ``.elf``, and ``.factory.bin``) for a single device, with their MD5
+        and byte size. Not every listed build output is necessarily published
+        at the nightly bucket root; the firmware downloader applies the
+        nightly-publish contract when flattening these manifests.
 
         Parameters:
             target_id (str): ``"<board>-<build-id>"`` (e.g.

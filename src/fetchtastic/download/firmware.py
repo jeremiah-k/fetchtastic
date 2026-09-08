@@ -101,6 +101,12 @@ _NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECAS
 # an asset filename so the selector can reject stale generations.
 _NIGHTLY_BUILD_TOKEN_RX = re.compile(r"(\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE)
 
+# Per-target manifests describe build outputs, not the exact contents of the
+# public nightly bucket. Upstream packages debug ELFs separately as
+# ``debug-elfs-*`` artifacts and does not copy them into the nightly publish
+# staging directory, so URLs synthesized for ``*.elf`` entries always 404.
+_NIGHTLY_UNPUBLISHED_TARGET_SUFFIXES = (".elf",)
+
 
 def _normalize_repo_directory_listing(raw: Any, *, source: str) -> list[str]:
     """Return string directory names from a repository listing response."""
@@ -2913,12 +2919,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
           /firmware-<board>-<version>.<hash>.mt.json   → {files: [{name, md5, bytes}]}
 
         and returns the same flat entry shape callers already consume:
-        ``{name, download_url, size, type, expected_md5?}`` for each binary
-        artifact, plus a synthetic release-manifest entry so the build-id
-        scan in :meth:`get_nightly_build_id` keeps working unchanged. The
-        selector in :meth:`get_selected_nightly_assets` already separates
-        the manifest from device files; nothing downstream needs to know
-        the listing came from manifest endpoints.
+        ``{name, download_url, size, type, expected_md5?}`` for each artifact
+        actually published at the nightly bucket root, plus a synthetic
+        release-manifest entry so the build-id scan in
+        :meth:`get_nightly_build_id` keeps working unchanged. Per-target
+        manifests can also inventory debug outputs such as ``*.elf`` that
+        upstream packages separately and does not publish to the nightly
+        bucket; those entries are ignored rather than turned into guaranteed
+        404 download URLs.
 
         **Fail-closed:**
         - Feature disabled → ``[]`` (no API call).
@@ -3003,6 +3011,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             }
         )
 
+        skipped_unpublished_outputs = 0
+
         # Target manifests are immutable for a build id. Reuse their TTL cache
         # and one HTTP session so a fresh nightly does not pay a TCP/TLS setup
         # cost for every board in the release manifest.
@@ -3052,6 +3062,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             f"firmware-nightly target manifest {target_id} has invalid file entry: {f!r}"
                         )
                     name = f["name"]
+                    if name.lower().endswith(_NIGHTLY_UNPUBLISHED_TARGET_SUFFIXES):
+                        skipped_unpublished_outputs += 1
+                        continue
                     entries.append(
                         {
                             "name": name,
@@ -3065,6 +3078,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             ),
                         }
                     )
+
+        if skipped_unpublished_outputs:
+            logger.debug(
+                "Ignored %d manifest-listed nightly debug output(s) not published "
+                "at the bucket root",
+                skipped_unpublished_outputs,
+            )
 
         # Synthetic helper-script entries. The nightly R2 bucket doesn't
         # publish device-install.sh / device-update.sh (they live in
@@ -3348,8 +3368,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Select nightly entries for a single build generation.
 
         The firmware-nightly directory is a flat repo-prerelease-like direct-file
-        listing (per-device ``.uf2``/``.bin``/``-ota.zip``/``.elf``/``.mt.json``
-        plus build-agnostic helpers), not a stable architecture-ZIP release.
+        listing (per-device ``.uf2``/``.bin``/``-ota.zip``/``.mt.json`` plus
+        build-agnostic helpers), not a stable architecture-ZIP release. The
+        selector remains generic enough to handle other direct-file entries,
+        but :meth:`fetch_firmware_nightlies` filters manifest-only debug outputs
+        such as ``*.elf`` that are not published at the nightly bucket root.
         Selection therefore uses the shared extraction-pattern matcher
         (:func:`matches_extract_patterns`) with DeviceManager aliases/families,
         the same matcher used by repository prereleases.
