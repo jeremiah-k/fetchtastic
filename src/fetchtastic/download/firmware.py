@@ -2931,8 +2931,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
           matching the legacy fail-closed posture).
 
         Each per-target ``files`` entry's ``md5`` and ``bytes`` flow
-        through to the entry as ``expected_md5`` and ``size``. A future
-        commit wires MD5 verification into the download path.
+        through to the entry as ``expected_md5`` and ``size``, which
+        :meth:`_validate_nightly_asset` enforces on same-build checks and
+        on the skip and post-download paths.
         """
         if not self._nightlies_enabled():
             return []
@@ -3024,6 +3025,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     raise ValueError(
                         f"firmware-nightly target manifest missing for {target_id}"
                     )
+
+                # Per-device manifests were downloadable assets in the legacy
+                # nightly directory. Emit them explicitly because the new R2
+                # manifest's ``files`` array contains payloads only.
+                target_manifest_name = f"firmware-{target_id}.mt.json"
+                entries.append(
+                    {
+                        "name": target_manifest_name,
+                        "download_url": (
+                            f"{FIRMWARE_NIGHTLY_BASE_URL}/{target_manifest_name}"
+                        ),
+                        "size": None,
+                        "type": "file",
+                    }
+                )
+
                 files = target_manifest.get("files")
                 if not isinstance(files, list):
                     raise ValueError(
@@ -3562,7 +3579,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 target = self.get_nightly_target_path(build_id, name, create=False)
             except ValueError:
                 return True
-            ok, _reason = self._validate_nightly_asset(target, name, entry.get("size"))
+            ok, _reason = self._validate_nightly_asset(
+                target,
+                name,
+                entry.get("size"),
+                expected_md5=entry.get("expected_md5"),
+            )
             if not ok:
                 return True
         return False

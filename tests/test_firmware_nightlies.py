@@ -415,12 +415,24 @@ def test_fetch_firmware_nightlies_returns_flat_listing(downloader, mock_cache_ma
     from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
 
     assert all(name in names for name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    # Per-device *.mt.json manifests are also included as downloadable
+    # nightly assets (one per target in the release manifest).
+    target_manifest_names = {
+        f"firmware-{target['board']}-{BUILD_2_8_0}.mt.json"
+        for target in release_body["targets"]
+    }
+    assert target_manifest_names <= {entry["name"] for entry in entries}
     # Each device file from the per-target manifests is present.
     expected_file_count = sum(
         len(target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"])
         for t in release_body["targets"]
     )
-    assert len(entries) == expected_file_count + 1 + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    assert len(entries) == (
+        expected_file_count
+        + 1  # release manifest
+        + len(release_body["targets"])  # one .mt.json per target
+        + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    )
 
 
 def test_fetch_firmware_nightlies_queries_nightly_manifests(
@@ -2623,6 +2635,32 @@ def test_should_process_nightly_same_identity_all_valid_skips(
     assert should(entries, BUILD_2_8_0) is False
 
 
+def test_should_process_nightly_enforces_manifest_md5(
+    downloader, cache_manager
+):
+    """Same-build validation must pass the upstream MD5 into the validator."""
+    tracking_path = cache_manager.get_cache_file_path(
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
+    )
+    Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
+
+    entry = {
+        "name": f"firmware-tbeam-{BUILD_2_8_0}.bin",
+        "size": 123,
+        "type": "file",
+        "expected_md5": "a" * 32,
+    }
+    target = str(Path(cache_manager.cache_dir) / entry["name"])
+    downloader.get_nightly_target_path = Mock(return_value=target)
+    downloader._validate_nightly_asset = Mock(return_value=(True, ""))
+
+    assert downloader.should_process_nightly([], BUILD_2_8_0, selected=[entry]) is False
+    downloader._validate_nightly_asset.assert_called_once_with(
+        target, entry["name"], 123, expected_md5=entry["expected_md5"]
+    )
+
+
 # ==================================================================
 # PC: Transaction reporting state machine
 # ==================================================================
@@ -4126,18 +4164,18 @@ def test_orch_nightly_malformed_source_sets_check_failed(tmp_path):
 
 
 def test_fetch_firmware_nightlies_none_returns_empty(downloader, mock_cache_manager):
-    """An empty index.json is a valid empty listing."""
-    mock_cache_manager.get_nightly_index.return_value = {}
+    """None from the index layer is a valid empty result."""
+    mock_cache_manager.get_nightly_index.return_value = None
     mock_cache_manager.get_nightly_release_manifest.return_value = {}
     mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
     assert downloader.fetch_firmware_nightlies() == []
 
 
-def test_fetch_firmware_nightlies_empty_list_returns_empty(
+def test_fetch_firmware_nightlies_empty_dict_returns_empty(
     downloader, mock_cache_manager
 ):
-    """[] from the source is a valid empty listing (distinct from malformed)."""
+    """{} from the index is a valid empty result (no candidate published yet)."""
     mock_cache_manager.get_nightly_index.return_value = {}
     mock_cache_manager.get_nightly_release_manifest.return_value = {}
     mock_cache_manager.get_nightly_target_manifest.return_value = {}
@@ -4183,14 +4221,20 @@ def test_fetch_firmware_nightlies_valid_list_unchanged(downloader, mock_cache_ma
     downloader.cache_manager = mock_cache_manager
     entries = downloader.fetch_firmware_nightlies()
     # Includes the release manifest + every file across every target +
-    # the synthetic helper-script entries (commit-pinned).
+    # one .mt.json per target + the synthetic helper-script entries
+    # (commit-pinned).
     from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
 
     expected_file_count = sum(
         len(target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"])
         for t in release_body["targets"]
     )
-    assert len(entries) == expected_file_count + 1 + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    assert len(entries) == (
+        expected_file_count
+        + 1  # release manifest
+        + len(release_body["targets"])  # one .mt.json per target
+        + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    )
     assert entries[0]["name"] == _release_manifest_name()
 
 
