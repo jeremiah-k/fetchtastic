@@ -89,3 +89,25 @@ def test_incomplete_release_baseline_does_not_prune_prereleases(
 
     assert downloader.cleanup_superseded_prereleases("v2.7") is False
     assert candidate.is_dir()
+
+
+def test_numeric_prefix_with_unparsed_suffix_is_preserved(
+    downloader: FirmwareReleaseDownloader,
+) -> None:
+    prerelease_dir = _prerelease_dir(downloader)
+    malformed = prerelease_dir / "firmware-2.7.12-garbage"
+    malformed.mkdir()
+
+    assert downloader.cleanup_superseded_prereleases("v2.7.12") is False
+    assert malformed.is_dir()
+
+
+def test_malformed_release_baseline_does_not_prune_prereleases(
+    downloader: FirmwareReleaseDownloader,
+) -> None:
+    prerelease_dir = _prerelease_dir(downloader)
+    candidate = prerelease_dir / "firmware-2.7.12.abcdef1"
+    candidate.mkdir()
+
+    assert downloader.cleanup_superseded_prereleases("v2.7.12-garbage") is False
+    assert candidate.is_dir()

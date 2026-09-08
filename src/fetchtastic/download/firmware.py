@@ -2781,17 +2781,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
             bool: `True` if any prerelease directories were removed, `False` otherwise.
         """
         try:
-            # Strip the 'v' prefix if present
-            clean_release_tag = latest_release_tag.lstrip("vV")
-            if not clean_release_tag:
-                return False
-
-            # Get version tuple for comparison
             version_manager = VersionManager()
-            release_tuple = version_manager.get_release_tuple(clean_release_tag)
-            if release_tuple is None or len(release_tuple) < 3:
+
+            def semantic_triplet(value: str) -> Optional[Tuple[int, int, int]]:
+                """Return major/minor/patch only when the full version is parseable."""
+                normalized = version_manager.normalize_version(value)
+                release = getattr(normalized, "release", ()) if normalized else ()
+                if len(release) < 3:
+                    return None
+                return (int(release[0]), int(release[1]), int(release[2]))
+
+            # Cleanup is destructive, so do not use get_release_tuple() here: its
+            # numeric-prefix fallback intentionally accepts partially parseable strings.
+            # Require the complete baseline to normalize before authorizing deletion.
+            release_tuple = semantic_triplet(latest_release_tag)
+            if release_tuple is None:
                 return False
-            release_tuple = release_tuple[:3]
 
             # Path to prerelease directory
             prerelease_dir = os.path.join(
@@ -2828,17 +2833,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                 parts = dir_name.split(".")
                                 if len(parts) >= 3:
                                     try:
-                                        parsed_dir_tuple = (
-                                            version_manager.get_release_tuple(dir_name)
-                                        )
-                                        if (
-                                            parsed_dir_tuple is None
-                                            or len(parsed_dir_tuple) < 3
-                                        ):
+                                        dir_tuple = semantic_triplet(dir_name)
+                                        if dir_tuple is None:
                                             raise ValueError(
                                                 "unparsable prerelease version"
                                             )
-                                        dir_tuple = parsed_dir_tuple[:3]
 
                                         # Check if this prerelease is superseded
                                         if dir_tuple <= release_tuple:
