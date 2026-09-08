@@ -77,6 +77,19 @@ FIRMWARE_NIGHTLY_INDEX_FILENAME = "index.json"
 # Short TTL for manifest caches: upstream replaces these in place on every
 # nightly cron, so cached responses can describe a superseded generation.
 FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS = 5 * 60  # 5 minutes
+# Helper scripts (device-install.sh, device-update.sh) are not part of the
+# nightly R2 bucket. They're published in the meshtastic/firmware repo's
+# bin/ directory and fetched directly from raw.githubusercontent.com, pinned
+# to the same git commit as the nightly build (carried in index.json's
+# ``commit`` field) so the helper version always matches the firmware.
+# Synthetic entries are appended to the nightly listing so the existing
+# selector / downloader / validator pipeline treats them like any other
+# nightly asset; the selector's pattern gate keeps them out of the
+# selection when EXTRACT_PATTERNS doesn't include ``device-``.
+FIRMWARE_NIGHTLY_HELPER_BASE_URL = (
+    "https://raw.githubusercontent.com/meshtastic/firmware"
+)
+FIRMWARE_NIGHTLY_HELPER_SCRIPTS = ("device-install.sh", "device-update.sh")
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
 LATEST_POINTER_NAME = "latest"

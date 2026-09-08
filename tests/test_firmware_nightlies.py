@@ -409,12 +409,18 @@ def test_fetch_firmware_nightlies_returns_flat_listing(downloader, mock_cache_ma
     # Release manifest is included alongside the device files.
     names = [e["name"] for e in entries]
     assert _release_manifest_name() in names
+    # Synthetic helper-script entries (device-install.sh, device-update.sh)
+    # are also included so the selector can pick them up via a ``device-``
+    # pattern. Pinned to the index.json commit SHA.
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
+    assert all(name in names for name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
     # Each device file from the per-target manifests is present.
     expected_file_count = sum(
         len(target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"])
         for t in release_body["targets"]
     )
-    assert len(entries) == expected_file_count + 1  # +1 for release manifest
+    assert len(entries) == expected_file_count + 1 + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
 
 
 def test_fetch_firmware_nightlies_queries_nightly_manifests(
@@ -518,6 +524,142 @@ def test_fetch_firmware_nightlies_records_md5_on_entries(
     assert file_entry["expected_md5"] == sample_file["md5"].lower()
     assert file_entry["size"] == sample_file["bytes"]
     assert file_entry["download_url"] == f"{NIGHTLY_BASE}/{sample_file['name']}"
+
+
+# --- Synthetic helper-script entries (device-install.sh / device-update.sh) ---
+
+
+def test_fetch_firmware_nightlies_appends_helper_scripts_pinned_to_commit(
+    downloader, mock_cache_manager
+):
+    """Helper-script entries are appended, pinned to the index.json commit."""
+    from fetchtastic.constants import (
+        FIRMWARE_NIGHTLY_HELPER_BASE_URL,
+        FIRMWARE_NIGHTLY_HELPER_SCRIPTS,
+    )
+
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = "0becda3017e4a1fba6201ebbd7aeccf9201aa7c5"
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+
+    by_name = {e["name"]: e for e in entries}
+    for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+        assert script_name in by_name, (
+            f"{script_name} missing from listing"
+        )
+        entry = by_name[script_name]
+        # URL is pinned to the firmware repo's commit SHA.
+        assert entry["download_url"] == (
+            f"{FIRMWARE_NIGHTLY_HELPER_BASE_URL}/"
+            f"{index_body['commit']}/bin/{script_name}"
+        )
+        assert entry["type"] == "file"
+        # No MD5 from upstream raw.githubusercontent.com; the download
+        # verifier relies on the local SHA-256 sidecar instead.
+        assert "expected_md5" not in entry
+        assert entry["size"] is None
+
+
+def test_fetch_firmware_nightlies_omits_helpers_when_commit_missing_or_malformed(
+    downloader, mock_cache_manager
+):
+    """When index.json has no usable commit, helpers are omitted (not fetched stale)."""
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
+    for bad_commit in (None, "", "not-a-sha", "abc"):
+        index_body = _make_nightly_index_body()
+        index_body["commit"] = bad_commit
+        release_body = _make_nightly_release_body()
+        target_bodies = _make_nightly_target_bodies()
+
+        mock_cache_manager = Mock(spec=CacheManager)
+        mock_cache_manager.cache_dir = downloader.cache_manager.cache_dir
+        mock_cache_manager.get_cache_file_path.side_effect = (
+            lambda file_name: os.path.join(
+                mock_cache_manager.cache_dir, file_name
+            )
+        )
+        mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+        mock_cache_manager.get_nightly_release_manifest = Mock(
+            return_value=release_body
+        )
+        mock_cache_manager.get_nightly_target_manifest = Mock(
+            side_effect=lambda target_id, **_: target_bodies[target_id]
+        )
+        downloader.cache_manager = mock_cache_manager
+
+        entries = downloader.fetch_firmware_nightlies()
+        names = {e["name"] for e in entries}
+        for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+            assert script_name not in names, (
+                f"{script_name} should be omitted when commit is {bad_commit!r}"
+            )
+
+
+def test_helper_scripts_selected_by_device_pattern(downloader, mock_cache_manager):
+    """Helper-script entries are picked up by the selector when EXTRACT_PATTERNS includes 'device-'."""
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = "0becda3017e4a1fba6201ebbd7aeccf9201aa7c5"
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+    downloader.config["EXTRACT_PATTERNS"] = ["device-"]
+
+    entries = downloader.fetch_firmware_nightlies()
+    build_id = downloader.get_nightly_build_id(entries)
+    selected = downloader.get_selected_nightly_assets(entries, build_id)
+
+    selected_names = {e["name"] for e in selected}
+    for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+        assert script_name in selected_names, (
+            f"{script_name} not selected by 'device-' pattern; got {sorted(selected_names)}"
+        )
+
+
+def test_helper_scripts_omitted_from_selection_without_device_pattern(
+    downloader, mock_cache_manager
+):
+    """Without a 'device-' pattern, helpers aren't auto-included even when present."""
+    # Default fixture's EXTRACT_PATTERNS is ['rak4631-'], which doesn't match
+    # the helpers. So selection should be free of helpers.
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = "0becda3017e4a1fba6201ebbd7aeccf9201aa7c5"
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    build_id = downloader.get_nightly_build_id(entries)
+    selected = downloader.get_selected_nightly_assets(entries, build_id)
+
+    selected_names = {e["name"] for e in selected}
+    assert "device-install.sh" not in selected_names
+    assert "device-update.sh" not in selected_names
 
 
 def test_fetch_firmware_nightlies_raises_on_bad_target(
@@ -4036,12 +4178,15 @@ def test_fetch_firmware_nightlies_valid_list_unchanged(downloader, mock_cache_ma
     )
     downloader.cache_manager = mock_cache_manager
     entries = downloader.fetch_firmware_nightlies()
-    # Includes the release manifest + every file across every target.
+    # Includes the release manifest + every file across every target +
+    # the synthetic helper-script entries (commit-pinned).
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
     expected_file_count = sum(
         len(target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"])
         for t in release_body["targets"]
     )
-    assert len(entries) == expected_file_count + 1
+    assert len(entries) == expected_file_count + 1 + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
     assert entries[0]["name"] == _release_manifest_name()
 
 
