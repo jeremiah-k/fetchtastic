@@ -505,9 +505,9 @@ class TestFirmwareReleaseDownloader:
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup of old firmware versions."""
         # Setup filesystem mocks
@@ -559,8 +559,8 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=2)
 
         # Should remove version not in the keep set (v1.0.0)
-        mock_rmtree.assert_called_once()
-        args = mock_rmtree.call_args[0][0]
+        mock_safe_rmtree.assert_called_once()
+        args = mock_safe_rmtree.call_args[0][0]
         assert "v1.0.0" in args
         expected_limit = self._expected_cleanup_fetch_limit(
             keep_limit=2, keep_last_beta=False
@@ -569,9 +569,9 @@ class TestFirmwareReleaseDownloader:
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_unsafe_tags(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup when release tags contain unsafe characters."""
         mock_exists.return_value = True
@@ -601,17 +601,17 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=2)
 
         # Should remove v2.0.0 since only v1.0.0 is safe
-        mock_rmtree.assert_called_once()
-        args = mock_rmtree.call_args[0][0]
+        mock_safe_rmtree.assert_called_once()
+        args = mock_safe_rmtree.call_args[0][0]
         assert "v2.0.0" in args
         assert "v1.0.0" not in args
         # Warning is logged but caplog testing is optional
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_keep_zero(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup with keep_limit=0 removes all versions."""
         # Setup filesystem mocks
@@ -644,17 +644,17 @@ class TestFirmwareReleaseDownloader:
             keep_limit=0, keep_last_beta=False
         )
         downloader.get_releases.assert_called_once_with(limit=expected_limit)
-        assert mock_rmtree.call_count == 2
-        calls = mock_rmtree.call_args_list
+        assert mock_safe_rmtree.call_count == 2
+        calls = mock_safe_rmtree.call_args_list
         removed_paths = {call[0][0] for call in calls}
         assert any("v1.0.0" in path for path in removed_paths)
         assert any("v2.0.0" in path for path in removed_paths)
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_negative_keep_limit(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup with negative keep_limit skips cleanup."""
         # Setup filesystem mocks
@@ -684,13 +684,13 @@ class TestFirmwareReleaseDownloader:
         # Should not call get_releases or rmtree for negative keep_limit
         downloader.get_releases.assert_not_called()
         mock_scandir.assert_not_called()
-        mock_rmtree.assert_not_called()
+        mock_safe_rmtree.assert_not_called()
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_skips_when_keep_set_mismatched(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Skip cleanup when expected tags do not match existing directories."""
         mock_exists.return_value = True
@@ -716,13 +716,13 @@ class TestFirmwareReleaseDownloader:
 
         downloader.cleanup_old_versions(keep_limit=2)
 
-        mock_rmtree.assert_not_called()
+        mock_safe_rmtree.assert_not_called()
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_all_unsafe_tags(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader, mocker
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader, mocker
     ):
         """Cleanup should bail when no safe tags are available to keep."""
         # Force the firmware directory to appear present.
@@ -742,7 +742,7 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=2)
 
         # No filesystem deletion should happen when the keep set is empty.
-        mock_rmtree.assert_not_called()
+        mock_safe_rmtree.assert_not_called()
         mock_scandir.assert_not_called()
         assert mock_logger.warning.called
 
@@ -1233,9 +1233,9 @@ class TestFirmwareReleaseDownloader:
         downloader.download.assert_not_called()
 
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_superseded_prereleases(
-        self, mock_rmtree, mock_scandir, downloader
+        self, mock_safe_rmtree, mock_scandir, downloader
     ):
         """Test cleanup of superseded prereleases."""
 
@@ -1274,13 +1274,13 @@ class TestFirmwareReleaseDownloader:
         result = downloader.cleanup_superseded_prereleases("v2.0.0")
 
         assert result is True
-        assert mock_rmtree.call_count == 2
+        assert mock_safe_rmtree.call_count == 2
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_keeps_prerelease_tags(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup retains prerelease-tagged releases in the keep set."""
         mock_exists.return_value = True
@@ -1317,13 +1317,15 @@ class TestFirmwareReleaseDownloader:
 
         downloader.cleanup_old_versions(keep_limit=2)
 
-        mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea-alpha")
+        mock_safe_rmtree.assert_called_once_with(
+            "/mock/firmware/v2.7.15.567b8ea-alpha", ANY, "v2.7.15.567b8ea-alpha"
+        )
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_matches_channel_suffix_bases(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Ensure base tags are matched even when releases use channel suffixes."""
         mock_exists.return_value = True
@@ -1352,7 +1354,9 @@ class TestFirmwareReleaseDownloader:
 
         downloader.cleanup_old_versions(keep_limit=1)
 
-        mock_rmtree.assert_called_once_with(entry_remove.path)
+        mock_safe_rmtree.assert_called_once_with(
+            entry_remove.path, ANY, entry_remove.name
+        )
 
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
@@ -1485,9 +1489,9 @@ class TestFirmwareReleaseDownloader:
     @pytest.mark.unit
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_adds_beta_tag(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Most recent beta is kept when keep_last_beta is enabled."""
         mock_exists.return_value = True
@@ -1533,7 +1537,7 @@ class TestFirmwareReleaseDownloader:
             cached_releases=[stable, beta],
         )
 
-        mock_rmtree.assert_called_once_with(entry_old.path)
+        mock_safe_rmtree.assert_called_once_with(entry_old.path, ANY, entry_old.name)
 
     @pytest.mark.unit
     @patch("os.path.exists")
@@ -1620,14 +1624,14 @@ class TestFirmwareReleaseDownloader:
         with (
             patch("fetchtastic.download.firmware.logger.warning") as mock_warning,
             patch("fetchtastic.download.firmware.logger.debug") as mock_debug,
-            patch("fetchtastic.download.firmware.shutil.rmtree") as mock_rmtree,
+            patch("fetchtastic.download.firmware._safe_rmtree") as mock_safe_rmtree,
         ):
             downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
 
         mock_warning.assert_not_called()
         assert not any(
             call.args and call.args[0] == mock_latest.path
-            for call in mock_rmtree.call_args_list
+            for call in mock_safe_rmtree.call_args_list
         )
         debug_messages = [c[0][0] for c in mock_debug.call_args_list]
         assert not any(
@@ -1662,9 +1666,9 @@ class TestFirmwareReleaseDownloader:
 
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_latest_dir_does_not_trip_mismatch_guard(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """A non-symlink latest directory is ignored by the mismatch guard and preserved."""
         mock_exists.return_value = True
@@ -1704,7 +1708,7 @@ class TestFirmwareReleaseDownloader:
             "Preserving non-symlink latest entry that may block latest pointer creation: %s",
             mock_latest.path,
         )
-        mock_rmtree.assert_not_called()
+        mock_safe_rmtree.assert_not_called()
 
     def test_update_latest_pointer_for_release_coerces_false_string(self, downloader):
         downloader.config["CREATE_LATEST_SYMLINKS"] = "false"
@@ -2022,9 +2026,9 @@ class TestFirmwareReleaseDownloader:
     @pytest.mark.core_downloads
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_keeps_most_recent_beta(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test that KEEP_LAST_BETA ensures most recent beta is kept."""
         mock_exists.return_value = True
@@ -2089,8 +2093,8 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=True)
 
         # Only v1.9.0 should be removed
-        assert mock_rmtree.call_count == 1
-        mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
+        assert mock_safe_rmtree.call_count == 1
+        mock_safe_rmtree.assert_called_once_with("/mock/firmware/v1.9.0", ANY, "v1.9.0")
         expected_limit = self._expected_cleanup_fetch_limit(
             keep_limit=1, keep_last_beta=True
         )
@@ -2100,9 +2104,9 @@ class TestFirmwareReleaseDownloader:
     @pytest.mark.core_downloads
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_without_keep_last_beta(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup without KEEP_LAST_BETA uses normal logic."""
         mock_exists.return_value = True
@@ -2140,8 +2144,8 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=1, keep_last_beta=False)
 
         # v1.9.0 should be removed
-        assert mock_rmtree.call_count == 1
-        mock_rmtree.assert_called_once_with("/mock/firmware/v1.9.0")
+        assert mock_safe_rmtree.call_count == 1
+        mock_safe_rmtree.assert_called_once_with("/mock/firmware/v1.9.0", ANY, "v1.9.0")
         expected_limit = self._expected_cleanup_fetch_limit(
             keep_limit=1, keep_last_beta=False
         )
@@ -2522,13 +2526,13 @@ class TestFirmwareUncoveredBranches:
     # Lines 1322-1333: Cleanup error handling
     @patch("os.path.exists")
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_old_versions_rmtree_error(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader, mocker
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader, mocker
     ):
         """Test cleanup when rmtree raises OSError."""
         mock_exists.return_value = True
-        mock_rmtree.side_effect = OSError("Permission denied")
+        mock_safe_rmtree.return_value = False
 
         entry = Mock()
         entry.name = "v0.9.0"
@@ -2550,10 +2554,10 @@ class TestFirmwareUncoveredBranches:
 
         downloader.cleanup_old_versions(keep_limit=1)
 
-        mock_logger.error.assert_any_call(
-            "Error removing old firmware version %s: %s",
-            "v0.9.0",
-            ANY,
+        mock_safe_rmtree.assert_called_once_with(entry.path, ANY, entry.name)
+        assert not any(
+            call.args and call.args[0] == "Removed old firmware version: %s"
+            for call in mock_logger.info.call_args_list
         )
 
     # Lines 1348-1349: Cleanup outer error handling
@@ -3260,13 +3264,17 @@ class TestFirmwareUncoveredBranches:
                 "get_release_tuple",
                 return_value=(2, 0, 0),
             ),
-            patch("shutil.rmtree", side_effect=OSError("Permission denied")),
+            patch(
+                "fetchtastic.download.firmware._safe_rmtree", return_value=False
+            ) as mock_safe_rmtree,
             patch("fetchtastic.download.firmware.logger") as mock_logger,
         ):
             result = downloader.cleanup_superseded_prereleases("v2.0.0")
 
-        # Should log error and continue
-        mock_logger.error.assert_called()
+        # The containment helper owns filesystem error logging; cleanup keeps the
+        # failed directory eligible as a valid latest target.
+        mock_safe_rmtree.assert_called_once_with(mock_entry.path, ANY, mock_entry.name)
+        mock_logger.error.assert_not_called()
         assert result is False  # No successful cleanup
 
     # Lines 1348-1350: Cleanup scandir error at outer level
@@ -3377,9 +3385,9 @@ class TestFirmwarePrereleaseBaselineDerivation:
         assert release_tuple != (2, 7, 15)
 
     @patch("os.scandir")
-    @patch("shutil.rmtree")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
     def test_cleanup_superseded_prereleases_hash_suffixed_tag(
-        self, mock_rmtree, mock_scandir, downloader
+        self, mock_safe_rmtree, mock_scandir, downloader
     ):
         """cleanup_superseded_prereleases should use (2, 7, 22) as baseline from v2.7.22.96dd647."""
         mock_prerelease_keep = Mock()
@@ -3403,7 +3411,11 @@ class TestFirmwarePrereleaseBaselineDerivation:
         result = downloader.cleanup_superseded_prereleases("v2.7.22.96dd647")
 
         assert result is True
-        mock_rmtree.assert_called_once_with("/mock/prerelease/firmware-2.7.22.deadbee")
+        mock_safe_rmtree.assert_called_once_with(
+            "/mock/prerelease/firmware-2.7.22.deadbee",
+            ANY,
+            "firmware-2.7.22.deadbee",
+        )
 
     # =========================================================================
     # Tests for deterministic prerelease directory sorting (review fix 1)
@@ -4942,7 +4954,7 @@ class TestPrereleaseAvailabilityVerification:
             pytest.skip("Symlinks not supported on this platform")
 
         with patch(
-            "fetchtastic.download.firmware.shutil.rmtree",
+            "fetchtastic.download.files.shutil.rmtree",
             side_effect=OSError("busy"),
         ):
             cleaned = downloader.cleanup_superseded_prereleases("v2.7.22")

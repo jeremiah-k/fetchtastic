@@ -204,6 +204,89 @@ class TestRepositoryDownloader:
             result = downloader.clean_repository_directory()
             assert result is True
 
+    def test_clean_repository_directory_continues_after_metadata_error(self, tmp_path):
+        """An unreadable entry should not prevent cleanup of later entries."""
+        downloader = RepositoryDownloader({"DOWNLOAD_DIR": str(tmp_path)})
+        repo_dir = Path(tmp_path) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR
+        repo_dir.mkdir(parents=True)
+
+        unreadable = MagicMock()
+        unreadable.path = str(repo_dir / "unreadable")
+        unreadable.is_file.side_effect = OSError("metadata denied")
+
+        removable = MagicMock()
+        removable.path = str(repo_dir / "keep-going.txt")
+        removable.is_file.return_value = True
+        removable.is_symlink.return_value = False
+
+        scandir = MagicMock()
+        scandir.__enter__.return_value = [unreadable, removable]
+        scandir.__exit__.return_value = False
+
+        with (
+            patch(
+                "fetchtastic.download.repository.os.scandir",
+                return_value=scandir,
+            ),
+            patch(
+                "fetchtastic.download.repository._safe_rmtree",
+                return_value=True,
+            ) as safe_rmtree,
+        ):
+            assert downloader.clean_repository_directory() is False
+
+        safe_rmtree.assert_called_once_with(
+            removable.path,
+            str(repo_dir),
+            "keep-going.txt",
+        )
+        summary = downloader.get_cleanup_summary()
+        assert summary["removed_files"] == 1
+        assert summary["removed_dirs"] == 0
+        assert summary["success"] is False
+        assert summary["errors"] == ["unreadable: metadata denied"]
+
+    def test_clean_repository_directory_continues_after_rejected_removal(
+        self, tmp_path
+    ):
+        """A rejected removal should be reported without stopping later cleanup."""
+        downloader = RepositoryDownloader({"DOWNLOAD_DIR": str(tmp_path)})
+        repo_dir = Path(tmp_path) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR
+        repo_dir.mkdir(parents=True)
+
+        blocked = MagicMock()
+        blocked.path = str(repo_dir / "blocked.txt")
+        blocked.is_file.return_value = True
+        blocked.is_symlink.return_value = False
+
+        removable = MagicMock()
+        removable.path = str(repo_dir / "remove.txt")
+        removable.is_file.return_value = True
+        removable.is_symlink.return_value = False
+
+        scandir = MagicMock()
+        scandir.__enter__.return_value = [blocked, removable]
+        scandir.__exit__.return_value = False
+
+        with (
+            patch(
+                "fetchtastic.download.repository.os.scandir",
+                return_value=scandir,
+            ),
+            patch(
+                "fetchtastic.download.repository._safe_rmtree",
+                side_effect=[False, True],
+            ) as safe_rmtree,
+        ):
+            assert downloader.clean_repository_directory() is False
+
+        assert safe_rmtree.call_count == 2
+        summary = downloader.get_cleanup_summary()
+        assert summary["removed_files"] == 1
+        assert summary["removed_dirs"] == 0
+        assert summary["success"] is False
+        assert summary["errors"] == ["blocked.txt: removal failed"]
+
     def test_get_latest_release_tag(self, repository_downloader):
         """Test getting latest release tag."""
         tag = repository_downloader.get_latest_release_tag()
