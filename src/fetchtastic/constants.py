@@ -52,11 +52,31 @@ DESKTOP_PRERELEASES_DIR_NAME = "prerelease"
 APP_SNAPSHOTS_DIR_NAME = "snapshots"
 FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
-# Opt-in rolling firmware-nightly source (meshtastic.github.io/firmware-nightly).
-# Separate from the CI workflow named "nightly", from stable firmware releases,
-# and from prerelease firmware directories.
+# Opt-in rolling firmware-nightly source. As of meshtastic/firmware#11719
+# (merged 2026-09-08) the nightly host is nightly.meshtastic.org (a
+# Cloudflare R2 bucket). The legacy meshtastic.github.io/firmware-nightly
+# folder is no longer refreshed. Separate from the CI workflow named
+# "nightly", from stable firmware releases, and from prerelease firmware
+# directories.
 FIRMWARE_NIGHTLY_SOURCE_DIR = "firmware-nightly"
 FIRMWARE_NIGHTLIES_DIR_NAME = "nightlies"
+# Public nightly host (Cloudflare R2 bucket behind nightly.meshtastic.org).
+# Stable/alpha/prerelease/event firmware are unchanged and still come from
+# meshtastic.github.io. The layout is flat at the bucket root:
+#   /index.json
+#   /firmware-<version>.<hash>.json            # release-level manifest
+#   /firmware-<board>-<version>.<hash>.mt.json # per-target manifest
+#   /firmware-<board>-<version>.<hash>.bin
+#   /firmware-<board>-<version>.<hash>.elf
+#   /firmware-<board>-<version>.<hash>.factory.bin
+#   /release_notes.md                          # manually maintained
+# No directory listing is served at the bucket root; callers must drive
+# off index.json + the manifest files, never enumerate the bucket.
+FIRMWARE_NIGHTLY_BASE_URL = "https://nightly.meshtastic.org"
+FIRMWARE_NIGHTLY_INDEX_FILENAME = "index.json"
+# Short TTL for manifest caches: upstream replaces these in place on every
+# nightly cron, so cached responses can describe a superseded generation.
+FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS = 5 * 60  # 5 minutes
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
 LATEST_POINTER_NAME = "latest"
