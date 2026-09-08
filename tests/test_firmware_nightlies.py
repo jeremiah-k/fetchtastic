@@ -2105,6 +2105,7 @@ def test_finalize_nightly_transaction_all_success_finalizes_once(tmp_path):
 
     listing = _make_nightly_listing()
     asset1, asset2 = listing[0], listing[4]
+    asset2["expected_md5"] = "b" * 32
     file_type = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
     orch.download_results = [
         DownloadResult(
@@ -2134,6 +2135,12 @@ def test_finalize_nightly_transaction_all_success_finalizes_once(tmp_path):
 
     orch._finalize_nightly_transaction_if_complete()
 
+    fd._validate_nightly_asset.assert_any_call(
+        str(tmp_path / "x"),
+        asset2["name"],
+        asset2.get("size"),
+        expected_md5=asset2["expected_md5"],
+    )
     fd.update_nightly_tracking.assert_called_once_with(BUILD_2_8_0)
     fd.cleanup_superseded_nightlies.assert_called_once_with(BUILD_2_8_0)
     fd.update_latest_pointer_for_nightly.assert_called_once_with(BUILD_2_8_0)
@@ -2366,6 +2373,7 @@ def test_download_nightly_asset_network_failure_retryable(downloader):
     import requests as _requests
 
     entry = _make_nightly_listing()[4]
+    entry["expected_md5"] = "a" * 32
     with patch(
         "fetchtastic.download.firmware.download_file_with_retry",
         side_effect=_requests.RequestException("boom"),
@@ -2377,6 +2385,7 @@ def test_download_nightly_asset_network_failure_retryable(downloader):
     from fetchtastic.constants import ERROR_TYPE_NETWORK
 
     assert result.error_type == ERROR_TYPE_NETWORK
+    assert result.error_details == {"expected_md5": entry["expected_md5"]}
 
 
 # --- Symlink cleanup: dangling links unlinked, external targets safe ---
@@ -2989,6 +2998,69 @@ def test_retry_nightly_chmods_sh_after_validation(tmp_path):
 
     mode = _stat.S_IMODE(os.stat(target).st_mode)
     assert mode & 0o111, "executable bit should be set for *.sh after retry validation"
+
+
+def test_retry_nightly_passes_expected_md5_to_validator(tmp_path):
+    """Retry revalidation preserves and enforces the manifest-provided MD5."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    name = "firmware-tbeam-2.8.0.f52e2ea.bin"
+    target = fd.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    expected_md5 = "c" * 32
+    fd.download = Mock(return_value=True)
+    fd.verify = Mock(return_value=True)
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=7,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+        error_details={"expected_md5": expected_md5},
+    )
+    result = orch._retry_single_failure(failed)
+
+    assert result.success is True
+    fd._validate_nightly_asset.assert_called_once_with(
+        target, name, 7, expected_md5=expected_md5
+    )
+
+
+def test_retry_failure_preserves_expected_md5_metadata(tmp_path):
+    """A failed retry keeps MD5 metadata for the next retry attempt."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    name = "firmware-tbeam-2.8.0.f52e2ea.bin"
+    target = fd.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    details = {"expected_md5": "d" * 32}
+    fd.download = Mock(return_value=False)
+    fd.verify = Mock(return_value=True)
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=7,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+        error_details=details,
+    )
+    result = orch._retry_single_failure(failed)
+
+    assert result.success is False
+    assert result.error_details == details
 
 
 def test_retry_nightly_validation_failure_removes_target_and_hash(tmp_path):

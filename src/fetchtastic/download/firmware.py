@@ -3901,6 +3901,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
                 is_retryable=is_retryable,
                 error_type=error_type,
+                error_details=(
+                    {"expected_md5": entry["expected_md5"]}
+                    if isinstance(entry.get("expected_md5"), str)
+                    and entry["expected_md5"]
+                    else None
+                ),
             )
 
         if not downloaded:
@@ -3915,6 +3921,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
                 is_retryable=True,
                 error_type=ERROR_TYPE_NETWORK,
+                error_details=(
+                    {"expected_md5": entry["expected_md5"]}
+                    if isinstance(entry.get("expected_md5"), str)
+                    and entry["expected_md5"]
+                    else None
+                ),
             )
 
         # Deterministic post-download validation. A failure here means the
