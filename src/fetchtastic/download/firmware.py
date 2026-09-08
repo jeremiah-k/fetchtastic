@@ -1774,6 +1774,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return set()
 
         tracked: set[str] = set()
+        version_manager = VersionManager()
         for key, value in entries.items():
             if not isinstance(key, str) or not isinstance(value, dict):
                 continue
@@ -1784,7 +1785,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 safe_tag = self._sanitize_required(tag, "release history tag")
             except ValueError:
                 continue
-            tracked.add(self._get_comparable_base_tag(safe_tag))
+            base_tag = self._get_comparable_base_tag(safe_tag)
+            normalized = version_manager.normalize_version(base_tag)
+            release_tuple = (
+                getattr(normalized, "release", ()) if normalized is not None else ()
+            )
+            if len(release_tuple) < 3:
+                continue
+            tracked.add(base_tag)
         return tracked
 
     def _get_comparable_base_tag(self, name: str) -> str:

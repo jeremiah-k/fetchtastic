@@ -123,3 +123,46 @@ def test_tracked_alternate_layout_is_pruned_after_canonical_dir_exists(
 
     assert canonical.is_dir()
     assert not alternate.exists()
+
+
+def test_non_version_history_tag_cannot_authorize_reconciliation_deletion(
+    downloader: FirmwareReleaseDownloader,
+) -> None:
+    firmware_dir = _firmware_dir(downloader)
+    local_only = firmware_dir / "notes"
+    local_only.mkdir()
+    (firmware_dir / "v1.0.0").mkdir()
+    assert downloader.cache_manager.atomic_write_json(
+        downloader.release_history_path,
+        {"entries": {"notes": {"tag_name": "notes"}}},
+    )
+
+    downloader.cleanup_old_versions(
+        1,
+        cached_releases=[Release(tag_name="v3.0.0")],
+    )
+
+    assert local_only.is_dir()
+
+
+def test_hash_suffixed_history_tag_still_authorizes_stale_release_cleanup(
+    downloader: FirmwareReleaseDownloader,
+) -> None:
+    firmware_dir = _firmware_dir(downloader)
+    stale = firmware_dir / "v2.7.25.104df5f"
+    stale.mkdir()
+    assert downloader.cache_manager.atomic_write_json(
+        downloader.release_history_path,
+        {
+            "entries": {
+                "v2.7.25.104df5f": {"tag_name": "v2.7.25.104df5f"}
+            }
+        },
+    )
+
+    downloader.cleanup_old_versions(
+        1,
+        cached_releases=[Release(tag_name="v3.0.0")],
+    )
+
+    assert not stale.exists()
