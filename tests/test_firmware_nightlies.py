@@ -642,38 +642,36 @@ def test_fetch_firmware_nightlies_appends_helper_scripts_pinned_to_commit(
         assert entry["size"] is None
 
 
+@pytest.mark.parametrize("bad_commit", [None, "", "not-a-sha", "abc"])
 def test_fetch_firmware_nightlies_omits_helpers_when_commit_missing_or_malformed(
-    downloader, mock_cache_manager
+    downloader, mock_cache_manager, bad_commit
 ):
     """When index.json has no usable commit, helpers are omitted (not fetched stale)."""
     from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
 
-    for bad_commit in (None, "", "not-a-sha", "abc"):
-        index_body = _make_nightly_index_body()
-        index_body["commit"] = bad_commit
-        release_body = _make_nightly_release_body()
-        target_bodies = _make_nightly_target_bodies()
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = bad_commit
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
 
-        mock_cache_manager = Mock(spec=CacheManager)
-        mock_cache_manager.cache_dir = downloader.cache_manager.cache_dir
-        mock_cache_manager.get_cache_file_path.side_effect = (
-            lambda file_name: os.path.join(mock_cache_manager.cache_dir, file_name)
-        )
-        mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
-        mock_cache_manager.get_nightly_release_manifest = Mock(
-            return_value=release_body
-        )
-        mock_cache_manager.get_nightly_target_manifest = Mock(
-            side_effect=lambda target_id, **_: target_bodies[target_id]
-        )
-        downloader.cache_manager = mock_cache_manager
+    mock_cache_manager = Mock(spec=CacheManager)
+    mock_cache_manager.cache_dir = downloader.cache_manager.cache_dir
+    mock_cache_manager.get_cache_file_path.side_effect = lambda file_name: os.path.join(
+        mock_cache_manager.cache_dir, file_name
+    )
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
 
-        entries = downloader.fetch_firmware_nightlies()
-        names = {e["name"] for e in entries}
-        for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
-            assert (
-                script_name not in names
-            ), f"{script_name} should be omitted when commit is {bad_commit!r}"
+    entries = downloader.fetch_firmware_nightlies()
+    names = {e["name"] for e in entries}
+    for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+        assert (
+            script_name not in names
+        ), f"{script_name} should be omitted when commit is {bad_commit!r}"
 
 
 def test_helper_scripts_selected_by_device_pattern(downloader, mock_cache_manager):
