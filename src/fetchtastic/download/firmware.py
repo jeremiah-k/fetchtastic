@@ -38,6 +38,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_MANIFEST_EXTENSION,
     FIRMWARE_NIGHTLIES_DIR_NAME,
+    FIRMWARE_NIGHTLY_BASE_URL,
     FIRMWARE_NIGHTLY_MANIFEST_PATTERN,
     FIRMWARE_NIGHTLY_SOURCE_DIR,
     FIRMWARE_PRERELEASES_DIR_NAME,
@@ -2899,56 +2900,134 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def fetch_firmware_nightlies(self) -> List[Dict[str, Any]]:
         """
-        Fetch the flat GitHub Contents listing of the rolling firmware-nightly directory.
+        Fetch the rolling firmware-nightly build from nightly.meshtastic.org.
 
-        Returns an empty list when the feature is disabled (no API call is made)
-        or when the listing is genuinely empty (``None`` or ``[]``). Each entry
-        preserves the live GitHub Contents API shape (``name``, ``download_url``,
-        ``size``, ``type``).
+        Walks the nightly manifest chain:
 
-        **Fail-closed policy for malformed source responses:** a non-list
-        response or a nonempty list containing any malformed entry (non-dict
-        or dict with a non-string ``name``) raises ``ValueError`` rather than
-        silently filtering. The orchestrator catches this and marks the run
-        ``CHECK_FAILED`` so a corrupt listing is never mistaken for "no
-        candidate published yet" (which an empty list represents). This is
-        a strict mixed-list fail-closed: one bad entry rejects the entire
-        listing, because silently dropping entries could hide a missing
-        release manifest and produce an incoherent download set.
+          /index.json                                  → {version, id, title, commit}
+          /firmware-<version>.<hash>.json              → {targets: [{board, platform}]}
+          /firmware-<board>-<version>.<hash>.mt.json   → {files: [{name, md5, bytes}]}
+
+        and returns the same flat entry shape callers already consume:
+        ``{name, download_url, size, type, expected_md5?}`` for each binary
+        artifact, plus a synthetic release-manifest entry so the build-id
+        scan in :meth:`get_nightly_build_id` keeps working unchanged. The
+        selector in :meth:`get_selected_nightly_assets` already separates
+        the manifest from device files; nothing downstream needs to know
+        the listing came from manifest endpoints.
+
+        **Fail-closed:**
+        - Feature disabled → ``[]`` (no API call).
+        - index.json 404 / empty → ``[]`` (no candidate published yet).
+        - Non-dict index.json or missing ``version`` → ``ValueError``
+          (orchestrator surfaces as ``CHECK_FAILED``).
+        - Release manifest missing or has no targets → ``ValueError``.
+        - A target entry missing ``board`` or a malformed ``files`` list
+          → ``ValueError`` (one bad target rejects the whole listing,
+          matching the legacy fail-closed posture).
+
+        Each per-target ``files`` entry's ``md5`` and ``bytes`` flow
+        through to the entry as ``expected_md5`` and ``size``. A future
+        commit wires MD5 verification into the download path.
         """
         if not self._nightlies_enabled():
             return []
-        # firmware-nightly/ is a rolling directory that upstream replaces in place.
-        # A cached Contents response can therefore describe a superseded generation,
-        # so enabled nightly checks must read the live listing each run.
-        contents = self.cache_manager.get_repo_contents(
-            FIRMWARE_NIGHTLY_SOURCE_DIR,
-            force_refresh=True,
-            github_token=self.config.get("GITHUB_TOKEN"),
-            allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
+        # The nightly host replaces manifest contents in place on every
+        # cron. A cached response can describe a superseded generation,
+        # so enabled nightly checks must always read the live chain.
+        index = self.cache_manager.get_nightly_index(force_refresh=True)
+        # Only ``None`` and ``{}`` are valid empty results at the index
+        # layer (the cache helper returns {} on 404 and on a missing
+        # cache; never None in practice). Every other falsy value
+        # ("", 0, False, (), set()) or non-dict payload is a malformed
+        # source response that must NOT be collapsed into a successful
+        # empty listing — surface it so the orchestrator marks the run
+        # CHECK_FAILED instead of "no candidate published yet".
+        if index is None or index == {}:
+            return []
+        if not isinstance(index, dict):
+            raise ValueError(
+                f"firmware-nightly index.json is not a dict: {type(index).__name__}"
+            )
+        version = index.get("version")
+        if not isinstance(version, str) or not version:
+            raise ValueError(
+                f"firmware-nightly index.json missing 'version': {index!r}"
+            )
+
+        release = self.cache_manager.get_nightly_release_manifest(
+            version, force_refresh=True
         )
-        # Validate type before emptiness: a falsy non-list response ("", {},
-        # 0, False, (), set()) must NOT be collapsed into a successful empty
-        # listing. Only ``None`` and ``[]`` are valid empty source results.
-        if contents is None:
-            return []
-        if not isinstance(contents, list):
-            raise ValueError("firmware-nightly source response is not a list")
-        if not contents:
-            return []
-        validated: List[Dict[str, Any]] = []
-        for entry in contents:
-            if not isinstance(entry, dict):
+        if not isinstance(release, dict) or not release:
+            raise ValueError(
+                f"firmware-nightly release manifest missing for {version}"
+            )
+        targets = release.get("targets")
+        if not isinstance(targets, list) or not targets:
+            raise ValueError(
+                f"firmware-nightly release manifest has no targets: {release!r}"
+            )
+
+        entries: List[Dict[str, Any]] = []
+
+        # Synthetic release-manifest entry. Mirrors the GitHub Contents
+        # shape so get_nightly_build_id (which scans for
+        # ``firmware-<build-id>.json`` with type=="file") keeps working
+        # without modification. ``size`` is None for the manifest itself
+        # (it's a JSON document, not a binary); the selector treats
+        # ``download_url`` as opaque.
+        entries.append(
+            {
+                "name": f"firmware-{version}.json",
+                "download_url": f"{FIRMWARE_NIGHTLY_BASE_URL}/firmware-{version}.json",
+                "size": None,
+                "type": "file",
+            }
+        )
+
+        for target in targets:
+            if not isinstance(target, dict):
                 raise ValueError(
-                    f"firmware-nightly source response has non-dict entry: {entry!r}"
+                    f"firmware-nightly release manifest has non-dict target: {target!r}"
                 )
-            name = entry.get("name")
-            if not isinstance(name, str) or not name:
+            board = target.get("board")
+            if not isinstance(board, str) or not board:
                 raise ValueError(
-                    "firmware-nightly source response has entry with invalid name"
+                    f"firmware-nightly release manifest target missing 'board': {target!r}"
                 )
-            validated.append(entry)
-        return validated
+            target_id = f"{board}-{version}"
+            target_manifest = self.cache_manager.get_nightly_target_manifest(
+                target_id, force_refresh=True
+            )
+            if not isinstance(target_manifest, dict) or not target_manifest:
+                raise ValueError(
+                    f"firmware-nightly target manifest missing for {target_id}"
+                )
+            files = target_manifest.get("files")
+            if not isinstance(files, list):
+                raise ValueError(
+                    f"firmware-nightly target manifest {target_id} has non-list 'files'"
+                )
+            for f in files:
+                if not isinstance(f, dict) or not isinstance(f.get("name"), str):
+                    raise ValueError(
+                        f"firmware-nightly target manifest {target_id} has invalid file entry: {f!r}"
+                    )
+                name = f["name"]
+                entries.append(
+                    {
+                        "name": name,
+                        "download_url": f"{FIRMWARE_NIGHTLY_BASE_URL}/{name}",
+                        "size": f.get("bytes"),
+                        "type": "file",
+                        **(
+                            {"expected_md5": str(f["md5"]).lower()}
+                            if isinstance(f.get("md5"), str) and f["md5"]
+                            else {}
+                        ),
+                    }
+                )
+        return entries
 
     @staticmethod
     def parse_nightly_build_id(name: str) -> Optional[str]:
