@@ -47,7 +47,7 @@ _NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECAS
 # Per-target id ("<board>-<version>.<hash>") used to validate the
 # firmware-<board>-<version>.<hash>.mt.json request URL.
 _NIGHTLY_TARGET_ID_RX = re.compile(
-    r"^[A-Za-z0-9_.-]+-\d+\.\d+\.\d+\.[a-f0-9]{6,}$"
+    r"^[A-Za-z0-9_.-]+-\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECASE
 )
 # Retry posture for nightly.meshtastic.org fetches. Keep this short:
 # transient Cloudflare/R2 blips are common, but the nightly cron
@@ -679,6 +679,13 @@ class CacheManager:
         # sees the real cause, not a misleading "non-dict payload"
         # ValueError.
         if captured:
+            # _get_cached_github_data stores the fetcher result before returning.
+            # The [] sentinel used above therefore needs to be removed before the
+            # real exception is propagated, otherwise a later cached read sees
+            # the sentinel as a valid payload and masks the transport/decode cause.
+            cache = self.read_json(cache_file)
+            if isinstance(cache, dict) and cache.pop(cache_key, None) is not None:
+                self.atomic_write_json(cache_file, cache)
             raise captured[0]
 
         # 404 short-circuit returns from inside the fetcher; the cache

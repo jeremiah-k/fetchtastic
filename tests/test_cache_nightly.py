@@ -113,6 +113,15 @@ def test_get_nightly_target_manifest_returns_files(
     assert out["files"][0]["name"].endswith(".bin")
 
 
+def test_get_nightly_target_manifest_accepts_uppercase_hash(
+    mocker, monkeypatch, tmp_path
+) -> None:
+    _enqueue(mocker, _FakeResponse(200, TARGET_BODY))
+    cm = _cache(monkeypatch, tmp_path)
+    out = cm.get_nightly_target_manifest("tbeam-2.8.1.0BECDA3", force_refresh=True)
+    assert out == TARGET_BODY
+
+
 # ---------- fail-closed: bad id ----------
 
 
@@ -155,15 +164,18 @@ def test_get_nightly_index_returns_empty_on_404(mocker, monkeypatch, tmp_path) -
 def test_get_nightly_index_retries_on_503_then_succeeds(
     mocker, monkeypatch, tmp_path
 ) -> None:
+    sleeper = mocker.patch("fetchtastic.download.cache.time.sleep")
     _enqueue(mocker, _FakeResponse(503), _FakeResponse(200, INDEX_BODY))
     cm = _cache(monkeypatch, tmp_path)
     out = cm.get_nightly_index(force_refresh=True)
     assert out == INDEX_BODY
+    sleeper.assert_called_once()
 
 
 def test_get_nightly_index_surfaces_503_after_retry_budget(
     mocker, monkeypatch, tmp_path
 ) -> None:
+    sleeper = mocker.patch("fetchtastic.download.cache.time.sleep")
     # Two 503s exhausts the 1-retry budget. The fetch raises HTTPError;
     # _fetch_nightly_json must propagate it so the orchestrator
     # classifies the failure as a transport error, not as a
@@ -174,6 +186,7 @@ def test_get_nightly_index_surfaces_503_after_retry_budget(
 
     with pytest.raises(_requests.HTTPError):
         cm.get_nightly_index(force_refresh=True)
+    sleeper.assert_called_once()
 
 
 def test_get_nightly_index_propagates_connection_error(
@@ -185,6 +198,7 @@ def test_get_nightly_index_propagates_connection_error(
     # its GitHub callers; the nightly path captures and re-raises.
     import requests as _requests
 
+    sleeper = mocker.patch("fetchtastic.download.cache.time.sleep")
     mocker.patch(
         "requests.Session.request",
         side_effect=_requests.ConnectionError("dns down"),
@@ -192,6 +206,7 @@ def test_get_nightly_index_propagates_connection_error(
     cm = _cache(monkeypatch, tmp_path)
     with pytest.raises(_requests.RequestException):
         cm.get_nightly_index(force_refresh=True)
+    sleeper.assert_called_once()
 
 
 def test_get_nightly_index_propagates_malformed_json(
@@ -242,3 +257,27 @@ def test_get_nightly_index_force_refresh_re_reads(mocker, monkeypatch, tmp_path)
     cm = _cache(monkeypatch, tmp_path)
     assert cm.get_nightly_index(force_refresh=True)["title"].startswith("Meshtastic")
     assert cm.get_nightly_index(force_refresh=True)["title"] == "updated"
+
+
+def test_get_nightly_index_failed_fetch_does_not_poison_cache(
+    mocker, monkeypatch, tmp_path
+) -> None:
+    import requests as _requests
+
+    sleeper = mocker.patch("fetchtastic.download.cache.time.sleep")
+    request = mocker.patch(
+        "requests.Session.request",
+        side_effect=[
+            _requests.ConnectionError("dns down"),
+            _requests.ConnectionError("dns down"),
+            _FakeResponse(200, INDEX_BODY),
+        ],
+    )
+    cm = _cache(monkeypatch, tmp_path)
+
+    with pytest.raises(_requests.ConnectionError):
+        cm.get_nightly_index(force_refresh=True)
+
+    assert cm.get_nightly_index(force_refresh=False) == INDEX_BODY
+    assert request.call_count == 3
+    sleeper.assert_called_once()
