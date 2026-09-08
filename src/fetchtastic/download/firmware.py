@@ -3013,9 +3013,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         skipped_unpublished_outputs = 0
 
-        # Target manifests are immutable for a build id. Reuse their TTL cache
-        # and one HTTP session so a fresh nightly does not pay a TCP/TLS setup
-        # cost for every board in the release manifest.
+        # Target manifests are version-addressed by build id. Reuse their
+        # longer bounded cache and one HTTP session so routine reruns do not
+        # refetch the full board graph or pay a TCP/TLS setup cost per target.
         with requests.Session() as target_session:
             for target in targets:
                 if not isinstance(target, dict):

@@ -22,6 +22,7 @@ from fetchtastic.constants import (
     FIRMWARE_NIGHTLY_BASE_URL,
     FIRMWARE_NIGHTLY_INDEX_FILENAME,
     FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS,
+    FIRMWARE_NIGHTLY_TARGET_MANIFEST_CACHE_EXPIRY_SECONDS,
     FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
@@ -604,6 +605,7 @@ class CacheManager:
             cache_key=f"nightly:target:{target_id}",
             path_description=f"nightly target manifest firmware-{target_id}.mt.json",
             session=session,
+            cache_expiry_seconds=FIRMWARE_NIGHTLY_TARGET_MANIFEST_CACHE_EXPIRY_SECONDS,
         )
 
     def _fetch_nightly_json(
@@ -614,6 +616,7 @@ class CacheManager:
         cache_key: str,
         path_description: str,
         session: Optional[requests.Session] = None,
+        cache_expiry_seconds: int = FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS,
     ) -> dict[str, Any]:
         """
         Fetch a JSON document from nightly.meshtastic.org through a TTL
@@ -667,7 +670,7 @@ class CacheManager:
                 data_field_name="payload",
                 fetcher_func=fetcher,
                 force_refresh=force_refresh,
-                cache_expiry_seconds=FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS,
+                cache_expiry_seconds=cache_expiry_seconds,
                 path_description=path_description,
             )
         except (ValueError, KeyError, TypeError) as exc:

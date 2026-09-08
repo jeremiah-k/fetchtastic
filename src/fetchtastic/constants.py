@@ -75,9 +75,14 @@ FIRMWARE_NIGHTLIES_DIR_NAME = "nightlies"
 # off index.json + the manifest files, never enumerate the bucket.
 FIRMWARE_NIGHTLY_BASE_URL = "https://nightly.meshtastic.org"
 FIRMWARE_NIGHTLY_INDEX_FILENAME = "index.json"
-# Short TTL for manifest caches: upstream replaces these in place on every
-# nightly cron, so cached responses can describe a superseded generation.
+# Short TTL for mutable nightly pointer/release metadata. Target manifests use
+# a separate longer bounded TTL because their URLs include the nightly build id.
 FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS = 5 * 60  # 5 minutes
+# Target manifests are version-addressed by the nightly build id and fan out to
+# ~150 board-specific requests. Keep them for one daily nightly cycle so routine
+# reruns do not refetch the entire manifest graph; explicit cache clears / force
+# refreshes still bypass this cache when needed.
+FIRMWARE_NIGHTLY_TARGET_MANIFEST_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
 # Helper scripts (device-install.sh, device-update.sh) are not part of the
 # nightly R2 bucket. They're published in the meshtastic/firmware repo's
 # bin/ directory and fetched directly from raw.githubusercontent.com, pinned

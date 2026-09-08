@@ -11,6 +11,7 @@ A queue with mixed 503/200 entries exercises the retry path; a queue
 with a single 404 exercises the short-circuit; etc.
 """
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -257,6 +258,64 @@ def test_get_nightly_index_force_refresh_re_reads(mocker, monkeypatch, tmp_path)
     cm = _cache(monkeypatch, tmp_path)
     assert cm.get_nightly_index(force_refresh=True)["title"].startswith("Meshtastic")
     assert cm.get_nightly_index(force_refresh=True)["title"] == "updated"
+
+
+def test_target_manifest_cache_survives_generic_five_minute_ttl(
+    monkeypatch, tmp_path
+) -> None:
+    """Version-addressed target manifests should not fan out again after 5 minutes."""
+    calls = 0
+
+    def request(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return _FakeResponse(200, TARGET_BODY)
+
+    monkeypatch.setattr("requests.Session.request", request)
+    cm = _cache(monkeypatch, tmp_path)
+    target_id = "tbeam-2.8.1.0becda3"
+    assert cm.get_nightly_target_manifest(target_id, force_refresh=True) == TARGET_BODY
+
+    cache_file = cm.get_cache_file_path("firmware_nightly")
+    cache = cm.read_json(cache_file)
+    assert isinstance(cache, dict)
+    cache[f"nightly:target:{target_id}"]["cached_at"] = (
+        datetime.now(timezone.utc) - timedelta(minutes=10)
+    ).isoformat()
+    assert cm.atomic_write_json(cache_file, cache)
+
+    assert cm.get_nightly_target_manifest(target_id, force_refresh=False) == TARGET_BODY
+    assert calls == 1
+
+
+def test_target_manifest_cache_remains_bounded(
+    monkeypatch, tmp_path
+) -> None:
+    """The longer target-manifest cache still refreshes after one day."""
+    updated = {**TARGET_BODY, "build_epoch": TARGET_BODY["build_epoch"] + 1}
+    responses = iter([_FakeResponse(200, TARGET_BODY), _FakeResponse(200, updated)])
+    calls = 0
+
+    def request(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr("requests.Session.request", request)
+    cm = _cache(monkeypatch, tmp_path)
+    target_id = "tbeam-2.8.1.0becda3"
+    assert cm.get_nightly_target_manifest(target_id, force_refresh=True) == TARGET_BODY
+
+    cache_file = cm.get_cache_file_path("firmware_nightly")
+    cache = cm.read_json(cache_file)
+    assert isinstance(cache, dict)
+    cache[f"nightly:target:{target_id}"]["cached_at"] = (
+        datetime.now(timezone.utc) - timedelta(hours=25)
+    ).isoformat()
+    assert cm.atomic_write_json(cache_file, cache)
+
+    assert cm.get_nightly_target_manifest(target_id, force_refresh=False) == updated
+    assert calls == 2
 
 
 def test_get_nightly_index_failed_fetch_does_not_poison_cache(
