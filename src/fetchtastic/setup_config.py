@@ -1559,9 +1559,10 @@ def _setup_firmware(
     )
     if config["CHECK_FIRMWARE_NIGHTLIES"]:
         # Nightly selection reuses the same extraction patterns as prereleases
-        # (the firmware-nightly directory is a flat direct-file listing, not a
-        # stable archive). Surface the finalized patterns so the user knows what
-        # will be selected; warn clearly when none are configured (fail-closed).
+        # (the firmware-nightly layout is a flat direct-file listing at
+        # https://nightly.meshtastic.org/, not a stable archive). Surface the
+        # finalized patterns so the user knows what will be selected; warn
+        # clearly when none are configured (fail-closed).
         nightly_patterns = _normalize_display_patterns(
             config.get("EXTRACT_PATTERNS", [])
         )

@@ -93,7 +93,7 @@ Firmware `latest` points only to a complete release with at least one selected n
 
 ### Firmware Nightly Builds
 
-When `CHECK_FIRMWARE_NIGHTLIES` is enabled, Fetchtastic checks a rolling experimental firmware source at `meshtastic.github.io/firmware-nightly`. This directory is published as a flat listing of per-device direct files (firmware images, per-device manifests, and helpers) — the same repo-prerelease-like layout used by prerelease firmware directories, not a GitHub Release or a tagged production release. Each publish replaces the rolling upstream contents. Existing configurations remain disabled unless you opt in.
+When `CHECK_FIRMWARE_NIGHTLIES` is enabled, Fetchtastic checks a rolling experimental firmware source at `https://nightly.meshtastic.org` (a Cloudflare R2 bucket; previously `meshtastic.github.io/firmware-nightly`, which stopped refreshing after `meshtastic/firmware#11719`). The layout is flat at the bucket root: `index.json`, the release-level `firmware-<version>.<hash>.json` manifest, per-device `firmware-<board>-<version>.<hash>.mt.json` manifests, and the binary artifacts themselves. Each publish replaces the rolling upstream contents. Existing configurations remain disabled unless you opt in.
 
 Nightly builds are stored separately from stable and prerelease firmware under `firmware/nightlies/<build_id>/`, where `<build_id>` is the immutable build identity parsed from the single release-level manifest (`firmware-<version>.<hash>.json`, for example `firmware-2.8.0.f52e2ea.json` → `2.8.0.f52e2ea`). Two distinct artifacts track the newest nightly, and they must not be confused:
 
