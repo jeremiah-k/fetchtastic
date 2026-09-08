@@ -1283,7 +1283,10 @@ class DownloadOrchestrator:
                 self.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
                 return False
             ok, reason = self.firmware_downloader._validate_nightly_asset(
-                target_path, name, entry.get("size")
+                target_path,
+                name,
+                entry.get("size"),
+                expected_md5=entry.get("expected_md5"),
             )
             if not ok:
                 logger.warning(
@@ -1895,6 +1898,7 @@ class DownloadOrchestrator:
             retry_timestamp=failed_result.retry_timestamp,
             error_message=final_message,
             error_type=ERROR_TYPE_RETRY_FAILURE,
+            error_details=failed_result.error_details,
             is_retryable=is_retryable,
         )
 
@@ -2194,8 +2198,15 @@ class DownloadOrchestrator:
                 failed_result, Path(canonical), url, file_type, "Retry attempt failed"
             )
 
+        details = failed_result.error_details
+        expected_md5 = (
+            details.get("expected_md5") if isinstance(details, dict) else None
+        )
         ok_v, reason = fd._validate_nightly_asset(
-            canonical, basename, failed_result.file_size
+            canonical,
+            basename,
+            failed_result.file_size,
+            expected_md5=expected_md5,
         )
         if not ok_v:
             fd._remove_nightly_target_and_hash(canonical)

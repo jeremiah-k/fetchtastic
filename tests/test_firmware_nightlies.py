@@ -20,6 +20,7 @@ behavior changed).  Each symbol is accessed via ``getattr``/``hasattr`` so
 the module collects cleanly even when an API is partially absent.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ import pytest
 from fetchtastic import constants
 from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
+    FIRMWARE_NIGHTLY_BASE_URL,
     FIRMWARE_PRERELEASES_DIR_NAME,
     LATEST_POINTER_NAME,
 )
@@ -38,6 +40,8 @@ from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import DownloadResult
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
+
+NIGHTLY_BASE = FIRMWARE_NIGHTLY_BASE_URL
 
 pytestmark = [pytest.mark.core_downloads, pytest.mark.unit]
 
@@ -111,6 +115,85 @@ BUILD_2_8_0 = "2.8.0.f52e2ea"
 MANIFEST_2_8_0 = f"firmware-{BUILD_2_8_0}.json"
 # A stale generation build-id used to exercise build-aware selection.
 _STALE_BUILD = "2.7.99.abc123"
+
+
+# ==================================================================
+# Nightly-manifest chain helpers (the upstream moved to nightly.meshtastic.org)
+# ==================================================================
+
+
+def _release_manifest_name(build: str = BUILD_2_8_0) -> str:
+    """Filename of the synthetic release-level manifest entry."""
+    return f"firmware-{build}.json"
+
+
+def _make_nightly_index_body(
+    build: str = BUILD_2_8_0, commit: str = "f52e2ea0000000000000000000000000000000f5"
+) -> dict:
+    """Mock nightly.meshtastic.org/index.json body."""
+    return {
+        "version": build,
+        "id": f"v{build}",
+        "title": f"Meshtastic Firmware {build} Nightly",
+        "commit": commit,
+    }
+
+
+def _make_nightly_release_body(
+    build: str = BUILD_2_8_0,
+    boards: tuple[str, ...] = ("rak4631", "tbeam", "heltec-v3"),
+) -> dict:
+    """Mock firmware-<build>.json body: {version, targets: [{board, platform}]}."""
+    return {
+        "version": build,
+        "targets": [
+            {
+                "board": board,
+                "platform": "nrf52" if board == "rak4631" else "esp32",
+            }
+            for board in boards
+        ],
+    }
+
+
+def _make_nightly_target_bodies(
+    build: str = BUILD_2_8_0,
+    boards: tuple[str, ...] = ("rak4631", "tbeam", "heltec-v3"),
+) -> dict[str, dict]:
+    """Mock firmware-<board>-<build>.mt.json bodies keyed by target id."""
+    bodies: dict[str, dict] = {}
+    for board in boards:
+        if board == "rak4631":
+            files = [
+                {"name": f"firmware-rak4631-{build}.uf2",
+                 "md5": "11111111111111111111111111111111", "bytes": 490_000},
+                {"name": f"firmware-rak4631-{build}.hex",
+                 "md5": "22222222222222222222222222222222", "bytes": 610_000},
+                {"name": f"firmware-rak4631-{build}-ota.zip",
+                 "md5": "33333333333333333333333333333333", "bytes": 769_000},
+                # The build manifest inventories this debug output, but the
+                # nightly publish job packages ELFs separately and does not
+                # copy them to the public bucket root.
+                {"name": f"firmware-rak4631-{build}.elf",
+                 "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bytes": 2_400_000},
+            ]
+        elif board == "tbeam":
+            files = [
+                {"name": f"firmware-tbeam-{build}.bin",
+                 "md5": "44444444444444444444444444444444", "bytes": 1_100_000},
+                {"name": f"firmware-tbeam-{build}.factory.bin",
+                 "md5": "55555555555555555555555555555555", "bytes": 1_050_000},
+            ]
+        else:  # heltec-v3
+            files = [
+                {"name": f"firmware-heltec-v3-{build}.bin",
+                 "md5": "66666666666666666666666666666666", "bytes": 1_150_000},
+            ]
+        bodies[f"{board}-{build}"] = {
+            "version": build,
+            "files": files,
+        }
+    return bodies
 
 
 def _make_nightly_listing(build: str = BUILD_2_8_0) -> list[dict]:
@@ -264,12 +347,15 @@ def test_default_check_firmware_nightlies_is_false():
 
 
 def test_disabled_no_api_calls(downloader_disabled, mock_cache_manager):
-    """When disabled, fetch_firmware_nightlies must not hit the GitHub API."""
+    """When disabled, fetch_firmware_nightlies must not hit the network."""
     downloader_disabled.cache_manager = mock_cache_manager
     fetch = _require_method(downloader_disabled, "fetch_firmware_nightlies")
     result = fetch()
     assert result == []
-    mock_cache_manager.get_repo_contents.assert_not_called()
+    # No manifest fetches when disabled.
+    mock_cache_manager.get_nightly_index.assert_not_called()
+    mock_cache_manager.get_nightly_release_manifest.assert_not_called()
+    mock_cache_manager.get_nightly_target_manifest.assert_not_called()
 
 
 def test_absent_config_defaults_false_no_side_effects(downloader_absent, tmp_path):
@@ -305,50 +391,342 @@ def test_disabled_does_not_process(downloader_disabled):
 
 
 def test_fetch_firmware_nightlies_returns_flat_listing(downloader, mock_cache_manager):
-    """fetch_firmware_nightlies returns the flat GitHub Contents listing."""
-    listing = _make_nightly_listing()
-    mock_cache_manager.get_repo_contents = Mock(return_value=listing)
+    """fetch_firmware_nightlies walks the nightly manifest chain and returns flat entries."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
     downloader.cache_manager = mock_cache_manager
 
     fetch = _require_method(downloader, "fetch_firmware_nightlies")
     entries = fetch()
     assert isinstance(entries, list)
-    assert len(entries) == len(listing)
-    # Every entry must be a dict with the expected GitHub Contents keys.
+    # Every entry has the GitHub Contents shape the rest of the pipeline expects.
     for entry in entries:
         assert "name" in entry
         assert "download_url" in entry
         assert entry.get("type") == "file"
+    # Release manifest is included alongside the device files.
+    names = [e["name"] for e in entries]
+    assert _release_manifest_name() in names
+    # Synthetic helper-script entries (device-install.sh, device-update.sh)
+    # are also included so the selector can pick them up via a ``device-``
+    # pattern. Pinned to the index.json commit SHA.
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
+    assert all(name in names for name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    # Per-device *.mt.json manifests are also included as downloadable
+    # nightly assets (one per target in the release manifest).
+    target_manifest_names = {
+        f"firmware-{target['board']}-{BUILD_2_8_0}.mt.json"
+        for target in release_body["targets"]
+    }
+    assert target_manifest_names <= {entry["name"] for entry in entries}
+    # Every target-manifest file that is actually published at the nightly
+    # bucket root is present. Debug ELFs are inventory-only in the manifest.
+    expected_file_count = sum(
+        sum(
+            not item["name"].lower().endswith(".elf")
+            for item in target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"]
+        )
+        for t in release_body["targets"]
+    )
+    assert len(entries) == (
+        expected_file_count
+        + 1  # release manifest
+        + len(release_body["targets"])  # one .mt.json per target
+        + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    )
 
 
-def test_fetch_firmware_nightlies_queries_firmware_nightly_dir(
+def test_fetch_firmware_nightlies_queries_nightly_manifests(
     downloader, mock_cache_manager
 ):
-    """fetch_firmware_nightlies must query the firmware-nightly repo path."""
-    source_dir = _require_constant("FIRMWARE_NIGHTLY_SOURCE_DIR", "firmware-nightly")
-    mock_cache_manager.get_repo_contents = Mock(return_value=[])
+    """fetch_firmware_nightlies must drive the manifest chain with force_refresh."""
+    # Use a valid non-empty index so the release-manifest fetch is reached.
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(
+        return_value=_make_nightly_release_body()
+    )
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        return_value={"version": BUILD_2_8_0, "files": []}
+    )
     downloader.cache_manager = mock_cache_manager
 
     fetch = _require_method(downloader, "fetch_firmware_nightlies")
     fetch()
-    mock_cache_manager.get_repo_contents.assert_called_once()
-    call_args = mock_cache_manager.get_repo_contents.call_args
-    # The rolling upstream directory is replaced in place, so each enabled check
-    # must bypass the long-lived repository-contents cache.
-    assert call_args.args[0] == source_dir
-    assert call_args.kwargs["force_refresh"] is True
+
+    # Index and release manifest are both fetched with force_refresh=True so
+    # the in-place upstream replacement is observed each enabled check.
+    mock_cache_manager.get_nightly_index.assert_called_once()
+    assert mock_cache_manager.get_nightly_index.call_args.kwargs["force_refresh"] is True
+    mock_cache_manager.get_nightly_release_manifest.assert_called_once_with(
+        BUILD_2_8_0, force_refresh=True
+    )
+    target_calls = mock_cache_manager.get_nightly_target_manifest.call_args_list
+    assert target_calls
+    assert all(call.kwargs.get("force_refresh", False) is False for call in target_calls)
+    assert len({id(call.kwargs["session"]) for call in target_calls}) == 1
 
 
 def test_listing_contains_release_manifest(downloader, mock_cache_manager):
-    """The flat listing must include the release manifest firmware-2.8.0.f52e2ea.json."""
-    listing = _make_nightly_listing()
-    mock_cache_manager.get_repo_contents = Mock(return_value=listing)
+    """The flat listing must include the release manifest firmware-<build-id>.json."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
     downloader.cache_manager = mock_cache_manager
 
     fetch = _require_method(downloader, "fetch_firmware_nightlies")
     entries = fetch()
     names = [e["name"] for e in entries]
-    assert MANIFEST_2_8_0 in names
+    assert _release_manifest_name() in names
+
+
+def test_fetch_firmware_nightlies_returns_empty_when_index_is_empty(
+    downloader, mock_cache_manager
+):
+    """404 / empty index -> empty listing (no candidate published yet)."""
+    mock_cache_manager.get_nightly_index = Mock(return_value={})
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value={})
+    mock_cache_manager.get_nightly_target_manifest = Mock(return_value={})
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+    assert entries == []
+    mock_cache_manager.get_nightly_release_manifest.assert_not_called()
+    mock_cache_manager.get_nightly_target_manifest.assert_not_called()
+
+
+def test_fetch_firmware_nightlies_raises_on_malformed_index(
+    downloader, mock_cache_manager
+):
+    """Non-dict or missing 'version' index -> ValueError (CHECK_FAILED in orchestrator)."""
+    mock_cache_manager.get_nightly_index = Mock(return_value={"unexpected": "shape"})
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value={})
+    mock_cache_manager.get_nightly_target_manifest = Mock(return_value={})
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    with pytest.raises(ValueError):
+        fetch()
+
+
+def test_fetch_firmware_nightlies_records_md5_on_entries(
+    downloader, mock_cache_manager
+):
+    """Per-target manifest carries md5/bytes; entries record both."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+
+    target = release_body["targets"][0]
+    sample_file = target_bodies[f"{target['board']}-{BUILD_2_8_0}"]["files"][0]
+    by_name = {e["name"]: e for e in entries}
+    assert sample_file["name"] in by_name
+    file_entry = by_name[sample_file["name"]]
+    assert file_entry["expected_md5"] == sample_file["md5"].lower()
+    assert file_entry["size"] == sample_file["bytes"]
+    assert file_entry["download_url"] == f"{NIGHTLY_BASE}/{sample_file['name']}"
+
+
+def test_fetch_firmware_nightlies_omits_unpublished_elf_outputs(
+    downloader, mock_cache_manager
+):
+    """Manifest-listed debug ELFs are not exposed as nightly download URLs."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body(boards=("rak4631",))
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631",))
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    names = {entry["name"] for entry in entries}
+
+    assert f"firmware-rak4631-{BUILD_2_8_0}.elf" not in names
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert f"firmware-rak4631-{BUILD_2_8_0}.mt.json" in names
+
+
+# --- Synthetic helper-script entries (device-install.sh / device-update.sh) ---
+
+
+def test_fetch_firmware_nightlies_appends_helper_scripts_pinned_to_commit(
+    downloader, mock_cache_manager
+):
+    """Helper-script entries are appended, pinned to the index.json commit."""
+    from fetchtastic.constants import (
+        FIRMWARE_NIGHTLY_HELPER_BASE_URL,
+        FIRMWARE_NIGHTLY_HELPER_SCRIPTS,
+    )
+
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = "0becda3017e4a1fba6201ebbd7aeccf9201aa7c5"
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+
+    by_name = {e["name"]: e for e in entries}
+    for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+        assert script_name in by_name, (
+            f"{script_name} missing from listing"
+        )
+        entry = by_name[script_name]
+        # URL is pinned to the firmware repo's commit SHA.
+        assert entry["download_url"] == (
+            f"{FIRMWARE_NIGHTLY_HELPER_BASE_URL}/"
+            f"{index_body['commit']}/bin/{script_name}"
+        )
+        assert entry["type"] == "file"
+        # No MD5 from upstream raw.githubusercontent.com; the download
+        # verifier relies on the local SHA-256 sidecar instead.
+        assert "expected_md5" not in entry
+        assert entry["size"] is None
+
+
+def test_fetch_firmware_nightlies_omits_helpers_when_commit_missing_or_malformed(
+    downloader, mock_cache_manager
+):
+    """When index.json has no usable commit, helpers are omitted (not fetched stale)."""
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
+    for bad_commit in (None, "", "not-a-sha", "abc"):
+        index_body = _make_nightly_index_body()
+        index_body["commit"] = bad_commit
+        release_body = _make_nightly_release_body()
+        target_bodies = _make_nightly_target_bodies()
+
+        mock_cache_manager = Mock(spec=CacheManager)
+        mock_cache_manager.cache_dir = downloader.cache_manager.cache_dir
+        mock_cache_manager.get_cache_file_path.side_effect = (
+            lambda file_name: os.path.join(
+                mock_cache_manager.cache_dir, file_name
+            )
+        )
+        mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+        mock_cache_manager.get_nightly_release_manifest = Mock(
+            return_value=release_body
+        )
+        mock_cache_manager.get_nightly_target_manifest = Mock(
+            side_effect=lambda target_id, **_: target_bodies[target_id]
+        )
+        downloader.cache_manager = mock_cache_manager
+
+        entries = downloader.fetch_firmware_nightlies()
+        names = {e["name"] for e in entries}
+        for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+            assert script_name not in names, (
+                f"{script_name} should be omitted when commit is {bad_commit!r}"
+            )
+
+
+def test_helper_scripts_selected_by_device_pattern(downloader, mock_cache_manager):
+    """Helper-script entries are picked up by the selector when EXTRACT_PATTERNS includes 'device-'."""
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = "0becda3017e4a1fba6201ebbd7aeccf9201aa7c5"
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+    downloader.config["EXTRACT_PATTERNS"] = ["device-"]
+
+    entries = downloader.fetch_firmware_nightlies()
+    build_id = downloader.get_nightly_build_id(entries)
+    selected = downloader.get_selected_nightly_assets(entries, build_id)
+
+    selected_names = {e["name"] for e in selected}
+    for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+        assert script_name in selected_names, (
+            f"{script_name} not selected by 'device-' pattern; got {sorted(selected_names)}"
+        )
+
+
+def test_helper_scripts_omitted_from_selection_without_device_pattern(
+    downloader, mock_cache_manager
+):
+    """Without a 'device-' pattern, helpers aren't auto-included even when present."""
+    # Default fixture's EXTRACT_PATTERNS is ['rak4631-'], which doesn't match
+    # the helpers. So selection should be free of helpers.
+    index_body = _make_nightly_index_body()
+    index_body["commit"] = "0becda3017e4a1fba6201ebbd7aeccf9201aa7c5"
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    build_id = downloader.get_nightly_build_id(entries)
+    selected = downloader.get_selected_nightly_assets(entries, build_id)
+
+    selected_names = {e["name"] for e in selected}
+    assert "device-install.sh" not in selected_names
+    assert "device-update.sh" not in selected_names
+
+
+def test_fetch_firmware_nightlies_raises_on_bad_target(
+    downloader, mock_cache_manager
+):
+    """A target with missing 'board' rejects the whole listing."""
+    index_body = _make_nightly_index_body()
+    release_body = {
+        "version": BUILD_2_8_0,
+        "targets": [{"board": "tbeam", "platform": "esp32"}, {"platform": "esp32"}],
+    }
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(return_value={})
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    with pytest.raises(ValueError):
+        fetch()
 
 
 def test_get_nightly_build_id_extracts_from_manifest(downloader, mock_cache_manager):
@@ -1489,6 +1867,129 @@ def test_validate_nightly_asset_rejects_symlink_target(downloader):
     assert "symlink" in reason.lower() or "regular" in reason.lower()
 
 
+# --- MD5 verification (meshtastic/firmware#11719 publishes md5 per file) ---
+
+
+def test_validate_nightly_asset_accepts_matching_md5(downloader):
+    """A file whose MD5 matches the expected value must validate cleanly."""
+    payload = b"hello nightly"
+    expected = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=expected
+    )
+    assert ok is True
+    assert reason == ""
+
+
+def test_validate_nightly_asset_rejects_mismatched_md5(downloader):
+    """A file whose MD5 doesn't match the expected value must fail validation."""
+    payload = b"hello nightly"
+    wrong = "f" * 32
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=wrong
+    )
+    assert ok is False
+    assert "MD5" in reason
+
+
+def test_validate_nightly_asset_md5_check_is_case_insensitive(downloader):
+    """MD5 comparison must be case-insensitive (manifests sometimes uppercase)."""
+    payload = b"hello nightly"
+    expected = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=expected.upper()
+    )
+    assert ok is True
+    assert reason == ""
+
+
+def test_validate_nightly_asset_no_md5_check_when_not_provided(downloader):
+    """When expected_md5 is None/empty, no MD5 check runs (legacy path preserved)."""
+    payload = b"hello nightly"
+    entry = _contents_entry("firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload))
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    Path(target).write_bytes(payload)
+
+    ok, reason = downloader._validate_nightly_asset(
+        target, entry["name"], len(payload), expected_md5=None
+    )
+    assert ok is True
+
+
+def test_download_nightly_asset_md5_mismatch_fails_non_retryable(
+    downloader, mock_cache_manager
+):
+    """A downloaded file whose MD5 doesn't match expected_md5 must fail non-retryably."""
+    payload = b"corrupted-bytes"
+    wrong_md5 = "0" * 32
+    entry = _contents_entry(
+        "firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload)
+    )
+    entry["expected_md5"] = wrong_md5
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    if os.path.exists(target):
+        os.remove(target)
+
+    def _fake_download(url, path):
+        Path(path).write_bytes(payload)
+        return True
+
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry",
+        side_effect=_fake_download,
+    ):
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    from fetchtastic.constants import ERROR_TYPE_VALIDATION
+
+    assert result.success is False
+    assert result.is_retryable is False
+    assert result.error_type == ERROR_TYPE_VALIDATION
+    assert "MD5" in (result.error_message or "")
+    # Bad file must have been removed.
+    assert not os.path.exists(target)
+
+
+def test_download_nightly_asset_md5_match_succeeds(
+    downloader, mock_cache_manager
+):
+    """A downloaded file whose MD5 matches expected_md5 must succeed."""
+    payload = b"good-bytes"
+    expected = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    entry = _contents_entry(
+        "firmware-tbeam-2.8.0.f52e2ea.bin", size=len(payload)
+    )
+    entry["expected_md5"] = expected
+    target = downloader.get_nightly_target_path(BUILD_2_8_0, entry["name"], create=True)
+    if os.path.exists(target):
+        os.remove(target)
+
+    def _fake_download(url, path):
+        Path(path).write_bytes(payload)
+        return True
+
+    with patch(
+        "fetchtastic.download.firmware.download_file_with_retry",
+        side_effect=_fake_download,
+    ):
+        result = downloader.download_nightly_asset(entry, BUILD_2_8_0)
+
+    assert result.success is True
+    assert os.path.exists(target)
+
+
 def test_download_nightly_asset_executable_only_after_validation(
     downloader, mock_cache_manager
 ):
@@ -1636,6 +2137,7 @@ def test_finalize_nightly_transaction_all_success_finalizes_once(tmp_path):
 
     listing = _make_nightly_listing()
     asset1, asset2 = listing[0], listing[4]
+    asset2["expected_md5"] = "b" * 32
     file_type = getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly")
     orch.download_results = [
         DownloadResult(
@@ -1665,6 +2167,12 @@ def test_finalize_nightly_transaction_all_success_finalizes_once(tmp_path):
 
     orch._finalize_nightly_transaction_if_complete()
 
+    fd._validate_nightly_asset.assert_any_call(
+        str(tmp_path / "x"),
+        asset2["name"],
+        asset2.get("size"),
+        expected_md5=asset2["expected_md5"],
+    )
     fd.update_nightly_tracking.assert_called_once_with(BUILD_2_8_0)
     fd.cleanup_superseded_nightlies.assert_called_once_with(BUILD_2_8_0)
     fd.update_latest_pointer_for_nightly.assert_called_once_with(BUILD_2_8_0)
@@ -1897,6 +2405,7 @@ def test_download_nightly_asset_network_failure_retryable(downloader):
     import requests as _requests
 
     entry = _make_nightly_listing()[4]
+    entry["expected_md5"] = "a" * 32
     with patch(
         "fetchtastic.download.firmware.download_file_with_retry",
         side_effect=_requests.RequestException("boom"),
@@ -1908,6 +2417,7 @@ def test_download_nightly_asset_network_failure_retryable(downloader):
     from fetchtastic.constants import ERROR_TYPE_NETWORK
 
     assert result.error_type == ERROR_TYPE_NETWORK
+    assert result.error_details == {"expected_md5": entry["expected_md5"]}
 
 
 # --- Symlink cleanup: dangling links unlinked, external targets safe ---
@@ -2164,6 +2674,32 @@ def test_should_process_nightly_same_identity_all_valid_skips(
 
     should = _require_method(downloader, "should_process_nightly")
     assert should(entries, BUILD_2_8_0) is False
+
+
+def test_should_process_nightly_enforces_manifest_md5(
+    downloader, cache_manager
+):
+    """Same-build validation must pass the upstream MD5 into the validator."""
+    tracking_path = cache_manager.get_cache_file_path(
+        constants.LATEST_FIRMWARE_NIGHTLY_JSON_FILE
+    )
+    Path(tracking_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(tracking_path).write_text(json.dumps({"build_id": BUILD_2_8_0}))
+
+    entry = {
+        "name": f"firmware-tbeam-{BUILD_2_8_0}.bin",
+        "size": 123,
+        "type": "file",
+        "expected_md5": "a" * 32,
+    }
+    target = str(Path(cache_manager.cache_dir) / entry["name"])
+    downloader.get_nightly_target_path = Mock(return_value=target)
+    downloader._validate_nightly_asset = Mock(return_value=(True, ""))
+
+    assert downloader.should_process_nightly([], BUILD_2_8_0, selected=[entry]) is False
+    downloader._validate_nightly_asset.assert_called_once_with(
+        target, entry["name"], 123, expected_md5=entry["expected_md5"]
+    )
 
 
 # ==================================================================
@@ -2496,6 +3032,69 @@ def test_retry_nightly_chmods_sh_after_validation(tmp_path):
     assert mode & 0o111, "executable bit should be set for *.sh after retry validation"
 
 
+def test_retry_nightly_passes_expected_md5_to_validator(tmp_path):
+    """Retry revalidation preserves and enforces the manifest-provided MD5."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    name = "firmware-tbeam-2.8.0.f52e2ea.bin"
+    target = fd.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    expected_md5 = "c" * 32
+    fd.download = Mock(return_value=True)
+    fd.verify = Mock(return_value=True)
+    fd._validate_nightly_asset = Mock(return_value=(True, ""))
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=7,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+        error_details={"expected_md5": expected_md5},
+    )
+    result = orch._retry_single_failure(failed)
+
+    assert result.success is True
+    fd._validate_nightly_asset.assert_called_once_with(
+        target, name, 7, expected_md5=expected_md5
+    )
+
+
+def test_retry_failure_preserves_expected_md5_metadata(tmp_path):
+    """A failed retry keeps MD5 metadata for the next retry attempt."""
+    from fetchtastic.download.orchestrator import DownloadOrchestrator
+
+    config = _make_config(tmp_path, SAVE_FIRMWARE=True)
+    orch = DownloadOrchestrator(config)
+    fd = orch.firmware_downloader
+
+    name = "firmware-tbeam-2.8.0.f52e2ea.bin"
+    target = fd.get_nightly_target_path(BUILD_2_8_0, name, create=True)
+    details = {"expected_md5": "d" * 32}
+    fd.download = Mock(return_value=False)
+    fd.verify = Mock(return_value=True)
+
+    failed = DownloadResult(
+        success=False,
+        release_tag=BUILD_2_8_0,
+        file_path=Path(target),
+        download_url="http://x",
+        file_size=7,
+        file_type=getattr(constants, "FILE_TYPE_FIRMWARE_NIGHTLY", "firmware_nightly"),
+        is_retryable=True,
+        error_details=details,
+    )
+    result = orch._retry_single_failure(failed)
+
+    assert result.success is False
+    assert result.error_details == details
+
+
 def test_retry_nightly_validation_failure_removes_target_and_hash(tmp_path):
     """A retried nightly asset that fails validation is removed with its hash metadata."""
     from fetchtastic.download.orchestrator import DownloadOrchestrator
@@ -2763,7 +3362,7 @@ def test_fetch_firmware_nightlies_propagates_request_exception(tmp_path):
 
     config = _make_config(tmp_path)
     dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
-    dl.cache_manager.get_repo_contents = Mock(
+    dl.cache_manager.get_nightly_index = Mock(
         side_effect=_requests.RequestException("boom")
     )
     with pytest.raises(_requests.RequestException):
@@ -2774,7 +3373,7 @@ def test_fetch_firmware_nightlies_propagates_oserror(tmp_path):
     """Source OSError must propagate, not collapse to empty list."""
     config = _make_config(tmp_path)
     dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
-    dl.cache_manager.get_repo_contents = Mock(side_effect=OSError("boom"))
+    dl.cache_manager.get_nightly_index = Mock(side_effect=OSError("boom"))
     with pytest.raises(OSError):
         dl.fetch_firmware_nightlies()
 
@@ -2783,19 +3382,24 @@ def test_fetch_firmware_nightlies_disabled_returns_empty(tmp_path):
     """Disabled makes no call and returns empty list."""
     config = _make_config(tmp_path, CHECK_FIRMWARE_NIGHTLIES=False)
     dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
-    dl.cache_manager.get_repo_contents = Mock()
+    dl.cache_manager.get_nightly_index = Mock()
     result = dl.fetch_firmware_nightlies()
     assert result == []
-    dl.cache_manager.get_repo_contents.assert_not_called()
+    dl.cache_manager.get_nightly_index.assert_not_called()
 
 
 def test_fetch_firmware_nightlies_empty_success_returns_empty(tmp_path):
     """An empty-but-valid listing returns empty list (distinct from error)."""
     config = _make_config(tmp_path)
     dl = FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
-    dl.cache_manager.get_repo_contents = Mock(return_value=[])
+    # Empty index.json (404 or no candidate) — no further fetches happen.
+    dl.cache_manager.get_nightly_index = Mock(return_value={})
+    dl.cache_manager.get_nightly_release_manifest = Mock(return_value={})
+    dl.cache_manager.get_nightly_target_manifest = Mock(return_value={})
     result = dl.fetch_firmware_nightlies()
     assert result == []
+    dl.cache_manager.get_nightly_release_manifest.assert_not_called()
+    dl.cache_manager.get_nightly_target_manifest.assert_not_called()
 
 
 # ==================================================================
@@ -3581,40 +4185,62 @@ def test_cleanup_nightly_path_swap_parent_before_cleanup(downloader, tmp_path):
 
 
 def test_fetch_firmware_nightlies_empty_is_valid(downloader, mock_cache_manager):
-    """None/[] from the source is a valid empty listing, not an error."""
-    mock_cache_manager.get_repo_contents.return_value = []
+    """None/{} from the index is a valid empty listing, not an error."""
+    mock_cache_manager.get_nightly_index.return_value = {}
+    mock_cache_manager.get_nightly_release_manifest.return_value = {}
+    mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
     assert downloader.fetch_firmware_nightlies() == []
 
 
-def test_fetch_firmware_nightlies_non_dict_entry_raises(downloader, mock_cache_manager):
-    """A non-dict entry in the listing raises ValueError (fail closed)."""
-    mock_cache_manager.get_repo_contents.return_value = [
-        {"name": "ok.bin"},
-        "not-a-dict",
-    ]
+def test_fetch_firmware_nightlies_non_dict_target_raises(
+    downloader, mock_cache_manager
+):
+    """A non-dict target in the release manifest raises ValueError (fail closed)."""
+    # Put the bad target first so it fails before any per-target manifest
+    # fetch for a well-formed sibling — the per-target check happens before
+    # the manifest fetch, but only for the *current* target.
+    mock_cache_manager.get_nightly_index.return_value = _make_nightly_index_body()
+    mock_cache_manager.get_nightly_release_manifest.return_value = {
+        "version": BUILD_2_8_0,
+        "targets": ["not-a-dict"],
+    }
+    mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError, match="non-dict entry"):
+    with pytest.raises(ValueError, match="non-dict target"):
         downloader.fetch_firmware_nightlies()
 
 
-def test_fetch_firmware_nightlies_invalid_name_raises(downloader, mock_cache_manager):
-    """An entry with a non-string name raises ValueError (fail closed)."""
-    mock_cache_manager.get_repo_contents.return_value = [
-        {"name": 123},
-    ]
+def test_fetch_firmware_nightlies_invalid_target_id_raises(
+    downloader, mock_cache_manager
+):
+    """A target without a 'board' key raises ValueError (fail closed)."""
+    mock_cache_manager.get_nightly_index.return_value = _make_nightly_index_body()
+    mock_cache_manager.get_nightly_release_manifest.return_value = {
+        "version": BUILD_2_8_0,
+        "targets": [{"platform": "esp32"}],  # no 'board'
+    }
+    mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError, match="invalid name"):
+    with pytest.raises(ValueError, match="missing 'board'"):
         downloader.fetch_firmware_nightlies()
 
 
-def test_fetch_firmware_nightlies_missing_name_raises(downloader, mock_cache_manager):
-    """An entry without a name key raises ValueError (fail closed)."""
-    mock_cache_manager.get_repo_contents.return_value = [
-        {"size": 100},
-    ]
+def test_fetch_firmware_nightlies_malformed_file_entry_raises(
+    downloader, mock_cache_manager
+):
+    """A malformed files[] entry in a target manifest raises ValueError (fail closed)."""
+    mock_cache_manager.get_nightly_index.return_value = _make_nightly_index_body()
+    mock_cache_manager.get_nightly_release_manifest.return_value = {
+        "version": BUILD_2_8_0,
+        "targets": [{"board": "tbeam", "platform": "esp32"}],
+    }
+    mock_cache_manager.get_nightly_target_manifest.return_value = {
+        "version": BUILD_2_8_0,
+        "files": [{"name": 123}],  # non-string name
+    }
     downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError, match="invalid name"):
+    with pytest.raises(ValueError, match="invalid file entry"):
         downloader.fetch_firmware_nightlies()
 
 
@@ -3636,95 +4262,108 @@ def test_orch_nightly_malformed_source_sets_check_failed(tmp_path):
 
 
 # ------------------------------------------------------------------
-# Falsy non-list source responses: None/[] are valid empty; every
-# other falsy value ("", {}, 0, False, (), set()) must fail closed.
+# Falsy index.json payloads: {} is a valid empty; every other falsy
+# value ("", 0, False, (), set()) must fail closed.
 # ------------------------------------------------------------------
 
 
 def test_fetch_firmware_nightlies_none_returns_empty(downloader, mock_cache_manager):
-    """None from the source is a valid empty listing."""
-    mock_cache_manager.get_repo_contents.return_value = None
+    """None from the index layer is a valid empty result."""
+    mock_cache_manager.get_nightly_index.return_value = None
+    mock_cache_manager.get_nightly_release_manifest.return_value = {}
+    mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
     assert downloader.fetch_firmware_nightlies() == []
 
 
-def test_fetch_firmware_nightlies_empty_list_returns_empty(
+def test_fetch_firmware_nightlies_empty_dict_returns_empty(
     downloader, mock_cache_manager
 ):
-    """[] from the source is a valid empty listing (distinct from malformed)."""
-    mock_cache_manager.get_repo_contents.return_value = []
+    """{} from the index is a valid empty result (no candidate published yet)."""
+    mock_cache_manager.get_nightly_index.return_value = {}
+    mock_cache_manager.get_nightly_release_manifest.return_value = {}
+    mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
     assert downloader.fetch_firmware_nightlies() == []
 
 
 @pytest.mark.parametrize(
     "value",
-    ["", {}, 0, False, (), set()],
-    ids=["empty-str", "empty-dict", "zero", "false", "empty-tuple", "empty-set"],
+    ["", False, (), set(), ["not", "a", "dict"]],
+    ids=["empty-str", "false", "empty-tuple", "empty-set", "non-dict-list"],
 )
-def test_fetch_firmware_nightlies_falsy_non_list_raises(
+def test_fetch_firmware_nightlies_falsy_non_dict_raises(
     downloader, mock_cache_manager, value
 ):
-    """A falsy non-list source response raises ValueError (fail closed).
+    """A falsy/non-dict index.json raises ValueError (fail closed).
 
-    Only ``None`` and ``[]`` are valid empty results; every other falsy
-    value is a malformed source response that must not be collapsed into
-    a successful empty listing.
+    Only ``None`` and ``{}`` are valid empty results at the index layer;
+    every other falsy value (or a non-dict payload) is a malformed
+    source response that must not be collapsed into a successful empty
+    listing. (``{}`` is exercised separately in the ``empty_is_valid`` /
+    ``empty_list_returns_empty`` tests above as the "no candidate
+    published yet" path.)
     """
-    mock_cache_manager.get_repo_contents.return_value = value
+    mock_cache_manager.get_nightly_index.return_value = value
+    mock_cache_manager.get_nightly_release_manifest.return_value = {}
+    mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError, match="not a list"):
-        downloader.fetch_firmware_nightlies()
-
-
-@pytest.mark.parametrize(
-    "entries",
-    [
-        ["bad"],
-        [None, 1],
-        [{"name": "ok.bin"}, "bad"],
-        [{"name": "ok.bin"}, {"name": 123}],
-    ],
-    ids=[
-        "string-entry",
-        "non-dict-entries",
-        "mixed-valid-and-string",
-        "mixed-valid-and-bad-name",
-    ],
-)
-def test_fetch_firmware_nightlies_malformed_entries_raise(
-    downloader, mock_cache_manager, entries
-):
-    """Malformed list entries (non-dict or invalid name) raise ValueError."""
-    mock_cache_manager.get_repo_contents.return_value = entries
-    downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="index.json"):
         downloader.fetch_firmware_nightlies()
 
 
 def test_fetch_firmware_nightlies_valid_list_unchanged(downloader, mock_cache_manager):
-    """A valid nonempty list is returned with every entry intact."""
-    listing = _make_nightly_listing()
-    mock_cache_manager.get_repo_contents.return_value = listing
+    """A valid manifest chain returns the expected flat entry list."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+    mock_cache_manager.get_nightly_index.return_value = index_body
+    mock_cache_manager.get_nightly_release_manifest.return_value = release_body
+    mock_cache_manager.get_nightly_target_manifest.side_effect = (
+        lambda target_id, **_: target_bodies[target_id]
+    )
     downloader.cache_manager = mock_cache_manager
-    assert downloader.fetch_firmware_nightlies() == listing
+    entries = downloader.fetch_firmware_nightlies()
+    # Includes the release manifest + every file across every target +
+    # one .mt.json per target + the synthetic helper-script entries
+    # (commit-pinned).
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
+    expected_file_count = sum(
+        sum(
+            not item["name"].lower().endswith(".elf")
+            for item in target_bodies[f"{t['board']}-{BUILD_2_8_0}"]["files"]
+        )
+        for t in release_body["targets"]
+    )
+    assert len(entries) == (
+        expected_file_count
+        + 1  # release manifest
+        + len(release_body["targets"])  # one .mt.json per target
+        + len(FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
+    )
+    assert entries[0]["name"] == _release_manifest_name()
 
 
 @pytest.mark.parametrize(
     "value",
-    [{}, "", False],
-    ids=["empty-dict", "empty-str", "false"],
+    ["", False, ["not", "a", "dict"]],
+    ids=["empty-str", "false", "non-dict-list"],
 )
-def test_orch_nightly_falsy_non_list_sets_check_failed(tmp_path, value):
-    """A falsy non-list source response sets CHECK_FAILED end-to-end.
+def test_orch_nightly_falsy_non_dict_sets_check_failed(tmp_path, value):
+    """A falsy non-dict index.json sets CHECK_FAILED end-to-end.
+
+    Note: ``{}`` from the index is a valid "no candidate published yet"
+    state (the cache helper returns {} on 404), not malformed, so it
+    produces UNCHECKED — not in this parametrize list.
 
     The real ``fetch_firmware_nightlies`` runs against a mocked source
-    returning the falsy value; it raises ``ValueError``; the orchestrator
-    catches it and marks the run ``CHECK_FAILED``. No fake asset failure
-    is added, no build-id is recorded, and tracking/retention/latest-pointer
-    finalization are never invoked. The ``CHECK_FAILED`` state is the
-    signal ``cli_integration`` uses to suppress the generic "All assets
-    are up to date" log and NTFY.
+    returning the malformed value; it raises ``ValueError``; the
+    orchestrator catches it and marks the run ``CHECK_FAILED``. No fake
+    asset failure is added, no build-id is recorded, and
+    tracking/retention/latest-pointer finalization are never invoked.
+    The ``CHECK_FAILED`` state is the signal ``cli_integration`` uses
+    to suppress the generic "All assets are up to date" log and NTFY.
     """
     from fetchtastic.constants import (
         FILE_TYPE_FIRMWARE_NIGHTLY,
@@ -3735,7 +4374,9 @@ def test_orch_nightly_falsy_non_list_sets_check_failed(tmp_path, value):
     config = _make_config(tmp_path, SAVE_FIRMWARE=True)
     orch = DownloadOrchestrator(config)
     fd = orch.firmware_downloader
-    fd.cache_manager.get_repo_contents = Mock(return_value=value)
+    fd.cache_manager.get_nightly_index = Mock(return_value=value)
+    fd.cache_manager.get_nightly_release_manifest = Mock(return_value={})
+    fd.cache_manager.get_nightly_target_manifest = Mock(return_value={})
     fd.update_nightly_tracking = Mock(return_value=True)
     fd.cleanup_superseded_nightlies = Mock(return_value=0)
     fd.update_latest_pointer_for_nightly = Mock(return_value=True)

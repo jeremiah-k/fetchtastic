@@ -52,11 +52,50 @@ DESKTOP_PRERELEASES_DIR_NAME = "prerelease"
 APP_SNAPSHOTS_DIR_NAME = "snapshots"
 FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
-# Opt-in rolling firmware-nightly source (meshtastic.github.io/firmware-nightly).
-# Separate from the CI workflow named "nightly", from stable firmware releases,
-# and from prerelease firmware directories.
+# Opt-in rolling firmware-nightly source. As of meshtastic/firmware#11719
+# (merged 2026-09-08) the nightly host is nightly.meshtastic.org (a
+# Cloudflare R2 bucket). The legacy meshtastic.github.io/firmware-nightly
+# folder is no longer refreshed. Separate from the CI workflow named
+# "nightly", from stable firmware releases, and from prerelease firmware
+# directories.
 FIRMWARE_NIGHTLY_SOURCE_DIR = "firmware-nightly"
 FIRMWARE_NIGHTLIES_DIR_NAME = "nightlies"
+# Public nightly host (Cloudflare R2 bucket behind nightly.meshtastic.org).
+# Stable/alpha/prerelease/event firmware are unchanged and still come from
+# meshtastic.github.io. The layout is flat at the bucket root:
+#   /index.json
+#   /firmware-<version>.<hash>.json            # release-level manifest
+#   /firmware-<board>-<version>.<hash>.mt.json # per-target manifest
+#   /firmware-<board>-<version>.<hash>.bin
+#   /firmware-<board>-<version>.<hash>.factory.bin
+#   /release_notes.md                          # manually maintained
+# Per-target manifests may mention debug ``.elf`` build outputs, but upstream
+# packages those separately and does not publish them at the nightly root.
+# No directory listing is served at the bucket root; callers must drive
+# off index.json + the manifest files, never enumerate the bucket.
+FIRMWARE_NIGHTLY_BASE_URL = "https://nightly.meshtastic.org"
+FIRMWARE_NIGHTLY_INDEX_FILENAME = "index.json"
+# Short TTL for mutable nightly pointer/release metadata. Target manifests use
+# a separate longer bounded TTL because their URLs include the nightly build id.
+FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS = 5 * 60  # 5 minutes
+# Target manifests are version-addressed by the nightly build id and fan out to
+# ~150 board-specific requests. Keep them for one daily nightly cycle so routine
+# reruns do not refetch the entire manifest graph; explicit cache clears / force
+# refreshes still bypass this cache when needed.
+FIRMWARE_NIGHTLY_TARGET_MANIFEST_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
+# Helper scripts (device-install.sh, device-update.sh) are not part of the
+# nightly R2 bucket. They're published in the meshtastic/firmware repo's
+# bin/ directory and fetched directly from raw.githubusercontent.com, pinned
+# to the same git commit as the nightly build (carried in index.json's
+# ``commit`` field) so the helper version always matches the firmware.
+# Synthetic entries are appended to the nightly listing so the existing
+# selector / downloader / validator pipeline treats them like any other
+# nightly asset; the selector's pattern gate keeps them out of the
+# selection when EXTRACT_PATTERNS doesn't include ``device-``.
+FIRMWARE_NIGHTLY_HELPER_BASE_URL = (
+    "https://raw.githubusercontent.com/meshtastic/firmware"
+)
+FIRMWARE_NIGHTLY_HELPER_SCRIPTS = ("device-install.sh", "device-update.sh")
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
 LATEST_POINTER_NAME = "latest"

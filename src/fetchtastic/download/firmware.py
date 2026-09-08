@@ -5,6 +5,7 @@ This module implements the specific downloader for Meshtastic firmware releases.
 """
 
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -18,6 +19,7 @@ import requests  # type: ignore[import-untyped]
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
     DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
+    DEFAULT_CHUNK_SIZE,
     DEFAULT_CREATE_LATEST_SYMLINKS,
     DEFAULT_FILTER_REVOKED_RELEASES,
     DEFAULT_FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP,
@@ -38,6 +40,9 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_MANIFEST_EXTENSION,
     FIRMWARE_NIGHTLIES_DIR_NAME,
+    FIRMWARE_NIGHTLY_BASE_URL,
+    FIRMWARE_NIGHTLY_HELPER_BASE_URL,
+    FIRMWARE_NIGHTLY_HELPER_SCRIPTS,
     FIRMWARE_NIGHTLY_MANIFEST_PATTERN,
     FIRMWARE_NIGHTLY_SOURCE_DIR,
     FIRMWARE_PRERELEASES_DIR_NAME,
@@ -95,6 +100,12 @@ _NIGHTLY_BUILD_ID_RX = re.compile(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECAS
 # Detects a nightly build token (e.g. ``2.8.0.f52e2ea``) embedded anywhere in
 # an asset filename so the selector can reject stale generations.
 _NIGHTLY_BUILD_TOKEN_RX = re.compile(r"(\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE)
+
+# Per-target manifests describe build outputs, not the exact contents of the
+# public nightly bucket. Upstream packages debug ELFs separately as
+# ``debug-elfs-*`` artifacts and does not copy them into the nightly publish
+# staging directory, so URLs synthesized for ``*.elf`` entries always 404.
+_NIGHTLY_UNPUBLISHED_TARGET_SUFFIXES = (".elf",)
 
 
 def _normalize_repo_directory_listing(raw: Any, *, source: str) -> list[str]:
@@ -2899,56 +2910,206 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def fetch_firmware_nightlies(self) -> List[Dict[str, Any]]:
         """
-        Fetch the flat GitHub Contents listing of the rolling firmware-nightly directory.
+        Fetch the rolling firmware-nightly build from nightly.meshtastic.org.
 
-        Returns an empty list when the feature is disabled (no API call is made)
-        or when the listing is genuinely empty (``None`` or ``[]``). Each entry
-        preserves the live GitHub Contents API shape (``name``, ``download_url``,
-        ``size``, ``type``).
+        Walks the nightly manifest chain:
 
-        **Fail-closed policy for malformed source responses:** a non-list
-        response or a nonempty list containing any malformed entry (non-dict
-        or dict with a non-string ``name``) raises ``ValueError`` rather than
-        silently filtering. The orchestrator catches this and marks the run
-        ``CHECK_FAILED`` so a corrupt listing is never mistaken for "no
-        candidate published yet" (which an empty list represents). This is
-        a strict mixed-list fail-closed: one bad entry rejects the entire
-        listing, because silently dropping entries could hide a missing
-        release manifest and produce an incoherent download set.
+          /index.json                                  → {version, id, title, commit}
+          /firmware-<version>.<hash>.json              → {targets: [{board, platform}]}
+          /firmware-<board>-<version>.<hash>.mt.json   → {files: [{name, md5, bytes}]}
+
+        and returns the same flat entry shape callers already consume:
+        ``{name, download_url, size, type, expected_md5?}`` for each artifact
+        actually published at the nightly bucket root, plus a synthetic
+        release-manifest entry so the build-id scan in
+        :meth:`get_nightly_build_id` keeps working unchanged. Per-target
+        manifests can also inventory debug outputs such as ``*.elf`` that
+        upstream packages separately and does not publish to the nightly
+        bucket; those entries are ignored rather than turned into guaranteed
+        404 download URLs.
+
+        **Fail-closed:**
+        - Feature disabled → ``[]`` (no API call).
+        - index.json 404 / empty → ``[]`` (no candidate published yet).
+        - Non-dict index.json or missing ``version`` → ``ValueError``
+          (orchestrator surfaces as ``CHECK_FAILED``).
+        - Release manifest missing or has no targets → ``ValueError``.
+        - A target entry missing ``board`` or a malformed ``files`` list
+          → ``ValueError`` (one bad target rejects the whole listing,
+          matching the legacy fail-closed posture).
+
+        Each per-target ``files`` entry's ``md5`` and ``bytes`` flow
+        through to the entry as ``expected_md5`` and ``size``, which
+        :meth:`_validate_nightly_asset` enforces on same-build checks and
+        on the skip and post-download paths.
         """
         if not self._nightlies_enabled():
             return []
-        # firmware-nightly/ is a rolling directory that upstream replaces in place.
-        # A cached Contents response can therefore describe a superseded generation,
-        # so enabled nightly checks must read the live listing each run.
-        contents = self.cache_manager.get_repo_contents(
-            FIRMWARE_NIGHTLY_SOURCE_DIR,
-            force_refresh=True,
-            github_token=self.config.get("GITHUB_TOKEN"),
-            allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
+        # The nightly host replaces manifest contents in place on every
+        # cron. A cached response can describe a superseded generation,
+        # so enabled nightly checks must always read the live chain.
+        index = self.cache_manager.get_nightly_index(force_refresh=True)
+        # Only ``None`` and ``{}`` are valid empty results at the index
+        # layer (the cache helper returns {} on 404 and on a missing
+        # cache; never None in practice). Every other falsy value
+        # ("", 0, False, (), set()) or non-dict payload is a malformed
+        # source response that must NOT be collapsed into a successful
+        # empty listing — surface it so the orchestrator marks the run
+        # CHECK_FAILED instead of "no candidate published yet".
+        if index is None or index == {}:
+            return []
+        if not isinstance(index, dict):
+            raise ValueError(
+                f"firmware-nightly index.json is not a dict: {type(index).__name__}"
+            )
+        version = index.get("version")
+        if not isinstance(version, str) or not version:
+            raise ValueError(
+                f"firmware-nightly index.json missing 'version': {index!r}"
+            )
+        # ``commit`` is the git SHA the nightly was built from. Helper
+        # scripts (device-install.sh / device-update.sh) are pinned to
+        # this SHA so they always match the firmware's runtime. When
+        # missing (a malformed nightly build), the synthetic helper
+        # entries are simply omitted from the listing — the rest of the
+        # build still works.
+        commit = index.get("commit")
+        commit_pinned = (
+            isinstance(commit, str) and bool(commit) and all(
+                c in "0123456789abcdef" for c in commit.lower()
+            )
+            and len(commit) >= 7
         )
-        # Validate type before emptiness: a falsy non-list response ("", {},
-        # 0, False, (), set()) must NOT be collapsed into a successful empty
-        # listing. Only ``None`` and ``[]`` are valid empty source results.
-        if contents is None:
-            return []
-        if not isinstance(contents, list):
-            raise ValueError("firmware-nightly source response is not a list")
-        if not contents:
-            return []
-        validated: List[Dict[str, Any]] = []
-        for entry in contents:
-            if not isinstance(entry, dict):
-                raise ValueError(
-                    f"firmware-nightly source response has non-dict entry: {entry!r}"
+
+        release = self.cache_manager.get_nightly_release_manifest(
+            version, force_refresh=True
+        )
+        if not isinstance(release, dict) or not release:
+            raise ValueError(
+                f"firmware-nightly release manifest missing for {version}"
+            )
+        targets = release.get("targets")
+        if not isinstance(targets, list) or not targets:
+            raise ValueError(
+                f"firmware-nightly release manifest has no targets: {release!r}"
+            )
+
+        entries: List[Dict[str, Any]] = []
+
+        # Synthetic release-manifest entry. Mirrors the GitHub Contents
+        # shape so get_nightly_build_id (which scans for
+        # ``firmware-<build-id>.json`` with type=="file") keeps working
+        # without modification. ``size`` is None for the manifest itself
+        # (it's a JSON document, not a binary); the selector treats
+        # ``download_url`` as opaque.
+        entries.append(
+            {
+                "name": f"firmware-{version}.json",
+                "download_url": f"{FIRMWARE_NIGHTLY_BASE_URL}/firmware-{version}.json",
+                "size": None,
+                "type": "file",
+            }
+        )
+
+        skipped_unpublished_outputs = 0
+
+        # Target manifests are version-addressed by build id. Reuse their
+        # longer bounded cache and one HTTP session so routine reruns do not
+        # refetch the full board graph or pay a TCP/TLS setup cost per target.
+        with requests.Session() as target_session:
+            for target in targets:
+                if not isinstance(target, dict):
+                    raise ValueError(
+                        f"firmware-nightly release manifest has non-dict target: {target!r}"
+                    )
+                board = target.get("board")
+                if not isinstance(board, str) or not board:
+                    raise ValueError(
+                        f"firmware-nightly release manifest target missing 'board': {target!r}"
+                    )
+                target_id = f"{board}-{version}"
+                target_manifest = self.cache_manager.get_nightly_target_manifest(
+                    target_id, session=target_session
                 )
-            name = entry.get("name")
-            if not isinstance(name, str) or not name:
-                raise ValueError(
-                    "firmware-nightly source response has entry with invalid name"
+                if not isinstance(target_manifest, dict) or not target_manifest:
+                    raise ValueError(
+                        f"firmware-nightly target manifest missing for {target_id}"
+                    )
+
+                # Per-device manifests were downloadable assets in the legacy
+                # nightly directory. Emit them explicitly because the new R2
+                # manifest's ``files`` array contains payloads only.
+                target_manifest_name = f"firmware-{target_id}.mt.json"
+                entries.append(
+                    {
+                        "name": target_manifest_name,
+                        "download_url": (
+                            f"{FIRMWARE_NIGHTLY_BASE_URL}/{target_manifest_name}"
+                        ),
+                        "size": None,
+                        "type": "file",
+                    }
                 )
-            validated.append(entry)
-        return validated
+
+                files = target_manifest.get("files")
+                if not isinstance(files, list):
+                    raise ValueError(
+                        f"firmware-nightly target manifest {target_id} has non-list 'files'"
+                    )
+                for f in files:
+                    if not isinstance(f, dict) or not isinstance(f.get("name"), str):
+                        raise ValueError(
+                            f"firmware-nightly target manifest {target_id} has invalid file entry: {f!r}"
+                        )
+                    name = f["name"]
+                    if name.lower().endswith(_NIGHTLY_UNPUBLISHED_TARGET_SUFFIXES):
+                        skipped_unpublished_outputs += 1
+                        continue
+                    entries.append(
+                        {
+                            "name": name,
+                            "download_url": f"{FIRMWARE_NIGHTLY_BASE_URL}/{name}",
+                            "size": f.get("bytes"),
+                            "type": "file",
+                            **(
+                                {"expected_md5": str(f["md5"]).lower()}
+                                if isinstance(f.get("md5"), str) and f["md5"]
+                                else {}
+                            ),
+                        }
+                    )
+
+        if skipped_unpublished_outputs:
+            logger.debug(
+                "Ignored %d manifest-listed nightly debug output(s) not published "
+                "at the bucket root",
+                skipped_unpublished_outputs,
+            )
+
+        # Synthetic helper-script entries. The nightly R2 bucket doesn't
+        # publish device-install.sh / device-update.sh (they live in
+        # meshtastic/firmware's bin/ directory), but every nightly build
+        # has historically included them in the listing so the selector
+        # could pick them up via a ``device-`` extraction pattern. Append
+        # synthetic entries here, pinned to the same git commit as the
+        # firmware, so the selector / downloader / validator / chmod
+        # pipeline treats them like any other nightly asset. When the
+        # nightly build's index.json is missing a usable commit SHA
+        # (malformed generation), the helpers are omitted rather than
+        # fetched from an unrelated version.
+        if commit_pinned:
+            helper_root = f"{FIRMWARE_NIGHTLY_HELPER_BASE_URL}/{commit}/bin"
+            for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+                entries.append(
+                    {
+                        "name": script_name,
+                        "download_url": f"{helper_root}/{script_name}",
+                        "size": None,
+                        "type": "file",
+                    }
+                )
+
+        return entries
 
     @staticmethod
     def parse_nightly_build_id(name: str) -> Optional[str]:
@@ -3207,8 +3368,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Select nightly entries for a single build generation.
 
         The firmware-nightly directory is a flat repo-prerelease-like direct-file
-        listing (per-device ``.uf2``/``.bin``/``-ota.zip``/``.elf``/``.mt.json``
-        plus build-agnostic helpers), not a stable architecture-ZIP release.
+        listing (per-device ``.uf2``/``.bin``/``-ota.zip``/``.mt.json`` plus
+        build-agnostic helpers), not a stable architecture-ZIP release. The
+        selector remains generic enough to handle other direct-file entries,
+        but :meth:`fetch_firmware_nightlies` filters manifest-only debug outputs
+        such as ``*.elf`` that are not published at the nightly bucket root.
         Selection therefore uses the shared extraction-pattern matcher
         (:func:`matches_extract_patterns`) with DeviceManager aliases/families,
         the same matcher used by repository prereleases.
@@ -3438,7 +3602,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 target = self.get_nightly_target_path(build_id, name, create=False)
             except ValueError:
                 return True
-            ok, _reason = self._validate_nightly_asset(target, name, entry.get("size"))
+            ok, _reason = self._validate_nightly_asset(
+                target,
+                name,
+                entry.get("size"),
+                expected_md5=entry.get("expected_md5"),
+            )
             if not ok:
                 return True
         return False
@@ -3488,7 +3657,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         _prepare_for_redownload(target_path)
 
     def _validate_nightly_asset(
-        self, target_path: str, name: str, expected_size: Any
+        self,
+        target_path: str,
+        name: str,
+        expected_size: Any,
+        expected_md5: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
         Validate a nightly asset on disk. Shared by the skip, fresh-download,
@@ -3496,6 +3669,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         Rules (all must hold):
           - target must be a regular file and not a symlink;
+          - when ``expected_md5`` is provided, the on-disk MD5 must match
+            (case-insensitive);
           - when ``expected_size`` is a positive int, the on-disk size must
             match exactly;
           - existing integrity / hash verification must pass;
@@ -3513,6 +3688,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         if os.path.islink(target_path) or not os.path.isfile(target_path):
             return False, "target is not a regular file (symlink or missing)"
+
+        # MD5 check first so a mismatch short-circuits the size and hash work;
+        # the manifest publishes a per-file md5 for every binary in
+        # firmware-<board>-<version>.<hash>.mt.json (see
+        # meshtastic/firmware#11719).
+        if isinstance(expected_md5, str) and expected_md5:
+            try:
+                hasher = hashlib.md5(usedforsecurity=False)
+                with open(target_path, "rb") as md5_file:
+                    for chunk in iter(
+                        lambda: md5_file.read(DEFAULT_CHUNK_SIZE), b""
+                    ):
+                        hasher.update(chunk)
+                actual_md5 = hasher.hexdigest()
+            except OSError as exc:
+                return False, f"could not read target for MD5: {exc}"
+            if actual_md5.lower() != expected_md5.lower():
+                return False, (
+                    f"MD5 mismatch: expected {expected_md5.lower()}, "
+                    f"got {actual_md5}"
+                )
 
         try:
             actual_size = os.path.getsize(target_path)
@@ -3685,7 +3881,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Skip if already present and fully valid.
         if os.path.exists(target_path):
-            ok, reason = self._validate_nightly_asset(target_path, name, size)
+            ok, reason = self._validate_nightly_asset(
+                target_path, name, size, expected_md5=entry.get("expected_md5")
+            )
             if ok:
                 logger.debug("Nightly asset already present and valid: %s", name)
                 return self.create_download_result(
@@ -3726,6 +3924,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
                 is_retryable=is_retryable,
                 error_type=error_type,
+                error_details=(
+                    {"expected_md5": entry["expected_md5"]}
+                    if isinstance(entry.get("expected_md5"), str)
+                    and entry["expected_md5"]
+                    else None
+                ),
             )
 
         if not downloaded:
@@ -3740,12 +3944,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 file_type=FILE_TYPE_FIRMWARE_NIGHTLY,
                 is_retryable=True,
                 error_type=ERROR_TYPE_NETWORK,
+                error_details=(
+                    {"expected_md5": entry["expected_md5"]}
+                    if isinstance(entry.get("expected_md5"), str)
+                    and entry["expected_md5"]
+                    else None
+                ),
             )
 
         # Deterministic post-download validation. A failure here means the
         # response itself was wrong; remove the bad file + stored hash and
         # treat it as non-retryable so a retry cannot silently replace it.
-        ok, reason = self._validate_nightly_asset(target_path, name, size)
+        ok, reason = self._validate_nightly_asset(
+            target_path, name, size, expected_md5=entry.get("expected_md5")
+        )
         if not ok:
             self._remove_nightly_target_and_hash(target_path)
             logger.error(
