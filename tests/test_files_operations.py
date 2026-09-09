@@ -26,6 +26,7 @@ from fetchtastic.download.files import (
     _is_release_complete,
     _matches_exclude,
     _prepare_for_redownload,
+    _safe_rmtree,
     _sanitize_path_component,
     safe_extract_path,
     strip_unwanted_chars,
@@ -878,6 +879,20 @@ class TestPrepareForRedownload:
 
         # File should still exist since cleanup failed
         assert main_file.exists()
+
+
+class TestSafeRmtree:
+    """Test containment checks for destructive cleanup."""
+
+    def test_refuses_to_remove_managed_base_directory(self, tmp_path):
+        base = tmp_path / "managed-root"
+        base.mkdir()
+        sentinel = base / "keep.txt"
+        sentinel.write_text("keep")
+
+        assert _safe_rmtree(str(base), str(base), base.name) is False
+        assert base.is_dir()
+        assert sentinel.is_file()
 
 
 class TestSafeExtractPath:

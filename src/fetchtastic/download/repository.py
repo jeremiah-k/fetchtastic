@@ -8,7 +8,6 @@ from the meshtastic.github.io repository.
 import json
 import os
 import re
-import shutil
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -25,6 +24,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 
 from .base import BaseDownloader
+from .files import _safe_rmtree
 from .interfaces import DownloadResult, Release
 
 
@@ -409,16 +409,26 @@ class RepositoryDownloader(BaseDownloader):
                 for entry in it:
                     entry_display = _format_entry_path(entry.path)
                     try:
-                        if entry.is_file() or entry.is_symlink():
-                            os.remove(entry.path)
-                            logger.info("Removed file: %s", entry_display)
-                            self._cleanup_summary["removed_files"] += 1
+                        if entry.is_symlink() or entry.is_file():
+                            if _safe_rmtree(entry.path, repo_dir, entry_display):
+                                logger.info("Removed file: %s", entry_display)
+                                self._cleanup_summary["removed_files"] += 1
+                            else:
+                                self._cleanup_summary["errors"].append(
+                                    f"{entry_display}: removal failed"
+                                )
+                                had_errors = True
                         elif entry.is_dir():
-                            shutil.rmtree(entry.path)
-                            logger.info("Removed directory: %s", entry_display)
-                            self._cleanup_summary["removed_dirs"] += 1
+                            if _safe_rmtree(entry.path, repo_dir, entry_display):
+                                logger.info("Removed directory: %s", entry_display)
+                                self._cleanup_summary["removed_dirs"] += 1
+                            else:
+                                self._cleanup_summary["errors"].append(
+                                    f"{entry_display}: removal failed"
+                                )
+                                had_errors = True
                     except OSError as e:
-                        logger.error("Error removing %s: %s", entry_display, e)
+                        logger.error("Error inspecting %s: %s", entry_display, e)
                         self._cleanup_summary["errors"].append(f"{entry_display}: {e}")
                         had_errors = True
 

@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple, cast
@@ -1566,8 +1565,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 existing_versions = {
                     entry.name
                     for entry in entries
-                    if entry.is_dir()
-                    and not entry.is_symlink()
+                    if not entry.is_symlink()
+                    and entry.is_dir()
                     and entry.name
                     not in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
@@ -1662,7 +1661,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                 "Removing firmware directory: %s",
                                 entry.path,
                             )
-                            shutil.rmtree(entry.path)
+                            if not _safe_rmtree(entry.path, firmware_dir, entry.name):
+                                continue
                             logger.info("Removed old firmware version: %s", entry.name)
                         except OSError as e:
                             logger.error(
@@ -2915,7 +2915,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                         if dir_tuple <= release_tuple:
                                             prerelease_path = entry.path
                                             try:
-                                                shutil.rmtree(prerelease_path)
+                                                if not _safe_rmtree(
+                                                    prerelease_path,
+                                                    prerelease_dir,
+                                                    entry.name,
+                                                ):
+                                                    valid_latest_target_names.add(
+                                                        entry.name
+                                                    )
+                                                    continue
                                                 logger.info(
                                                     f"Removed superseded prerelease: {entry.name}"
                                                 )

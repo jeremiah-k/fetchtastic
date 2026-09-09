@@ -425,6 +425,12 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
             return True
 
         real_target = os.path.realpath(path_to_remove)
+        if real_target == real_base_dir:
+            logger.warning(
+                "Skipping removal of %s because it is the managed base directory",
+                path_to_remove,
+            )
+            return False
         if not _is_within_base(real_base_dir, real_target):
             logger.warning(
                 "Skipping removal of %s because it resolves outside the base directory",
