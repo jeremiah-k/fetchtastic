@@ -2781,15 +2781,21 @@ class FirmwareReleaseDownloader(BaseDownloader):
             bool: `True` if any prerelease directories were removed, `False` otherwise.
         """
         try:
-            # Strip the 'v' prefix if present
-            clean_release_tag = latest_release_tag.lstrip("vV")
-            if not clean_release_tag:
-                return False
-
-            # Get version tuple for comparison
             version_manager = VersionManager()
-            release_tuple = version_manager.get_release_tuple(clean_release_tag)
-            if not release_tuple:
+
+            def semantic_triplet(value: str) -> Optional[Tuple[int, int, int]]:
+                """Return major/minor/patch only when the full version is parseable."""
+                normalized = version_manager.normalize_version(value)
+                release = getattr(normalized, "release", ()) if normalized else ()
+                if len(release) < 3:
+                    return None
+                return (int(release[0]), int(release[1]), int(release[2]))
+
+            # Cleanup is destructive, so do not use get_release_tuple() here: its
+            # numeric-prefix fallback intentionally accepts partially parseable strings.
+            # Require the complete baseline to normalize before authorizing deletion.
+            release_tuple = semantic_triplet(latest_release_tag)
+            if release_tuple is None:
                 return False
 
             # Path to prerelease directory
@@ -2823,15 +2829,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         if entry.name.startswith(FIRMWARE_DIR_PREFIX):
                             dir_name = entry.name[len(FIRMWARE_DIR_PREFIX) :]
 
-                            # Extract version from directory name
                             if "." in dir_name:
                                 parts = dir_name.split(".")
                                 if len(parts) >= 3:
                                     try:
-                                        dir_major, dir_minor, dir_patch = map(
-                                            int, parts[:3]
-                                        )
-                                        dir_tuple = (dir_major, dir_minor, dir_patch)
+                                        dir_tuple = semantic_triplet(dir_name)
+                                        if dir_tuple is None:
+                                            raise ValueError(
+                                                "unparsable prerelease version"
+                                            )
 
                                         # Check if this prerelease is superseded
                                         if dir_tuple <= release_tuple:
@@ -2853,7 +2859,26 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                             valid_latest_target_names.add(entry.name)
 
                                     except ValueError:
+                                        logger.debug(
+                                            "Preserving unparsable firmware prerelease "
+                                            "directory: %s",
+                                            entry.name,
+                                        )
+                                        valid_latest_target_names.add(entry.name)
                                         continue
+                                else:
+                                    logger.debug(
+                                        "Preserving unparsable firmware prerelease "
+                                        "directory: %s",
+                                        entry.name,
+                                    )
+                                    valid_latest_target_names.add(entry.name)
+                            else:
+                                logger.debug(
+                                    "Preserving unparsable firmware prerelease directory: %s",
+                                    entry.name,
+                                )
+                                valid_latest_target_names.add(entry.name)
                 self._cleanup_invalid_prerelease_latest_pointer(
                     prerelease_dir, valid_latest_target_names
                 )

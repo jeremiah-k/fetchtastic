@@ -3187,7 +3187,7 @@ class TestFirmwareUncoveredBranches:
         """Test when version tuple can't be extracted."""
         with patch.object(
             VersionManager,
-            "get_release_tuple",
+            "normalize_version",
             return_value=None,
         ):
             result = downloader.cleanup_superseded_prereleases("v1.2.3")
@@ -3389,10 +3389,10 @@ class TestFirmwarePrereleaseBaselineDerivation:
         mock_prerelease_keep.path = "/mock/prerelease/firmware-2.7.23.abcdef1"
 
         mock_prerelease_remove = Mock()
-        mock_prerelease_remove.name = "firmware-2.7.22.oldhash"
+        mock_prerelease_remove.name = "firmware-2.7.22.deadbee"
         mock_prerelease_remove.is_symlink.return_value = False
         mock_prerelease_remove.is_dir.return_value = True
-        mock_prerelease_remove.path = "/mock/prerelease/firmware-2.7.22.oldhash"
+        mock_prerelease_remove.path = "/mock/prerelease/firmware-2.7.22.deadbee"
 
         mock_scandir.return_value.__enter__.return_value = [
             mock_prerelease_keep,
@@ -3403,7 +3403,7 @@ class TestFirmwarePrereleaseBaselineDerivation:
         result = downloader.cleanup_superseded_prereleases("v2.7.22.96dd647")
 
         assert result is True
-        mock_rmtree.assert_called_once_with("/mock/prerelease/firmware-2.7.22.oldhash")
+        mock_rmtree.assert_called_once_with("/mock/prerelease/firmware-2.7.22.deadbee")
 
     # =========================================================================
     # Tests for deterministic prerelease directory sorting (review fix 1)
