@@ -1401,10 +1401,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Remove firmware version directories not present in the latest `keep_limit` releases
         (full releases only).
 
-        This mirrors legacy behavior by keeping only the newest release tags (alpha/beta)
-        returned by GitHub API (bounded by `keep_limit`). Any local version
-        directories not in that set are removed. Special directories "prerelease" and
-        "repo-dls" are always preserved.
+        This mirrors legacy behavior by keeping the newest release tags returned by
+        GitHub API, bounded by `keep_limit`. When the local directory layout does not
+        match that keep set, cleanup is conservative: only stale release bases recorded
+        in Fetchtastic release history are eligible for removal, while untracked local
+        directories and retained alternate layouts without a canonical directory are
+        preserved. Special directories "prerelease", "nightlies", and "repo-dls" are
+        always preserved.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
@@ -1586,18 +1589,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         and name != self._get_comparable_base_tag(name)
                     ]
 
-                if (
+                shape_mismatch = bool(
                     keep_limit > 0
                     and existing_versions
                     and (
                         keep_base_names.isdisjoint(existing_base_names)
-                        or bool(unmatched_channel_dirs)
+                        or unmatched_channel_dirs
                     )
-                ):
+                )
+                tracked_base_names: set[str] = set()
+                existing_canonical_bases = {
+                    self._get_comparable_base_tag(name)
+                    for name in existing_versions
+                    if name in release_tags_to_keep
+                }
+                if shape_mismatch:
+                    tracked_base_names = self._get_tracked_release_base_names()
                     logger.warning(
-                        "Skipping firmware cleanup: keep set does not match existing directories."
+                        "Firmware cleanup keep set does not fully match existing directories; "
+                        "pruning only previously tracked stale releases."
                     )
-                    return
+
                 for entry in entries:
                     if entry.name in {
                         FIRMWARE_PRERELEASES_DIR_NAME,
@@ -1624,6 +1636,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             continue
                         if preserve_legacy_base_dirs and entry.name in keep_base_names:
                             continue
+
+                        entry_base_name = self._get_comparable_base_tag(entry.name)
+                        if shape_mismatch:
+                            if (
+                                entry_base_name in keep_base_names
+                                and entry_base_name not in existing_canonical_bases
+                            ):
+                                logger.info(
+                                    "Preserving firmware directory for retained release during "
+                                    "storage-layout reconciliation: %s",
+                                    entry.name,
+                                )
+                                continue
+                            if entry_base_name not in tracked_base_names:
+                                logger.info(
+                                    "Preserving untracked firmware directory during cleanup "
+                                    "reconciliation: %s",
+                                    entry.name,
+                                )
+                                continue
+
                         try:
                             logger.debug(
                                 "Removing firmware directory: %s",
@@ -1722,6 +1755,45 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         patterns = self.config.get("SELECTED_PRERELEASE_ASSETS") or []
         return patterns if isinstance(patterns, list) else [str(patterns)]
+
+    def _get_tracked_release_base_names(self) -> set[str]:
+        """Return sanitized firmware base tags from valid release-history entries.
+
+        During storage-layout reconciliation, history is used only to limit
+        deletion to release bases Fetchtastic previously observed upstream. Missing,
+        malformed, or internally inconsistent entries provide no deletion evidence.
+        """
+        try:
+            history = self.cache_manager.read_json(self.release_history_path) or {}
+        except (OSError, ValueError, TypeError):
+            return set()
+        if not isinstance(history, dict):
+            return set()
+        entries = history.get("entries")
+        if not isinstance(entries, dict):
+            return set()
+
+        tracked: set[str] = set()
+        version_manager = VersionManager()
+        for key, value in entries.items():
+            if not isinstance(key, str) or not isinstance(value, dict):
+                continue
+            tag = value.get("tag_name")
+            if not isinstance(tag, str) or not tag or tag != key:
+                continue
+            try:
+                safe_tag = self._sanitize_required(tag, "release history tag")
+            except ValueError:
+                continue
+            base_tag = self._get_comparable_base_tag(safe_tag)
+            normalized = version_manager.normalize_version(base_tag)
+            release_tuple = (
+                getattr(normalized, "release", ()) if normalized is not None else ()
+            )
+            if len(release_tuple) < 3:
+                continue
+            tracked.add(base_tag)
+        return tracked
 
     def _get_comparable_base_tag(self, name: str) -> str:
         """
