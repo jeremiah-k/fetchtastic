@@ -1949,7 +1949,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     # though the local hash sidecar is self-consistent.
                     expected_size = item.get("size")
                     size_ok = True
-                    if isinstance(expected_size, int) and expected_size > 0:
+                    if type(expected_size) is int and expected_size >= 0:
                         try:
                             size_ok = os.path.getsize(target_path) == expected_size
                         except OSError:

@@ -2776,6 +2776,45 @@ class TestFirmwareUncoveredBranches:
         assert any_downloaded is True
 
     @patch("fetchtastic.download.firmware.download_file_with_retry")
+    def test_download_prerelease_assets_zero_remote_size_redownloads_nonempty_local(
+        self, mock_download, downloader, tmp_path, mocker
+    ):
+        """A published zero-byte size is authoritative, not a missing-size sentinel."""
+        downloader.download_dir = str(tmp_path)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease" / "test-dir"
+        prerelease_dir.mkdir(parents=True)
+        stale_path = prerelease_dir / "firmware.bin"
+        stale_path.write_bytes(b"stale-bytes")
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "firmware.bin",
+                    "download_url": "https://example.com/firmware.bin",
+                    "size": 0,
+                }
+            ]
+        )
+        mocker.patch(
+            "fetchtastic.download.firmware.verify_file_integrity", return_value=True
+        )
+        mock_download.return_value = True
+
+        successes, _failures, any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=False,
+        )
+
+        mock_download.assert_called_once()
+        assert len(successes) == 1
+        assert successes[0].was_skipped is False
+        assert any_downloaded is True
+
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
     def test_download_prerelease_assets_matching_size_reuses_without_download(
         self, mock_download, downloader, tmp_path, mocker
     ):
