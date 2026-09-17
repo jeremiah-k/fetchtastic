@@ -3299,10 +3299,10 @@ def install_crond() -> Optional[bool]:
     """
     Install and enable the Termux crond service.
 
-    On Termux, installs any missing cronie/termux-services packages, starts the
-    termux-services supervisor in the current shell environment, and enables the
-    crond service. Returns True on success and False on failure. On non-Termux
-    platforms this function has no effect and returns None.
+    On Termux, installs any missing cronie/termux-services packages, requests a
+    termux-services supervisor start, and enables the crond service. Returns
+    True when crond is enabled and False if a checked setup step fails. On
+    non-Termux platforms this function has no effect and returns None.
     """
     if is_termux():
         try:
@@ -3376,7 +3376,7 @@ def install_crond() -> Optional[bool]:
 
 
 def _resolve_fetchtastic_executable() -> Optional[str]:
-    """Return an executable path suitable for non-interactive automation.
+    """Return an absolute executable path for automation, or None if unavailable.
 
     Cron and Termux:Boot do not necessarily inherit the interactive shell's
     PATH. In particular, pipx installs Fetchtastic into ``~/.local/bin`` by
@@ -3406,7 +3406,10 @@ def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") 
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
 
-    Removes any existing Fetchtastic scheduled entries (excluding `@reboot` lines) and writes a single cron entry for the chosen frequency, updating the current user's crontab. Unknown `frequency` values default to "hourly". This function does nothing on Windows.
+    Replaces existing non-`@reboot` Fetchtastic entries with one that invokes a
+    resolved absolute executable path. Unknown `frequency` values default to
+    "hourly". No update is attempted on Windows or when the executable cannot be
+    found; crontab command errors are logged.
 
     Parameters:
         frequency (str): Key from CRON_SCHEDULES selecting the schedule preset (e.g., "hourly", "daily"); unknown keys default to "hourly".
@@ -3557,9 +3560,11 @@ def remove_cron_job(*, crontab_path: str = "crontab") -> None:
 
 def setup_boot_script() -> None:
     """
-    Create a boot script that runs fetchtastic on device boot in Termux.
+    Create or replace the Termux:Boot script that runs Fetchtastic after boot.
 
-    This function is intended for Termux environments only. On other platforms, it does nothing.
+    The script sources the Termux services startup file when present, waits 30
+    seconds, and runs the resolved Fetchtastic executable. If that executable
+    cannot be found, the boot directory and script are left unchanged.
     """
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
