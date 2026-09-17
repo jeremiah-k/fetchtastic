@@ -170,7 +170,9 @@ class TestDownloadOrchestrator:
         with (
             patch.object(orchestrator, "_check_releases_complete", return_value=[True]),
             patch.object(
-                orchestrator, "_has_selected_non_manifest_firmware_asset", return_value=False
+                orchestrator,
+                "_has_selected_non_manifest_firmware_asset",
+                return_value=False,
             ),
         ):
             orchestrator._process_firmware_downloads()
