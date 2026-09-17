@@ -564,14 +564,33 @@ class DownloadCLIIntegration:
                 NightlyRunState.CHECK_FAILED,
             )
         )
+        # A stable release fetch (firmware or client app) that failed during
+        # the run is likewise a distinct state: "could not check", not
+        # "nothing new".
+        release_check_failed = self.orchestrator is not None and getattr(
+            self.orchestrator, "release_check_failed", False
+        )
 
-        if downloaded_count == 0 and not failed_downloads and not nightly_incomplete:
+        if (
+            downloaded_count == 0
+            and not failed_downloads
+            and not nightly_incomplete
+            and not release_check_failed
+        ):
             log.info(
                 "All assets are up to date.\n%s",
                 time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             )
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
+        elif downloaded_count == 0 and not failed_downloads and release_check_failed:
+            # Zero downloads, no asset-level failures, but a stable release
+            # check failed (e.g. GitHub outage or rate limit). Emit a distinct
+            # summary instead of claiming up to date.
+            log.info(
+                "Release check failed; could not verify all sources. "
+                "No new versions downloaded."
+            )
         elif (
             downloaded_count == 0
             and not failed_downloads
@@ -630,6 +649,7 @@ class DownloadCLIIntegration:
                 not failed_downloads
                 and not new_versions_available
                 and not nightly_incomplete
+                and not release_check_failed
             ):
                 send_up_to_date_notification(self.config)
 

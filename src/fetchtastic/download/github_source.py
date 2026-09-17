@@ -59,6 +59,11 @@ class GithubReleaseSource:
         self.releases_url = releases_url
         self.cache_manager = cache_manager
         self.config = config
+        # True when the most recent get_releases()/fetch_raw_releases_data()
+        # call failed (transport error, HTTP error, or invalid payload) rather
+        # than legitimately returning no releases. Downstream fail-open callers
+        # read this to distinguish "nothing published" from "could not check".
+        self.last_fetch_failed: bool = False
 
     def get_releases(
         self,
@@ -70,6 +75,10 @@ class GithubReleaseSource:
 
         Builds a cache key from the configured releases URL and the provided params, uses cached raw release data when valid, falls back to the GitHub API when not, and parses each release with the provided parser. Releases that are malformed or have no valid assets are skipped.
 
+        On failure, ``last_fetch_failed`` is set to True so callers can tell a
+        failed check apart from a genuinely empty release list (it is reset to
+        False at the start of every call).
+
         Parameters:
             params (Dict[str, Any]): Query parameters for the API request (e.g., {"per_page": 10}).
             parse_release_func (Callable[[Dict[str, Any]], Optional[Release]]): Function that converts a raw GitHub release dictionary into a Release object; return `None` to skip a release.
@@ -77,6 +86,7 @@ class GithubReleaseSource:
         Returns:
             List[Release]: Parsed Release objects. Returns an empty list on error or if no valid releases are found.
         """
+        self.last_fetch_failed = False
         try:
             url_key = self.cache_manager.build_url_cache_key(self.releases_url, params)
             releases_data = self.cache_manager.read_releases_cache_entry(
@@ -102,6 +112,7 @@ class GithubReleaseSource:
 
             if releases_data is None or not isinstance(releases_data, list):
                 logger.error("Invalid releases data received from GitHub API")
+                self.last_fetch_failed = True
                 return []
 
             releases: List[Release] = []
@@ -143,6 +154,7 @@ class GithubReleaseSource:
             logger.exception(
                 "Error fetching releases from %s: %s", self.releases_url, exc
             )
+            self.last_fetch_failed = True
             return []
 
     def fetch_raw_releases_data(
@@ -151,12 +163,17 @@ class GithubReleaseSource:
         """
         Fetch raw release dictionaries from GitHub, using cached data when available.
 
+        On failure, ``last_fetch_failed`` is set to True so callers can tell a
+        failed check apart from a genuinely empty release list (it is reset to
+        False at the start of every call).
+
         Parameters:
             params (Dict[str, Any]): Query parameters for the API request (e.g., {"per_page": 10}).
 
         Returns:
             Optional[List[Dict[str, Any]]]: List of raw release dicts on success, or `None` if an error occurs or the API response is invalid.
         """
+        self.last_fetch_failed = False
         try:
             url_key = self.cache_manager.build_url_cache_key(self.releases_url, params)
             releases_data = self.cache_manager.read_releases_cache_entry(
@@ -189,6 +206,7 @@ class GithubReleaseSource:
 
             if releases_data is None or not isinstance(releases_data, list):
                 logger.error("Invalid releases data received from GitHub API")
+                self.last_fetch_failed = True
                 return None
 
             return releases_data
@@ -203,6 +221,7 @@ class GithubReleaseSource:
             logger.exception(
                 "Error fetching releases from %s: %s", self.releases_url, exc
             )
+            self.last_fetch_failed = True
             return None
 
     def _fetch_from_api(self, params: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:

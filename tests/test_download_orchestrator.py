@@ -66,6 +66,7 @@ class TestDownloadOrchestrator:
         orch.client_app_downloader.download_dir = "/tmp/test"
         orch.client_app_downloader.should_download_prerelease.return_value = True
         orch.client_app_downloader.update_prerelease_tracking.return_value = True
+        orch.client_app_downloader.last_releases_fetch_failed = False
         orch.android_downloader = Mock()
         orch.android_downloader.download_dir = "/tmp/test"
         orch.android_downloader.should_download_prerelease.return_value = True
@@ -78,6 +79,7 @@ class TestDownloadOrchestrator:
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
         orch.firmware_downloader.get_zips_needing_extraction = Mock(return_value=[])
+        orch.firmware_downloader.last_releases_fetch_failed = False
 
         def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
             return initial_releases, initial_releases, current_fetch_limit
@@ -111,6 +113,35 @@ class TestDownloadOrchestrator:
 
         orchestrator.client_app_downloader.migrate_legacy_layout.assert_called_once()
         orchestrator.client_app_downloader.get_releases.assert_called_once()
+
+    def test_client_app_fetch_failure_sets_release_check_failed(self, orchestrator):
+        """A failed client app fetch marks the run, distinct from 'no releases'."""
+        orchestrator.client_app_downloader.get_releases.return_value = []
+        orchestrator.client_app_downloader.last_releases_fetch_failed = True
+
+        orchestrator._process_client_app_downloads()
+
+        assert orchestrator.release_check_failed is True
+
+    def test_client_app_fetch_success_keeps_release_check_failed_clear(
+        self, orchestrator
+    ):
+        """An empty-but-successful fetch must not mark the run as failed."""
+        orchestrator.client_app_downloader.get_releases.return_value = []
+        orchestrator.client_app_downloader.last_releases_fetch_failed = False
+
+        orchestrator._process_client_app_downloads()
+
+        assert orchestrator.release_check_failed is False
+
+    def test_firmware_fetch_failure_sets_release_check_failed(self, orchestrator):
+        """A failed firmware fetch marks the run, distinct from 'no releases'."""
+        orchestrator.firmware_downloader.get_releases.return_value = []
+        orchestrator.firmware_downloader.last_releases_fetch_failed = True
+
+        orchestrator._process_firmware_downloads()
+
+        assert orchestrator.release_check_failed is True
 
     def test_get_release_check_workers_invalid_value(self, orchestrator):
         """Invalid worker config should fall back to default."""

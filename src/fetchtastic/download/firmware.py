@@ -200,6 +200,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
         )
         self.latest_release_file = LATEST_FIRMWARE_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_FIRMWARE_PRERELEASE_JSON_FILE
+        # True when the most recent get_releases() call failed (transport /
+        # HTTP / payload error) rather than legitimately finding no releases.
+        # Fail-open callers read this to tell the two apart.
+        self.last_releases_fetch_failed: bool = False
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
         )
@@ -345,8 +349,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             limit (Optional[int]): Maximum number of releases to return; when omitted defaults to 8. Pass 0 to return an empty list. Values above 100 are capped at 100 (GitHub API limit).
 
         Returns:
-            List[Release]: Parsed Release objects (each includes its Asset entries); returns an empty list if no valid releases are found or an error occurs.
+            List[Release]: Parsed Release objects (each includes its Asset entries); returns an empty list if no valid releases are found or an error occurs. On error, ``last_releases_fetch_failed`` is set to True so callers can distinguish a failed check from an empty result (it is reset to False at the start of every call).
         """
+        self.last_releases_fetch_failed = False
         try:
             if limit == 0:
                 return []
@@ -364,6 +369,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             releases = self.github_source.get_releases(
                 params, create_release_from_github_data
             )
+            self.last_releases_fetch_failed = self.github_source.last_fetch_failed
 
             # Respect limit if specified
             if limit and len(releases) > limit:
@@ -378,6 +384,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             json.JSONDecodeError,
         ) as exc:
             logger.exception("Error fetching firmware releases: %s", exc)
+            self.last_releases_fetch_failed = True
             return []
 
     def get_assets(self, release: Release) -> List[Asset]:

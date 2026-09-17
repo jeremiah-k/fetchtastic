@@ -314,6 +314,51 @@ class TestFirmwareReleaseDownloader:
         assert releases[0].tag_name == "v1.0.0"
         assert len(releases[0].assets) == 1
 
+    @patch("fetchtastic.download.github_source.make_github_api_request")
+    def test_get_releases_fetch_failure_sets_flag(self, mock_request, downloader):
+        """A failed fetch must be distinguishable from 'no releases found'."""
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+
+        mock_request.side_effect = requests.RequestException("github down")
+
+        releases = downloader.get_releases(limit=10)
+
+        assert releases == []
+        assert downloader.last_releases_fetch_failed is True
+
+    @patch("fetchtastic.download.github_source.make_github_api_request")
+    def test_get_releases_success_clears_flag(self, mock_request, downloader):
+        """A successful fetch resets the failure flag from earlier attempts."""
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+        downloader.cache_manager.write_releases_cache_entry = Mock()
+
+        mock_request.side_effect = requests.RequestException("github down")
+        downloader.get_releases(limit=10)
+        assert downloader.last_releases_fetch_failed is True
+
+        mock_request.side_effect = None
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {
+                "tag_name": "v1.0.0",
+                "prerelease": False,
+                "published_at": "2023-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "firmware-rak4631.zip",
+                        "browser_download_url": "https://example.com/firmware-rak4631.zip",
+                        "size": 1000000,
+                    }
+                ],
+            }
+        ]
+        mock_request.return_value = mock_response
+
+        releases = downloader.get_releases(limit=10)
+
+        assert len(releases) == 1
+        assert downloader.last_releases_fetch_failed is False
+
     def test_get_assets_firmware_filtering(self, downloader):
         """Test that get_assets returns all assets from the release."""
         asset1 = Mock(spec=Asset)
