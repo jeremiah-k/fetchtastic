@@ -322,6 +322,67 @@ def test_target_manifest_cache_remains_bounded(monkeypatch, tmp_path) -> None:
     assert calls == 2
 
 
+def test_target_manifest_404_is_not_cached(monkeypatch, tmp_path) -> None:
+    """A 404 ({} sentinel) must not be pinned for the 24h target-manifest TTL.
+
+    Nightly publishing is rolling: a variant manifest that 404s now may be
+    live minutes later. Caching the empty payload would keep the variant
+    invisible until the TTL expires, so the next non-forced read must hit
+    the network again and observe the published manifest.
+    """
+    responses = iter([_FakeResponse(404), _FakeResponse(200, TARGET_BODY)])
+    calls = 0
+
+    def request(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr("requests.Session.request", request)
+    cm = _cache(monkeypatch, tmp_path)
+    target_id = "tbeam-2.8.1.0becda3"
+
+    assert cm.get_nightly_target_manifest(target_id, force_refresh=True) == {}
+    assert cm.get_nightly_target_manifest(target_id, force_refresh=False) == TARGET_BODY
+    assert calls == 2
+
+
+def test_target_manifest_legacy_cached_404_is_ignored_on_read(
+    monkeypatch, tmp_path
+) -> None:
+    """Empty payloads cached by older versions must not be served.
+
+    Before empty results stopped being cached, a transient 404 was pinned
+    for the 24h target-manifest TTL. Those legacy entries must be treated
+    as a miss on read so the live manifest is observed on the next check.
+    """
+    responses = iter([_FakeResponse(200, TARGET_BODY)])
+    calls = 0
+
+    def request(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr("requests.Session.request", request)
+    cm = _cache(monkeypatch, tmp_path)
+    target_id = "tbeam-2.8.1.0becda3"
+
+    # Simulate a legacy poisoned entry: empty payload, fresh timestamp.
+    cache_file = cm.get_cache_file_path("firmware_nightly")
+    legacy = {
+        f"nightly:target:{target_id}": {
+            "payload": {},
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        }
+    }
+    assert cm.atomic_write_json(cache_file, legacy)
+
+    # Non-forced read must ignore the legacy empty payload and refetch.
+    assert cm.get_nightly_target_manifest(target_id, force_refresh=False) == TARGET_BODY
+    assert calls == 1
+
+
 def test_get_nightly_index_failed_fetch_does_not_poison_cache(
     mocker, monkeypatch, tmp_path
 ) -> None:

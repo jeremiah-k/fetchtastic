@@ -305,6 +305,7 @@ class CacheManager:
         force_refresh: bool = False,
         cache_expiry_seconds: int = FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
         path_description: str = "",
+        cache_empty_results: bool = True,
     ) -> Any:
         """
         Fetch GitHub-derived data using a TTL-backed cache and update the cache on miss or expiry.
@@ -317,6 +318,10 @@ class CacheManager:
             force_refresh (bool): If True, bypass any existing cached entry and fetch fresh data.
             cache_expiry_seconds (int): Time-to-live for cache entries in seconds.
             path_description (str): Short description for logging context (e.g., "repo contents for /path").
+            cache_empty_results (bool): When False, a falsy fresh result (``{}`` / ``[]`` /
+                ``None``) is returned to the caller but not written to the cache. Callers whose
+                "empty" means a transient state (e.g. nightly 404 "not published yet") use this
+                so a later publish is observed on the next check instead of after the TTL.
 
         Returns:
             Any: The data returned by `fetcher_func` and stored under `data_field_name` in the cache, or an empty list on fetch/parse errors.
@@ -331,7 +336,11 @@ class CacheManager:
         if isinstance(cached, dict) and not force_refresh:
             data = cached.get(data_field_name)
             cached_at_raw = cached.get("cached_at")
-            if data is not None and cached_at_raw:
+            # With cache_empty_results=False an empty payload is a transient
+            # "absent" state, never meaningful data, so a legacy cached empty
+            # entry (written before that gate existed) is treated as a miss
+            # and refetched instead of being served until its TTL expires.
+            if data is not None and (data or cache_empty_results) and cached_at_raw:
                 cached_at = parse_iso_datetime_utc(cached_at_raw)
                 if cached_at:
                     age_s = (now - cached_at).total_seconds()
@@ -351,11 +360,12 @@ class CacheManager:
 
         try:
             fresh_data = fetcher_func()
-            cache[cache_key] = {
-                data_field_name: fresh_data,
-                "cached_at": now.isoformat(),
-            }
-            self.atomic_write_json(cache_file, cache)
+            if fresh_data or cache_empty_results:
+                cache[cache_key] = {
+                    data_field_name: fresh_data,
+                    "cached_at": now.isoformat(),
+                }
+                self.atomic_write_json(cache_file, cache)
             return fresh_data
         except (ValueError, KeyError, TypeError) as e:
             # Note: The specific error message will be logged by the fetcher_func
@@ -670,6 +680,12 @@ class CacheManager:
                 force_refresh=force_refresh,
                 cache_expiry_seconds=cache_expiry_seconds,
                 path_description=path_description,
+                # Nightly 404s mean "not published yet" — a transient state
+                # during the rolling publish — so an empty payload must not
+                # be pinned for the entry's TTL. Otherwise a variant whose
+                # manifest lags the release manifest stays invisible until
+                # the TTL expires even though it is already live.
+                cache_empty_results=False,
             )
         except (ValueError, KeyError, TypeError) as exc:
             # Last-resort safety net: a parse or shape error that

@@ -28,6 +28,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 from fetchtastic import constants
 from fetchtastic.constants import (
@@ -729,21 +730,197 @@ def test_helper_scripts_omitted_from_selection_without_device_pattern(
     assert "device-update.sh" not in selected_names
 
 
-def test_fetch_firmware_nightlies_raises_on_bad_target(downloader, mock_cache_manager):
-    """A target with missing 'board' rejects the whole listing."""
+def test_fetch_firmware_nightlies_skips_target_missing_board(
+    downloader, mock_cache_manager
+):
+    """A malformed target entry is skipped; the remaining variants still process."""
     index_body = _make_nightly_index_body()
     release_body = {
         "version": BUILD_2_8_0,
         "targets": [{"board": "tbeam", "platform": "esp32"}, {"platform": "esp32"}],
     }
+    target_bodies = _make_nightly_target_bodies()
     mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
     mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+    names = [e["name"] for e in entries]
+    assert f"firmware-tbeam-{BUILD_2_8_0}.mt.json" in names
+    # The malformed target contributed nothing.
+    assert not any(name.startswith("firmware-None") for name in names)
+
+
+def test_fetch_firmware_nightlies_skips_missing_target_manifest(
+    downloader, mock_cache_manager
+):
+    """One variant's manifest 404 must skip that variant, not fail the run."""
+    index_body = _make_nightly_index_body()
+    # Use a board set that includes the missing variant.
+    release_body = _make_nightly_release_body(
+        boards=("rak4631", "xiao_nrf54l15_lr2021")
+    )
+    target_bodies = _make_nightly_target_bodies(
+        boards=("rak4631", "xiao_nrf54l15_lr2021")
+    )
+
+    def _target_manifest(target_id, **_):
+        # xiao board has no manifest published ({} is the 404 sentinel).
+        if target_id.startswith("xiao_nrf54l15_lr2021-"):
+            return {}
+        return target_bodies[target_id]
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(side_effect=_target_manifest)
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+    names = [e["name"] for e in entries]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert f"firmware-rak4631-{BUILD_2_8_0}.mt.json" in names
+    # Nothing from the missing variant.
+    assert not any("xiao_nrf54l15_lr2021" in name for name in names)
+
+
+def test_fetch_firmware_nightlies_skips_target_manifest_fetch_error(
+    downloader, mock_cache_manager
+):
+    """A per-target transport failure skips only that variant."""
+    release_body = _make_nightly_release_body(boards=("rak4631", "tbeam"))
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631", "tbeam"))
+
+    def _target_manifest(target_id, **_):
+        if target_id.startswith("tbeam-"):
+            raise requests.Timeout("target manifest timed out")
+        return target_bodies[target_id]
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(side_effect=_target_manifest)
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    names = [entry["name"] for entry in entries]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert not any("tbeam" in name for name in names)
+
+
+def test_fetch_firmware_nightlies_skips_empty_files_target(
+    downloader, mock_cache_manager
+):
+    """A target manifest with no payload files contributes nothing."""
+    release_body = _make_nightly_release_body(boards=("rak4631", "tbeam"))
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631", "tbeam"))
+    target_bodies[f"tbeam-{BUILD_2_8_0}"] = {
+        "version": BUILD_2_8_0,
+        "files": [],
+    }
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    names = [entry["name"] for entry in entries]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert f"firmware-tbeam-{BUILD_2_8_0}.mt.json" not in names
+
+
+def test_fetch_firmware_nightlies_empty_when_only_unpublished_payloads_exist(
+    downloader, mock_cache_manager
+):
+    """Synthetic manifests alone must never make a nightly finalizable."""
+    release_body = _make_nightly_release_body(boards=("tbeam",))
+    target_body = {
+        "version": BUILD_2_8_0,
+        "files": [
+            {
+                "name": f"firmware-tbeam-{BUILD_2_8_0}.elf",
+                "md5": "a" * 32,
+                "bytes": 123,
+            }
+        ],
+    }
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(return_value=target_body)
+    downloader.cache_manager = mock_cache_manager
+
+    assert downloader.fetch_firmware_nightlies() == []
+
+
+def test_fetch_firmware_nightlies_empty_when_all_target_manifests_missing(
+    downloader, mock_cache_manager
+):
+    """Every variant manifest absent -> not-yet-published ([]), not an error."""
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(
+        return_value=_make_nightly_release_body()
+    )
     mock_cache_manager.get_nightly_target_manifest = Mock(return_value={})
     downloader.cache_manager = mock_cache_manager
 
     fetch = _require_method(downloader, "fetch_firmware_nightlies")
-    with pytest.raises(ValueError):
-        fetch()
+    assert fetch() == []
+
+
+def test_fetch_firmware_nightlies_skips_malformed_target_files(
+    downloader, mock_cache_manager
+):
+    """A variant whose manifest has a malformed files list is skipped whole."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+    target_bodies[f"tbeam-{BUILD_2_8_0}"] = {
+        "version": BUILD_2_8_0,
+        "files": "not-a-list",
+    }
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+    names = [e["name"] for e in entries]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    # The malformed variant contributed neither its manifest nor its files.
+    assert not any("tbeam" in name for name in names)
+
+
+def test_fetch_firmware_nightlies_skips_invalid_file_entry(
+    downloader, mock_cache_manager
+):
+    """A variant with an invalid file entry is skipped whole (no partial sets)."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body()
+    target_bodies = _make_nightly_target_bodies()
+    target_bodies[f"tbeam-{BUILD_2_8_0}"] = {
+        "version": BUILD_2_8_0,
+        "files": [{"name": 42}],
+    }
+    mock_cache_manager.get_nightly_index = Mock(return_value=index_body)
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+    names = [e["name"] for e in entries]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert not any("tbeam" in name for name in names)
 
 
 def test_get_nightly_build_id_extracts_from_manifest(downloader, mock_cache_manager):
@@ -4208,28 +4385,29 @@ def test_fetch_firmware_nightlies_empty_is_valid(downloader, mock_cache_manager)
     assert downloader.fetch_firmware_nightlies() == []
 
 
-def test_fetch_firmware_nightlies_non_dict_target_raises(
-    downloader, mock_cache_manager
-):
-    """A non-dict target in the release manifest raises ValueError (fail closed)."""
-    # Put the bad target first so it fails before any per-target manifest
-    # fetch for a well-formed sibling — the per-target check happens before
-    # the manifest fetch, but only for the *current* target.
+def test_fetch_firmware_nightlies_non_dict_target_skips(downloader, mock_cache_manager):
+    """A non-dict target in the release manifest is skipped, not fatal."""
+    # Put the bad target first so it is processed before a well-formed
+    # sibling — the per-target check happens before the manifest fetch,
+    # but only for the *current* target.
     mock_cache_manager.get_nightly_index.return_value = _make_nightly_index_body()
     mock_cache_manager.get_nightly_release_manifest.return_value = {
         "version": BUILD_2_8_0,
-        "targets": ["not-a-dict"],
+        "targets": ["not-a-dict", {"board": "tbeam", "platform": "esp32"}],
     }
-    mock_cache_manager.get_nightly_target_manifest.return_value = {}
+    mock_cache_manager.get_nightly_target_manifest.side_effect = (
+        lambda target_id, **_: _make_nightly_target_bodies(boards=("tbeam",))[target_id]
+    )
     downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError, match="non-dict target"):
-        downloader.fetch_firmware_nightlies()
+    entries = downloader.fetch_firmware_nightlies()
+    names = [e["name"] for e in entries]
+    assert f"firmware-tbeam-{BUILD_2_8_0}.bin" in names
 
 
-def test_fetch_firmware_nightlies_invalid_target_id_raises(
+def test_fetch_firmware_nightlies_invalid_target_id_skips(
     downloader, mock_cache_manager
 ):
-    """A target without a 'board' key raises ValueError (fail closed)."""
+    """A target without a 'board' key is skipped; run continues."""
     mock_cache_manager.get_nightly_index.return_value = _make_nightly_index_body()
     mock_cache_manager.get_nightly_release_manifest.return_value = {
         "version": BUILD_2_8_0,
@@ -4237,14 +4415,13 @@ def test_fetch_firmware_nightlies_invalid_target_id_raises(
     }
     mock_cache_manager.get_nightly_target_manifest.return_value = {}
     downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError, match="missing 'board'"):
-        downloader.fetch_firmware_nightlies()
+    assert downloader.fetch_firmware_nightlies() == []
 
 
-def test_fetch_firmware_nightlies_malformed_file_entry_raises(
+def test_fetch_firmware_nightlies_malformed_file_entry_skips(
     downloader, mock_cache_manager
 ):
-    """A malformed files[] entry in a target manifest raises ValueError (fail closed)."""
+    """A malformed files[] entry skips the variant (no partial file sets)."""
     mock_cache_manager.get_nightly_index.return_value = _make_nightly_index_body()
     mock_cache_manager.get_nightly_release_manifest.return_value = {
         "version": BUILD_2_8_0,
@@ -4255,8 +4432,7 @@ def test_fetch_firmware_nightlies_malformed_file_entry_raises(
         "files": [{"name": 123}],  # non-string name
     }
     downloader.cache_manager = mock_cache_manager
-    with pytest.raises(ValueError, match="invalid file entry"):
-        downloader.fetch_firmware_nightlies()
+    assert downloader.fetch_firmware_nightlies() == []
 
 
 def test_orch_nightly_malformed_source_sets_check_failed(tmp_path):
