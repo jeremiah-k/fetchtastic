@@ -261,6 +261,13 @@ class DownloadOrchestrator:
             Tuple[List[DownloadResult], List[DownloadResult]]: A tuple (successful_results, failed_results) where `successful_results` is the list of completed DownloadResult entries and `failed_results` is the list of DownloadResult entries that remain failed after retry attempts.
         """
         start_time = time.time()
+        # Result lists are run-scoped like the flags below: without the reset,
+        # a second run on a reused orchestrator would aggregate the previous
+        # run's results (double-counted summaries, and a stale non-skipped
+        # nightly result flipping an all-skipped run into
+        # FINALIZED_WITH_DOWNLOAD with a duplicate notification).
+        self.download_results = []
+        self.failed_downloads = []
         self.wifi_skipped = False
         self.latest_available_firmware_prerelease_dir = None
         self.firmware_prerelease_availability_checked = False

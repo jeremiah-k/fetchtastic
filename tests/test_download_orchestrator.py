@@ -179,6 +179,36 @@ class TestDownloadOrchestrator:
 
         assert orchestrator.release_check_failed is True
 
+    def test_run_download_pipeline_resets_result_lists(self, orchestrator):
+        """A second run on a reused orchestrator must not aggregate stale results.
+
+        Without the reset, _nightly_had_actual_download would match the
+        previous run's non-skipped nightly results and flip an all-skipped
+        run into FINALIZED_WITH_DOWNLOAD with a duplicate notification.
+        """
+        stale = DownloadResult(
+            success=True,
+            release_tag="v2.0.0",
+            download_url="https://example.com/firmware.zip",
+            file_path="/tmp/firmware.zip",
+            file_type=FILE_TYPE_FIRMWARE,
+        )
+        orchestrator.download_results = [stale]
+        orchestrator.failed_downloads = [stale]
+
+        with (
+            patch.object(orchestrator, "_process_firmware_downloads"),
+            patch.object(orchestrator, "_process_client_app_downloads"),
+            patch.object(orchestrator, "_enhance_download_results_with_metadata"),
+            patch.object(orchestrator, "_retry_failed_downloads"),
+            patch.object(orchestrator, "_finalize_nightly_transaction_if_complete"),
+            patch.object(orchestrator, "_log_download_summary"),
+        ):
+            results, failures = orchestrator.run_download_pipeline()
+
+        assert results == []
+        assert failures == []
+
     def test_get_release_check_workers_invalid_value(self, orchestrator):
         """Invalid worker config should fall back to default."""
         orchestrator.config["MAX_PARALLEL_RELEASE_CHECKS"] = "invalid"
