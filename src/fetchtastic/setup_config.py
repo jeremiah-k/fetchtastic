@@ -1608,14 +1608,17 @@ def _setup_firmware(
     return config
 
 
-def _configure_cron_job(install_crond_needed: bool = False) -> None:
+def _configure_cron_job(
+    install_crond_needed: bool = False, *, remove_existing_on_none: bool = False
+) -> None:
     """
     Prompt the user for a cron frequency and configure a Fetchtastic cron job accordingly.
 
-    If the chosen frequency is not "none", the function will install the Termux crond service first when requested and then create/update the cron job at the selected cadence. If the user selects "none", no cron job is configured and a message is printed.
+    If the chosen frequency is not "none", the function will install the Termux crond service first when requested and then create/update the cron job at the selected cadence. Existing cron entries are replaced by ``setup_cron_job`` only after prerequisites succeed. If the user selects "none", no cron job is configured; when ``remove_existing_on_none`` is True, the existing Fetchtastic schedule is removed intentionally.
 
     Parameters:
         install_crond_needed (bool): If True, install and enable the Termux crond service before configuring the cron job.
+        remove_existing_on_none (bool): If True, remove the existing Fetchtastic cron entry when the user explicitly selects "none".
     """
     frequency = _prompt_for_cron_frequency()
     if frequency != "none":
@@ -1623,11 +1626,14 @@ def _configure_cron_job(install_crond_needed: bool = False) -> None:
             if install_crond() is False:
                 print(
                     "Cron job has not been set up because the Termux crond service "
-                    "could not be started."
+                    "could not be started. The existing schedule was left unchanged."
                 )
                 return
         setup_cron_job(frequency)
     else:
+        if remove_existing_on_none:
+            remove_cron_job()
+            print("Existing cron job removed.")
         print("Cron job has not been set up.")
 
 
@@ -1762,12 +1768,12 @@ def _setup_automation(
                     default=False,
                 )
                 if cron_prompt:
-                    # First, remove existing cron job
-                    remove_cron_job()
-                    print("Existing cron job removed for reconfiguration.")
-
-                    # Configure cron job
-                    _configure_cron_job(install_crond_needed=True)
+                    # Let setup_cron_job replace the existing entry only after
+                    # Termux service prerequisites succeed. This preserves the
+                    # working schedule if crond setup fails mid-reconfiguration.
+                    _configure_cron_job(
+                        install_crond_needed=True, remove_existing_on_none=True
+                    )
                 else:
                     print("Cron job configuration left unchanged.")
             else:
@@ -3645,7 +3651,9 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
         if not fetchtastic_path:
             print("Error: fetchtastic executable not found in PATH.")
             return
-        cron_lines.append(f"@reboot {fetchtastic_path} download  # fetchtastic")
+        cron_lines.append(
+            f"@reboot {shlex.quote(fetchtastic_path)} download  # fetchtastic"
+        )
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)

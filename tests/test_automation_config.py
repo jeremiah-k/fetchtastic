@@ -59,13 +59,32 @@ class TestAutomationConfiguration:
         mock_setup.assert_not_called()
 
     def test_configure_cron_job_stops_when_termux_service_setup_fails(self, mocker):
-        """Do not install a schedule when the Termux scheduler could not start."""
+        """Do not replace an existing schedule when the Termux scheduler cannot start."""
         mock_setup = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+        mock_remove = mocker.patch("fetchtastic.setup_config.remove_cron_job")
         mocker.patch("fetchtastic.setup_config.install_crond", return_value=False)
         mocker.patch("builtins.input", return_value="hourly")
 
-        setup_config._configure_cron_job(install_crond_needed=True)
+        setup_config._configure_cron_job(
+            install_crond_needed=True, remove_existing_on_none=True
+        )
 
+        mock_setup.assert_not_called()
+        mock_remove.assert_not_called()
+
+    def test_configure_cron_job_none_removes_existing_schedule(self, mocker):
+        """Selecting none during reconfiguration intentionally removes the old job."""
+        mock_setup = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+        mock_remove = mocker.patch("fetchtastic.setup_config.remove_cron_job")
+        mock_install = mocker.patch("fetchtastic.setup_config.install_crond")
+        mocker.patch("builtins.input", return_value="none")
+
+        setup_config._configure_cron_job(
+            install_crond_needed=True, remove_existing_on_none=True
+        )
+
+        mock_remove.assert_called_once_with()
+        mock_install.assert_not_called()
         mock_setup.assert_not_called()
 
     def test_setup_boot_script_starts_services_and_uses_absolute_executable(
@@ -115,6 +134,32 @@ class TestAutomationConfiguration:
         )
 
         assert setup_config._resolve_fetchtastic_executable() == str(executable)
+
+    def test_setup_reboot_cron_job_quotes_executable_path(self, mocker):
+        """The reboot entry shell-quotes resolved executable paths containing spaces."""
+        mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+        mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+        mocker.patch(
+            "fetchtastic.setup_config.shutil.which", return_value="/usr/bin/crontab"
+        )
+        mocker.patch(
+            "fetchtastic.setup_config._resolve_fetchtastic_executable",
+            return_value="/home/user/My Apps/fetchtastic",
+        )
+        mocker.patch(
+            "fetchtastic.setup_config.subprocess.run",
+            return_value=mocker.MagicMock(returncode=0, stdout=""),
+        )
+        process = mocker.MagicMock(returncode=0)
+        mocker.patch("fetchtastic.setup_config.subprocess.Popen", return_value=process)
+
+        setup_config.setup_reboot_cron_job()
+
+        written = process.communicate.call_args.kwargs["input"]
+        assert (
+            "@reboot '/home/user/My Apps/fetchtastic' download  # fetchtastic"
+            in written
+        )
 
     def test_crontab_available_false_when_missing(self, mocker, capsys):
         mocker.patch("fetchtastic.setup_config.shutil.which", return_value=None)

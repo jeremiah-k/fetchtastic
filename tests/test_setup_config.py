@@ -1424,7 +1424,7 @@ def test_setup_automation_termux_reconfig_cron(mocker):
     config = {}
     result = setup_config._setup_automation(config, False, lambda _: True)
 
-    mock_remove_cron.assert_called_once()
+    mock_remove_cron.assert_not_called()
     mock_install_crond.assert_called_once()
     mock_setup_cron.assert_called_once_with("daily")
     assert result == config

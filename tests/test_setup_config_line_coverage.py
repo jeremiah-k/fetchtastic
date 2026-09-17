@@ -147,6 +147,7 @@ def test_setup_downloads_rerun_false_no_existing_assets(mocker, capsys):
 
 
 def test_install_crond_installs_cronie(mocker, capsys):
+    """Install missing Termux cron services and enable crond with runit paths."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
     which_calls = {
         "crond": [None],
