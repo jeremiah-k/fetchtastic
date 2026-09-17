@@ -3767,7 +3767,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> Tuple[bool, str]:
         """
         Validate a nightly asset on disk. Shared by the skip, fresh-download,
-        and retry paths so they apply identical rules.
+        retry, and executable-metadata repair paths so they apply identical rules.
 
         Rules (all must hold):
           - target must be a regular file and not a symlink;
