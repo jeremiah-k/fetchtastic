@@ -44,6 +44,15 @@ RELEASE_SCAN_COUNT = 10
 WINDOWS_MAX_REPLACE_RETRIES = 3
 WINDOWS_INITIAL_RETRY_DELAY = 1.0  # seconds
 
+# Cross-process download-run lock (advisory; see download/run_lock.py).
+# A run lock whose holder cannot be probed for liveness (Windows, another
+# host, or a malformed payload) is taken over once it is older than the TTL,
+# so an abandoned lock can never block downloads indefinitely. Same-host
+# POSIX holders are recovered immediately via the PID instead.
+RUN_LOCK_FILENAME = ".fetchtastic-run.lock"
+RUN_LOCK_STALE_TTL_SECONDS = 60 * 60  # 1 hour
+RUN_LOCK_TAKEOVER_ATTEMPTS = 5
+
 # File and directory names
 REPO_DOWNLOADS_DIR = "repo-dls"
 FIRMWARE_PRERELEASES_DIR_NAME = "prerelease"

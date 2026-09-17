@@ -28,6 +28,7 @@ def integration(mocker):
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.wifi_skipped = False
     integration.orchestrator.release_check_failed = False
+    integration.orchestrator.pipeline_lock_skipped = False
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.8.0",
         "android": "v1.8.0",
