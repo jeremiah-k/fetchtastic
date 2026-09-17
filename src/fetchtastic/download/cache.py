@@ -336,7 +336,11 @@ class CacheManager:
         if isinstance(cached, dict) and not force_refresh:
             data = cached.get(data_field_name)
             cached_at_raw = cached.get("cached_at")
-            if data is not None and cached_at_raw:
+            # With cache_empty_results=False an empty payload is a transient
+            # "absent" state, never meaningful data, so a legacy cached empty
+            # entry (written before that gate existed) is treated as a miss
+            # and refetched instead of being served until its TTL expires.
+            if data is not None and (data or cache_empty_results) and cached_at_raw:
                 cached_at = parse_iso_datetime_utc(cached_at_raw)
                 if cached_at:
                     age_s = (now - cached_at).total_seconds()
