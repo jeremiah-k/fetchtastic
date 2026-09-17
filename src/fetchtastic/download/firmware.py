@@ -3897,7 +3897,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> Tuple[bool, str]:
         """
         Validate a nightly asset on disk. Shared by the skip, fresh-download,
-        and retry paths so they apply identical rules.
+        retry, and executable-metadata repair paths so they apply identical rules.
 
         Rules (all must hold):
           - target must be a regular file and not a symlink;
@@ -4421,7 +4421,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 target = self.get_nightly_target_path(build_id, name, create=False)
             except ValueError:
                 continue
-            ok, _reason = self._validate_nightly_asset(target, name, entry.get("size"))
+            ok, _reason = self._validate_nightly_asset(
+                target,
+                name,
+                entry.get("size"),
+                expected_md5=entry.get("expected_md5"),
+            )
             if not ok:
                 continue
             try:
