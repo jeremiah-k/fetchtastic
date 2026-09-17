@@ -3038,9 +3038,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         - Non-dict index.json or missing ``version`` → ``ValueError``
           (orchestrator surfaces as ``CHECK_FAILED``).
         - Release manifest missing or has no targets → ``ValueError``.
-        - A target entry missing ``board`` or a malformed ``files`` list
-          → ``ValueError`` (one bad target rejects the whole listing,
-          matching the legacy fail-closed posture).
+
+        **Fault-isolated per target:** a single variant with a missing
+        (404 — the nightly publish is rolling, so a manifest can lag the
+        release manifest), empty, or structurally malformed target
+        manifest (non-dict, non-list ``files``, invalid file entry, or a
+        target entry missing ``board``) is skipped with a warning — the
+        remaining variants still process, and a later run backfills the
+        variant once its manifest is published (same-identity backfill in
+        :meth:`should_process_nightly`). When *every* target manifest is
+        unavailable the listing is treated as not-yet-published
+        (``[]``, not an error): finalizing a build with zero device
+        payloads would permanently mark it complete.
 
         Each per-target ``files`` entry's ``md5`` and ``bytes`` flow
         through to the entry as ``expected_md5`` and ``size``, which
@@ -3114,6 +3123,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
         )
 
         skipped_unpublished_outputs = 0
+        skipped_targets = 0
+        resolved_targets = 0
 
         # Target manifests are version-addressed by build id. Reuse their
         # longer bounded cache and one HTTP session so routine reruns do not
@@ -3121,22 +3132,67 @@ class FirmwareReleaseDownloader(BaseDownloader):
         with requests.Session() as target_session:
             for target in targets:
                 if not isinstance(target, dict):
-                    raise ValueError(
-                        f"firmware-nightly release manifest has non-dict target: {target!r}"
+                    logger.warning(
+                        "Skipping firmware-nightly target with unexpected shape: %r",
+                        target,
                     )
+                    skipped_targets += 1
+                    continue
                 board = target.get("board")
                 if not isinstance(board, str) or not board:
-                    raise ValueError(
-                        f"firmware-nightly release manifest target missing 'board': {target!r}"
+                    logger.warning(
+                        "Skipping firmware-nightly target missing 'board': %r", target
                     )
+                    skipped_targets += 1
+                    continue
                 target_id = f"{board}-{version}"
                 target_manifest = self.cache_manager.get_nightly_target_manifest(
                     target_id, session=target_session
                 )
                 if not isinstance(target_manifest, dict) or not target_manifest:
-                    raise ValueError(
-                        f"firmware-nightly target manifest missing for {target_id}"
+                    # Nightly publishing is rolling: a per-variant manifest can
+                    # 404 while the rest of the generation is already live (or
+                    # the board simply failed to build). One absent variant
+                    # must not cancel the whole nightly run — skip it; a later
+                    # run backfills it once the manifest is published.
+                    logger.warning(
+                        "firmware-nightly target manifest missing for %s; "
+                        "skipping that variant",
+                        target_id,
                     )
+                    skipped_targets += 1
+                    continue
+
+                # Structural problems inside one manifest are handled the same
+                # way: the variant is skipped whole rather than emitting a
+                # partial file set (e.g. a factory image without its app
+                # image) that a device could flash by mistake.
+                files = target_manifest.get("files")
+                if not isinstance(files, list):
+                    logger.warning(
+                        "firmware-nightly target manifest %s has non-list 'files'; "
+                        "skipping that variant",
+                        target_id,
+                    )
+                    skipped_targets += 1
+                    continue
+                bad_file_entry = next(
+                    (
+                        f
+                        for f in files
+                        if not isinstance(f, dict) or not isinstance(f.get("name"), str)
+                    ),
+                    None,
+                )
+                if bad_file_entry is not None:
+                    logger.warning(
+                        "firmware-nightly target manifest %s has invalid file entry "
+                        "%r; skipping that variant",
+                        target_id,
+                        bad_file_entry,
+                    )
+                    skipped_targets += 1
+                    continue
 
                 # Per-device manifests were downloadable assets in the legacy
                 # nightly directory. Emit them explicitly because the new R2
@@ -3152,17 +3208,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         "type": "file",
                     }
                 )
+                resolved_targets += 1
 
-                files = target_manifest.get("files")
-                if not isinstance(files, list):
-                    raise ValueError(
-                        f"firmware-nightly target manifest {target_id} has non-list 'files'"
-                    )
                 for f in files:
-                    if not isinstance(f, dict) or not isinstance(f.get("name"), str):
-                        raise ValueError(
-                            f"firmware-nightly target manifest {target_id} has invalid file entry: {f!r}"
-                        )
                     name = f["name"]
                     if name.lower().endswith(_NIGHTLY_UNPUBLISHED_TARGET_SUFFIXES):
                         skipped_unpublished_outputs += 1
@@ -3180,6 +3228,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             ),
                         }
                     )
+
+        if resolved_targets == 0:
+            # Every variant manifest is absent: the generation is mid-upload
+            # (or the bucket is broken). Treat it like an unpublished nightly
+            # rather than an error, so the orchestrator leaves state UNCHECKED
+            # and the next run retries the same build from a clean slate.
+            logger.warning(
+                "firmware-nightly build %s has no target manifests available; "
+                "treating as not yet published",
+                version,
+            )
+            return []
+
+        if skipped_targets:
+            logger.warning(
+                "Skipped %d firmware-nightly target(s) with missing or "
+                "malformed manifests",
+                skipped_targets,
+            )
 
         if skipped_unpublished_outputs:
             logger.debug(
