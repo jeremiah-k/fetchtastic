@@ -18,9 +18,11 @@ runtimes:
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
   enabled:
+    # Held at 4.x: trunk's pinact plugin (v1.11.0) invokes pinact with v4-style
+    # single-dash flags, which pinact v5 rejects. Revisit when the plugin supports v5.
     - pinact@4.1.1
-    - grype@0.118.0
-    - renovate@44.69.11
+    - grype@0.119.0
+    - renovate@44.97.2
     - shellcheck@0.11.0
     - shfmt@3.14.1
     - gitleaks@8.30.1
@@ -28,15 +30,15 @@ lint:
     - actionlint@1.7.12
     - bandit@1.9.4
     - black@26.5.1
-    - checkov@3.3.16
+    - checkov@3.3.19
     - git-diff-check
     - isort@9.0.1
     - markdownlint@0.49.1
     - osv-scanner@2.4.0
-    - prettier@3.9.6
-    - ruff@0.16.6
+    - prettier@3.9.7
+    - ruff@0.16.8
     - taplo@0.10.0
-    - trufflehog@3.97.4
+    - trufflehog@3.97.5
     - yamllint@1.38.0
 actions:
   disabled:

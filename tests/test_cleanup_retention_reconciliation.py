@@ -153,11 +153,7 @@ def test_hash_suffixed_history_tag_still_authorizes_stale_release_cleanup(
     stale.mkdir()
     assert downloader.cache_manager.atomic_write_json(
         downloader.release_history_path,
-        {
-            "entries": {
-                "v2.7.25.104df5f": {"tag_name": "v2.7.25.104df5f"}
-            }
-        },
+        {"entries": {"v2.7.25.104df5f": {"tag_name": "v2.7.25.104df5f"}}},
     )
 
     downloader.cleanup_old_versions(
