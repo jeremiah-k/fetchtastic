@@ -44,6 +44,11 @@ RELEASE_SCAN_COUNT = 10
 WINDOWS_MAX_REPLACE_RETRIES = 3
 WINDOWS_INITIAL_RETRY_DELAY = 1.0  # seconds
 
+# Cross-process download-run lock (advisory; see download/run_lock.py).
+# The rendezvous file persists; ownership is the OS lock held on its open file
+# handle for the lifetime of a pipeline run.
+RUN_LOCK_FILENAME = ".fetchtastic-run.lock"
+
 # File and directory names
 REPO_DOWNLOADS_DIR = "repo-dls"
 FIRMWARE_PRERELEASES_DIR_NAME = "prerelease"

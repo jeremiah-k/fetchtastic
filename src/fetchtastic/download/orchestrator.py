@@ -56,6 +56,7 @@ from fetchtastic.constants import (
     MAX_RETRY_DELAY,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
+    RUN_LOCK_FILENAME,
     NightlyRunState,
 )
 from fetchtastic.log_utils import logger
@@ -74,6 +75,7 @@ from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
+from .run_lock import RunLock, RunLockAcquireResult
 from .version import VersionManager, is_prerelease_directory
 
 
@@ -217,6 +219,11 @@ class DownloadOrchestrator:
         # failed during this run. A failed check is a distinct state from
         # "nothing new" and must suppress the generic up-to-date log/NTFY.
         self.release_check_failed: bool = False
+        # Run-scoped: True when this run was skipped because another
+        # fetchtastic process holds the cross-process run lock.
+        self.pipeline_lock_skipped: bool = False
+        # Cross-process run lock while a pipeline run is active (None otherwise).
+        self._run_lock: Optional["RunLock"] = None
 
     def _is_client_app_prerelease_release(self, release: Release) -> bool:
         """Classify client app prereleases without depending on wrapper mocks."""
@@ -243,6 +250,13 @@ class DownloadOrchestrator:
         """
         Orchestrates discovery, downloading, retrying, and summary reporting for all configured artifact types.
 
+        The whole pipeline is serialized by an advisory cross-process run lock
+        (``.fetchtastic-run.lock`` under DOWNLOAD_DIR) so overlapping invocations
+        cannot interleave destructive nightly steps. When a live holder owns the
+        lock, this run is skipped: no downloads are attempted, no state changes,
+        ``pipeline_lock_skipped`` is set for the summary, and empty result lists
+        are returned.
+
         Returns:
             Tuple[List[DownloadResult], List[DownloadResult]]: A tuple (successful_results, failed_results) where `successful_results` is the list of completed DownloadResult entries and `failed_results` is the list of DownloadResult entries that remain failed after retry attempts.
         """
@@ -258,6 +272,36 @@ class DownloadOrchestrator:
         self.available_new_apk_versions = []
         self._client_app_downloads_processed = False
         self.release_check_failed = False
+        self.pipeline_lock_skipped = False
+
+        lock_result = self._acquire_run_lock()
+        if lock_result is RunLockAcquireResult.CONTENDED:
+            logger.warning(
+                "Another fetchtastic download run is active (%s); skipping this "
+                "run to avoid racing its downloads and cleanup.",
+                (
+                    self._run_lock.describe_holder()
+                    if self._run_lock is not None
+                    else "unknown holder"
+                ),
+            )
+            self.pipeline_lock_skipped = True
+            return [], []
+        if lock_result is RunLockAcquireResult.UNAVAILABLE:
+            logger.warning(
+                "Cross-process run lock is unavailable; proceeding unlocked. "
+                "Avoid overlapping fetchtastic runs for this invocation."
+            )
+
+        try:
+            self._run_download_pipeline_locked(start_time)
+        finally:
+            self._release_run_lock()
+
+        return self.download_results, self.failed_downloads
+
+    def _run_download_pipeline_locked(self, start_time: float) -> None:
+        """Pipeline body executed while the run lock is held."""
         logger.info("Starting download pipeline...")
         logger.debug(
             "Execution context: cwd=%s, python=%s, fetchtastic=%s",
@@ -271,7 +315,7 @@ class DownloadOrchestrator:
                 logger.warning("Not connected to Wi-Fi. Skipping all downloads.")
                 self.wifi_skipped = True
                 self._discover_available_versions_when_wifi_skipped()
-                return [], []
+                return
 
         cleanup_legacy_hash_sidecars(self.config.get("DOWNLOAD_DIR", ""))
 
@@ -296,7 +340,33 @@ class DownloadOrchestrator:
         # Log summary
         self._log_download_summary(start_time)
 
-        return self.download_results, self.failed_downloads
+    def _acquire_run_lock(self) -> RunLockAcquireResult:
+        """Acquire the run lock, distinguishing contention from unavailability.
+
+        No configured ``DOWNLOAD_DIR`` is equivalent to running unlocked and
+        therefore returns ``ACQUIRED`` with no lock object. A genuine locking
+        failure returns ``UNAVAILABLE`` so the pipeline can preserve the
+        documented best-effort fallback instead of reporting false contention.
+        """
+        self._run_lock = None
+        download_dir = self.config.get("DOWNLOAD_DIR")
+        if not isinstance(download_dir, str) or not download_dir.strip():
+            return RunLockAcquireResult.ACQUIRED
+        lock = RunLock(os.path.join(download_dir, RUN_LOCK_FILENAME))
+        result = lock.acquire()
+        if result in {
+            RunLockAcquireResult.ACQUIRED,
+            RunLockAcquireResult.CONTENDED,
+        }:
+            # Keep the object on contention so the skip warning can describe
+            # the holder. Unavailable locks are not owned and need no release.
+            self._run_lock = lock
+        return result
+
+    def _release_run_lock(self) -> None:
+        if self._run_lock is not None:
+            self._run_lock.release()
+            self._run_lock = None
 
     def _discover_available_versions_when_wifi_skipped(self) -> None:
         self._discover_available_firmware_versions_when_wifi_skipped()

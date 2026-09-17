@@ -570,12 +570,18 @@ class DownloadCLIIntegration:
         release_check_failed = self.orchestrator is not None and getattr(
             self.orchestrator, "release_check_failed", False
         )
+        # A run skipped because another fetchtastic process holds the
+        # cross-process run lock checked nothing at all.
+        pipeline_lock_skipped = self.orchestrator is not None and getattr(
+            self.orchestrator, "pipeline_lock_skipped", False
+        )
 
         if (
             downloaded_count == 0
             and not failed_downloads
             and not nightly_incomplete
             and not release_check_failed
+            and not pipeline_lock_skipped
         ):
             log.info(
                 "All assets are up to date.\n%s",
@@ -583,6 +589,11 @@ class DownloadCLIIntegration:
             )
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
+        elif downloaded_count == 0 and not failed_downloads and pipeline_lock_skipped:
+            log.info(
+                "Skipped this run: another fetchtastic download run is active. "
+                "No new versions downloaded."
+            )
         elif downloaded_count == 0 and not failed_downloads and release_check_failed:
             # Zero downloads, no asset-level failures, but a stable release
             # check failed (e.g. GitHub outage or rate limit). Emit a distinct
@@ -650,6 +661,7 @@ class DownloadCLIIntegration:
                 and not new_versions_available
                 and not nightly_incomplete
                 and not release_check_failed
+                and not pipeline_lock_skipped
             ):
                 send_up_to_date_notification(self.config)
 
