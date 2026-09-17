@@ -614,6 +614,10 @@ class TestFirmwareReleaseDownloader:
         self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup with keep_limit=0 removes all versions."""
+        # Exercise the zero-fetch-limit case: without revocation filtering or
+        # beta retention, cleanup still needs one release to prove the fetch
+        # succeeded before "delete all" is safe.
+        downloader.config["FILTER_REVOKED_RELEASES"] = False
         # Setup filesystem mocks
         mock_exists.return_value = True
 
@@ -641,8 +645,11 @@ class TestFirmwareReleaseDownloader:
         downloader.cleanup_old_versions(keep_limit=0)
 
         # Should remove all versions
-        expected_limit = self._expected_cleanup_fetch_limit(
-            keep_limit=0, keep_last_beta=False
+        expected_limit = max(
+            1,
+            self._expected_cleanup_fetch_limit(
+                keep_limit=0, keep_last_beta=False, filter_revoked=False
+            ),
         )
         downloader.get_releases.assert_called_once_with(limit=expected_limit)
         assert mock_safe_rmtree.call_count == 2
