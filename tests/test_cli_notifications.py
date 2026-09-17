@@ -27,6 +27,7 @@ def integration(mocker):
     mocker.patch("fetchtastic.download.cli_integration.time", wraps=time)
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.release_check_failed = False
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.8.0",
         "android": "v1.8.0",
@@ -174,6 +175,34 @@ def test_summary_does_not_send_up_to_date_notification_on_failures(integration):
             ],
         )
         mock_up_to_date.assert_not_called()
+
+
+def test_summary_suppresses_up_to_date_when_release_check_failed(integration):
+    """A failed stable release fetch is 'could not check', not 'nothing new'."""
+    integration.orchestrator.release_check_failed = True
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
+        _call_summary(integration, [], [], [])
+        mock_completion.assert_not_called()
+        mock_up_to_date.assert_not_called()
+
+
+def test_summary_logs_release_check_failed_instead_of_up_to_date(integration, caplog):
+    integration.orchestrator.release_check_failed = True
+    integration.orchestrator.nightly_run_state = NightlyRunState.UNCHECKED
+    with patch(
+        "fetchtastic.download.cli_integration.send_up_to_date_notification"
+    ) as mock_up_to_date:
+        _call_summary(integration, [], [], [])
+        mock_up_to_date.assert_not_called()
+    assert "Release check failed" in caplog.text
+    assert "up to date" not in caplog.text
 
 
 def test_summary_sends_skip_notification_when_wifi_skipped(integration):

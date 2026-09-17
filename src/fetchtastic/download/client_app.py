@@ -228,6 +228,10 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         self.latest_release_file = LATEST_CLIENT_APP_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_CLIENT_APP_PRERELEASE_JSON_FILE
         self.latest_snapshot_file = LATEST_APP_SNAPSHOT_JSON_FILE
+        # True when the most recent get_releases() call failed (transport /
+        # HTTP / payload error) rather than legitimately finding no releases.
+        # Fail-open callers read this to tell the two apart.
+        self.last_releases_fetch_failed: bool = False
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
         )
@@ -797,6 +801,13 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return True
 
     def get_releases(self, limit: int | None = None) -> list[Release]:
+        """Fetch client app releases, setting ``last_releases_fetch_failed`` on error.
+
+        The flag is reset to False at the start of every call and set to True
+        when the underlying fetch fails (transport / HTTP / payload error), so
+        fail-open callers can distinguish a failed check from an empty result.
+        """
+        self.last_releases_fetch_failed = False
         try:
             max_scan = GITHUB_MAX_PER_PAGE
             raw_keep = self.config.get(
@@ -821,6 +832,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 releases_data = self.github_source.fetch_raw_releases_data(
                     {"per_page": scan_count}
                 )
+                self.last_releases_fetch_failed = self.github_source.last_fetch_failed
                 if releases_data is None:
                     return []
                 releases: list[Release] = []
@@ -880,6 +892,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             TypeError,
         ) as exc:
             logger.exception("Error fetching client app releases: %s", exc)
+            self.last_releases_fetch_failed = True
             return []
 
     def get_assets(self, release: Release) -> list[Asset]:

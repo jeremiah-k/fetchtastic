@@ -3697,6 +3697,7 @@ def test_cli_summary_nightly_check_failed_emits_message(tmp_path):
     integration.orchestrator.nightly_run_state = NightlyRunState.CHECK_FAILED
     integration.orchestrator.latest_firmware_nightly_build_id = None
     integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.release_check_failed = False
     integration.orchestrator.download_results = []
     integration.orchestrator.failed_downloads = []
     integration.orchestrator.available_new_firmware_versions = []
@@ -3739,6 +3740,7 @@ def test_cli_summary_nightly_incomplete_emits_message(tmp_path):
     integration.orchestrator.nightly_run_state = NightlyRunState.ATTEMPTED_INCOMPLETE
     integration.orchestrator.latest_firmware_nightly_build_id = None
     integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.release_check_failed = False
     integration.orchestrator.download_results = []
     integration.orchestrator.failed_downloads = []
     integration.orchestrator.available_new_firmware_versions = []
@@ -3781,6 +3783,7 @@ def test_cli_summary_maintenance_only_allows_up_to_date(tmp_path):
     integration.orchestrator.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
     integration.orchestrator.latest_firmware_nightly_build_id = BUILD_2_8_0
     integration.orchestrator.wifi_skipped = False
+    integration.orchestrator.release_check_failed = False
     integration.orchestrator.download_results = []
     integration.orchestrator.failed_downloads = []
     integration.orchestrator.available_new_firmware_versions = []

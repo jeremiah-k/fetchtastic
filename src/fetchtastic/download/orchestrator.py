@@ -213,6 +213,10 @@ class DownloadOrchestrator:
         self.wifi_skipped: bool = False
         self.available_new_firmware_versions: List[str] = []
         self.available_new_apk_versions: List[str] = []
+        # Run-scoped: True when a stable release fetch (firmware or client app)
+        # failed during this run. A failed check is a distinct state from
+        # "nothing new" and must suppress the generic up-to-date log/NTFY.
+        self.release_check_failed: bool = False
 
     def _is_client_app_prerelease_release(self, release: Release) -> bool:
         """Classify client app prereleases without depending on wrapper mocks."""
@@ -253,6 +257,7 @@ class DownloadOrchestrator:
         self.available_new_firmware_versions = []
         self.available_new_apk_versions = []
         self._client_app_downloads_processed = False
+        self.release_check_failed = False
         logger.info("Starting download pipeline...")
         logger.debug(
             "Execution context: cwd=%s, python=%s, fetchtastic=%s",
@@ -327,6 +332,12 @@ class DownloadOrchestrator:
                 target_count=keep_limit,
                 current_fetch_limit=fetch_limit,
             )
+            # collect_non_revoked_releases may perform one or more expansion
+            # fetches after the initial _ensure_releases call. Propagate a
+            # failure from those fetches too; otherwise a revoked-heavy initial
+            # page followed by an outage can still be reported as up to date.
+            if getattr(self.firmware_downloader, "last_releases_fetch_failed", False):
+                self.release_check_failed = True
             self.firmware_releases = firmware_releases
 
             stable_releases = [
@@ -426,7 +437,13 @@ class DownloadOrchestrator:
             logger.info("Scanning client app releases")
             app_releases = self._ensure_client_app_releases()
             if not app_releases:
-                logger.info("No client app releases found")
+                if self.release_check_failed:
+                    logger.warning(
+                        "Client app release check failed; cannot verify client "
+                        "app assets this run"
+                    )
+                else:
+                    logger.info("No client app releases found")
                 return
 
             self.client_app_downloader.update_release_history(app_releases)
@@ -670,7 +687,11 @@ class DownloadOrchestrator:
                 else:
                     logger.debug("No snapshot release found")
 
-            if not any_app_downloaded and not releases_to_download:
+            if (
+                not any_app_downloaded
+                and not releases_to_download
+                and not (self.failed_downloads)
+            ):
                 logger.info("All client app assets are up to date.")
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
@@ -775,6 +796,10 @@ class DownloadOrchestrator:
 
         if should_fetch:
             new_releases = downloader.get_releases(limit=limit) or []
+            if getattr(downloader, "last_releases_fetch_failed", False):
+                # A failed fetch is not "no releases": record it so the
+                # summary suppresses the generic up-to-date outcome.
+                self.release_check_failed = True
             setattr(self, releases_attr, new_releases)
             setattr(self, fetch_limit_attr, limit)
             return new_releases
@@ -912,7 +937,13 @@ class DownloadOrchestrator:
             fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
             firmware_releases = self._ensure_firmware_releases(limit=fetch_limit)
             if not firmware_releases:
-                logger.info("No firmware releases found")
+                if self.release_check_failed:
+                    logger.warning(
+                        "Firmware release check failed; cannot verify firmware "
+                        "releases this run"
+                    )
+                else:
+                    logger.info("No firmware releases found")
                 return
 
             self.firmware_release_history = (
@@ -930,6 +961,10 @@ class DownloadOrchestrator:
                 target_count=keep_limit,
                 current_fetch_limit=fetch_limit,
             )
+            if getattr(self.firmware_downloader, "last_releases_fetch_failed", False):
+                # Expansion fetches inside collect_non_revoked_releases happen
+                # after _ensure_releases() recorded the initial fetch outcome.
+                self.release_check_failed = True
             self.firmware_releases = firmware_releases
 
             releases_to_process = releases_for_processing[:keep_limit]
@@ -1045,7 +1080,13 @@ class DownloadOrchestrator:
 
             # Stable-only up-to-date indicator. Scoped to releases (not
             # nightlies) so it cannot contradict a nightly finalize/fail/incomplete.
-            if not any_firmware_downloaded and not releases_to_download:
+            # Suppressed when any asset in the run failed so the log never
+            # claims "up to date" alongside recorded failures.
+            if (
+                not any_firmware_downloaded
+                and not releases_to_download
+                and not (self.failed_downloads)
+            ):
                 logger.info("All Firmware releases are up to date.")
 
             # Remove prerelease directories whose version is <= the latest

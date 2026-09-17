@@ -1,9 +1,10 @@
 import json
 import os
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 from fetchtastic.constants import APP_DIR_NAME
 from fetchtastic.download.cache import CacheManager
@@ -67,6 +68,54 @@ def test_migrates_legacy_apks_and_split_app_dirs(downloader, tmp_path):
     assert (
         downloads / "app" / "prerelease" / "v2.7.16-closed.1" / "asset.txt"
     ).exists()
+
+
+def test_get_releases_fetch_failure_sets_flag(downloader):
+    """A failed fetch must be distinguishable from 'no releases found'."""
+    downloader.cache_manager.read_releases_cache_entry.return_value = None
+
+    with patch(
+        "fetchtastic.download.github_source.make_github_api_request",
+        side_effect=requests.RequestException("github down"),
+    ):
+        assert downloader.get_releases() == []
+    assert downloader.last_releases_fetch_failed is True
+
+
+def test_get_releases_success_clears_flag(downloader):
+    """A successful fetch resets the failure flag from earlier attempts."""
+    downloader.cache_manager.read_releases_cache_entry.return_value = None
+
+    with patch(
+        "fetchtastic.download.github_source.make_github_api_request",
+        side_effect=requests.RequestException("github down"),
+    ):
+        downloader.get_releases()
+    assert downloader.last_releases_fetch_failed is True
+
+    response = Mock()
+    response.json.return_value = [
+        {
+            "tag_name": "v2.7.13",
+            "prerelease": False,
+            "published_at": "2023-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "app-fdroid-universal-release.apk",
+                    "browser_download_url": "https://example.com/app.apk",
+                    "size": 1000,
+                }
+            ],
+        }
+    ]
+    with patch(
+        "fetchtastic.download.github_source.make_github_api_request",
+        return_value=response,
+    ):
+        releases = downloader.get_releases()
+
+    assert [r.tag_name for r in releases] == ["v2.7.13"]
+    assert downloader.last_releases_fetch_failed is False
 
 
 @pytest.mark.parametrize(
