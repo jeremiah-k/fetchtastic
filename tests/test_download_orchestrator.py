@@ -752,6 +752,44 @@ class TestDownloadOrchestrator:
             "v2.7.11"
         )
 
+    def test_update_version_tracking_skips_revoked_firmware_head(self, orchestrator):
+        """A revoked newest firmware release must not become the tracked latest tag.
+
+        The download pass targets releases via _select_latest_release_by_version
+        (highest version, revoked last); version tracking must record the same
+        release, not the raw API-order list head.
+        """
+        revoked = Release(
+            tag_name="v2.7.21",
+            prerelease=False,
+            name="Meshtastic Firmware 2.7.21 Alpha (Revoked)",
+        )
+        stable = Release(tag_name="v2.7.20", prerelease=False)
+        orchestrator.android_releases = [
+            Release(tag_name="v2.7.11", prerelease=False),
+        ]
+        orchestrator.firmware_releases = [revoked, stable]
+        orchestrator.desktop_releases = [
+            Release(tag_name="v2.7.11", prerelease=False),
+        ]
+        orchestrator.version_manager.get_release_tuple.side_effect = lambda tag: {
+            "v2.7.21": (2, 7, 21),
+            "v2.7.20": (2, 7, 20),
+        }[tag]
+        orchestrator.firmware_downloader.is_release_revoked.side_effect = (
+            lambda release: release is revoked
+        )
+        orchestrator.android_downloader.update_latest_release_tag = Mock()
+        orchestrator.firmware_downloader.update_latest_release_tag = Mock()
+        orchestrator.desktop_downloader = Mock()
+        orchestrator._manage_prerelease_tracking = Mock()
+
+        orchestrator.update_version_tracking()
+
+        orchestrator.firmware_downloader.update_latest_release_tag.assert_called_once_with(
+            "v2.7.20"
+        )
+
     @patch("fetchtastic.download.orchestrator.logger")
     def test_log_download_summary_demotes_completion_lines_to_debug(
         self, mock_logger, orchestrator
