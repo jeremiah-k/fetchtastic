@@ -1943,32 +1943,49 @@ class FirmwareReleaseDownloader(BaseDownloader):
             target_path = os.path.join(target_dir, name)
             try:
                 if not force_refresh and os.path.exists(target_path):
-                    zip_ok = True
-                    if name.lower().endswith(".zip"):
-                        has_hash_baseline = load_file_hash(target_path) is not None
-                        if not has_hash_baseline:
-                            try:
-                                with zipfile.ZipFile(target_path, "r") as zf:
-                                    zip_ok = zf.testzip() is None
-                            except (zipfile.BadZipFile, IOError):
-                                zip_ok = False
-
-                    if zip_ok and verify_file_integrity(target_path):
+                    # Compare against the remote listing's size first: an
+                    # upstream republish under the same directory/file name
+                    # (CI rebuild of the same commit) must be detected even
+                    # though the local hash sidecar is self-consistent.
+                    expected_size = item.get("size")
+                    size_ok = True
+                    if isinstance(expected_size, int) and expected_size > 0:
+                        try:
+                            size_ok = os.path.getsize(target_path) == expected_size
+                        except OSError:
+                            size_ok = False
+                    if not size_ok:
                         logger.debug(
-                            "Prerelease file already exists and is valid: %s", name
+                            "Prerelease file size mismatch for %s; re-downloading",
+                            name,
                         )
-                        successes.append(
-                            self.create_download_result(
-                                success=True,
-                                release_tag=remote_dir,
-                                file_path=target_path,
-                                download_url=str(url),
-                                file_size=item.get("size"),
-                                file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
-                                was_skipped=True,
+                    else:
+                        zip_ok = True
+                        if name.lower().endswith(".zip"):
+                            has_hash_baseline = load_file_hash(target_path) is not None
+                            if not has_hash_baseline:
+                                try:
+                                    with zipfile.ZipFile(target_path, "r") as zf:
+                                        zip_ok = zf.testzip() is None
+                                except (zipfile.BadZipFile, IOError):
+                                    zip_ok = False
+
+                        if zip_ok and verify_file_integrity(target_path):
+                            logger.debug(
+                                "Prerelease file already exists and is valid: %s", name
                             )
-                        )
-                        continue
+                            successes.append(
+                                self.create_download_result(
+                                    success=True,
+                                    release_tag=remote_dir,
+                                    file_path=target_path,
+                                    download_url=str(url),
+                                    file_size=item.get("size"),
+                                    file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
+                                    was_skipped=True,
+                                )
+                            )
+                            continue
 
                 ok = download_file_with_retry(str(url), target_path)
                 if ok:
