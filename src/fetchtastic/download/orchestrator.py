@@ -332,6 +332,12 @@ class DownloadOrchestrator:
                 target_count=keep_limit,
                 current_fetch_limit=fetch_limit,
             )
+            # collect_non_revoked_releases may perform one or more expansion
+            # fetches after the initial _ensure_releases call. Propagate a
+            # failure from those fetches too; otherwise a revoked-heavy initial
+            # page followed by an outage can still be reported as up to date.
+            if getattr(self.firmware_downloader, "last_releases_fetch_failed", False):
+                self.release_check_failed = True
             self.firmware_releases = firmware_releases
 
             stable_releases = [
@@ -955,6 +961,10 @@ class DownloadOrchestrator:
                 target_count=keep_limit,
                 current_fetch_limit=fetch_limit,
             )
+            if getattr(self.firmware_downloader, "last_releases_fetch_failed", False):
+                # Expansion fetches inside collect_non_revoked_releases happen
+                # after _ensure_releases() recorded the initial fetch outcome.
+                self.release_check_failed = True
             self.firmware_releases = firmware_releases
 
             releases_to_process = releases_for_processing[:keep_limit]

@@ -143,6 +143,40 @@ class TestDownloadOrchestrator:
 
         assert orchestrator.release_check_failed is True
 
+    def test_firmware_expansion_fetch_failure_sets_release_check_failed(
+        self, orchestrator
+    ):
+        """A failure during revoked-release expansion marks the whole check failed."""
+        orchestrator.config["SAVE_FIRMWARE"] = True
+        release = Release(tag_name="v2.8.0", prerelease=False)
+        orchestrator.firmware_downloader.get_releases.return_value = [release]
+        orchestrator.firmware_downloader.last_releases_fetch_failed = False
+
+        def _collect_with_failed_expansion(**kwargs):
+            orchestrator.firmware_downloader.last_releases_fetch_failed = True
+            initial = kwargs["initial_releases"]
+            return initial, initial, kwargs["current_fetch_limit"]
+
+        orchestrator.firmware_downloader.collect_non_revoked_releases.side_effect = (
+            _collect_with_failed_expansion
+        )
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = (
+            [],
+            [],
+            None,
+            None,
+        )
+
+        with (
+            patch.object(orchestrator, "_check_releases_complete", return_value=[True]),
+            patch.object(
+                orchestrator, "_has_selected_non_manifest_firmware_asset", return_value=False
+            ),
+        ):
+            orchestrator._process_firmware_downloads()
+
+        assert orchestrator.release_check_failed is True
+
     def test_get_release_check_workers_invalid_value(self, orchestrator):
         """Invalid worker config should fall back to default."""
         orchestrator.config["MAX_PARALLEL_RELEASE_CHECKS"] = "invalid"
