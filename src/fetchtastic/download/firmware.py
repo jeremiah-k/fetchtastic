@@ -3150,7 +3150,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     target_manifest = self.cache_manager.get_nightly_target_manifest(
                         target_id, session=target_session
                     )
-                except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+                except (
+                    requests.RequestException,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                ) as exc:
                     logger.warning(
                         "firmware-nightly target manifest fetch failed for %s: %s; "
                         "skipping that variant",
