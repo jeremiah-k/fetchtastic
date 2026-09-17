@@ -90,9 +90,70 @@ You can set up Fetchtastic to run automatically when your device boots:
 2. Open Termux:Boot once to enable it
 3. During Fetchtastic setup, choose to enable boot scripts
 
+The generated Fetchtastic boot script also starts `termux-services` before the
+one-time download. This is important when you use cron: `sv-enable crond`
+enables the service under Termux's runit supervisor, but the supervisor itself
+must be started again after an Android reboot. If you do not use the boot
+script, cron will resume after you next open a Termux login shell.
+
 ### Cron Jobs
 
-Termux supports cron for scheduled tasks. During setup, you can schedule Fetchtastic to run automatically.
+Termux supports cron for scheduled tasks. During setup, you can schedule
+Fetchtastic to run automatically. Fetchtastic installs/enables `cronie` and
+`termux-services` as needed and writes the absolute Fetchtastic executable path
+into the crontab. The absolute path matters for the recommended pipx install:
+pipx normally places the command in `~/.local/bin`, while Termux cronie uses a
+minimal `$PREFIX/bin` PATH for cron jobs.
+
+After setup, verify all three pieces independently:
+
+```bash
+# The schedule exists.
+crontab -l
+
+# The runit service is up. Open a new Termux session first if SVDIR is unset.
+sv status crond
+
+# crond itself is running.
+pgrep -a crond
+```
+
+If `sv status crond` reports that the service directory is unavailable in the
+current shell, start a new Termux session or run:
+
+```bash
+export SVDIR="$PREFIX/var/service"
+export LOGDIR="$PREFIX/var/log"
+service-daemon start
+sv-enable crond
+```
+
+Cron is still subject to Android background execution and Doze behavior. For
+reliable screen-off operation, disable Android battery optimization for Termux.
+Even then, Android and some OEM firmware can terminate long-running Termux
+processes, so daemon-based cron should be treated as best-effort rather than an
+exact Android alarm. You can also acquire a Termux wake lock, at the cost of
+additional battery use:
+
+```bash
+termux-wake-lock
+# Later, when you no longer need continuous background execution:
+termux-wake-unlock
+```
+
+For troubleshooting, inspect the service log when present and Android's crond
+log messages:
+
+```bash
+tail -n 100 "$PREFIX/var/log/sv/crond/current"
+logcat -d -s CROND
+```
+
+`termux-job-scheduler` is an Android JobScheduler-based alternative available
+through Termux:API. It is useful when approximate, battery-aware scheduling is
+preferred over a continuously running cron daemon, but periodic execution is
+not exact and depends on Android/device scheduling policy. Fetchtastic's setup
+currently configures cronie.
 
 ## Upgrading
 
@@ -186,13 +247,18 @@ If automatic startup doesn't work:
 3. Grant all requested permissions
 4. Restart your device to test
 
+If the boot script exists but cron does not resume after reboot, verify that it
+contains the `start-services.sh` line and then check `sv status crond` after
+boot.
+
 ### Termux Session Killed
 
 Android may kill Termux sessions to save battery. To prevent this:
 
 1. Disable battery optimization for Termux
 2. Use Termux:Boot for automatic startup
-3. Consider using a wake lock app
+3. Use `termux-wake-lock` when continuous background execution is required
+   (and `termux-wake-unlock` when it is no longer needed)
 
 ## Storage Locations
 

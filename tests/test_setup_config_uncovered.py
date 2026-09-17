@@ -2033,27 +2033,36 @@ def test_install_crond_exception(mocker, capsys):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_setup_cron_job_termux_path(mocker):
-    """Test setup_cron_job Termux path (line 3028)."""
+    """Termux cron uses the resolved executable instead of relying on PATH."""
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mocker.patch("shutil.which", return_value="/usr/bin/crontab")
+    mocker.patch(
+        "fetchtastic.setup_config._resolve_fetchtastic_executable",
+        return_value="/data/data/com.termux/files/home/.local/bin/fetchtastic",
+    )
 
     mock_subprocess = mocker.patch("subprocess.run")
     mock_subprocess.return_value = MagicMock(returncode=0, stdout="")
 
     mock_popen = mocker.patch("subprocess.Popen")
+    mock_popen.return_value.returncode = 0
     mock_communicate = mock_popen.return_value.communicate
 
     setup_config.setup_cron_job("hourly")
 
-    # Check that the cron line contains 'fetchtastic' without full path (Termux style)
+    # The pipx shim is outside cronie's default $PREFIX/bin PATH, so the
+    # scheduled command must carry its absolute path.
     mock_communicate.assert_called()
     call_args = mock_communicate.call_args
     assert call_args is not None
     assert "input" in call_args.kwargs
     cron_content = call_args.kwargs["input"]
-    assert "fetchtastic download  # fetchtastic" in cron_content
+    assert (
+        "0 * * * * /data/data/com.termux/files/home/.local/bin/fetchtastic "
+        "download  # fetchtastic"
+    ) in cron_content
 
 
 @pytest.mark.configuration

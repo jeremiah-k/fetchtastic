@@ -7,6 +7,7 @@ import os
 import platform
 import random
 import re
+import shlex
 import shutil
 import string
 import subprocess
@@ -1607,21 +1608,32 @@ def _setup_firmware(
     return config
 
 
-def _configure_cron_job(install_crond_needed: bool = False) -> None:
+def _configure_cron_job(
+    install_crond_needed: bool = False, *, remove_existing_on_none: bool = False
+) -> None:
     """
     Prompt the user for a cron frequency and configure a Fetchtastic cron job accordingly.
 
-    If the chosen frequency is not "none", the function will install the Termux crond service first when requested and then create/update the cron job at the selected cadence. If the user selects "none", no cron job is configured and a message is printed.
+    If the chosen frequency is not "none", the function will install the Termux crond service first when requested and then create/update the cron job at the selected cadence. Existing cron entries are replaced by ``setup_cron_job`` only after prerequisites succeed. If the user selects "none", no cron job is configured; when ``remove_existing_on_none`` is True, the existing Fetchtastic schedule is removed intentionally.
 
     Parameters:
         install_crond_needed (bool): If True, install and enable the Termux crond service before configuring the cron job.
+        remove_existing_on_none (bool): If True, remove the existing Fetchtastic cron entry when the user explicitly selects "none".
     """
     frequency = _prompt_for_cron_frequency()
     if frequency != "none":
         if install_crond_needed:
-            install_crond()
+            if install_crond() is False:
+                print(
+                    "Cron job has not been set up because the Termux crond service "
+                    "could not be started. The existing schedule was left unchanged."
+                )
+                return
         setup_cron_job(frequency)
     else:
+        if remove_existing_on_none:
+            remove_cron_job()
+            print("Existing cron job removed.")
         print("Cron job has not been set up.")
 
 
@@ -1756,12 +1768,12 @@ def _setup_automation(
                     default=False,
                 )
                 if cron_prompt:
-                    # First, remove existing cron job
-                    remove_cron_job()
-                    print("Existing cron job removed for reconfiguration.")
-
-                    # Configure cron job
-                    _configure_cron_job(install_crond_needed=True)
+                    # Let setup_cron_job replace the existing entry only after
+                    # Termux service prerequisites succeed. This preserves the
+                    # working schedule if crond setup fails mid-reconfiguration.
+                    _configure_cron_job(
+                        install_crond_needed=True, remove_existing_on_none=True
+                    )
                 else:
                     print("Cron job configuration left unchanged.")
             else:
@@ -3283,36 +3295,110 @@ def setup_storage() -> None:
         print("Please grant storage permissions when prompted.")
 
 
-def install_crond() -> None:
+def install_crond() -> Optional[bool]:
     """
     Install and enable the Termux crond service.
 
-    On Termux, installs the cronie package if it is not present and enables the crond service; on non-Termux platforms this function has no effect.
+    On Termux, installs any missing cronie/termux-services packages, requests a
+    termux-services supervisor start, and enables the crond service. Returns
+    True when crond is enabled and False if a checked setup step fails. On
+    non-Termux platforms this function has no effect and returns None.
     """
     if is_termux():
         try:
-            crond_path = shutil.which("crond")
-            if crond_path is None:
-                print("Installing cronie...")
-                # Install cronie
+            packages_to_install: List[str] = []
+            if shutil.which("crond") is None:
+                packages_to_install.append("cronie")
+            if (
+                shutil.which("sv-enable") is None
+                or shutil.which("service-daemon") is None
+            ):
+                packages_to_install.append("termux-services")
+
+            if packages_to_install:
+                print(
+                    "Installing required cron service packages: "
+                    + ", ".join(packages_to_install)
+                    + "..."
+                )
                 subprocess.run(
-                    ["pkg", "install", "cronie", "-y"],
+                    ["pkg", "install", *packages_to_install, "-y"],
                     check=True,
                     timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
                 )
-                print("cronie installed.")
+                print("Required cron service packages installed.")
             else:
-                print("cronie is already installed.")
-            # Enable crond service
+                print("cronie and termux-services are already installed.")
+
+            prefix = os.environ.get("PREFIX", "").strip()
+            if not prefix:
+                raise RuntimeError("Termux PREFIX environment variable is not set")
+
+            service_daemon_path = shutil.which("service-daemon")
+            sv_enable_path = shutil.which("sv-enable")
+            if not service_daemon_path or not sv_enable_path:
+                raise FileNotFoundError(
+                    "termux-services commands were not found after installation"
+                )
+
+            service_env = os.environ.copy()
+            if not service_env.get("SVDIR"):
+                service_env["SVDIR"] = os.path.join(prefix, "var", "service")
+            if not service_env.get("LOGDIR"):
+                service_env["LOGDIR"] = os.path.join(prefix, "var", "log")
+
+            # termux-services normally starts its runit supervisor when a new
+            # login shell sources start-services.sh. Setup may have installed
+            # termux-services in this already-running shell, so start the
+            # supervisor explicitly before enabling crond. A second start is
+            # harmless: service-daemon/start-stop-daemon refuses duplicates.
             subprocess.run(
-                ["sv-enable", "crond"], check=True, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+                [service_daemon_path, "start"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=service_env,
+                timeout=CRON_COMMAND_TIMEOUT_SECONDS,
+            )
+            subprocess.run(
+                [sv_enable_path, "crond"],
+                check=True,
+                env=service_env,
+                timeout=CRON_COMMAND_TIMEOUT_SECONDS,
             )
             print("crond service enabled.")
+            return True
         except Exception as e:  # noqa: BLE001
             print(f"An error occurred while installing or enabling crond: {e}")
-    else:
-        # For non-Termux environments, crond installation is not needed
-        pass
+            return False
+    # For non-Termux environments, crond installation is not needed.
+    return None
+
+
+def _resolve_fetchtastic_executable() -> Optional[str]:
+    """Return an absolute executable path for automation, or None if unavailable.
+
+    Cron and Termux:Boot do not necessarily inherit the interactive shell's
+    PATH. In particular, pipx installs Fetchtastic into ``~/.local/bin`` by
+    default while Termux cronie uses ``$PREFIX/bin`` as its default PATH.
+    Prefer the currently resolvable executable and fall back to the standard
+    pipx bin directory (including an explicit ``PIPX_BIN_DIR`` override).
+    """
+    executable = shutil.which("fetchtastic")
+    if executable:
+        return os.path.abspath(executable)
+
+    candidate_dirs: List[str] = []
+    pipx_bin_dir = os.environ.get("PIPX_BIN_DIR", "").strip()
+    if pipx_bin_dir:
+        candidate_dirs.append(os.path.expanduser(pipx_bin_dir))
+    candidate_dirs.append(os.path.expanduser("~/.local/bin"))
+
+    for directory in candidate_dirs:
+        candidate = os.path.join(directory, "fetchtastic")
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return os.path.abspath(candidate)
+    return None
 
 
 @cron_command_required
@@ -3320,7 +3406,10 @@ def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") 
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
 
-    Removes any existing Fetchtastic scheduled entries (excluding `@reboot` lines) and writes a single cron entry for the chosen frequency, updating the current user's crontab. Unknown `frequency` values default to "hourly". This function does nothing on Windows.
+    Replaces existing non-`@reboot` Fetchtastic entries with one that invokes a
+    resolved absolute executable path. Unknown `frequency` values default to
+    "hourly". No update is attempted on Windows or when the executable cannot be
+    found; crontab command errors are logged.
 
     Parameters:
         frequency (str): Key from CRON_SCHEDULES selecting the schedule preset (e.g., "hourly", "daily"); unknown keys default to "hourly".
@@ -3365,18 +3454,17 @@ def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") 
             )
         ]
 
-        # Add new cron job
-        if is_termux():
-            cron_lines.append(f"{cron_schedule} fetchtastic download  # fetchtastic")
-        else:
-            # Non-Termux environments
-            fetchtastic_path = shutil.which("fetchtastic")
-            if not fetchtastic_path:
-                print("Error: fetchtastic executable not found in PATH.")
-                return
-            cron_lines.append(
-                f"{cron_schedule} {fetchtastic_path} download  # fetchtastic"
-            )
+        # Always use an absolute executable path. Cron has a deliberately
+        # minimal PATH; this is essential on Termux where the recommended pipx
+        # install normally places the shim in ~/.local/bin while cronie's
+        # compiled default PATH contains only $PREFIX/bin.
+        fetchtastic_path = _resolve_fetchtastic_executable()
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found for cron automation.")
+            return
+        cron_lines.append(
+            f"{cron_schedule} {shlex.quote(fetchtastic_path)} download  # fetchtastic"
+        )
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)
@@ -3395,6 +3483,12 @@ def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") 
             process.communicate(
                 input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
             )  # Add timeout to prevent hanging
+            if process.returncode != 0:
+                logger.error(
+                    "Failed to install cron job: crontab exited with status %s",
+                    process.returncode,
+                )
+                return
             print(f"Cron job added to run Fetchtastic {frequency_desc}.")
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
             logger.error(f"An error occurred while setting up the cron job: {e}")
@@ -3466,12 +3560,18 @@ def remove_cron_job(*, crontab_path: str = "crontab") -> None:
 
 def setup_boot_script() -> None:
     """
-    Create a boot script that runs fetchtastic on device boot in Termux.
+    Create or replace the Termux:Boot script that runs Fetchtastic after boot.
 
-    This function is intended for Termux environments only. On other platforms, it does nothing.
+    The script sources the Termux services startup file when present, waits 30
+    seconds, and runs the resolved Fetchtastic executable. If that executable
+    cannot be found, the boot directory and script are left unchanged.
     """
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
+    fetchtastic_path = _resolve_fetchtastic_executable()
+    if not fetchtastic_path:
+        print("Error: fetchtastic executable not found for Termux boot automation.")
+        return
     if not os.path.exists(boot_dir):
         os.makedirs(boot_dir)
         print("Created the Termux:Boot directory.")
@@ -3481,8 +3581,14 @@ def setup_boot_script() -> None:
     # Write the boot script
     with open(boot_script, "w") as f:
         f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
+        prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
+        start_services = os.path.join(prefix, "etc", "profile.d", "start-services.sh")
+        quoted_start_services = shlex.quote(start_services)
+        f.write(f"if [ -f {quoted_start_services} ]; then\n")
+        f.write(f"    . {quoted_start_services}\n")
+        f.write("fi\n")
         f.write("sleep 30\n")
-        f.write("fetchtastic download\n")
+        f.write(f"{shlex.quote(fetchtastic_path)} download\n")
     os.chmod(boot_script, 0o700)
     print("Boot script created to run Fetchtastic on device boot.")
     print(
@@ -3546,11 +3652,13 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab") -> None:
         ]
 
         # Add new @reboot cron job
-        fetchtastic_path = shutil.which("fetchtastic")
+        fetchtastic_path = _resolve_fetchtastic_executable()
         if not fetchtastic_path:
             print("Error: fetchtastic executable not found in PATH.")
             return
-        cron_lines.append(f"@reboot {fetchtastic_path} download  # fetchtastic")
+        cron_lines.append(
+            f"@reboot {shlex.quote(fetchtastic_path)} download  # fetchtastic"
+        )
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)

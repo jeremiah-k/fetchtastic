@@ -58,11 +58,139 @@ class TestAutomationConfiguration:
         mock_install.assert_not_called()
         mock_setup.assert_not_called()
 
+    def test_configure_cron_job_stops_when_termux_service_setup_fails(self, mocker):
+        """Do not replace an existing schedule when the Termux scheduler cannot start."""
+        mock_setup = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+        mock_remove = mocker.patch("fetchtastic.setup_config.remove_cron_job")
+        mocker.patch("fetchtastic.setup_config.install_crond", return_value=False)
+        mocker.patch("builtins.input", return_value="hourly")
+
+        setup_config._configure_cron_job(
+            install_crond_needed=True, remove_existing_on_none=True
+        )
+
+        mock_setup.assert_not_called()
+        mock_remove.assert_not_called()
+
+    def test_configure_cron_job_none_removes_existing_schedule(self, mocker):
+        """Selecting none during reconfiguration intentionally removes the old job."""
+        mock_setup = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+        mock_remove = mocker.patch("fetchtastic.setup_config.remove_cron_job")
+        mock_install = mocker.patch("fetchtastic.setup_config.install_crond")
+        mocker.patch("builtins.input", return_value="none")
+
+        setup_config._configure_cron_job(
+            install_crond_needed=True, remove_existing_on_none=True
+        )
+
+        mock_remove.assert_called_once_with()
+        mock_install.assert_not_called()
+        mock_setup.assert_not_called()
+
+    def test_setup_boot_script_starts_services_and_uses_absolute_executable(
+        self, mocker, tmp_path
+    ):
+        """Termux boot restarts services and invokes the resolved pipx shim."""
+        boot_dir = tmp_path / ".termux" / "boot"
+        executable = "/data/data/com.termux/files/home/.local/bin/fetchtastic"
+        mocker.patch(
+            "fetchtastic.setup_config.os.path.expanduser",
+            return_value=str(boot_dir),
+        )
+        mocker.patch(
+            "fetchtastic.setup_config._resolve_fetchtastic_executable",
+            return_value=executable,
+        )
+        mocker.patch.dict(
+            "fetchtastic.setup_config.os.environ",
+            {"PREFIX": "/data/data/com.termux/files/usr"},
+            clear=False,
+        )
+
+        setup_config.setup_boot_script()
+
+        content = (boot_dir / "fetchtastic.sh").read_text(encoding="utf-8")
+        assert (
+            ". /data/data/com.termux/files/usr/etc/profile.d/start-services.sh"
+            in content
+        )
+        assert f"{executable} download" in content
+
+    def test_resolve_fetchtastic_executable_falls_back_to_pipx_bin(
+        self, mocker, tmp_path
+    ):
+        """Automation resolves the default pipx shim even outside shell PATH."""
+        pipx_bin = tmp_path / "pipx-bin"
+        pipx_bin.mkdir()
+        executable = pipx_bin / "fetchtastic"
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o700)
+
+        mocker.patch("fetchtastic.setup_config.shutil.which", return_value=None)
+        mocker.patch.dict(
+            "fetchtastic.setup_config.os.environ",
+            {"PIPX_BIN_DIR": str(pipx_bin)},
+            clear=False,
+        )
+
+        assert setup_config._resolve_fetchtastic_executable() == str(executable)
+
+    def test_setup_reboot_cron_job_quotes_executable_path(self, mocker):
+        """The reboot entry shell-quotes resolved executable paths containing spaces."""
+        mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+        mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+        mocker.patch(
+            "fetchtastic.setup_config.shutil.which", return_value="/usr/bin/crontab"
+        )
+        mocker.patch(
+            "fetchtastic.setup_config._resolve_fetchtastic_executable",
+            return_value="/home/user/My Apps/fetchtastic",
+        )
+        mocker.patch(
+            "fetchtastic.setup_config.subprocess.run",
+            return_value=mocker.MagicMock(returncode=0, stdout=""),
+        )
+        process = mocker.MagicMock(returncode=0)
+        mocker.patch("fetchtastic.setup_config.subprocess.Popen", return_value=process)
+
+        setup_config.setup_reboot_cron_job()
+
+        written = process.communicate.call_args.kwargs["input"]
+        assert (
+            "@reboot '/home/user/My Apps/fetchtastic' download  # fetchtastic"
+            in written
+        )
+
     def test_crontab_available_false_when_missing(self, mocker, capsys):
         mocker.patch("fetchtastic.setup_config.shutil.which", return_value=None)
         assert setup_config._crontab_available() is False
         # Function is now pure and doesn't print
         assert capsys.readouterr().out == ""
+
+    def test_setup_cron_job_reports_crontab_install_failure(self, mocker):
+        """A rejected crontab update must not be reported as successfully added."""
+        mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+        mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+        mocker.patch(
+            "fetchtastic.setup_config.shutil.which", return_value="/usr/bin/crontab"
+        )
+        mocker.patch(
+            "fetchtastic.setup_config._resolve_fetchtastic_executable",
+            return_value="/home/user/.local/bin/fetchtastic",
+        )
+        mocker.patch(
+            "fetchtastic.setup_config.subprocess.run",
+            return_value=mocker.MagicMock(returncode=0, stdout=""),
+        )
+        process = mocker.MagicMock(returncode=1)
+        mocker.patch("fetchtastic.setup_config.subprocess.Popen", return_value=process)
+        mock_error = mocker.patch("fetchtastic.setup_config.logger.error")
+
+        setup_config.setup_cron_job("hourly")
+
+        mock_error.assert_called_once_with(
+            "Failed to install cron job: crontab exited with status %s", 1
+        )
 
     def test_setup_cron_job_returns_early_without_crontab(self, mocker):
         mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
