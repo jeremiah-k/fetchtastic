@@ -1269,6 +1269,7 @@ def test_cron_job_setup(mocker):
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
+    mock_popen.return_value.returncode = 0
     mocker.patch("shutil.which", return_value="/path/to/fetchtastic")
 
     # 1. Add a cron job
@@ -1293,6 +1294,7 @@ def test_cron_job_setup_hourly(mocker):
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
+    mock_popen.return_value.returncode = 0
     mocker.patch("shutil.which", return_value="/path/to/fetchtastic")
 
     # Add an hourly cron job
@@ -1319,6 +1321,7 @@ def test_cron_job_setup_invalid_frequency(mocker):
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
+    mock_popen.return_value.returncode = 0
     mocker.patch("shutil.which", return_value="/path/to/fetchtastic")
 
     # Add a cron job with invalid frequency
@@ -1801,7 +1804,10 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
     mock_menu_app.return_value = {"selected_assets": ["meshtastic.apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
-    with patch("builtins.open", mock_open()):
+    with (
+        patch("builtins.open", mock_open()),
+        patch("fetchtastic.setup_config.install_crond", return_value=True),
+    ):
         setup_config.run_setup()
 
         mock_install_termux_packages.assert_called_once()

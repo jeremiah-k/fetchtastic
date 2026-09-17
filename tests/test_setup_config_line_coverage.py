@@ -148,13 +148,41 @@ def test_setup_downloads_rerun_false_no_existing_assets(mocker, capsys):
 
 def test_install_crond_installs_cronie(mocker, capsys):
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mocker.patch("shutil.which", return_value=None)
-    mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))
+    which_calls = {
+        "crond": [None],
+        "sv-enable": [None, "/data/data/com.termux/files/usr/bin/sv-enable"],
+        "service-daemon": ["/data/data/com.termux/files/usr/bin/service-daemon"],
+    }
 
-    install_crond()
+    def _which(command):
+        values = which_calls.get(command)
+        if values:
+            return values.pop(0) if len(values) > 1 else values[0]
+        return f"/data/data/com.termux/files/usr/bin/{command}"
+
+    mocker.patch("fetchtastic.setup_config.shutil.which", side_effect=_which)
+    mocker.patch.dict(
+        "fetchtastic.setup_config.os.environ",
+        {"PREFIX": "/data/data/com.termux/files/usr"},
+        clear=False,
+    )
+    mock_run = mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))
+
+    assert install_crond() is True
 
     captured = capsys.readouterr()
-    assert "cronie installed." in captured.out
+    assert "Required cron service packages installed." in captured.out
+    assert "crond service enabled." in captured.out
+    pkg_call = mock_run.call_args_list[0]
+    assert pkg_call.args[0] == ["pkg", "install", "cronie", "termux-services", "-y"]
+    enable_call = mock_run.call_args_list[-1]
+    assert enable_call.args[0] == [
+        "/data/data/com.termux/files/usr/bin/sv-enable",
+        "crond",
+    ]
+    assert enable_call.kwargs["env"]["SVDIR"] == (
+        "/data/data/com.termux/files/usr/var/service"
+    )
 
 
 def test_load_config_old_location_returns_none(tmp_path, mocker):
