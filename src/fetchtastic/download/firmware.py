@@ -2768,55 +2768,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         Remove or expire local prerelease tracking files that are superseded by current repository prereleases.
 
-        Compare stored prerelease tracking data with the set of current prereleases and delegate removal of outdated or expired tracking files to the PrereleaseHistoryManager.
+        Delegates entirely to the PrereleaseHistoryManager, which scans the
+        ``prerelease_tracking`` subdirectory with the shared per-release schema
+        (``prerelease_version`` / ``base_version``) and removes superseded or
+        expired tracking files.
+
+        For firmware, GitHub prerelease flags are treated as stable (see
+        :meth:`handle_prereleases`), so the current set is typically empty and
+        the helper's expiry rules drive removal.
 
         Parameters:
             cached_releases (Optional[List[Release]]): Optional list of Release objects to use instead of fetching releases from the remote API.
         """
         tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
-
-        # Get all prerelease tracking files
-        tracking_files = []
-        try:
-            with os.scandir(tracking_dir) as it:
-                for entry in it:
-                    if entry.name.startswith("prerelease_") and entry.name.endswith(
-                        ".json"
-                    ):
-                        tracking_files.append(entry.path)
-        except FileNotFoundError:
+        if not os.path.exists(tracking_dir):
             return
-
-        # Read all existing prerelease tracking data
-        existing_prereleases = []
-        version_manager = VersionManager()
-        prerelease_manager = PrereleaseHistoryManager()
-
-        for file_path in tracking_files:
-            tracking_data = None
-            try:
-                tracking_data = self.cache_manager.read_json(file_path)
-            except (
-                OSError,
-                ValueError,
-                json.JSONDecodeError,
-            ) as exc:  # pragma: no cover - defensive
-                logger.debug(
-                    "Skipping prerelease tracking file %s due to read error: %s",
-                    file_path,
-                    exc,
-                )
-            if (
-                tracking_data
-                and "latest_version" in tracking_data
-                and "base_version" in tracking_data
-            ):
-                existing_prereleases.append(tracking_data)
 
         # Get current prereleases from GitHub (if available)
         # Use cached releases if provided to avoid redundant API calls
         current_releases = cached_releases or self.get_releases(limit=10)
-        current_prereleases = self.handle_prereleases(current_releases)
+        version_manager = VersionManager()
+        prerelease_manager = PrereleaseHistoryManager()
 
         # Create tracking data for current prereleases
         current_tracking_data = [
@@ -2829,7 +2801,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     prerelease.tag_name
                 ).get("commit_hash", ""),
             )
-            for prerelease in current_prereleases
+            for prerelease in self.handle_prereleases(current_releases)
         ]
 
         # Clean up superseded/expired prereleases using shared helper

@@ -3157,55 +3157,68 @@ class TestFirmwareUncoveredBranches:
         # Should not raise
         downloader.manage_prerelease_tracking_files()
 
-    def test_manage_prerelease_tracking_files_read_error(
-        self, downloader, tmp_path, mocker
+    def test_manage_prerelease_tracking_files_removes_expired_entries(
+        self, mock_config, tmp_path
     ):
-        """Test tracking file read error handling."""
-        tracking_dir = tmp_path / "tracking"
-        tracking_dir.mkdir(parents=True)
+        """Expired per-release tracking metadata is removed via the shared helper.
 
-        # Create a tracking file with proper prefix
-        tracking_file = tracking_dir / "prerelease_test.json"
-        tracking_file.write_text(
-            '{"latest_version": "v1.0.0", "base_version": "v1.0.0"}'
-        )
+        Firmware's current prerelease set is empty (GitHub prerelease flags
+        are treated as stable), so expiry is what drives removal.
+        """
+        cache_dir = tmp_path / "cache"
+        real_cache = CacheManager(cache_dir=str(cache_dir))
+        dl = FirmwareReleaseDownloader(mock_config, real_cache)
 
-        # Create a mock entry that looks like a DirEntry
-        class MockEntry:
-            def __init__(self, name, path):
-                self.name = name
-                self.path = path
+        tracking_root = cache_dir
+        tracking_subdir = tracking_root / "prerelease_tracking"
+        tracking_subdir.mkdir(parents=True)
+        expired = {
+            "prerelease_version": "v2.7.17.9058cce",
+            "base_version": "v2.7.17",
+            "expiry_timestamp": "2020-01-01T00:00:00+00:00",
+            "created_at": "2020-01-01T00:00:00+00:00",
+        }
+        expired_file = tracking_subdir / "prerelease_v2.7.17.9058cce_v2.7.17.json"
+        expired_file.write_text(json.dumps(expired), encoding="utf-8")
 
-        mock_entry = MockEntry("prerelease_test.json", str(tracking_file))
+        dl.get_releases = Mock(return_value=[])
+        dl.manage_prerelease_tracking_files()
 
-        with (
-            patch.object(
-                downloader,
-                "get_prerelease_tracking_file",
-                return_value=str(tracking_file),
-            ),
-            patch("os.scandir") as mock_scandir,
-            patch.object(
-                downloader.cache_manager,
-                "read_json",
-                side_effect=OSError("Read error"),
-            ),
-            patch("fetchtastic.download.firmware.logger") as mock_logger,
-        ):
-            mock_scandir.return_value.__enter__ = Mock(return_value=iter([mock_entry]))
-            mock_scandir.return_value.__exit__ = Mock(return_value=None)
+        assert not expired_file.exists()
 
-            downloader.manage_prerelease_tracking_files()
+    def test_manage_prerelease_tracking_files_leaves_cache_root_files_alone(
+        self, mock_config, tmp_path
+    ):
+        """Cache-root documents matching prerelease_*.json are not tracking metadata.
 
-        # Verify debug log was called about read error
-        debug_calls = [
-            call
-            for call in mock_logger.debug.call_args_list
-            if len(call.args) >= 2
-            and isinstance(call.args[0], str)
-            and "read error" in call.args[0].lower()
-        ]
-        assert len(debug_calls) > 0
+        The per-release metadata lives in prerelease_tracking/; the shared
+        helper only scans that subdirectory, so unrelated cache documents in
+        the root must survive untouched.
+        """
+        cache_dir = tmp_path / "cache"
+        real_cache = CacheManager(cache_dir=str(cache_dir))
+        dl = FirmwareReleaseDownloader(mock_config, real_cache)
+
+        dirs_doc = cache_dir / "prerelease_dirs.json"
+        dirs_doc.parent.mkdir(parents=True, exist_ok=True)
+        dirs_doc.write_text('{"repo:/": "not tracking data"}', encoding="utf-8")
+
+        tracking_subdir = cache_dir / "prerelease_tracking"
+        tracking_subdir.mkdir(parents=True)
+        fresh = {
+            "prerelease_version": "v2.7.17.9058cce",
+            "base_version": "v2.7.17",
+            "expiry_timestamp": "2999-01-01T00:00:00+00:00",
+            "created_at": "2999-01-01T00:00:00+00:00",
+        }
+        fresh_file = tracking_subdir / "prerelease_v2.7.17.9058cce_v2.7.17.json"
+        fresh_file.write_text(json.dumps(fresh), encoding="utf-8")
+
+        dl.get_releases = Mock(return_value=[])
+        dl.manage_prerelease_tracking_files()
+
+        assert dirs_doc.exists()
+        assert fresh_file.exists()
 
     # Lines 2117, 2123: Comparison edge cases in cleanup_superseded_prereleases
     def test_cleanup_superseded_prereleases_empty_tag(self, downloader):
