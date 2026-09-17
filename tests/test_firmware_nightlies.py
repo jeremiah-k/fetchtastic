@@ -3658,7 +3658,7 @@ def test_repair_nightly_executable_metadata_enforces_md5(tmp_path):
 
     manifest_entry = _contents_entry(f"firmware-{BUILD_2_8_0}.json")
     # …but publish a manifest MD5 for different content.
-    wrong_md5 = hashlib.md5(b"different bytes").hexdigest()
+    wrong_md5 = hashlib.md5(b"different bytes", usedforsecurity=False).hexdigest()
     entry = {
         **_contents_entry("device-install.sh", size=len(content)),
         "expected_md5": wrong_md5,
