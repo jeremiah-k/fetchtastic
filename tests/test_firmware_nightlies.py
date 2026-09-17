@@ -3632,6 +3632,49 @@ def test_repair_nightly_executable_metadata_skips_invalid(tmp_path):
     assert repaired == 0
 
 
+def test_repair_nightly_executable_metadata_enforces_md5(tmp_path):
+    """A hash-sidecar-valid .sh asset whose manifest MD5 differs is not chmodded.
+
+    Every other validation path (skip, download, finalize, retry) enforces the
+    published expected_md5; the repair path must not be the one place a
+    content-swapped asset passes validation and gets its exec bit restored.
+    """
+    config = _make_config(tmp_path, EXTRACT_PATTERNS=["device-"])
+    dl = _seed_device_patterns(
+        FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    )
+    content = b"#!/bin/sh\necho hi\n"
+    target = dl.get_nightly_target_path(BUILD_2_8_0, "device-install.sh", create=True)
+    Path(target).write_bytes(content)
+    # Store a matching hash sidecar so verify_file_integrity passes…
+    from fetchtastic.utils import get_hash_file_path
+
+    hash_path = get_hash_file_path(target)
+    Path(hash_path).parent.mkdir(parents=True, exist_ok=True)
+    import hashlib
+
+    digest = hashlib.sha256(content).hexdigest()
+    Path(hash_path).write_text(f"{digest}  device-install.sh\n")
+
+    manifest_entry = _contents_entry(f"firmware-{BUILD_2_8_0}.json")
+    # …but publish a manifest MD5 for different content.
+    wrong_md5 = hashlib.md5(b"different bytes").hexdigest()
+    entry = {
+        **_contents_entry("device-install.sh", size=len(content)),
+        "expected_md5": wrong_md5,
+    }
+
+    repaired = dl.repair_nightly_executable_metadata(
+        BUILD_2_8_0, [manifest_entry, entry]
+    )
+
+    assert repaired == 0
+    import stat as _stat
+
+    mode = _stat.S_IMODE(os.stat(target).st_mode)
+    assert not (mode & 0o111)
+
+
 def test_repair_nightly_executable_metadata_skips_non_sh(tmp_path):
     """A valid .uf2 asset is never chmodded."""
     config = _make_config(tmp_path, EXTRACT_PATTERNS=["rak4631-"])
@@ -6079,9 +6122,9 @@ def test_orch_config_mutation_cannot_alter_repair_set(downloader, tmp_path):
     examined_names: list[str] = []
     original_validate = downloader._validate_nightly_asset
 
-    def _spy(target: str, name: str, size: Any) -> tuple:
+    def _spy(target: str, name: str, size: Any, **kwargs: Any) -> tuple:
         examined_names.append(name)
-        return original_validate(target, name, size)
+        return original_validate(target, name, size, **kwargs)
 
     downloader._validate_nightly_asset = _spy
     downloader.repair_nightly_executable_metadata(

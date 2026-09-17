@@ -4291,7 +4291,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 target = self.get_nightly_target_path(build_id, name, create=False)
             except ValueError:
                 continue
-            ok, _reason = self._validate_nightly_asset(target, name, entry.get("size"))
+            ok, _reason = self._validate_nightly_asset(
+                target,
+                name,
+                entry.get("size"),
+                expected_md5=entry.get("expected_md5"),
+            )
             if not ok:
                 continue
             try:
