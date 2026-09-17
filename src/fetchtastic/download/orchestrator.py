@@ -3229,9 +3229,18 @@ class DownloadOrchestrator:
                     )
 
             if firmware_releases:
-                self.firmware_downloader.update_latest_release_tag(
-                    firmware_releases[0].tag_name
+                # Track the same release the download pass targets: highest
+                # version, preferring non-revoked releases. The raw list head
+                # is API publish order and may be a revoked release, which
+                # would poison the latest-tag tracking (summary display,
+                # Wi-Fi-skip comparison, and the deleted-prerelease floor).
+                latest_tracked_firmware = self._select_latest_release_by_version(
+                    firmware_releases
                 )
+                if latest_tracked_firmware is not None:
+                    self.firmware_downloader.update_latest_release_tag(
+                        latest_tracked_firmware.tag_name
+                    )
 
             desktop_releases = self.desktop_releases or []
             latest_desktop_release = next(
