@@ -1451,7 +1451,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 # Add a buffer of releases to compensate for skipped revoked entries
                 # without increasing the API loop complexity.
                 fetch_limit += RELEASE_SCAN_COUNT
-            fetch_limit = min(100, fetch_limit if fetch_limit >= 0 else 0)
+            # Even keep_limit=0 needs one affirmative release record before
+            # destructive cleanup can mean "delete all". get_releases(limit=0)
+            # intentionally returns [] without making a request, which would
+            # otherwise make the safety guard below turn keep=0 into a no-op.
+            fetch_limit = max(1, min(100, fetch_limit if fetch_limit >= 0 else 0))
 
             if cached_releases is not None and len(cached_releases) >= fetch_limit:
                 all_releases = cached_releases
@@ -1472,7 +1476,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     reason_text,
                 )
                 all_releases = self.get_releases(limit=fetch_limit)
-            if not all_releases and (keep_limit > 0 or keep_last_beta):
+            if not all_releases:
+                # An empty release list means the fetch failed or returned
+                # nothing usable. With keep_limit == 0 that must NOT be read
+                # as "keep set is empty, delete everything": destructive
+                # cleanup requires affirmative release data. (With a
+                # successful fetch, keep_limit == 0 still deletes all
+                # version directories below.)
                 logger.warning(
                     "Skipping firmware cleanup: no releases available to determine keep set."
                 )

@@ -39,7 +39,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-from fetchtastic.download.interfaces import DownloadResult
+from fetchtastic.download.interfaces import DownloadResult, Release
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 
 NIGHTLY_BASE = FIRMWARE_NIGHTLY_BASE_URL
@@ -1698,7 +1698,9 @@ def test_stable_cleanup_preserves_nightlies_dir(downloader, tmp_path):
 
     # Run stable cleanup with keep_limit=0 and no cached releases.
     downloader.config["FILTER_REVOKED_RELEASES"] = False
-    downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+    downloader.cleanup_old_versions(
+        keep_limit=0, cached_releases=[Release(tag_name="v2.8.0", prerelease=False)]
+    )
 
     # The nightlies directory and its contents must survive.
     assert nightly_dir.is_dir()
@@ -1720,7 +1722,9 @@ def test_stable_cleanup_preserves_nightlies_with_symlink(downloader, tmp_path):
         pytest.skip("Symlinks not supported on this platform")
 
     downloader.config["FILTER_REVOKED_RELEASES"] = False
-    downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+    downloader.cleanup_old_versions(
+        keep_limit=0, cached_releases=[Release(tag_name="v2.8.0", prerelease=False)]
+    )
 
     # Symlink must survive.
     assert (firmware_dir / nightly_dir_name).is_symlink()
