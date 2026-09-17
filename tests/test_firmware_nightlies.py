@@ -28,6 +28,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 from fetchtastic import constants
 from fetchtastic.constants import (
@@ -785,6 +786,75 @@ def test_fetch_firmware_nightlies_skips_missing_target_manifest(
     assert f"firmware-rak4631-{BUILD_2_8_0}.mt.json" in names
     # Nothing from the missing variant.
     assert not any("xiao_nrf54l15_lr2021" in name for name in names)
+
+
+def test_fetch_firmware_nightlies_skips_target_manifest_fetch_error(
+    downloader, mock_cache_manager
+):
+    """A per-target transport failure skips only that variant."""
+    release_body = _make_nightly_release_body(boards=("rak4631", "tbeam"))
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631", "tbeam"))
+
+    def _target_manifest(target_id, **_):
+        if target_id.startswith("tbeam-"):
+            raise requests.Timeout("target manifest timed out")
+        return target_bodies[target_id]
+
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(side_effect=_target_manifest)
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    names = [entry["name"] for entry in entries]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert not any("tbeam" in name for name in names)
+
+
+def test_fetch_firmware_nightlies_skips_empty_files_target(
+    downloader, mock_cache_manager
+):
+    """A target manifest with no payload files contributes nothing."""
+    release_body = _make_nightly_release_body(boards=("rak4631", "tbeam"))
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631", "tbeam"))
+    target_bodies[f"tbeam-{BUILD_2_8_0}"] = {
+        "version": BUILD_2_8_0,
+        "files": [],
+    }
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager = mock_cache_manager
+
+    entries = downloader.fetch_firmware_nightlies()
+    names = [entry["name"] for entry in entries]
+    assert f"firmware-rak4631-{BUILD_2_8_0}.uf2" in names
+    assert f"firmware-tbeam-{BUILD_2_8_0}.mt.json" not in names
+
+
+def test_fetch_firmware_nightlies_empty_when_only_unpublished_payloads_exist(
+    downloader, mock_cache_manager
+):
+    """Synthetic manifests alone must never make a nightly finalizable."""
+    release_body = _make_nightly_release_body(boards=("tbeam",))
+    target_body = {
+        "version": BUILD_2_8_0,
+        "files": [
+            {
+                "name": f"firmware-tbeam-{BUILD_2_8_0}.elf",
+                "md5": "a" * 32,
+                "bytes": 123,
+            }
+        ],
+    }
+    mock_cache_manager.get_nightly_index = Mock(return_value=_make_nightly_index_body())
+    mock_cache_manager.get_nightly_release_manifest = Mock(return_value=release_body)
+    mock_cache_manager.get_nightly_target_manifest = Mock(return_value=target_body)
+    downloader.cache_manager = mock_cache_manager
+
+    assert downloader.fetch_firmware_nightlies() == []
 
 
 def test_fetch_firmware_nightlies_empty_when_all_target_manifests_missing(

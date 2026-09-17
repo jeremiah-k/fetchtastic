@@ -3124,7 +3124,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         skipped_unpublished_outputs = 0
         skipped_targets = 0
-        resolved_targets = 0
+        published_payloads = 0
 
         # Target manifests are version-addressed by build id. Reuse their
         # longer bounded cache and one HTTP session so routine reruns do not
@@ -3146,9 +3146,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     skipped_targets += 1
                     continue
                 target_id = f"{board}-{version}"
-                target_manifest = self.cache_manager.get_nightly_target_manifest(
-                    target_id, session=target_session
-                )
+                try:
+                    target_manifest = self.cache_manager.get_nightly_target_manifest(
+                        target_id, session=target_session
+                    )
+                except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+                    logger.warning(
+                        "firmware-nightly target manifest fetch failed for %s: %s; "
+                        "skipping that variant",
+                        target_id,
+                        exc,
+                    )
+                    skipped_targets += 1
+                    continue
                 if not isinstance(target_manifest, dict) or not target_manifest:
                     # Nightly publishing is rolling: a per-variant manifest can
                     # 404 while the rest of the generation is already live (or
@@ -3194,6 +3204,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     skipped_targets += 1
                     continue
 
+                published_files = []
+                for file_entry in files:
+                    name = file_entry["name"]
+                    if name.lower().endswith(_NIGHTLY_UNPUBLISHED_TARGET_SUFFIXES):
+                        skipped_unpublished_outputs += 1
+                        continue
+                    published_files.append(file_entry)
+
+                if not published_files:
+                    logger.warning(
+                        "firmware-nightly target manifest %s has no published payloads; "
+                        "skipping that variant",
+                        target_id,
+                    )
+                    skipped_targets += 1
+                    continue
+
                 # Per-device manifests were downloadable assets in the legacy
                 # nightly directory. Emit them explicitly because the new R2
                 # manifest's ``files`` array contains payloads only.
@@ -3208,13 +3235,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         "type": "file",
                     }
                 )
-                resolved_targets += 1
-
-                for f in files:
+                for f in published_files:
                     name = f["name"]
-                    if name.lower().endswith(_NIGHTLY_UNPUBLISHED_TARGET_SUFFIXES):
-                        skipped_unpublished_outputs += 1
-                        continue
                     entries.append(
                         {
                             "name": name,
@@ -3228,14 +3250,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             ),
                         }
                     )
+                    published_payloads += 1
 
-        if resolved_targets == 0:
-            # Every variant manifest is absent: the generation is mid-upload
-            # (or the bucket is broken). Treat it like an unpublished nightly
+        if published_payloads == 0:
+            # Every variant contributes zero published device payloads: the
+            # generation is mid-upload (or the bucket is broken). Treat it like
+            # an unpublished nightly
             # rather than an error, so the orchestrator leaves state UNCHECKED
             # and the next run retries the same build from a clean slate.
             logger.warning(
-                "firmware-nightly build %s has no target manifests available; "
+                "firmware-nightly build %s has no published target payloads available; "
                 "treating as not yet published",
                 version,
             )
