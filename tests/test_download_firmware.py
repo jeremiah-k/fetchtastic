@@ -3186,6 +3186,20 @@ class TestFirmwareUncoveredBranches:
 
         assert not expired_file.exists()
 
+    def test_manage_prerelease_tracking_files_honors_explicit_empty_cache(
+        self, mock_config, tmp_path
+    ):
+        """An explicitly supplied empty release cache must not trigger a refetch."""
+        cache_dir = tmp_path / "cache"
+        real_cache = CacheManager(cache_dir=str(cache_dir))
+        dl = FirmwareReleaseDownloader(mock_config, real_cache)
+        (cache_dir / "prerelease_tracking").mkdir(parents=True)
+        dl.get_releases = Mock(return_value=[Release(tag_name="v9.9.9")])
+
+        dl.manage_prerelease_tracking_files(cached_releases=[])
+
+        dl.get_releases.assert_not_called()
+
     def test_manage_prerelease_tracking_files_leaves_cache_root_files_alone(
         self, mock_config, tmp_path
     ):

@@ -2786,7 +2786,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Get current prereleases from GitHub (if available)
         # Use cached releases if provided to avoid redundant API calls
-        current_releases = cached_releases or self.get_releases(limit=10)
+        current_releases = (
+            cached_releases
+            if cached_releases is not None
+            else self.get_releases(limit=10)
+        )
         version_manager = VersionManager()
         prerelease_manager = PrereleaseHistoryManager()
 
