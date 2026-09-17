@@ -2825,6 +2825,166 @@ class TestFirmwareUncoveredBranches:
         assert len(_successes) == 1
         assert _successes[0].was_skipped is True
 
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    def test_download_prerelease_assets_size_mismatch_redownloads(
+        self, mock_download, downloader, tmp_path, mocker
+    ):
+        """An existing file whose size differs from the remote listing must re-download.
+
+        Upstream can republish different bytes under the same prerelease
+        directory/file name (CI rebuild of the same commit); the local hash
+        sidecar stays self-consistent, so the remote size is the only signal.
+        """
+        downloader.download_dir = str(tmp_path)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease" / "test-dir"
+        prerelease_dir.mkdir(parents=True)
+        stale_path = prerelease_dir / "firmware.bin"
+        stale_path.write_bytes(b"stale-bytes")
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "firmware.bin",
+                    "download_url": "https://example.com/firmware.bin",
+                    "size": stale_path.stat().st_size + 1024,
+                }
+            ]
+        )
+
+        mocker.patch(
+            "fetchtastic.download.firmware.verify_file_integrity", return_value=True
+        )
+        mock_download.return_value = True
+
+        successes, _failures, any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=False,
+        )
+
+        mock_download.assert_called_once()
+        assert len(successes) == 1
+        assert successes[0].was_skipped is False
+        assert any_downloaded is True
+
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    def test_download_prerelease_assets_zero_remote_size_redownloads_nonempty_local(
+        self, mock_download, downloader, tmp_path, mocker
+    ):
+        """A published zero-byte size is authoritative, not a missing-size sentinel."""
+        downloader.download_dir = str(tmp_path)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease" / "test-dir"
+        prerelease_dir.mkdir(parents=True)
+        stale_path = prerelease_dir / "firmware.bin"
+        stale_path.write_bytes(b"stale-bytes")
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "firmware.bin",
+                    "download_url": "https://example.com/firmware.bin",
+                    "size": 0,
+                }
+            ]
+        )
+        mocker.patch(
+            "fetchtastic.download.firmware.verify_file_integrity", return_value=True
+        )
+        mock_download.return_value = True
+
+        successes, _failures, any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=False,
+        )
+
+        mock_download.assert_called_once()
+        assert len(successes) == 1
+        assert successes[0].was_skipped is False
+        assert any_downloaded is True
+
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    def test_download_prerelease_assets_matching_size_reuses_without_download(
+        self, mock_download, downloader, tmp_path, mocker
+    ):
+        """An existing non-zip file with matching remote size is reused as-is."""
+        downloader.download_dir = str(tmp_path)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease" / "test-dir"
+        prerelease_dir.mkdir(parents=True)
+        existing_path = prerelease_dir / "firmware.bin"
+        existing_path.write_bytes(b"same-bytes")
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "firmware.bin",
+                    "download_url": "https://example.com/firmware.bin",
+                    "size": existing_path.stat().st_size,
+                }
+            ]
+        )
+
+        mocker.patch(
+            "fetchtastic.download.firmware.verify_file_integrity", return_value=True
+        )
+
+        successes, _failures, any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=False,
+        )
+
+        mock_download.assert_not_called()
+        assert len(successes) == 1
+        assert successes[0].was_skipped is True
+        assert any_downloaded is False
+
+    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    def test_download_prerelease_assets_missing_remote_size_falls_back_to_integrity(
+        self, mock_download, downloader, tmp_path, mocker
+    ):
+        """No remote size in the listing: integrity check alone decides reuse."""
+        downloader.download_dir = str(tmp_path)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease" / "test-dir"
+        prerelease_dir.mkdir(parents=True)
+        (prerelease_dir / "firmware.bin").write_bytes(b"same-bytes")
+
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {
+                    "type": "file",
+                    "name": "firmware.bin",
+                    "download_url": "https://example.com/firmware.bin",
+                    "size": None,
+                }
+            ]
+        )
+
+        mocker.patch(
+            "fetchtastic.download.firmware.verify_file_integrity", return_value=True
+        )
+
+        successes, _failures, any_downloaded = downloader._download_prerelease_assets(
+            "test-dir",
+            selected_patterns=[],
+            exclude_patterns=[],
+            force_refresh=False,
+        )
+
+        mock_download.assert_not_called()
+        assert len(successes) == 1
+        assert successes[0].was_skipped is True
+
     # Lines 1593-1596: Executable permissions for .sh files
     @patch("fetchtastic.download.firmware.download_file_with_retry")
     @patch("os.chmod")
