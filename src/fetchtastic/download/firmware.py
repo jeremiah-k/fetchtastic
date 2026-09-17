@@ -1465,7 +1465,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     reason_text,
                 )
                 all_releases = self.get_releases(limit=fetch_limit)
-            if not all_releases and (keep_limit > 0 or keep_last_beta):
+            if not all_releases:
+                # An empty release list means the fetch failed or returned
+                # nothing usable. With keep_limit == 0 that must NOT be read
+                # as "keep set is empty, delete everything": destructive
+                # cleanup requires affirmative release data. (With a
+                # successful fetch, keep_limit == 0 still deletes all
+                # version directories below.)
                 logger.warning(
                     "Skipping firmware cleanup: no releases available to determine keep set."
                 )

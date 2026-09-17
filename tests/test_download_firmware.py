@@ -635,7 +635,8 @@ class TestFirmwareReleaseDownloader:
         )
         mock_scandir.return_value.__exit__ = Mock(return_value=None)
 
-        downloader.get_releases = Mock(return_value=[])
+        # A successful fetch with keep_limit=0 still deletes all versions.
+        downloader.get_releases = Mock(return_value=[Release(tag_name="v9.0.0")])
 
         downloader.cleanup_old_versions(keep_limit=0)
 
@@ -649,6 +650,42 @@ class TestFirmwareReleaseDownloader:
         removed_paths = {call[0][0] for call in calls}
         assert any("v1.0.0" in path for path in removed_paths)
         assert any("v2.0.0" in path for path in removed_paths)
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("fetchtastic.download.firmware._safe_rmtree")
+    def test_cleanup_old_versions_keep_zero_empty_fetch_skips(
+        self, mock_safe_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """keep_limit=0 must not delete everything when the release fetch failed.
+
+        An empty release list (API failure or unusable payload) is not
+        affirmative data; destructive cleanup requires a real release list.
+        """
+        mock_exists.return_value = True
+
+        mock_entry1 = Mock()
+        mock_entry1.name = "v1.0.0"
+        mock_entry1.is_dir.return_value = True
+        mock_entry1.is_symlink.return_value = False
+        mock_entry1.path = "/path/to/firmware/v1.0.0"
+
+        mock_entry2 = Mock()
+        mock_entry2.name = "v2.0.0"
+        mock_entry2.is_dir.return_value = True
+        mock_entry2.is_symlink.return_value = False
+        mock_entry2.path = "/path/to/firmware/v2.0.0"
+
+        mock_scandir.return_value.__enter__ = Mock(
+            return_value=[mock_entry1, mock_entry2]
+        )
+        mock_scandir.return_value.__exit__ = Mock(return_value=None)
+
+        downloader.get_releases = Mock(return_value=[])
+
+        downloader.cleanup_old_versions(keep_limit=0)
+
+        mock_safe_rmtree.assert_not_called()
 
     @patch("os.path.exists")
     @patch("os.scandir")
@@ -1626,7 +1663,9 @@ class TestFirmwareReleaseDownloader:
         mock_scandir.return_value.__exit__.return_value = None
 
         with patch("fetchtastic.download.firmware.logger.warning") as mock_warning:
-            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+            downloader.cleanup_old_versions(
+                keep_limit=0, cached_releases=[Release(tag_name="v9.0.0")]
+            )
 
         mock_warning.assert_any_call(
             "Skipping symlink in firmware directory during cleanup: %s",
@@ -1655,7 +1694,9 @@ class TestFirmwareReleaseDownloader:
             patch("fetchtastic.download.firmware.logger.debug") as mock_debug,
             patch("fetchtastic.download.firmware._safe_rmtree") as mock_safe_rmtree,
         ):
-            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+            downloader.cleanup_old_versions(
+                keep_limit=0, cached_releases=[Release(tag_name="v9.0.0")]
+            )
 
         mock_warning.assert_not_called()
         assert not any(
@@ -1686,7 +1727,9 @@ class TestFirmwareReleaseDownloader:
         mock_scandir.return_value.__exit__.return_value = None
 
         with patch("fetchtastic.download.firmware.logger.debug") as mock_debug:
-            downloader.cleanup_old_versions(keep_limit=0, cached_releases=[])
+            downloader.cleanup_old_versions(
+                keep_limit=0, cached_releases=[Release(tag_name="v9.0.0")]
+            )
 
         mock_debug.assert_any_call(
             "Preserving non-symlink latest entry that may block latest pointer creation: %s",
