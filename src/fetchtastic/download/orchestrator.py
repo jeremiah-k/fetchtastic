@@ -75,7 +75,7 @@ from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .run_lock import RunLock
+from .run_lock import RunLock, RunLockAcquireResult
 from .version import VersionManager, is_prerelease_directory
 
 
@@ -274,18 +274,24 @@ class DownloadOrchestrator:
         self.release_check_failed = False
         self.pipeline_lock_skipped = False
 
-        if not self._acquire_run_lock():
+        lock_result = self._acquire_run_lock()
+        if lock_result is RunLockAcquireResult.CONTENDED:
             logger.warning(
                 "Another fetchtastic download run is active (%s); skipping this "
                 "run to avoid racing its downloads and cleanup.",
                 (
                     self._run_lock.describe_holder()
                     if self._run_lock is not None
-                    else "lock unavailable"
+                    else "unknown holder"
                 ),
             )
             self.pipeline_lock_skipped = True
             return [], []
+        if lock_result is RunLockAcquireResult.UNAVAILABLE:
+            logger.warning(
+                "Cross-process run lock is unavailable; proceeding unlocked. "
+                "Avoid overlapping fetchtastic runs for this invocation."
+            )
 
         try:
             self._run_download_pipeline_locked(start_time)
@@ -334,23 +340,28 @@ class DownloadOrchestrator:
         # Log summary
         self._log_download_summary(start_time)
 
-    def _acquire_run_lock(self) -> bool:
-        """Acquire the cross-process run lock for DOWNLOAD_DIR.
+    def _acquire_run_lock(self) -> RunLockAcquireResult:
+        """Acquire the run lock, distinguishing contention from unavailability.
 
-        Locking is best-effort: when no DOWNLOAD_DIR is configured, or the
-        lock directory cannot be created, the pipeline proceeds unlocked
-        exactly as before.
+        No configured ``DOWNLOAD_DIR`` is equivalent to running unlocked and
+        therefore returns ``ACQUIRED`` with no lock object. A genuine locking
+        failure returns ``UNAVAILABLE`` so the pipeline can preserve the
+        documented best-effort fallback instead of reporting false contention.
         """
         self._run_lock = None
         download_dir = self.config.get("DOWNLOAD_DIR")
         if not isinstance(download_dir, str) or not download_dir.strip():
-            return True
+            return RunLockAcquireResult.ACQUIRED
         lock = RunLock(os.path.join(download_dir, RUN_LOCK_FILENAME))
-        acquired = lock.acquire()
-        # Keep the lock object even when acquisition failed so the skip
-        # warning can describe the live holder.
-        self._run_lock = lock
-        return acquired
+        result = lock.acquire()
+        if result in {
+            RunLockAcquireResult.ACQUIRED,
+            RunLockAcquireResult.CONTENDED,
+        }:
+            # Keep the object on contention so the skip warning can describe
+            # the holder. Unavailable locks are not owned and need no release.
+            self._run_lock = lock
+        return result
 
     def _release_run_lock(self) -> None:
         if self._run_lock is not None:

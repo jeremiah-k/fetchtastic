@@ -1,88 +1,38 @@
-"""Tests for the cross-process download run lock (download/run_lock.py).
-
-The lock serializes overlapping fetchtastic download runs and must never
-get stuck: a dead holder is taken over immediately (POSIX PID probe), an
-unprobeable holder (Windows / another host / malformed payload) is taken
-over after the TTL, and takeover/release never delete a lock they do not
-own.
-"""
+"""Tests for the cross-process download run lock."""
 
 import json
 import os
-import platform
-import time
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.constants import (
-    RUN_LOCK_FILENAME,
-    RUN_LOCK_STALE_TTL_SECONDS,
-)
-from fetchtastic.download.run_lock import RunLock
+from fetchtastic.constants import RUN_LOCK_FILENAME
+from fetchtastic.download.run_lock import RunLock, RunLockAcquireResult
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
-def _write_lock(
-    path: Path,
-    *,
-    pid=os.getpid(),
-    host=platform.node(),
-    acquired_at=None,
-    extra=None,
-) -> None:
-    payload = {
-        "token": "manual-test-token",
-        "pid": pid,
-        "host": host,
-        "acquired_at": acquired_at or datetime.now(timezone.utc).isoformat(),
-    }
-    if extra:
-        payload.update(extra)
-    path.write_text(json.dumps(payload), encoding="utf-8")
-
-
-def _dead_pid() -> int:
-    """A PID that is provably not running (above any default pid_max)."""
-    return 2**31 - 1
-
-
-# ------------------------------------------------------------------
-# acquire / release basics
-# ------------------------------------------------------------------
-
-
-def test_acquire_creates_lock_and_release_removes_it(tmp_path):
+def test_acquire_holds_os_lock_and_release_makes_it_available(tmp_path):
     lock_path = tmp_path / RUN_LOCK_FILENAME
-    lock = RunLock(str(lock_path))
+    first = RunLock(str(lock_path))
 
-    assert lock.acquire() is True
-    assert lock.locked is True
-    assert lock_path.exists()
-
+    assert first.acquire() is RunLockAcquireResult.ACQUIRED
+    assert first.locked is True
     payload = json.loads(lock_path.read_text(encoding="utf-8"))
     assert payload["pid"] == os.getpid()
 
-    lock.release()
-    assert lock.locked is False
-    assert not lock_path.exists()
-
-
-def test_second_acquire_fails_while_holder_alive(tmp_path):
-    lock_path = tmp_path / RUN_LOCK_FILENAME
-    first = RunLock(str(lock_path))
-    assert first.acquire() is True
-
     second = RunLock(str(lock_path))
-    assert second.acquire() is False
+    assert second.acquire() is RunLockAcquireResult.CONTENDED
     assert second.locked is False
-    # The live holder's lock is untouched by the failed attempt.
-    assert lock_path.exists()
 
     first.release()
-    assert RunLock(str(lock_path)).acquire() is True
+    assert first.locked is False
+    # The rendezvous path persists, but no process owns it now.
+    assert lock_path.exists()
+    replacement = RunLock(str(lock_path))
+    assert replacement.acquire() is RunLockAcquireResult.ACQUIRED
+    replacement.release()
 
 
 def test_context_manager_releases_on_exit(tmp_path):
@@ -90,80 +40,73 @@ def test_context_manager_releases_on_exit(tmp_path):
     with RunLock(str(lock_path)) as lock:
         assert lock.locked is True
         assert lock_path.exists()
-    assert not lock_path.exists()
+    replacement = RunLock(str(lock_path))
+    assert replacement.acquire() is RunLockAcquireResult.ACQUIRED
+    replacement.release()
 
 
-# ------------------------------------------------------------------
-# stale takeover
-# ------------------------------------------------------------------
-
-
-@pytest.mark.skipif(os.name != "posix", reason="PID liveness probe is POSIX-only")
-def test_dead_holder_taken_over_immediately(tmp_path):
-    lock_path = tmp_path / RUN_LOCK_FILENAME
-    # Fresh timestamp, same host, but the holder process is gone: the PID
-    # probe must recover instantly instead of waiting out the TTL.
-    _write_lock(lock_path, pid=_dead_pid())
-
-    assert RunLock(str(lock_path)).acquire() is True
-
-
-@pytest.mark.skipif(os.name != "posix", reason="PID liveness probe is POSIX-only")
-def test_live_same_host_holder_respected_regardless_of_age(tmp_path):
-    lock_path = tmp_path / RUN_LOCK_FILENAME
-    old = (
-        datetime.now(timezone.utc) - timedelta(seconds=RUN_LOCK_STALE_TTL_SECONDS * 10)
-    ).isoformat()
-    # Old timestamp but the PID (this test process) is alive: held.
-    _write_lock(lock_path, pid=os.getpid(), acquired_at=old)
-
-    assert RunLock(str(lock_path)).acquire() is False
-
-
-def test_remote_host_holder_respected_until_ttl(tmp_path):
-    lock_path = tmp_path / RUN_LOCK_FILENAME
-    _write_lock(lock_path, host="some-other-host")
-
-    assert RunLock(str(lock_path)).acquire() is False
-
-    old = (
-        datetime.now(timezone.utc) - timedelta(seconds=RUN_LOCK_STALE_TTL_SECONDS + 60)
-    ).isoformat()
-    _write_lock(lock_path, host="some-other-host", acquired_at=old)
-
-    assert RunLock(str(lock_path)).acquire() is True
-
-
-def test_malformed_lock_respected_until_ttl(tmp_path):
-    lock_path = tmp_path / RUN_LOCK_FILENAME
-    lock_path.write_text("not json at all", encoding="utf-8")
-    os.utime(lock_path, (time.time(), time.time()))
-
-    assert RunLock(str(lock_path)).acquire() is False
-
-    stale = time.time() - (RUN_LOCK_STALE_TTL_SECONDS + 60)
-    os.utime(lock_path, (stale, stale))
-
-    assert RunLock(str(lock_path)).acquire() is True
-
-
-def test_release_never_removes_successor_lock(tmp_path):
+def test_holder_description_comes_from_diagnostic_payload(tmp_path):
     lock_path = tmp_path / RUN_LOCK_FILENAME
     first = RunLock(str(lock_path))
-    assert first.acquire() is True
+    assert first.acquire() is RunLockAcquireResult.ACQUIRED
 
-    # Simulate a TTL takeover: a successor replaced our lock.
-    _write_lock(lock_path, extra={"token": "successor-token"})
+    second = RunLock(str(lock_path))
+    assert second.acquire() is RunLockAcquireResult.CONTENDED
+    description = second.describe_holder()
+    assert f"PID {os.getpid()}" in description
+    assert "started " in description
     first.release()
 
-    # The successor's lock survives our release.
-    payload = json.loads(lock_path.read_text(encoding="utf-8"))
-    assert payload["token"] == "successor-token"
+
+def test_old_mtime_never_steals_live_os_lock(tmp_path):
+    """A live lock is authoritative regardless of timestamps or run duration."""
+    lock_path = tmp_path / RUN_LOCK_FILENAME
+    first = RunLock(str(lock_path))
+    assert first.acquire() is RunLockAcquireResult.ACQUIRED
+    os.utime(lock_path, (1, 1))
+
+    second = RunLock(str(lock_path))
+    assert second.acquire() is RunLockAcquireResult.CONTENDED
+    first.release()
 
 
-# ------------------------------------------------------------------
-# orchestrator integration
-# ------------------------------------------------------------------
+def test_idle_rendezvous_file_never_blocks_next_run(tmp_path):
+    lock_path = tmp_path / RUN_LOCK_FILENAME
+    lock_path.write_text("stale diagnostic bytes", encoding="utf-8")
+    os.utime(lock_path, (1, 1))
+
+    lock = RunLock(str(lock_path))
+    assert lock.acquire() is RunLockAcquireResult.ACQUIRED
+    lock.release()
+
+
+def test_payload_write_failure_returns_unavailable_without_holding_lock(
+    tmp_path, monkeypatch
+):
+    lock_path = tmp_path / RUN_LOCK_FILENAME
+    first = RunLock(str(lock_path))
+
+    def _fail_write(_handle, _payload):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(first, "_write_payload", _fail_write)
+    assert first.acquire() is RunLockAcquireResult.UNAVAILABLE
+    assert first.locked is False
+
+    # A failed metadata write cannot strand or simulate contention. The next
+    # process acquires the OS lock immediately even if the rendezvous file exists.
+    second = RunLock(str(lock_path))
+    assert second.acquire() is RunLockAcquireResult.ACQUIRED
+    second.release()
+
+
+def test_open_failure_returns_unavailable(tmp_path):
+    parent_as_file = tmp_path / "not-a-directory"
+    parent_as_file.write_text("x", encoding="utf-8")
+    lock = RunLock(str(parent_as_file / RUN_LOCK_FILENAME))
+
+    assert lock.acquire() is RunLockAcquireResult.UNAVAILABLE
+    assert lock.locked is False
 
 
 def _patched_pipeline(orchestrator, monkeypatch):
@@ -185,25 +128,24 @@ def _patched_pipeline(orchestrator, monkeypatch):
     return calls
 
 
-def test_pipeline_skips_when_run_lock_held(tmp_path, monkeypatch):
+def test_pipeline_skips_only_for_real_contention(tmp_path, monkeypatch):
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
     config = {"DOWNLOAD_DIR": str(tmp_path)}
+    holder = RunLock(str(tmp_path / RUN_LOCK_FILENAME))
+    assert holder.acquire() is RunLockAcquireResult.ACQUIRED
+
     orchestrator = DownloadOrchestrator(config)
-    _patched_pipeline(orchestrator, monkeypatch)
-
-    live_lock = tmp_path / RUN_LOCK_FILENAME
-    _write_lock(live_lock, pid=os.getpid())
-
+    calls = _patched_pipeline(orchestrator, monkeypatch)
     results, failures = orchestrator.run_download_pipeline()
 
     assert results == [] and failures == []
+    assert calls == []
     assert orchestrator.pipeline_lock_skipped is True
-    # The pipeline body never ran and the holder's lock is untouched.
-    assert os.path.exists(live_lock)
+    holder.release()
 
 
-def test_pipeline_creates_and_releases_lock(tmp_path, monkeypatch):
+def test_pipeline_runs_and_releases_kernel_lock(tmp_path, monkeypatch):
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
     config = {"DOWNLOAD_DIR": str(tmp_path)}
@@ -212,32 +154,33 @@ def test_pipeline_creates_and_releases_lock(tmp_path, monkeypatch):
 
     results, failures = orchestrator.run_download_pipeline()
 
+    assert results == [] and failures == []
     assert orchestrator.pipeline_lock_skipped is False
     assert "firmware" in calls and "app" in calls
-    # The lock is released after the run.
-    assert not (tmp_path / RUN_LOCK_FILENAME).exists()
+    # The persistent rendezvous file is idle and immediately re-acquirable.
+    probe = RunLock(str(tmp_path / RUN_LOCK_FILENAME))
+    assert probe.acquire() is RunLockAcquireResult.ACQUIRED
+    probe.release()
 
 
-def test_pipeline_takes_over_stale_lock(tmp_path, monkeypatch):
+def test_pipeline_runs_unlocked_when_locking_is_unavailable(tmp_path, monkeypatch):
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
-    config = {"DOWNLOAD_DIR": str(tmp_path)}
-    orchestrator = DownloadOrchestrator(config)
-    _patched_pipeline(orchestrator, monkeypatch)
-
-    stale_lock = tmp_path / RUN_LOCK_FILENAME
-    old = (
-        datetime.now(timezone.utc) - timedelta(seconds=RUN_LOCK_STALE_TTL_SECONDS + 60)
-    ).isoformat()
-    _write_lock(stale_lock, host="crashed-host", acquired_at=old)
+    orchestrator = DownloadOrchestrator({"DOWNLOAD_DIR": str(tmp_path)})
+    calls = _patched_pipeline(orchestrator, monkeypatch)
+    monkeypatch.setattr(
+        orchestrator,
+        "_acquire_run_lock",
+        lambda: RunLockAcquireResult.UNAVAILABLE,
+    )
 
     orchestrator.run_download_pipeline()
 
     assert orchestrator.pipeline_lock_skipped is False
-    assert not stale_lock.exists()
+    assert "firmware" in calls and "app" in calls
 
 
-def test_pipeline_runs_unlocked_without_download_dir(tmp_path, monkeypatch):
+def test_pipeline_runs_unlocked_without_download_dir(monkeypatch):
     from fetchtastic.download.orchestrator import DownloadOrchestrator
 
     orchestrator = DownloadOrchestrator({"DOWNLOAD_DIR": ""})
@@ -246,17 +189,10 @@ def test_pipeline_runs_unlocked_without_download_dir(tmp_path, monkeypatch):
     orchestrator.run_download_pipeline()
 
     assert orchestrator.pipeline_lock_skipped is False
-    assert "firmware" in calls
-
-
-# ------------------------------------------------------------------
-# CLI summary gating
-# ------------------------------------------------------------------
+    assert "firmware" in calls and "app" in calls
 
 
 def test_cli_summary_reports_skipped_run_instead_of_up_to_date(tmp_path):
-    from unittest.mock import Mock, patch
-
     from fetchtastic.constants import NightlyRunState
     from fetchtastic.download.cli_integration import DownloadCLIIntegration
 
@@ -298,6 +234,6 @@ def test_cli_summary_reports_skipped_run_instead_of_up_to_date(tmp_path):
         )
 
     mock_up_to_date.assert_not_called()
-    logged = " ".join(str(c) for c in mock_log.info.call_args_list)
+    logged = " ".join(str(call) for call in mock_log.info.call_args_list)
     assert "another fetchtastic download run is active" in logged
     assert "up to date" not in logged
