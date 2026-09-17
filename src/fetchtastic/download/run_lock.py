@@ -120,7 +120,9 @@ class RunLock:
         try:
             handle = open(self.lock_path, "a+b")
         except OSError as exc:
-            logger.debug("Run lock unavailable (cannot open %s): %s", self.lock_path, exc)
+            logger.debug(
+                "Run lock unavailable (cannot open %s): %s", self.lock_path, exc
+            )
             return RunLockAcquireResult.UNAVAILABLE
 
         try:
@@ -143,7 +145,9 @@ class RunLock:
         try:
             self._write_payload(handle, payload)
         except OSError as exc:
-            logger.debug("Run lock payload write failed for %s: %s", self.lock_path, exc)
+            logger.debug(
+                "Run lock payload write failed for %s: %s", self.lock_path, exc
+            )
             self._clear_payload(handle)
             try:
                 _unlock_file(handle)
