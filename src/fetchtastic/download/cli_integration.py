@@ -21,7 +21,13 @@ from fetchtastic.client_release_discovery import (
 )
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
+    APK_PRERELEASES_DIR_NAME,
+    APP_DIR_NAME,
+    APP_SNAPSHOTS_DIR_NAME,
     CLIENT_APP_FILE_TYPES,
+    DEFAULT_CHECK_APP_PRERELEASES,
+    DEFAULT_CHECK_APP_SNAPSHOTS,
+    DEFAULT_CHECK_FIRMWARE_NIGHTLIES,
     DEFAULT_NOTIFY_ON_FIRMWARE_NIGHTLIES,
     DEFAULT_NOTIFY_ON_SNAPSHOTS,
     DESKTOP_FILE_TYPES,
@@ -37,9 +43,14 @@ from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_FILE_TYPES,
+    FIRMWARE_NIGHTLIES_DIR_NAME,
+    FIRMWARE_PRERELEASES_DIR_NAME,
+    REPO_DOWNLOADS_DIR,
     SNAPSHOT_VERSION_CODE_PATTERN,
+    STORAGE_CHANNEL_SUFFIXES,
     NightlyRunState,
 )
 from fetchtastic.log_utils import logger
@@ -362,6 +373,137 @@ class DownloadCLIIntegration:
             logger.warning(f"Error clearing caches: {e}")
             return False
 
+    # ------------------------------------------------------------------
+    # Download-summary helpers: resolve the newest local copy of each asset
+    # type so the latest-version summary can show how fresh each one is.
+    # ------------------------------------------------------------------
+
+    def _download_base_dir(self) -> Optional[str]:
+        """Return the configured DOWNLOAD_DIR, or None when unavailable."""
+        cfg = self.config if isinstance(self.config, dict) else None
+        base = cfg.get("DOWNLOAD_DIR") if cfg else None
+        return base if isinstance(base, str) and base.strip() else None
+
+    @staticmethod
+    def _first_existing_dir(base: Optional[str], *names: str) -> Optional[str]:
+        """Return the first name in ``names`` that exists as a directory under ``base``."""
+        if not base:
+            return None
+        for name in names:
+            candidate = os.path.join(base, name)
+            if os.path.isdir(candidate):
+                return candidate
+        return None
+
+    def _downloaded_age_suffix(self, local_dir: Optional[str]) -> str:
+        """
+        Describe how long ago ``local_dir`` was last written, for summary lines.
+
+        Returns ``" (downloaded <age> ago)"`` derived from the directory mtime
+        (set when its files were downloaded), ``" (not downloaded yet)"`` when a
+        download directory is configured but the version is absent locally, and
+        ``""`` when no download directory is known (library use) so that no
+        claim about local state is made.
+        """
+        if not self._download_base_dir():
+            return ""
+        if local_dir is None:
+            return " (not downloaded yet)"
+        try:
+            age = time.time() - os.path.getmtime(local_dir)
+        except OSError:
+            return " (not downloaded yet)"
+        if age < 120:
+            return " (downloaded just now)"
+        minutes = int(age // 60)
+        if minutes < 60:
+            return f" (downloaded {minutes}m ago)"
+        hours = int(age // 3600)
+        if hours < 48:
+            return f" (downloaded {hours}h ago)"
+        return f" (downloaded {int(age // 86400)}d ago)"
+
+    def _local_firmware_release_dir(self, tag: Optional[str]) -> Optional[str]:
+        """
+        Locate the stored directory for a firmware release tag.
+
+        Covers the channel-suffixed storage layouts (``<tag>-alpha`` and
+        friends) and the ``-revoked`` suffix used for filtered releases.
+        """
+        base = self._download_base_dir()
+        if not base or not tag:
+            return None
+        firmware_base = os.path.join(base, FIRMWARE_DIR_NAME)
+        candidates = [
+            tag,
+            *(f"{tag}-{channel}" for channel in sorted(STORAGE_CHANNEL_SUFFIXES)),
+            f"{tag}-revoked",
+        ]
+        return self._first_existing_dir(firmware_base, *candidates)
+
+    def _local_firmware_prerelease_dir(
+        self, identifier: Optional[str]
+    ) -> Optional[str]:
+        """Locate the stored directory for a repo-based firmware prerelease identifier."""
+        base = self._download_base_dir()
+        if not base or not identifier:
+            return None
+        names = (identifier, f"{FIRMWARE_DIR_PREFIX}{identifier}")
+        for parent in (REPO_DOWNLOADS_DIR, FIRMWARE_PRERELEASES_DIR_NAME):
+            found = self._first_existing_dir(
+                os.path.join(base, FIRMWARE_DIR_NAME, parent), *names
+            )
+            if found:
+                return found
+        return None
+
+    def _local_firmware_nightly_dir(self, build_id: Optional[str]) -> Optional[str]:
+        """Locate the stored directory for a firmware-nightly build id."""
+        base = self._download_base_dir()
+        if not base or not build_id:
+            return None
+        return self._first_existing_dir(
+            os.path.join(base, FIRMWARE_DIR_NAME, FIRMWARE_NIGHTLIES_DIR_NAME),
+            build_id,
+        )
+
+    def _local_app_dir(
+        self, tag: Optional[str], *, prerelease: bool = False
+    ) -> Optional[str]:
+        """Locate the stored directory for a client app release or prerelease tag."""
+        base = self._download_base_dir()
+        if not base or not tag:
+            return None
+        if prerelease:
+            return self._first_existing_dir(
+                os.path.join(base, APP_DIR_NAME, APK_PRERELEASES_DIR_NAME), tag
+            )
+        return self._first_existing_dir(os.path.join(base, APP_DIR_NAME), tag)
+
+    def _local_snapshot_entry(self) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Return ``(versionCode, directory)`` for the newest stored app snapshot.
+
+        Snapshot directories are named ``<YYYYMMDD>-<HHMMSS>-<versionCode>``;
+        the newest by mtime wins and its trailing segment is the versionCode.
+        """
+        base = self._download_base_dir()
+        if not base:
+            return None, None
+        snapshots_root = os.path.join(base, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
+        try:
+            entries = [
+                (entry.path, os.path.getmtime(entry.path))
+                for entry in os.scandir(snapshots_root)
+                if entry.is_dir() and entry.name.rsplit("-", 1)[-1].isdigit()
+            ]
+        except OSError:
+            return None, None
+        if not entries:
+            return None, None
+        newest_path, _ = max(entries, key=lambda item: item[1])
+        return newest_path.rsplit("-", 1)[-1], newest_path
+
     def log_download_results_summary(
         self,
         *,
@@ -384,7 +526,7 @@ class DownloadCLIIntegration:
         """
         Emit a legacy-style summary of download results to the provided logger.
 
-        Logs elapsed time, counts of downloaded assets, latest release and prerelease tags, detailed information about any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an up-to-date timestamp. If this instance has a configured `config`, sends notifications for completion or up-to-date state.
+        Logs elapsed time, counts of downloaded assets, a latest-version line for every asset type configured for download (firmware release/prerelease/nightly, client app release/prerelease, app snapshots) annotated with how long ago the newest local copy was downloaded, detailed information about any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an up-to-date timestamp. If this instance has a configured `config`, sends notifications for completion or up-to-date state.
 
         Parameters:
             logger_override (logging-like, optional): Logger to use instead of the module logger.
@@ -509,22 +651,94 @@ class DownloadCLIIntegration:
             or latest_versions.get("desktop_prerelease")
         )
 
-        if latest_firmware_version:
-            log.info(f"Latest firmware: {latest_firmware_version}")
-        if latest_firmware_prerelease:
-            log.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
-        else:
-            log.info("Latest firmware prerelease: none")
-
-        if latest_client_app:
-            log.info("Latest Meshtastic Client release: %s", latest_client_app)
-        if latest_client_app_prerelease:
-            log.info(
-                "Latest Meshtastic Client prerelease: %s",
-                latest_client_app_prerelease,
+        # Latest-version lines: exactly one line per asset type configured for
+        # download (firmware releases, repo-based firmware prereleases, firmware
+        # nightlies, client app releases/prereleases, app snapshots), each
+        # annotated with how long ago the newest local copy of that version was
+        # downloaded. With no attached config (library use) the legacy ungated
+        # firmware/client-app lines are kept and opt-in types stay hidden.
+        cfg = self.config if isinstance(self.config, dict) else {}
+        if cfg:
+            save_firmware = coerce_bool(cfg.get("SAVE_FIRMWARE", False))
+            save_apps = (
+                coerce_bool(cfg.get("SAVE_CLIENT_APPS", False))
+                or coerce_bool(cfg.get("SAVE_APKS", False))
+                or coerce_bool(cfg.get("SAVE_DESKTOP_APP", False))
             )
         else:
-            log.info("Latest Meshtastic Client prerelease: none")
+            save_firmware = True
+            save_apps = True
+        nightlies_enabled = save_firmware and coerce_bool(
+            cfg.get("CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES)
+        )
+        app_prereleases_enabled = save_apps and coerce_bool(
+            cfg.get("CHECK_APP_PRERELEASES", DEFAULT_CHECK_APP_PRERELEASES)
+        )
+        snapshots_enabled = save_apps and coerce_bool(
+            cfg.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
+        )
+        latest_firmware_nightly = latest_versions.get("firmware_nightly")
+
+        if save_firmware:
+            if latest_firmware_version:
+                log.info(
+                    "Latest firmware release: %s%s",
+                    latest_firmware_version,
+                    self._downloaded_age_suffix(
+                        self._local_firmware_release_dir(latest_firmware_version)
+                    ),
+                )
+            if latest_firmware_prerelease:
+                log.info(
+                    "Latest firmware prerelease: %s%s",
+                    latest_firmware_prerelease,
+                    self._downloaded_age_suffix(
+                        self._local_firmware_prerelease_dir(latest_firmware_prerelease)
+                    ),
+                )
+            else:
+                log.info("Latest firmware prerelease: none")
+            if nightlies_enabled:
+                if latest_firmware_nightly:
+                    log.info(
+                        "Latest firmware nightly: %s%s",
+                        latest_firmware_nightly,
+                        self._downloaded_age_suffix(
+                            self._local_firmware_nightly_dir(latest_firmware_nightly)
+                        ),
+                    )
+                else:
+                    log.info("Latest firmware nightly: none")
+        if save_apps:
+            if latest_client_app:
+                log.info(
+                    "Latest client app release: %s%s",
+                    latest_client_app,
+                    self._downloaded_age_suffix(self._local_app_dir(latest_client_app)),
+                )
+            if app_prereleases_enabled:
+                if latest_client_app_prerelease:
+                    log.info(
+                        "Latest client app prerelease: %s%s",
+                        latest_client_app_prerelease,
+                        self._downloaded_age_suffix(
+                            self._local_app_dir(
+                                latest_client_app_prerelease, prerelease=True
+                            )
+                        ),
+                    )
+                else:
+                    log.info("Latest client app prerelease: none")
+            if snapshots_enabled:
+                snapshot_version_code, snapshot_dir = self._local_snapshot_entry()
+                if snapshot_version_code:
+                    log.info(
+                        "Latest app snapshot: %s%s",
+                        snapshot_version_code,
+                        self._downloaded_age_suffix(snapshot_dir),
+                    )
+                else:
+                    log.info("Latest app snapshot: none")
 
         if downloaded_app_snapshots:
             log.info(

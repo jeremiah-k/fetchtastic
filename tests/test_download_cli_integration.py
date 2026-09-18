@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -900,31 +901,150 @@ def test_log_download_results_summary_logging_order(mocker):
         args = call_args.args
         call_str = args[0] % args[1:] if len(args) > 1 else str(call_args)
         if (
-            "Latest firmware:" in call_str
-            or "Latest Meshtastic Client release:" in call_str
-            or "firmware prerelease:" in call_str
-            or "Meshtastic Client prerelease:" in call_str
+            "Latest firmware release:" in call_str
+            or "Latest firmware prerelease:" in call_str
+            or "Latest firmware nightly:" in call_str
+            or "Latest client app release:" in call_str
+            or "Latest client app prerelease:" in call_str
         ):
             latest_version_calls.append(call_str)
 
     joined_calls = " ".join(latest_version_calls)
 
-    assert "Latest firmware: v2.7.18.fb3bf78" in joined_calls
+    assert "Latest firmware release: v2.7.18.fb3bf78" in joined_calls
     assert "Latest firmware prerelease: v2.7.19-prerelease" in joined_calls
-    assert "Latest Meshtastic Client release: v2.7.11" in joined_calls
-    assert "Latest Meshtastic Client prerelease: none" in joined_calls
+    assert "Latest client app release: v2.7.11" in joined_calls
+    assert "Latest client app prerelease: none" in joined_calls
+    # No attached config: opt-in types stay hidden and no local-age annotation
+    # can be claimed.
+    assert "Latest firmware nightly" not in joined_calls
+    assert "Latest app snapshot" not in joined_calls
+    assert "(downloaded" not in joined_calls
     assert "Latest APK:" not in joined_calls
     assert "Latest desktop:" not in joined_calls
 
-    assert joined_calls.index("Latest firmware: v2.7.18.fb3bf78") < joined_calls.index(
-        "Latest firmware prerelease: v2.7.19-prerelease"
+    assert joined_calls.index("Latest firmware release: v2.7.18.fb3bf78") < (
+        joined_calls.index("Latest firmware prerelease: v2.7.19-prerelease")
     )
     assert joined_calls.index(
         "Latest firmware prerelease: v2.7.19-prerelease"
-    ) < joined_calls.index("Latest Meshtastic Client release: v2.7.11")
+    ) < joined_calls.index("Latest client app release: v2.7.11")
     assert joined_calls.index(
-        "Latest Meshtastic Client release: v2.7.11"
-    ) < joined_calls.index("Latest Meshtastic Client prerelease: none")
+        "Latest client app release: v2.7.11"
+    ) < joined_calls.index("Latest client app prerelease: none")
+
+
+def test_log_download_results_summary_configured_types_with_download_ages(
+    mocker, tmp_path
+):
+    """Every configured asset type gets a latest-version line with its download age."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {
+        "firmware": "v2.8.0.47db0e3",
+        "firmware_prerelease": None,
+        "firmware_nightly": "2.8.1.67e8aaf",
+        "client_app": "v2.8.1",
+        "client_app_prerelease": "v2.8.2-open.2",
+    }
+    integration.config = {
+        "DOWNLOAD_DIR": str(tmp_path),
+        "SAVE_FIRMWARE": True,
+        "CHECK_FIRMWARE_NIGHTLIES": True,
+        "SAVE_CLIENT_APPS": True,
+        "CHECK_APP_PRERELEASES": True,
+        "CHECK_APP_SNAPSHOTS": True,
+    }
+
+    now = time.time()
+    firmware_dir = tmp_path / "firmware" / "v2.8.0.47db0e3-alpha"
+    firmware_dir.mkdir(parents=True)
+    nightly_dir = tmp_path / "firmware" / "nightlies" / "2.8.1.67e8aaf"
+    nightly_dir.mkdir(parents=True)
+    app_dir = tmp_path / "app" / "v2.8.1"
+    app_dir.mkdir(parents=True)
+    old_snapshot = tmp_path / "app" / "snapshots" / "20260901-000000-29000000"
+    old_snapshot.mkdir(parents=True)
+    new_snapshot = tmp_path / "app" / "snapshots" / "20260918-050701-29322311"
+    new_snapshot.mkdir(parents=True)
+    # Pin mtimes so the rendered ages are deterministic.
+    os.utime(firmware_dir, (now - 3 * 86400, now - 3 * 86400))
+    os.utime(nightly_dir, (now - 30 * 3600, now - 30 * 3600))
+    os.utime(app_dir, (now - 90, now - 90))
+    os.utime(old_snapshot, (now - 20 * 86400, now - 20 * 86400))
+    os.utime(new_snapshot, (now - 5 * 60, now - 5 * 60))
+
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=19.5,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="v2.8.0.47db0e3",
+        latest_apk_version="v2.8.1",
+    )
+
+    messages = []
+    for call_args in mock_logger.info.call_args_list:
+        args = call_args.args
+        messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
+    joined = " ".join(messages)
+
+    # Channel-suffixed firmware dir is resolved for the age annotation.
+    assert "Latest firmware release: v2.8.0.47db0e3 (downloaded 3d ago)" in joined
+    assert "Latest firmware prerelease: none" in joined
+    assert "Latest firmware nightly: 2.8.1.67e8aaf (downloaded 30h ago)" in joined
+    assert "Latest client app release: v2.8.1 (downloaded just now)" in joined
+    # Upstream prerelease known but no local directory for it yet.
+    assert "Latest client app prerelease: v2.8.2-open.2 (not downloaded yet)" in joined
+    # Newest snapshot wins and its trailing segment is the versionCode.
+    assert "Latest app snapshot: 29322311 (downloaded 5m ago)" in joined
+
+
+def test_log_download_results_summary_hides_unconfigured_types(mocker, tmp_path):
+    """Latest-version lines appear only for asset types configured to download."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {
+        "firmware": "v2.8.0.47db0e3",
+        "firmware_prerelease": None,
+        "firmware_nightly": "2.8.1.67e8aaf",
+        "client_app": "v2.8.1",
+        "client_app_prerelease": "v2.8.2-open.2",
+    }
+    integration.config = {
+        "DOWNLOAD_DIR": str(tmp_path),
+        "SAVE_FIRMWARE": True,
+        "CHECK_FIRMWARE_NIGHTLIES": False,
+        "SAVE_CLIENT_APPS": True,
+        "CHECK_APP_PRERELEASES": False,
+        "CHECK_APP_SNAPSHOTS": False,
+    }
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=2.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="v2.8.0.47db0e3",
+        latest_apk_version="v2.8.1",
+    )
+
+    messages = []
+    for call_args in mock_logger.info.call_args_list:
+        args = call_args.args
+        messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
+    joined = " ".join(messages)
+    assert "Latest firmware release: v2.8.0.47db0e3" in joined
+    assert "Latest firmware prerelease: none" in joined
+    assert "Latest client app release: v2.8.1" in joined
+    assert "Latest firmware nightly" not in joined
+    assert "Latest client app prerelease" not in joined
+    assert "Latest app snapshot" not in joined
 
 
 def test_run_download_orchestrator_none_after_init(mocker):
@@ -1116,7 +1236,7 @@ def test_log_download_results_summary_with_desktop_prerelease(mocker):
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
     assert any(
-        "Latest Meshtastic Client prerelease:" in msg and "v2.0.0-beta" in msg
+        "Latest client app prerelease:" in msg and "v2.0.0-beta" in msg
         for msg in logged_messages
     )
 
