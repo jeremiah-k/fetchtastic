@@ -950,6 +950,7 @@ def test_log_download_results_summary_configured_types_with_download_ages(
     integration.config = {
         "DOWNLOAD_DIR": str(tmp_path),
         "SAVE_FIRMWARE": True,
+        "CHECK_FIRMWARE_PRERELEASES": True,
         "CHECK_FIRMWARE_NIGHTLIES": True,
         "SAVE_CLIENT_APPS": True,
         "CHECK_APP_PRERELEASES": True,
@@ -959,14 +960,23 @@ def test_log_download_results_summary_configured_types_with_download_ages(
     now = time.time()
     firmware_dir = tmp_path / "firmware" / "v2.8.0.47db0e3-alpha"
     firmware_dir.mkdir(parents=True)
+    (firmware_dir / "firmware.zip").write_bytes(b"firmware")
     nightly_dir = tmp_path / "firmware" / "nightlies" / "2.8.1.67e8aaf"
     nightly_dir.mkdir(parents=True)
+    (nightly_dir / "firmware-rak4631.uf2").write_bytes(b"nightly")
     app_dir = tmp_path / "app" / "v2.8.1"
     app_dir.mkdir(parents=True)
+    (app_dir / "app-fdroid-universal-release.apk").write_bytes(b"apk")
     old_snapshot = tmp_path / "app" / "snapshots" / "20260901-000000-29000000"
     old_snapshot.mkdir(parents=True)
+    (old_snapshot / "androidApp-fdroid-universal-debug-29000000.apk").write_bytes(
+        b"old"
+    )
     new_snapshot = tmp_path / "app" / "snapshots" / "20260918-050701-29322311"
     new_snapshot.mkdir(parents=True)
+    (new_snapshot / "androidApp-fdroid-universal-debug-29322311.apk").write_bytes(
+        b"new"
+    )
     # Pin mtimes so the rendered ages are deterministic.
     os.utime(firmware_dir, (now - 3 * 86400, now - 3 * 86400))
     os.utime(nightly_dir, (now - 30 * 3600, now - 30 * 3600))
@@ -1040,7 +1050,7 @@ def test_log_download_results_summary_hides_unconfigured_types(mocker, tmp_path)
         messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
     joined = " ".join(messages)
     assert "Latest firmware release: v2.8.0.47db0e3" in joined
-    assert "Latest firmware prerelease: none" in joined
+    assert "Latest firmware prerelease" not in joined
     assert "Latest client app release: v2.8.1" in joined
     assert "Latest firmware nightly" not in joined
     assert "Latest client app prerelease" not in joined
@@ -1124,6 +1134,7 @@ def test_log_download_results_summary_prefers_newest_local_copy(mocker, tmp_path
     integration.config = {
         "DOWNLOAD_DIR": str(tmp_path),
         "SAVE_FIRMWARE": True,
+        "CHECK_FIRMWARE_PRERELEASES": True,
         "SAVE_CLIENT_APPS": True,
     }
 
@@ -1131,13 +1142,17 @@ def test_log_download_results_summary_prefers_newest_local_copy(mocker, tmp_path
     # Older plain-tag copy next to a newer channel-suffixed copy.
     plain_dir = tmp_path / "firmware" / "v2.8.0.47db0e3"
     plain_dir.mkdir(parents=True)
+    (plain_dir / "firmware.zip").write_bytes(b"plain")
     alpha_dir = tmp_path / "firmware" / "v2.8.0.47db0e3-alpha"
     alpha_dir.mkdir(parents=True)
+    (alpha_dir / "firmware.zip").write_bytes(b"alpha")
     # Older prefixed copy in repo-dls vs. newer unprefixed copy in prerelease.
     repo_dls_dir = tmp_path / "firmware" / "repo-dls" / "firmware-v2.8.3-rc1"
     repo_dls_dir.mkdir(parents=True)
+    (repo_dls_dir / "firmware.bin").write_bytes(b"old")
     prerelease_dir = tmp_path / "firmware" / "prerelease" / "v2.8.3-rc1"
     prerelease_dir.mkdir(parents=True)
+    (prerelease_dir / "firmware.bin").write_bytes(b"new")
     os.utime(plain_dir, (now - 10 * 86400, now - 10 * 86400))
     os.utime(alpha_dir, (now - 3600, now - 3600))
     os.utime(repo_dls_dir, (now - 5 * 86400, now - 5 * 86400))
@@ -1163,6 +1178,99 @@ def test_log_download_results_summary_prefers_newest_local_copy(mocker, tmp_path
     assert "Latest firmware release: v2.8.0.47db0e3 (downloaded 1h ago)" in joined
     assert "Latest firmware prerelease: v2.8.3-rc1 (downloaded 2h ago)" in joined
     assert "Latest client app release: none" in joined
+
+
+def test_log_download_results_summary_hides_disabled_firmware_prereleases(
+    mocker, tmp_path
+):
+    """Firmware prerelease status is omitted when that asset type is disabled."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {
+        "firmware_prerelease": "v2.8.3-rc1",
+    }
+    integration.config = {
+        "DOWNLOAD_DIR": str(tmp_path),
+        "SAVE_FIRMWARE": True,
+        "CHECK_FIRMWARE_PRERELEASES": False,
+        "CHECK_PRERELEASES": False,
+    }
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="v2.8.2",
+        latest_apk_version="",
+    )
+
+    joined = " ".join(str(call) for call in mock_logger.info.call_args_list)
+    assert "Latest firmware release" in joined
+    assert "Latest firmware prerelease" not in joined
+
+
+def test_log_download_results_summary_metadata_only_dir_is_not_downloaded(
+    mocker, tmp_path
+):
+    """Release notes alone must not make a failed app download look local."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {
+        "client_app": "v2.8.1",
+    }
+    integration.config = {
+        "DOWNLOAD_DIR": str(tmp_path),
+        "SAVE_CLIENT_APPS": True,
+        "CHECK_APP_PRERELEASES": False,
+        "CHECK_APP_SNAPSHOTS": False,
+    }
+    release_dir = tmp_path / "app" / "v2.8.1"
+    release_dir.mkdir(parents=True)
+    (release_dir / "release_notes-v2.8.1.md").write_text("notes", encoding="utf-8")
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="",
+        latest_apk_version="v2.8.1",
+    )
+
+    messages = []
+    for call_args in mock_logger.info.call_args_list:
+        args = call_args.args
+        messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
+    assert "Latest client app release: v2.8.1 (not downloaded yet)" in " ".join(
+        messages
+    )
+
+
+def test_local_snapshot_entry_prefers_highest_version_code_over_mtime(tmp_path):
+    """Snapshot newestness follows versionCode, matching retention/tracking semantics."""
+    integration = DownloadCLIIntegration()
+    integration.config = {"DOWNLOAD_DIR": str(tmp_path)}
+    snapshots = tmp_path / "app" / "snapshots"
+    older_vc = snapshots / "20260918-090000-29322310"
+    newer_vc = snapshots / "20260918-080000-29322311"
+    older_vc.mkdir(parents=True)
+    newer_vc.mkdir(parents=True)
+    (older_vc / "androidApp-fdroid-universal-debug-29322310.apk").write_bytes(b"old")
+    (newer_vc / "androidApp-fdroid-universal-debug-29322311.apk").write_bytes(b"new")
+    now = time.time()
+    # Touch the lower version later; mtime must not redefine which version is latest.
+    os.utime(older_vc, (now, now))
+    os.utime(newer_vc, (now - 3600, now - 3600))
+
+    version_code, path = integration._local_snapshot_entry()
+
+    assert version_code == "29322311"
+    assert path == str(newer_vc)
 
 
 def test_log_download_results_summary_warns_on_storage_errors(mocker, tmp_path):

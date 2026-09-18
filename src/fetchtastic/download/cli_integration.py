@@ -395,13 +395,39 @@ class DownloadCLIIntegration:
         return base if isinstance(base, str) and base.strip() else None
 
     @staticmethod
-    def _newest_existing_dir(candidates: Iterable[str]) -> Optional[str]:
+    def _dir_has_download_payload(path: str) -> bool:
+        """Return whether a release directory contains downloaded payload data.
+
+        Release-note metadata is written before client-app downloads begin, so
+        directory existence alone does not prove that any asset was downloaded.
+        Legacy adjacent hash sidecars likewise do not count as payloads.
         """
-        Return the candidate that exists as a directory with the newest mtime.
+        try:
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    name = entry.name
+                    if name.startswith("release_notes-") and name.endswith(".md"):
+                        continue
+                    if name.endswith(".sha256"):
+                        continue
+                    return True
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            logger.warning("Cannot inspect %s: %s", path, exc)
+            return False
+        return False
+
+    @classmethod
+    def _newest_existing_dir(cls, candidates: Iterable[str]) -> Optional[str]:
+        """
+        Return the payload-bearing candidate directory with the newest mtime.
 
         Multiple storage variants of one version can coexist (e.g. a release
         tag next to its channel-suffixed copy), so the most recently written
-        directory is the honest answer for "when was this downloaded". Missing
+        payload-bearing directory is the honest answer for "when was this
+        downloaded". Metadata-only directories are ignored because release
+        notes can be created before an asset download succeeds. Missing
         candidates are skipped silently; other OSError problems are logged and
         the candidate is treated as absent so the summary never crashes.
         """
@@ -414,7 +440,9 @@ class DownloadCLIIntegration:
             except OSError as exc:
                 logger.warning("Cannot inspect %s: %s", candidate, exc)
                 continue
-            if not os.path.isdir(candidate):
+            if not os.path.isdir(candidate) or not cls._dir_has_download_payload(
+                candidate
+            ):
                 continue
             if newest is None or mtime > newest[0]:
                 newest = (mtime, candidate)
@@ -527,11 +555,19 @@ class DownloadCLIIntegration:
             return None, None
         snapshots_root = os.path.join(base, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
         try:
-            entries = [
-                (entry.path, os.path.getmtime(entry.path))
-                for entry in os.scandir(snapshots_root)
-                if entry.is_dir() and entry.name.rsplit("-", 1)[-1].isdigit()
-            ]
+            entries: list[tuple[int, float, str]] = []
+            with os.scandir(snapshots_root) as snapshot_entries:
+                for entry in snapshot_entries:
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                    version_text = entry.name.rsplit("-", 1)[-1]
+                    if not version_text.isdigit() or not self._dir_has_download_payload(
+                        entry.path
+                    ):
+                        continue
+                    entries.append(
+                        (int(version_text), os.path.getmtime(entry.path), entry.path)
+                    )
         except FileNotFoundError:
             return None, None
         except OSError as exc:
@@ -539,8 +575,10 @@ class DownloadCLIIntegration:
             return None, None
         if not entries:
             return None, None
-        newest_path, _ = max(entries, key=lambda item: item[1])
-        return newest_path.rsplit("-", 1)[-1], newest_path
+        version_code, _mtime, newest_path = max(
+            entries, key=lambda item: (item[0], item[1])
+        )
+        return str(version_code), newest_path
 
     def log_download_results_summary(
         self,
@@ -708,6 +746,15 @@ class DownloadCLIIntegration:
         else:
             save_firmware = True
             save_apps = True
+        firmware_prereleases_enabled = save_firmware and (
+            not isinstance(self.config, dict)
+            or coerce_bool(
+                cfg.get(
+                    "CHECK_FIRMWARE_PRERELEASES",
+                    cfg.get("CHECK_PRERELEASES", False),
+                )
+            )
+        )
         nightlies_enabled = save_firmware and coerce_bool(
             cfg.get("CHECK_FIRMWARE_NIGHTLIES", DEFAULT_CHECK_FIRMWARE_NIGHTLIES)
         )
@@ -730,16 +777,19 @@ class DownloadCLIIntegration:
                 )
             else:
                 log.info("Latest firmware release: none")
-            if latest_firmware_prerelease:
-                log.info(
-                    "Latest firmware prerelease: %s%s",
-                    latest_firmware_prerelease,
-                    self._downloaded_age_suffix(
-                        self._local_firmware_prerelease_dir(latest_firmware_prerelease)
-                    ),
-                )
-            else:
-                log.info("Latest firmware prerelease: none")
+            if firmware_prereleases_enabled:
+                if latest_firmware_prerelease:
+                    log.info(
+                        "Latest firmware prerelease: %s%s",
+                        latest_firmware_prerelease,
+                        self._downloaded_age_suffix(
+                            self._local_firmware_prerelease_dir(
+                                latest_firmware_prerelease
+                            )
+                        ),
+                    )
+                else:
+                    log.info("Latest firmware prerelease: none")
             if nightlies_enabled:
                 if latest_firmware_nightly:
                     log.info(
