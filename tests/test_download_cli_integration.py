@@ -1047,6 +1047,166 @@ def test_log_download_results_summary_hides_unconfigured_types(mocker, tmp_path)
     assert "Latest app snapshot" not in joined
 
 
+def test_log_download_results_summary_none_for_unavailable_configured_stable_versions(
+    mocker, tmp_path
+):
+    """Configured stable releases with unknown versions still emit their line as none."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {}
+    integration.config = {
+        "DOWNLOAD_DIR": str(tmp_path),
+        "SAVE_FIRMWARE": True,
+        "SAVE_CLIENT_APPS": True,
+    }
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="",
+        latest_apk_version="",
+    )
+
+    messages = []
+    for call_args in mock_logger.info.call_args_list:
+        args = call_args.args
+        messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
+    joined = " ".join(messages)
+    assert "Latest firmware release: none" in joined
+    assert "Latest client app release: none" in joined
+    # No version is known, so no local-age claim is made anywhere.
+    assert "(downloaded" not in joined
+    assert "(not downloaded yet)" not in joined
+
+
+def test_log_download_results_summary_empty_attached_config_is_gated(mocker):
+    """An attached-but-empty config dict behaves like a real config, not legacy library use."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {}
+    integration.config = {}
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="v2.8.0.47db0e3",
+        latest_apk_version="v2.8.1",
+    )
+
+    messages = []
+    for call_args in mock_logger.info.call_args_list:
+        args = call_args.args
+        messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
+    joined = " ".join(messages)
+    # With everything disabled in the attached config, no latest-version line
+    # is emitted at all — including the legacy ungated ones.
+    assert "Latest firmware release" not in joined
+    assert "Latest client app release" not in joined
+    assert "Latest firmware prerelease" not in joined
+    assert "Latest app snapshot" not in joined
+
+
+def test_log_download_results_summary_prefers_newest_local_copy(mocker, tmp_path):
+    """Among coexisting storage variants, the newest-mtime copy supplies the age."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {
+        "firmware_prerelease": "v2.8.3-rc1",
+    }
+    integration.config = {
+        "DOWNLOAD_DIR": str(tmp_path),
+        "SAVE_FIRMWARE": True,
+        "SAVE_CLIENT_APPS": True,
+    }
+
+    now = time.time()
+    # Older plain-tag copy next to a newer channel-suffixed copy.
+    plain_dir = tmp_path / "firmware" / "v2.8.0.47db0e3"
+    plain_dir.mkdir(parents=True)
+    alpha_dir = tmp_path / "firmware" / "v2.8.0.47db0e3-alpha"
+    alpha_dir.mkdir(parents=True)
+    # Older prefixed copy in repo-dls vs. newer unprefixed copy in prerelease.
+    repo_dls_dir = tmp_path / "firmware" / "repo-dls" / "firmware-v2.8.3-rc1"
+    repo_dls_dir.mkdir(parents=True)
+    prerelease_dir = tmp_path / "firmware" / "prerelease" / "v2.8.3-rc1"
+    prerelease_dir.mkdir(parents=True)
+    os.utime(plain_dir, (now - 10 * 86400, now - 10 * 86400))
+    os.utime(alpha_dir, (now - 3600, now - 3600))
+    os.utime(repo_dls_dir, (now - 5 * 86400, now - 5 * 86400))
+    os.utime(prerelease_dir, (now - 2 * 3600, now - 2 * 3600))
+
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        logger_override=mock_logger,
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="v2.8.0.47db0e3",
+        latest_apk_version="",
+    )
+
+    messages = []
+    for call_args in mock_logger.info.call_args_list:
+        args = call_args.args
+        messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
+    joined = " ".join(messages)
+    assert "Latest firmware release: v2.8.0.47db0e3 (downloaded 1h ago)" in joined
+    assert "Latest firmware prerelease: v2.8.3-rc1 (downloaded 2h ago)" in joined
+    assert "Latest client app release: none" in joined
+
+
+def test_log_download_results_summary_warns_on_storage_errors(mocker, tmp_path):
+    """Unreadable local storage degrades to 'not downloaded yet' with a warning, not a crash."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.orchestrator.get_latest_versions.return_value = {}
+    integration.config = {
+        "DOWNLOAD_DIR": str(tmp_path),
+        "SAVE_FIRMWARE": True,
+        "SAVE_CLIENT_APPS": True,
+        "CHECK_APP_SNAPSHOTS": True,
+    }
+    snapshot_dir = tmp_path / "app" / "snapshots" / "20260918-050701-29322311"
+    snapshot_dir.mkdir(parents=True)
+
+    mocker.patch(
+        "fetchtastic.download.cli_integration.os.path.getmtime",
+        side_effect=PermissionError(13, "Permission denied"),
+    )
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
+
+    integration.log_download_results_summary(
+        elapsed_seconds=1.0,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="v2.8.0.47db0e3",
+        latest_apk_version="v2.8.1",
+    )
+
+    messages = []
+    for call_args in mock_logger.info.call_args_list:
+        args = call_args.args
+        messages.append(args[0] % args[1:] if len(args) > 1 else str(call_args))
+    joined = " ".join(messages)
+    assert "Latest firmware release: v2.8.0.47db0e3 (not downloaded yet)" in joined
+    assert "Latest client app release: v2.8.1 (not downloaded yet)" in joined
+    assert "Latest app snapshot: none" in joined
+    warnings_logged = [str(call) for call in mock_logger.warning.call_args_list]
+    assert warnings_logged, "expected a warning about unreadable local storage"
+    assert any(str(tmp_path) in msg for msg in warnings_logged)
+
+
 def test_run_download_orchestrator_none_after_init(mocker):
     """Test run_download raises RuntimeError when orchestrator is None after _initialize_components (lines 122-123)."""
     integration = DownloadCLIIntegration()
@@ -1208,6 +1368,10 @@ def test_log_download_results_summary_empty_versions(mocker):
     assert not any("Latest firmware:" in msg and "v" in msg for msg in logged_messages)
     assert not any("Latest APK:" in msg and "v" in msg for msg in logged_messages)
     assert not any("Latest desktop:" in msg and "v" in msg for msg in logged_messages)
+    # Library use (no attached config) keeps the ungated stable lines and
+    # reports unknown versions as "none".
+    assert any("Latest firmware release: none" in msg for msg in logged_messages)
+    assert any("Latest client app release: none" in msg for msg in logged_messages)
 
 
 def test_log_download_results_summary_with_desktop_prerelease(mocker):
