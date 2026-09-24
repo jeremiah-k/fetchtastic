@@ -548,7 +548,9 @@ class DownloadCLIIntegration:
         Return ``(versionCode, directory)`` for the newest stored app snapshot.
 
         Snapshot directories are named ``<YYYYMMDD>-<HHMMSS>-<versionCode>``;
-        the newest by mtime wins and its trailing segment is the versionCode.
+        the highest versionCode wins (mtime only breaks ties), matching
+        snapshot retention semantics, and its trailing segment is the
+        versionCode.
         """
         base = self._download_base_dir()
         if not base:
