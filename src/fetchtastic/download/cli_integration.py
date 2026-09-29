@@ -400,23 +400,37 @@ class DownloadCLIIntegration:
 
         Release-note metadata is written before client-app downloads begin, so
         directory existence alone does not prove that any asset was downloaded.
-        Legacy adjacent hash sidecars likewise do not count as payloads.
+        Legacy adjacent hash sidecars likewise do not count as payloads, and
+        neither does an empty extracted subdirectory: only an actual payload
+        file does. Payload files nested inside extracted subdirectories count
+        (archives are extracted with their member paths preserved); symlinked
+        subdirectories are not followed to avoid cycles.
         """
-        try:
-            with os.scandir(path) as entries:
-                for entry in entries:
-                    name = entry.name
-                    if name.startswith("release_notes-") and name.endswith(".md"):
-                        continue
-                    if name.endswith(".sha256"):
-                        continue
-                    return True
-        except FileNotFoundError:
+
+        def has_payload_file(dir_path: str, depth: int) -> bool:
+            try:
+                with os.scandir(dir_path) as entries:
+                    for entry in entries:
+                        name = entry.name
+                        if name.startswith("release_notes-") and name.endswith(".md"):
+                            continue
+                        if name.endswith(".sha256"):
+                            continue
+                        if entry.is_file(follow_symlinks=True):
+                            return True
+                        if depth > 0 and entry.is_dir(follow_symlinks=False):
+                            if has_payload_file(entry.path, depth - 1):
+                                return True
+            except FileNotFoundError:
+                return False
+            except OSError as exc:
+                logger.warning("Cannot inspect %s: %s", dir_path, exc)
+                return False
             return False
-        except OSError as exc:
-            logger.warning("Cannot inspect %s: %s", path, exc)
-            return False
-        return False
+
+        # Downloaded payloads sit at the top level; extracted archives keep a
+        # couple of directory levels from their member paths.
+        return has_payload_file(path, 3)
 
     @classmethod
     def _newest_existing_dir(cls, candidates: Iterable[str]) -> Optional[str]:
@@ -563,13 +577,21 @@ class DownloadCLIIntegration:
                     if not entry.is_dir(follow_symlinks=False):
                         continue
                     version_text = entry.name.rsplit("-", 1)[-1]
-                    if not version_text.isdigit() or not self._dir_has_download_payload(
-                        entry.path
-                    ):
+                    if not version_text.isdigit():
                         continue
-                    entries.append(
-                        (int(version_text), os.path.getmtime(entry.path), entry.path)
-                    )
+                    # One unreadable candidate must not discard snapshots that
+                    # were listed fine; only failures on the root itself fall
+                    # through to the handlers below.
+                    try:
+                        mtime = os.path.getmtime(entry.path)
+                    except FileNotFoundError:
+                        continue
+                    except OSError as exc:
+                        logger.warning("Cannot inspect %s: %s", entry.path, exc)
+                        continue
+                    if not self._dir_has_download_payload(entry.path):
+                        continue
+                    entries.append((int(version_text), mtime, entry.path))
         except FileNotFoundError:
             return None, None
         except OSError as exc:

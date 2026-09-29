@@ -1273,6 +1273,55 @@ def test_local_snapshot_entry_prefers_highest_version_code_over_mtime(tmp_path):
     assert path == str(newer_vc)
 
 
+def test_local_snapshot_entry_skips_unreadable_candidate(mocker, tmp_path):
+    """A candidate whose metadata cannot be inspected is skipped, not fatal."""
+    integration = DownloadCLIIntegration()
+    integration.config = {"DOWNLOAD_DIR": str(tmp_path)}
+    snapshots = tmp_path / "app" / "snapshots"
+    broken = snapshots / "20260918-090000-29322312"
+    broken.mkdir(parents=True)
+    (broken / "androidApp-fdroid-universal-debug-29322312.apk").write_bytes(b"bad")
+    readable = snapshots / "20260918-050701-29322311"
+    readable.mkdir(parents=True)
+    (readable / "androidApp-fdroid-universal-debug-29322311.apk").write_bytes(b"ok")
+
+    real_getmtime = os.path.getmtime
+
+    def flaky_getmtime(path):
+        if str(path) == str(broken):
+            raise PermissionError(13, "Permission denied")
+        return real_getmtime(path)
+
+    mocker.patch(
+        "fetchtastic.download.cli_integration.os.path.getmtime",
+        side_effect=flaky_getmtime,
+    )
+
+    version_code, path = integration._local_snapshot_entry()
+
+    # The broken candidate holds the higher versionCode, so all-or-nothing
+    # error handling would have reported no snapshot at all.
+    assert version_code == "29322311"
+    assert path == str(readable)
+
+
+def test_dir_has_download_payload_requires_a_payload_file(tmp_path):
+    """Release notes with an empty extracted subdir are not a download; a
+    nested payload file inside an extracted dir is."""
+    release_dir = tmp_path / "v2.8.1"
+    release_dir.mkdir()
+    (release_dir / "release_notes-v2.8.1.md").write_text("notes", encoding="utf-8")
+    (release_dir / "extracted").mkdir()
+
+    assert not DownloadCLIIntegration._dir_has_download_payload(str(release_dir))
+
+    extracted_payload = release_dir / "extracted" / "device-us915"
+    extracted_payload.mkdir()
+    (extracted_payload / "firmware-us915.bin").write_bytes(b"payload")
+
+    assert DownloadCLIIntegration._dir_has_download_payload(str(release_dir))
+
+
 def test_log_download_results_summary_warns_on_storage_errors(mocker, tmp_path):
     """Unreadable local storage degrades to 'not downloaded yet' with a warning, not a crash."""
     integration = DownloadCLIIntegration()
