@@ -56,7 +56,6 @@ from fetchtastic.constants import (
     MAX_RETRY_DELAY,
     RELEASE_SCAN_COUNT,
     REPO_DOWNLOADS_DIR,
-    RUN_LOCK_FILENAME,
     NightlyRunState,
 )
 from fetchtastic.log_utils import logger
@@ -75,7 +74,7 @@ from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .run_lock import RunLock, RunLockAcquireResult
+from .run_lock import RunLock, RunLockAcquireResult, get_run_lock_path
 from .version import VersionManager, is_prerelease_directory
 
 
@@ -251,11 +250,12 @@ class DownloadOrchestrator:
         Orchestrates discovery, downloading, retrying, and summary reporting for all configured artifact types.
 
         The whole pipeline is serialized by an advisory cross-process run lock
-        (``.fetchtastic-run.lock`` under DOWNLOAD_DIR) so overlapping invocations
-        cannot interleave destructive nightly steps. When a live holder owns the
-        lock, this run is skipped: no downloads are attempted, no state changes,
-        ``pipeline_lock_skipped`` is set for the summary, and empty result lists
-        are returned.
+        (a rendezvous file in the user's private state directory, scoped by
+        download directory via :func:`get_run_lock_path`) so overlapping
+        invocations cannot interleave destructive nightly steps. When a live
+        holder owns the lock, this run is skipped: no downloads are attempted,
+        no state changes, ``pipeline_lock_skipped`` is set for the summary, and
+        empty result lists are returned.
 
         Returns:
             Tuple[List[DownloadResult], List[DownloadResult]]: A tuple (successful_results, failed_results) where `successful_results` is the list of completed DownloadResult entries and `failed_results` is the list of DownloadResult entries that remain failed after retry attempts.
@@ -354,12 +354,16 @@ class DownloadOrchestrator:
         therefore returns ``ACQUIRED`` with no lock object. A genuine locking
         failure returns ``UNAVAILABLE`` so the pipeline can preserve the
         documented best-effort fallback instead of reporting false contention.
+        The rendezvous file lives in the user's private state directory
+        (scoped by download directory), not in ``DOWNLOAD_DIR`` itself:
+        download directories on Android shared storage do not support
+        ``flock``, which made the lock permanently unavailable on Termux.
         """
         self._run_lock = None
         download_dir = self.config.get("DOWNLOAD_DIR")
         if not isinstance(download_dir, str) or not download_dir.strip():
             return RunLockAcquireResult.ACQUIRED
-        lock = RunLock(os.path.join(download_dir, RUN_LOCK_FILENAME))
+        lock = RunLock(get_run_lock_path(download_dir))
         result = lock.acquire()
         if result in {
             RunLockAcquireResult.ACQUIRED,

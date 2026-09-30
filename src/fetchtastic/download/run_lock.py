@@ -1,10 +1,17 @@
 """Cross-process advisory lock for automatic download runs.
 
-The lock file is a persistent rendezvous file under ``DOWNLOAD_DIR``. Ownership
+The lock file is a persistent rendezvous file in the user's private state
+directory, scoped by a hash of the configured ``DOWNLOAD_DIR``. Ownership
 is provided by the operating system for the lifetime of an open file handle,
 not by inspecting and replacing a pathname. This avoids stale-file takeover,
 PID-reuse, heartbeat, and ownership-check/remove races: when a process exits,
 the OS releases its lock even if the rendezvous file remains.
+
+The rendezvous file must live on a filesystem that supports the platform
+lock primitive. Download directories frequently do not: on Termux the
+configured directory is usually Android shared storage (a FUSE mount
+without ``flock`` support), so the file is kept in the app-private state
+directory instead, where locking works on every supported platform.
 
 POSIX uses ``fcntl.flock`` and Windows uses ``msvcrt.locking``. The payload is
 only diagnostic metadata for log messages; it is never used to decide
@@ -13,6 +20,7 @@ real contention and preserve Fetchtastic's best-effort fallback behavior.
 """
 
 import errno
+import hashlib
 import json
 import os
 import platform
@@ -21,7 +29,53 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, BinaryIO, Optional
 
+import platformdirs
+
 from fetchtastic.log_utils import logger
+
+
+def _termux_private_home() -> Optional[str]:
+    """Return the Termux app-private home directory, or None off Termux.
+
+    Termux marks its prefix with ``com.termux`` in ``$PREFIX``. ``$HOME`` is
+    read directly (``expanduser`` would fall back to the passwd entry when
+    unset, which is not the Termux home); when unset, the home is derived
+    from ``$PREFIX`` (``<prefix>/../home``).
+    """
+    prefix = os.environ.get("PREFIX", "")
+    if "com.termux" not in prefix:
+        return None
+    home = os.environ.get("HOME", "")
+    if home.strip():
+        return home
+    return os.path.join(os.path.dirname(prefix), "home")
+
+
+def default_run_lock_dir() -> str:
+    """Return the directory holding run-lock rendezvous files.
+
+    On Termux this resolves under the app-private home directory (full
+    path on ext4, where ``flock`` works); shared storage is never used.
+    Elsewhere the user state directory keeps the lock file out of the
+    download tree.
+    """
+    termux_home = _termux_private_home()
+    if termux_home is not None:
+        return os.path.join(termux_home, ".local", "state", "fetchtastic", "run-locks")
+    return os.path.join(platformdirs.user_state_dir("fetchtastic"), "run-locks")
+
+
+def get_run_lock_path(download_dir: str) -> str:
+    """Return the rendezvous lock path scoped to ``download_dir``.
+
+    The scope hash is taken over the canonical path (``realpath`` resolves
+    symlink aliases so one physical download directory maps to one lock,
+    ``normcase`` normalizes Windows case), while distinct download
+    directories still lock independently in the shared state directory.
+    """
+    canonical = os.path.normcase(os.path.realpath(os.path.expanduser(download_dir)))
+    scope = hashlib.sha256(canonical.encode("utf-8", "replace")).hexdigest()[:16]
+    return os.path.join(default_run_lock_dir(), f"fetchtastic-run-{scope}.lock")
 
 
 class RunLockAcquireResult(Enum):
