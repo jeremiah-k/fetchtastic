@@ -186,6 +186,53 @@ class TestFirmwareReleaseDownloader:
         assert "v2.7.14" in remaining_names
         assert "v2.7.13" in remaining_names
 
+    def test_cleanup_uses_fresh_release_list_without_refetch(
+        self, test_config, tmp_path
+    ):
+        """A fresh release list shorter than the fetch window is used as-is.
+
+        GitHub can return fewer public releases than requested (drafts are
+        hidden), so gating on len(cached) >= fetch window is unsatisfiable
+        for such repos and forced a redundant refetch on every run.
+        """
+        cache_manager = CacheManager(str(tmp_path / "cache"))
+        downloader = FirmwareReleaseDownloader(test_config, cache_manager)
+        downloader.download_dir = str(tmp_path)
+
+        for version in ["v2.7.10", "v2.7.11", "v2.7.12"]:
+            (tmp_path / "firmware" / version).mkdir(parents=True)
+
+        fresh_releases = [
+            Release(tag_name="v2.7.12"),
+            Release(tag_name="v2.7.11"),
+            Release(tag_name="v2.7.10"),
+        ]
+        downloader.get_releases = Mock(return_value=fresh_releases)
+        downloader.cleanup_old_versions(keep_limit=2, cached_releases=fresh_releases)
+
+        downloader.get_releases.assert_not_called()
+        remaining = sorted(d.name for d in (tmp_path / "firmware").iterdir())
+        assert remaining == ["v2.7.11", "v2.7.12"]
+
+    def test_cleanup_fetches_when_no_release_list_provided(self, test_config, tmp_path):
+        """Without a cached list, cleanup fetches releases itself."""
+        cache_manager = CacheManager(str(tmp_path / "cache"))
+        downloader = FirmwareReleaseDownloader(test_config, cache_manager)
+        downloader.download_dir = str(tmp_path)
+        (tmp_path / "firmware" / "v2.7.12").mkdir(parents=True)
+
+        downloader.get_releases = Mock(
+            return_value=[
+                Release(tag_name="v2.7.12"),
+                Release(tag_name="v2.7.11"),
+                Release(tag_name="v2.7.10"),
+            ]
+        )
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        downloader.get_releases.assert_called_once()
+        assert list((tmp_path / "firmware").iterdir())
+
     def test_get_latest_release_tag(self, test_config, tmp_path):
         """Test getting the latest release tag."""
         cache_manager = CacheManager(str(tmp_path))

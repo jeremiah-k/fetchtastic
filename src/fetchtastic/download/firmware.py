@@ -1420,7 +1420,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
                 older directories will be deleted. Pass 0 to delete all version directories.
-            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
+            cached_releases (Optional[List[Release]]): The run's freshly fetched release list; when empty or omitted, releases are fetched with the same limit this method computes.
             keep_last_beta (bool): If True, always keep the most recent beta release
                 in addition to keep_limit releases. Default is False.
         """
@@ -1459,23 +1459,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
             # otherwise make the safety guard below turn keep=0 into a no-op.
             fetch_limit = max(1, min(100, fetch_limit if fetch_limit >= 0 else 0))
 
-            if cached_releases is not None and len(cached_releases) >= fetch_limit:
+            if cached_releases:
+                # Callers pass the run's freshly fetched release list, fetched
+                # with the same limit this method would use. GitHub can return
+                # fewer public releases than requested (drafts are hidden), so
+                # a length gate against fetch_limit is unsatisfiable in that
+                # case and forced a redundant refetch on every run; the list
+                # the run already holds is exactly what a refetch would return.
                 all_releases = cached_releases
+                if len(cached_releases) < fetch_limit:
+                    logger.debug(
+                        "Using the run's release list for cleanup: %d releases "
+                        "(fetch window is %d)",
+                        len(cached_releases),
+                        fetch_limit,
+                    )
             else:
-                cached_len = len(cached_releases) if cached_releases is not None else 0
-                reason_parts = []
-                if keep_last_beta:
-                    reason_parts.append("keep_last_beta")
-                if filter_revoked:
-                    reason_parts.append("filter_revoked")
-                reason_text = (
-                    " and ".join(reason_parts) if reason_parts else "fetch requirements"
-                )
                 logger.debug(
-                    "cached_releases contains %d releases but %d are needed to honor %s; refetching",
-                    cached_len,
+                    "No release list provided; fetching up to %d releases for cleanup",
                     fetch_limit,
-                    reason_text,
                 )
                 all_releases = self.get_releases(limit=fetch_limit)
             if not all_releases:
