@@ -22,7 +22,9 @@ the module collects cleanly even when an API is partially absent.
 
 import hashlib
 import json
+import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
@@ -786,6 +788,167 @@ def test_fetch_firmware_nightlies_skips_missing_target_manifest(
     assert f"firmware-rak4631-{BUILD_2_8_0}.mt.json" in names
     # Nothing from the missing variant.
     assert not any("xiao_nrf54l15_lr2021" in name for name in names)
+
+
+def test_missing_target_manifest_warns_once_per_target(downloader, caplog):
+    """A permanently absent manifest warns on its first run, debug afterwards."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body(
+        boards=("rak4631", "xiao_nrf54l15_lr2021")
+    )
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631",))
+
+    def _target_manifest(target_id, **_):
+        if target_id.startswith("xiao_nrf54l15_lr2021-"):
+            return {}
+        return target_bodies[target_id]
+
+    downloader.cache_manager.get_nightly_index = Mock(return_value=index_body)
+    downloader.cache_manager.get_nightly_release_manifest = Mock(
+        return_value=release_body
+    )
+    downloader.cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=_target_manifest
+    )
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+
+    with caplog.at_level(logging.DEBUG, logger="fetchtastic"):
+        fetch()
+    assert any(
+        record.levelno == logging.WARNING
+        and "target manifest missing" in record.getMessage()
+        for record in caplog.records
+    )
+    assert any(
+        record.levelno == logging.WARNING
+        and "missing or malformed manifests" in record.getMessage()
+        for record in caplog.records
+    )
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="fetchtastic"):
+        fetch()
+    assert not any(
+        record.levelno == logging.WARNING
+        and "target manifest missing" in record.getMessage()
+        for record in caplog.records
+    )
+    assert not any(
+        record.levelno == logging.WARNING
+        and "missing or malformed manifests" in record.getMessage()
+        for record in caplog.records
+    )
+    assert any("still missing" in record.getMessage() for record in caplog.records)
+
+
+def test_missing_target_manifest_backfill_clears_recorded_absence(downloader):
+    """A manifest that appears again removes the recorded absence."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body(
+        boards=("rak4631", "xiao_nrf54l15_lr2021")
+    )
+    target_bodies = _make_nightly_target_bodies(
+        boards=("rak4631", "xiao_nrf54l15_lr2021")
+    )
+
+    downloader.cache_manager.get_nightly_index = Mock(return_value=index_body)
+    downloader.cache_manager.get_nightly_release_manifest = Mock(
+        return_value=release_body
+    )
+    downloader.cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: (
+            {}
+            if target_id.startswith("xiao_nrf54l15_lr2021-")
+            else target_bodies[target_id]
+        )
+    )
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    fetch()
+    state_path = downloader.cache_manager.get_cache_file_path(
+        constants.FIRMWARE_NIGHTLY_MISSING_MANIFESTS_JSON_FILE
+    )
+    recorded = downloader.cache_manager.read_json(state_path)
+    assert recorded is not None
+    assert any(
+        target_id.startswith("xiao_nrf54l15_lr2021")
+        for target_id in recorded["targets"]
+    )
+
+    downloader.cache_manager.get_nightly_target_manifest.side_effect = (
+        lambda target_id, **_: target_bodies[target_id]
+    )
+    fetch()
+
+    cleared = downloader.cache_manager.read_json(state_path)
+    assert cleared is not None
+    assert not any(
+        target_id.startswith("xiao_nrf54l15_lr2021") for target_id in cleared["targets"]
+    )
+
+
+def test_all_target_manifests_absent_still_persists_state(downloader):
+    """Persistence survives the not-yet-published early return."""
+    downloader.cache_manager.get_nightly_index = Mock(
+        return_value=_make_nightly_index_body()
+    )
+    downloader.cache_manager.get_nightly_release_manifest = Mock(
+        return_value=_make_nightly_release_body(boards=("rak4631", "tbeam"))
+    )
+    downloader.cache_manager.get_nightly_target_manifest = Mock(return_value={})
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    assert fetch() == []
+
+    state_path = downloader.cache_manager.get_cache_file_path(
+        constants.FIRMWARE_NIGHTLY_MISSING_MANIFESTS_JSON_FILE
+    )
+    recorded = downloader.cache_manager.read_json(state_path)
+    assert recorded is not None
+    assert set(recorded["targets"]) == {
+        f"rak4631-{BUILD_2_8_0}",
+        f"tbeam-{BUILD_2_8_0}",
+    }
+
+
+def test_stale_missing_manifest_entry_pruned_without_new_absences(downloader):
+    """The absence record is pruned even when a run records no new absence."""
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body(
+        boards=("rak4631", "xiao_nrf54l15_lr2021")
+    )
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631",))
+    stale_target_id = f"xiao_nrf54l15_lr2021-{BUILD_2_8_0}"
+
+    state_path = downloader.cache_manager.get_cache_file_path(
+        constants.FIRMWARE_NIGHTLY_MISSING_MANIFESTS_JSON_FILE
+    )
+    downloader.cache_manager.atomic_write_json(
+        state_path,
+        {"targets": {stale_target_id: time.time() - 31 * 86400}},
+    )
+
+    downloader.cache_manager.get_nightly_index = Mock(return_value=index_body)
+    downloader.cache_manager.get_nightly_release_manifest = Mock(
+        return_value=release_body
+    )
+    downloader.cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: (
+            {}
+            if target_id.startswith("xiao_nrf54l15_lr2021-")
+            else target_bodies[target_id]
+        )
+    )
+
+    fetch = _require_method(downloader, "fetch_firmware_nightlies")
+    entries = fetch()
+    # The run itself is unchanged: one good variant, one known-absent skip.
+    assert any(f"firmware-rak4631-{BUILD_2_8_0}.uf2" in e["name"] for e in entries)
+
+    recorded = downloader.cache_manager.read_json(state_path)
+    assert recorded is not None
+    assert stale_target_id not in recorded["targets"]
 
 
 def test_fetch_firmware_nightlies_skips_target_manifest_fetch_error(

@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple, cast
@@ -43,6 +44,7 @@ from fetchtastic.constants import (
     FIRMWARE_NIGHTLY_HELPER_BASE_URL,
     FIRMWARE_NIGHTLY_HELPER_SCRIPTS,
     FIRMWARE_NIGHTLY_MANIFEST_PATTERN,
+    FIRMWARE_NIGHTLY_MISSING_MANIFESTS_JSON_FILE,
     FIRMWARE_PRERELEASES_DIR_NAME,
     FIRMWARE_RELEASE_HISTORY_JSON_FILE,
     LATEST_FIRMWARE_NIGHTLY_JSON_FILE,
@@ -3022,6 +3024,51 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """Cache path to the latest firmware-nightly tracking JSON."""
         return self.cache_manager.get_cache_file_path(LATEST_FIRMWARE_NIGHTLY_JSON_FILE)
 
+    def _load_known_missing_nightly_manifests(self) -> Dict[str, float]:
+        """Load target ids whose nightly manifest has been observed absent.
+
+        Returns a mapping of ``"<board>-<build-id>"`` to the epoch time the
+        absence was first recorded.
+        """
+        state_path = self.cache_manager.get_cache_file_path(
+            FIRMWARE_NIGHTLY_MISSING_MANIFESTS_JSON_FILE
+        )
+        data = self.cache_manager.read_json(state_path)
+        if not isinstance(data, dict):
+            return {}
+        entries = data.get("targets")
+        if not isinstance(entries, dict):
+            return {}
+        return {
+            target_id: seen
+            for target_id, seen in entries.items()
+            if isinstance(target_id, str) and isinstance(seen, (int, float))
+        }
+
+    def _save_known_missing_nightly_manifests(self, entries: Dict[str, float]) -> bool:
+        """Persist absent-manifest target ids, pruning stale entries.
+
+        Entries first recorded more than 30 days ago are dropped and the
+        map is capped at the 512 most recent ids, so abandoned boards and
+        superseded build ids cannot accumulate forever.
+        """
+        cutoff = time.time() - 30 * 86400
+        recent = sorted(
+            (
+                (target_id, seen)
+                for target_id, seen in entries.items()
+                if seen >= cutoff
+            ),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:512]
+        state_path = self.cache_manager.get_cache_file_path(
+            FIRMWARE_NIGHTLY_MISSING_MANIFESTS_JSON_FILE
+        )
+        return self.cache_manager.atomic_write_json(
+            state_path, {"targets": dict(recent)}
+        )
+
     def fetch_firmware_nightlies(self) -> List[Dict[str, Any]]:
         """
         Fetch the rolling firmware-nightly build from nightly.meshtastic.org.
@@ -3056,7 +3103,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         target entry missing ``board``) is skipped with a warning — the
         remaining variants still process, and a later run backfills the
         variant once its manifest is published (same-identity backfill in
-        :meth:`should_process_nightly`). When *every* target manifest is
+        :meth:`should_process_nightly`). A missing manifest warns only on
+        its first occurrence per target id; the absence is recorded in a
+        small state file and later runs skip that variant at debug level
+        until the manifest appears (boards dropped from the nightly build
+        therefore do not warn on every run). When *every* target manifest is
         unavailable the listing is treated as not-yet-published
         (``[]``, not an error): finalizing a build with zero device
         payloads would permanently mark it complete.
@@ -3135,6 +3186,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         skipped_unpublished_outputs = 0
         skipped_targets = 0
         published_payloads = 0
+        # Per-target manifests can be permanently absent (a board dropped
+        # from the nightly build); such absences are recorded so only the
+        # first occurrence per target warns.
+        known_missing_manifests = self._load_known_missing_nightly_manifests()
+        known_missing_skips = 0
 
         # Target manifests are version-addressed by build id. Reuse their
         # longer bounded cache and one HTTP session so routine reruns do not
@@ -3179,14 +3235,33 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     # 404 while the rest of the generation is already live (or
                     # the board simply failed to build). One absent variant
                     # must not cancel the whole nightly run — skip it; a later
-                    # run backfills it once the manifest is published.
-                    logger.warning(
-                        "firmware-nightly target manifest missing for %s; "
-                        "skipping that variant",
-                        target_id,
-                    )
+                    # run backfills it once the manifest is published. Boards
+                    # dropped from the nightly build stay absent forever, so
+                    # only the first absence per target warns; repeats are
+                    # debug-level.
+                    if target_id in known_missing_manifests:
+                        logger.debug(
+                            "firmware-nightly target manifest still missing for %s; "
+                            "skipping that variant",
+                            target_id,
+                        )
+                        known_missing_skips += 1
+                    else:
+                        logger.warning(
+                            "firmware-nightly target manifest missing for %s; "
+                            "skipping that variant",
+                            target_id,
+                        )
+                        known_missing_manifests[target_id] = time.time()
                     skipped_targets += 1
                     continue
+
+                if target_id in known_missing_manifests:
+                    del known_missing_manifests[target_id]
+                    logger.debug(
+                        "firmware-nightly target manifest for %s is published again",
+                        target_id,
+                    )
 
                 # Structural problems inside one manifest are handled the same
                 # way: the variant is skipped whole rather than emitting a
@@ -3267,6 +3342,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     )
                     published_payloads += 1
 
+        # Persist the absence record on every completed pass through the
+        # targets — including the all-manifests-absent case that returns
+        # below, and runs with no new absences so the 30-day prune stays
+        # effective for entries whose target has since vanished upstream.
+        if not self._save_known_missing_nightly_manifests(known_missing_manifests):
+            logger.debug("Could not persist firmware-nightly missing-manifest state")
+
         if published_payloads == 0:
             # Every variant contributes zero published device payloads: the
             # generation is mid-upload (or the bucket is broken). Treat it like
@@ -3281,11 +3363,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return []
 
         if skipped_targets:
-            logger.warning(
-                "Skipped %d firmware-nightly target(s) with missing or "
-                "malformed manifests",
-                skipped_targets,
-            )
+            if skipped_targets > known_missing_skips:
+                logger.warning(
+                    "Skipped %d firmware-nightly target(s) with missing or "
+                    "malformed manifests",
+                    skipped_targets,
+                )
+            else:
+                # Every skip is a manifest already known to be absent; the
+                # per-target warning covered it on its first occurrence.
+                logger.debug(
+                    "Skipped %d firmware-nightly target(s) whose manifests "
+                    "remain absent",
+                    skipped_targets,
+                )
 
         if skipped_unpublished_outputs:
             logger.debug(
