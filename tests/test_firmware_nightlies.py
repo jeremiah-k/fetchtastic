@@ -6484,3 +6484,98 @@ def test_orch_config_mutation_cannot_alter_repair_set(downloader, tmp_path):
     # the precomputed set was used, not a recomputed empty set.
     assert "device-install.sh" in examined_names
     downloader.get_selected_nightly_assets.assert_not_called()
+
+
+def test_malformed_missing_manifest_state_is_ignored(downloader, caplog):
+    """A state file whose targets entry is not a mapping is rebuilt from scratch."""
+    state_path = downloader.cache_manager.get_cache_file_path(
+        constants.FIRMWARE_NIGHTLY_MISSING_MANIFESTS_JSON_FILE
+    )
+    downloader.cache_manager.atomic_write_json(state_path, {"targets": ["nope"]})
+
+    index_body = _make_nightly_index_body()
+    release_body = _make_nightly_release_body(
+        boards=("rak4631", "xiao_nrf54l15_lr2021")
+    )
+    target_bodies = _make_nightly_target_bodies(boards=("rak4631",))
+    downloader.cache_manager.get_nightly_index = Mock(return_value=index_body)
+    downloader.cache_manager.get_nightly_release_manifest = Mock(
+        return_value=release_body
+    )
+    downloader.cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: (
+            {}
+            if target_id.startswith("xiao_nrf54l15_lr2021-")
+            else target_bodies[target_id]
+        )
+    )
+
+    with caplog.at_level(logging.WARNING, logger="fetchtastic"):
+        entries = _require_method(downloader, "fetch_firmware_nightlies")()
+
+    # The corrupt record was not treated as a known absence: the missing
+    # manifest warns again and the run still publishes the good variant.
+    assert any(f"firmware-rak4631-{BUILD_2_8_0}.uf2" in e["name"] for e in entries)
+    assert any(
+        "target manifest missing" in record.getMessage() for record in caplog.records
+    )
+    rebuilt = downloader.cache_manager.read_json(state_path)
+    assert rebuilt is not None
+    assert set(rebuilt["targets"]) == {f"xiao_nrf54l15_lr2021-{BUILD_2_8_0}"}
+
+
+def test_missing_manifest_state_save_failure_is_debug_only(downloader, caplog):
+    """A failed state write never breaks the nightly listing."""
+    downloader.cache_manager.get_nightly_index = Mock(
+        return_value=_make_nightly_index_body()
+    )
+    downloader.cache_manager.get_nightly_release_manifest = Mock(
+        return_value=_make_nightly_release_body()
+    )
+    target_bodies = _make_nightly_target_bodies()
+    downloader.cache_manager.get_nightly_target_manifest = Mock(
+        side_effect=lambda target_id, **_: target_bodies[target_id]
+    )
+    downloader.cache_manager.atomic_write_json = Mock(return_value=False)
+
+    with caplog.at_level(logging.DEBUG, logger="fetchtastic"):
+        entries = _require_method(downloader, "fetch_firmware_nightlies")()
+
+    assert entries, "the listing must still be produced when state cannot persist"
+    assert any(
+        "Could not persist firmware-nightly missing-manifest state"
+        in record.getMessage()
+        for record in caplog.records
+    )
+    assert not any(
+        record.levelno == logging.ERROR or record.levelno == logging.WARNING
+        for record in caplog.records
+    )
+
+
+def test_fetch_firmware_nightlies_raises_when_release_manifest_missing(downloader):
+    """A missing release manifest fails closed (CHECK_FAILED), not as empty."""
+    downloader.cache_manager.get_nightly_index = Mock(
+        return_value=_make_nightly_index_body()
+    )
+    downloader.cache_manager.get_nightly_release_manifest = Mock(return_value={})
+
+    with pytest.raises(ValueError, match="release manifest missing"):
+        _require_method(downloader, "fetch_firmware_nightlies")()
+
+
+def test_fetch_firmware_nightlies_raises_when_release_manifest_has_no_targets(
+    downloader,
+):
+    """A release manifest without targets fails closed (CHECK_FAILED)."""
+    release_body = _make_nightly_release_body()
+    release_body["targets"] = []
+    downloader.cache_manager.get_nightly_index = Mock(
+        return_value=_make_nightly_index_body()
+    )
+    downloader.cache_manager.get_nightly_release_manifest = Mock(
+        return_value=release_body
+    )
+
+    with pytest.raises(ValueError, match="has no targets"):
+        _require_method(downloader, "fetch_firmware_nightlies")()
