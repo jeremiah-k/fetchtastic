@@ -505,6 +505,8 @@ class DownloadOrchestrator:
                     )
                 else:
                     logger.info("No client app releases found")
+                if snapshots_enabled:
+                    self._process_client_app_snapshots()
                 return
 
             self.client_app_downloader.update_release_history(app_releases)
@@ -669,94 +671,72 @@ class DownloadOrchestrator:
             if real_release_downloaded:
                 self.client_app_downloader.cleanup_superseded_snapshots()
 
-            # --- Snapshot Debug Builds (rolling "snapshot" tag) ---
             if snapshots_enabled:
-                logger.info("Checking for Client app snapshot debug builds...")
-                snapshot_release = self.client_app_downloader.fetch_snapshot_release()
-                handled_snapshot = self.client_app_downloader.handle_snapshots(
-                    snapshot_release
+                any_app_downloaded = (
+                    self._process_client_app_snapshots() or any_app_downloaded
                 )
-                if handled_snapshot is not None:
-                    snapshot_vc = self.client_app_downloader.get_snapshot_version_code(
-                        handled_snapshot
-                    )
-                    if snapshot_vc is not None and (
-                        self.client_app_downloader.should_process_snapshot(
-                            handled_snapshot, snapshot_vc
-                        )
-                    ):
-                        selected_assets = (
-                            self.client_app_downloader.get_selected_snapshot_assets(
-                                handled_snapshot
-                            )
-                        )
-                        if not selected_assets:
-                            logger.info(
-                                "No selected assets match snapshot debug build %s; skipping",
-                                snapshot_vc,
-                            )
-                        else:
-                            logger.info(
-                                "Downloading snapshot debug build %s", snapshot_vc
-                            )
-                            snapshot_results = []
-                            for asset in selected_assets:
-                                snapshot_result = (
-                                    self.client_app_downloader.download_snapshot_asset(
-                                        handled_snapshot, asset, snapshot_vc
-                                    )
-                                )
-                                if (
-                                    snapshot_result.success
-                                    and not snapshot_result.was_skipped
-                                ):
-                                    any_app_downloaded = True
-                                self._handle_download_result(
-                                    snapshot_result, FILE_TYPE_APP_SNAPSHOT
-                                )
-                                snapshot_results.append(snapshot_result)
-                            # Transactional: only track when all selected succeed
-                            if snapshot_results and all(
-                                r.success for r in snapshot_results
-                            ):
-                                if not self.client_app_downloader.update_snapshot_tracking(
-                                    snapshot_vc,
-                                    self.client_app_downloader.extract_snapshot_commit_sha(
-                                        handled_snapshot
-                                    ),
-                                ):
-                                    logger.warning(
-                                        "Failed to update snapshot tracking for %s",
-                                        snapshot_vc,
-                                    )
-                            elif snapshot_results:
-                                logger.warning(
-                                    "Snapshot %s has failed assets; tracking and cleanup deferred",
-                                    snapshot_vc,
-                                )
-                    else:
-                        if snapshot_vc is not None:
-                            logger.debug(
-                                "Snapshot debug build %s is up to date", snapshot_vc
-                            )
-                        else:
-                            logger.debug(
-                                "Snapshot release has no parsable versionCode; skipping"
-                            )
-                elif snapshot_release is not None:
-                    logger.debug("Snapshot release has no stamped client app assets")
-                else:
-                    logger.debug("No snapshot release found")
 
             if (
                 not any_app_downloaded
                 and not releases_to_download
-                and not (self.failed_downloads)
+                and not self.failed_downloads
+                and not self.release_check_failed
             ):
                 logger.info("All client app assets are up to date.")
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            self.release_check_failed = True
             logger.error(f"Error processing client app downloads: {e}", exc_info=True)
+
+    def _process_client_app_snapshots(self) -> bool:
+        """Check the rolling channel independently of ordinary releases."""
+        downloader = self.client_app_downloader
+        logger.info("Checking for client app snapshot builds...")
+        release = downloader.fetch_snapshot_release()
+        if downloader.last_snapshot_fetch_failed:
+            self.release_check_failed = True
+            return False
+        handled = downloader.handle_snapshots(release)
+        if handled is None:
+            logger.debug("No snapshot release with stamped client app assets found")
+            return False
+        version_code = downloader.get_snapshot_version_code(handled)
+        if version_code is None:
+            self.release_check_failed = True
+            logger.warning(
+                "Cannot verify snapshot release with invalid or mixed versionCodes"
+            )
+            return False
+        if not downloader.should_process_snapshot(handled, version_code):
+            logger.debug("Snapshot build %s is up to date", version_code)
+            return False
+        assets = downloader.get_selected_snapshot_assets(handled)
+        if not assets:
+            logger.info(
+                "No selected assets match snapshot build %s; skipping", version_code
+            )
+            return False
+        logger.info("Downloading snapshot build %s", version_code)
+        results = []
+        for asset in assets:
+            result = downloader.download_snapshot_asset(handled, asset, version_code)
+            self._handle_download_result(result, FILE_TYPE_APP_SNAPSHOT)
+            results.append(result)
+        # Track only complete selections; snapshot-only runs preserve retention behavior.
+        if all(result.success for result in results):
+            if not downloader.update_snapshot_tracking(
+                version_code, downloader.extract_snapshot_commit_sha(handled)
+            ):
+                self.release_check_failed = True
+                logger.warning(
+                    "Failed to update snapshot tracking for %s", version_code
+                )
+        else:
+            logger.warning(
+                "Snapshot %s has failed assets; tracking and cleanup deferred",
+                version_code,
+            )
+        return any(result.success and not result.was_skipped for result in results)
 
     def _get_tracked_prerelease_tag(self, downloader: Any) -> Optional[str]:
         """
@@ -2470,7 +2450,7 @@ class DownloadOrchestrator:
 
         logger.debug("Download pipeline completed")
         logger.debug(f"Time taken: {elapsed_time:.2f} seconds")
-        if not downloaded and total_failures == 0:
+        if not downloaded and total_failures == 0 and not self.release_check_failed:
             logger.debug("All assets are up to date.")
         else:
             # Group results by product category
