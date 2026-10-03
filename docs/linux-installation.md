@@ -10,67 +10,60 @@ curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetc
 
 > **Security Note:** For security-conscious users, you can [download and inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh) before running it.
 
-This script will:
+For a new installation, the script installs uv when needed and installs Fetchtastic
+in its isolated tool environment. If Fetchtastic is already installed by uv, pipx, or
+a detectable pip environment, re-running the script upgrades through that manager
+instead of switching ownership. Migration to uv is explicit.
 
-- Check if Python is installed and install it if needed
-- Install pipx for better package isolation
-- Install Fetchtastic via pipx
-- Run the initial setup process
+## Manual Installation with uv
 
-## Manual Installation
-
-If you prefer to install manually or need more control over the process:
-
-### Prerequisites
-
-- Python 3.10 or higher
-- pip (usually comes with Python)
-
-### Step 1: Install pipx (Recommended)
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
 
 ```bash
-# Install pipx
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-
-# Restart your shell or run:
-source ~/.bashrc
+uv tool install --python '>=3.10' fetchtastic
+uv tool update-shell
 ```
 
-### Step 2: Install Fetchtastic
+Restart your terminal if PATH was updated, then run `fetchtastic setup`.
+uv installs Fetchtastic in an isolated environment and supplies a suitable
+Python when needed.
+
+## Install with pip
+
+Use Python 3.10+ in a virtual environment. On Debian/Ubuntu, install
+`python3-venv` if creating the environment fails.
 
 ```bash
-pipx install fetchtastic
+python3 -m venv ~/.local/share/fetchtastic/venv
+~/.local/share/fetchtastic/venv/bin/python -m pip install fetchtastic
+~/.local/share/fetchtastic/venv/bin/fetchtastic setup
 ```
 
-### Step 3: Run Setup
-
-```bash
-fetchtastic setup
-```
-
-## Alternative: Install with pip
-
-If you prefer using pip directly (not recommended for isolation):
-
-```bash
-pip install --user fetchtastic
-fetchtastic setup
-```
+The shell installer also supports `bash setup_fetchtastic.sh pip`, which creates
+this environment and links the command in `~/.local/bin`. Existing pipx
+installations remain supported (`bash setup_fetchtastic.sh pipx`). A no-argument
+rerun preserves the recognized manager; it does not migrate pip or pipx to uv.
 
 ## Upgrading
 
-To upgrade Fetchtastic to the latest version:
+Use your installation's manager:
 
 ```bash
+uv tool upgrade fetchtastic
+# pip:
+~/.local/share/fetchtastic/venv/bin/python -m pip install --upgrade fetchtastic
+# pipx:
 pipx upgrade fetchtastic
 ```
 
-If pipx reports "already at latest version" but you know there's a newer version:
+## Migrating to uv
 
-```bash
-pipx install fetchtastic --force
-```
+Configuration and downloads are stored outside the package environment. Keep
+those directories when switching installers. Remove the package using the
+manager that installed it (`pipx uninstall fetchtastic`, or the existing
+environment's `python -m pip uninstall fetchtastic`), then install with uv as
+above. Refresh scheduled commands and shortcuts with `fetchtastic setup` so they
+use the uv executable path. Do not remove your configuration or downloads.
 
 ## Scheduling (Optional)
 
@@ -127,14 +120,14 @@ sudo pacman -S python python-pip
 
 ### Permission Issues
 
-If you encounter permission issues, make sure you're not using `sudo` with pip or pipx. These tools should be run as your regular user.
+If you encounter permission issues, run uv or pip in a virtual environment as your regular user.
 
 ### PATH Issues
 
-If `fetchtastic` command is not found after installation, ensure pipx's bin directory is in your PATH:
+If `fetchtastic` command is not found after installation, update uv's executable directory in your PATH:
 
 ```bash
-python3 -m pipx ensurepath
+uv tool update-shell
 source ~/.bashrc
 ```
 
@@ -144,7 +137,7 @@ To completely remove Fetchtastic:
 
 ```bash
 # Remove the application
-pipx uninstall fetchtastic
+uv tool uninstall fetchtastic
 
 # Remove configuration and downloads (optional)
 rm -rf ~/.config/fetchtastic
