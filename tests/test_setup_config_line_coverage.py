@@ -204,7 +204,7 @@ def test_load_config_old_location_returns_none(tmp_path, mocker):
     assert result is None
 
 
-def test_migrate_pip_to_pipx_in_setup_base_success(mocker, capsys, tmp_path):
+def test_termux_setup_preserves_pip_and_explains_uv(mocker, capsys, tmp_path):
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mocker.patch(
@@ -217,7 +217,7 @@ def test_migrate_pip_to_pipx_in_setup_base_success(mocker, capsys, tmp_path):
 
     mocker.patch(
         "fetchtastic.setup_config._safe_input",
-        side_effect=["y", str(tmp_path)],
+        side_effect=[str(tmp_path)],
     )
     mocker.patch("shutil.which", return_value="/usr/bin/fake")
     mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))
@@ -234,6 +234,7 @@ def test_migrate_pip_to_pipx_in_setup_base_success(mocker, capsys, tmp_path):
     )
 
     captured = capsys.readouterr()
-    assert "pipx installed" in captured.out
-    assert "Removed pip installation" in captured.out
-    assert "Installed with pipx" in captured.out
+    assert "pip upgrades remain supported" in captured.out
+    assert "uv tool install" in captured.out
+    setup_config = __import__("fetchtastic.setup_config", fromlist=["_setup_base"])
+    setup_config.subprocess.run.assert_not_called()

@@ -3,6 +3,8 @@ Comprehensive tests for pip-to-pipx migration functionality.
 """
 
 import os
+import shlex
+import sys
 import tempfile
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -191,7 +193,10 @@ class TestPipToPipxMigration:
 
         command = setup_config.get_upgrade_command()
 
-        assert command == "pip install --upgrade fetchtastic"
+        assert (
+            command
+            == f"{shlex.quote(sys.executable)} -m pip install --upgrade fetchtastic"
+        )
 
     def test_get_upgrade_command_termux_pipx(self, mocker):
         """Test get_upgrade_command for Termux with pipx."""
@@ -206,12 +211,15 @@ class TestPipToPipxMigration:
         assert command == "pipx upgrade fetchtastic"
 
     def test_get_upgrade_command_non_termux(self, mocker):
-        """Test get_upgrade_command for non-Termux (should default to pipx)."""
-        mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+        """Test uv upgrade commands outside Termux."""
+        mocker.patch(
+            "fetchtastic.setup_config.get_fetchtastic_installation_method",
+            return_value="uv",
+        )
 
         command = setup_config.get_upgrade_command()
 
-        assert command == "pipx upgrade fetchtastic"
+        assert command == "uv tool upgrade fetchtastic"
 
     def test_get_version_info(self, mocker):
         """Test get_version_info function."""
