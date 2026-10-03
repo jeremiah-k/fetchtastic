@@ -4089,7 +4089,7 @@ def test_cli_summary_nightly_check_failed_emits_message(tmp_path):
     integration.orchestrator.download_results = []
     integration.orchestrator.failed_downloads = []
     integration.orchestrator.available_new_firmware_versions = []
-    integration.orchestrator.available_new_apk_versions = []
+    integration.orchestrator.available_new_client_app_versions = []
     integration.orchestrator.get_latest_versions = Mock(return_value={})
 
     mock_log = Mock()
@@ -4107,10 +4107,10 @@ def test_cli_summary_nightly_check_failed_emits_message(tmp_path):
             logger_override=mock_log,
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     logged = " ".join(str(c) for c in mock_log.info.call_args_list)
@@ -4133,7 +4133,7 @@ def test_cli_summary_nightly_incomplete_emits_message(tmp_path):
     integration.orchestrator.download_results = []
     integration.orchestrator.failed_downloads = []
     integration.orchestrator.available_new_firmware_versions = []
-    integration.orchestrator.available_new_apk_versions = []
+    integration.orchestrator.available_new_client_app_versions = []
     integration.orchestrator.get_latest_versions = Mock(return_value={})
 
     mock_log = Mock()
@@ -4151,10 +4151,10 @@ def test_cli_summary_nightly_incomplete_emits_message(tmp_path):
             logger_override=mock_log,
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     logged = " ".join(str(c) for c in mock_log.info.call_args_list)
@@ -4177,7 +4177,7 @@ def test_cli_summary_maintenance_only_allows_up_to_date(tmp_path):
     integration.orchestrator.download_results = []
     integration.orchestrator.failed_downloads = []
     integration.orchestrator.available_new_firmware_versions = []
-    integration.orchestrator.available_new_apk_versions = []
+    integration.orchestrator.available_new_client_app_versions = []
     integration.orchestrator.get_latest_versions = Mock(return_value={})
 
     mock_log = Mock()
@@ -4194,10 +4194,10 @@ def test_cli_summary_maintenance_only_allows_up_to_date(tmp_path):
             logger_override=mock_log,
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     logged = " ".join(str(c) for c in mock_log.info.call_args_list)

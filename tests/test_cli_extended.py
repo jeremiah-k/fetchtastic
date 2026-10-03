@@ -9,6 +9,7 @@ from pick import Option
 # Import package module (matches how users invoke it)
 import fetchtastic.cli as cli
 import fetchtastic.menu_repo as menu_repo
+from fetchtastic.download.cli_integration import DownloadReport
 
 
 @pytest.mark.user_interface
@@ -363,20 +364,16 @@ def test_cli_download_failed_downloads_reporting(mocker):
         },
     ]
 
-    mock_integration.main.return_value = (
-        [],  # downloaded_firmwares
-        ["v2.0.1"],  # new_firmware_versions
-        [],  # downloaded_apks
-        ["v1.1.0"],  # new_apk_versions
-        [],  # downloaded_desktop
-        [],  # new_desktop_versions
-        [],  # downloaded_firmware_prereleases
-        [],  # downloaded_apk_prereleases
-        [],  # downloaded_desktop_prereleases
-        failed_downloads,  # failed_downloads
-        "",  # latest_firmware_version
-        "",  # latest_apk_version
-        "",  # latest_desktop_version
+    mock_integration.main.return_value = DownloadReport(
+        [],
+        ["v2.0.1"],
+        [],
+        ["v1.1.0"],
+        [],
+        [],
+        failed_downloads,
+        "",
+        "",
     )
 
     mocker.patch(
@@ -404,13 +401,13 @@ def test_cli_download_failed_downloads_reporting(mocker):
     assert call_args.kwargs["failed_downloads"] == failed_downloads
     assert len(call_args.kwargs["failed_downloads"]) == 2
     assert call_args.kwargs["new_firmware_versions"] == ["v2.0.1"]
-    assert call_args.kwargs["new_apk_versions"] == ["v1.1.0"]
+    assert call_args.kwargs["new_client_app_versions"] == ["v1.1.0"]
 
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_download_legacy_result_shape_is_normalized(mocker):
-    """CLI should tolerate legacy/short integration tuple shapes."""
+def test_cli_download_empty_report(mocker):
+    """CLI should pass an empty shared report to the download summary."""
     mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
     mocker.patch("urllib3.connection.HTTPSConnection")
     mocker.patch("urllib3.connection.HTTPConnection")
@@ -418,18 +415,7 @@ def test_cli_download_legacy_result_shape_is_normalized(mocker):
     mocker.patch("requests.Session.get", return_value=mocker.MagicMock())
 
     mock_integration = mocker.MagicMock()
-    # Legacy shape (9 fields) previously caused ValueError during unpacking.
-    mock_integration.main.return_value = (
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        "",
-        "",
-    )
+    mock_integration.main.return_value = DownloadReport.empty()
 
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/config.yaml")
@@ -454,8 +440,8 @@ def test_cli_download_legacy_result_shape_is_normalized(mocker):
     kwargs = mock_integration.log_download_results_summary.call_args.kwargs
     assert kwargs["failed_downloads"] == []
     assert kwargs["latest_firmware_version"] == ""
-    assert kwargs["latest_apk_version"] == ""
-    assert kwargs["latest_desktop_version"] == ""
+    assert kwargs["latest_client_app_version"] == ""
+    assert "latest_desktop_version" not in kwargs
 
 
 @pytest.mark.user_interface

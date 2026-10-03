@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "fetchtastic"
 version = "0.11.4"
 authors = [{ name = "Jeremiah K", email = "jeremiahk@gmx.com" }]
-description = "Meshtastic Firmware and APK Downloader"
+description = "Meshtastic Firmware and Client App Downloader"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -124,8 +124,7 @@ directory = "htmlcov"
 
 [tool.coverage.components]
 core_downloads = [
-  "src/fetchtastic/download/desktop.py",
-  "src/fetchtastic/download/android.py",
+  "src/fetchtastic/download/client_app.py",
   "src/fetchtastic/download/firmware.py",
   "src/fetchtastic/download/orchestrator.py",
   "src/fetchtastic/download/cli_integration.py",
@@ -144,13 +143,15 @@ core_downloads = [
 ]
 user_interface = [
   "src/fetchtastic/cli.py",
-  "src/fetchtastic/menu_apk.py",
-  "src/fetchtastic/menu_desktop.py",
+  "src/fetchtastic/menu_app.py",
   "src/fetchtastic/menu_firmware.py",
   "src/fetchtastic/menu_repo.py",
   "src/fetchtastic/notifications.py",
 ]
-configuration = ["src/fetchtastic/setup_config.py"]
+configuration = [
+  "src/fetchtastic/setup_config.py",
+  "src/fetchtastic/client_app_config.py",
+]
 infrastructure = [
   "src/fetchtastic/log_utils.py",
   "src/fetchtastic/constants.py",
