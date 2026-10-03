@@ -25,15 +25,15 @@ import requests  # type: ignore[import-untyped]
 from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.client_release_discovery import (
     is_android_asset_name,
-    is_android_prerelease_tag,
+    is_client_app_prerelease_tag,
     is_desktop_asset_name,
     is_release_at_or_above_minimum,
     is_release_prerelease,
 )
 from fetchtastic.constants import (
-    APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
     APP_DIR_NAME,
+    APP_PRERELEASES_DIR_NAME,
     APP_SNAPSHOTS_DIR_NAME,
     CLIENT_APP_RELEASE_HISTORY_JSON_FILE,
     DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
@@ -51,9 +51,9 @@ from fetchtastic.constants import (
     LATEST_CLIENT_APP_PRERELEASE_JSON_FILE,
     LATEST_CLIENT_APP_RELEASE_JSON_FILE,
     LATEST_POINTER_NAME,
-    MESHTASTIC_ANDROID_SNAPSHOT_RELEASE_URL,
-    MESHTASTIC_ANDROID_SNAPSHOT_TAG,
     MESHTASTIC_CLIENT_APP_RELEASES_URL,
+    MESHTASTIC_CLIENT_APP_SNAPSHOT_RELEASE_URL,
+    MESHTASTIC_CLIENT_APP_SNAPSHOT_TAG,
     RELEASE_SCAN_COUNT,
     SNAPSHOT_VERSION_CODE_PATTERN,
 )
@@ -80,7 +80,7 @@ from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
-MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
+MIN_CLIENT_APP_TRACKED_VERSION = (2, 7, 0)
 
 # Snapshot debug-build asset names: androidApp-{flavor}-{abi}-debug-{versionCode}.apk
 _SNAPSHOT_VERSION_CODE_RE = re.compile(SNAPSHOT_VERSION_CODE_PATTERN)
@@ -168,18 +168,9 @@ def is_client_app_asset_name(asset_name: str) -> bool:
     return is_android_asset_name(asset_name) or is_desktop_asset_name(asset_name)
 
 
-def is_client_app_prerelease_tag(tag_name: str) -> bool:
-    """Return True for client app prerelease tag styles."""
-    return (
-        "-open" in (tag_name or "").lower()
-        or "-closed" in (tag_name or "").lower()
-        or "-internal" in (tag_name or "").lower()
-    )
-
-
 def is_snapshot_tag(tag_name: str) -> bool:
     """Return True when the tag is the rolling Android snapshot debug-build tag."""
-    return (tag_name or "").strip().lower() == MESHTASTIC_ANDROID_SNAPSHOT_TAG
+    return (tag_name or "").strip().lower() == MESHTASTIC_CLIENT_APP_SNAPSHOT_TAG
 
 
 def _parse_snapshot_vc_from_dirname(name: str) -> int | None:
@@ -196,16 +187,16 @@ def _parse_snapshot_vc_from_dirname(name: str) -> int | None:
     return None
 
 
-def _is_apk_prerelease_by_name(
+def _is_client_app_prerelease_by_name(
     tag_name: str, version_manager: VersionManager | None = None
 ) -> bool:
-    """Return whether an Android tag should be treated as a tracked prerelease."""
-    if not is_android_prerelease_tag(tag_name):
+    """Return whether a client app tag should be treated as a tracked prerelease."""
+    if not is_client_app_prerelease_tag(tag_name):
         return False
     manager = version_manager or VersionManager()
     return is_release_at_or_above_minimum(
         tag_name,
-        minimum_version=MIN_ANDROID_TRACKED_VERSION,
+        minimum_version=MIN_CLIENT_APP_TRACKED_VERSION,
         version_manager=manager,
     )
 
@@ -277,7 +268,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def _ensure_prerelease_base_dir(self) -> str:
         """Return the client app prerelease directory, creating it when needed."""
         app_dir = os.path.join(self.download_dir, APP_DIR_NAME)
-        prerelease_dir = os.path.join(app_dir, APK_PRERELEASES_DIR_NAME)
+        prerelease_dir = os.path.join(app_dir, APP_PRERELEASES_DIR_NAME)
         if os.path.islink(app_dir):
             raise ValueError(f"Refusing symlinked client app dir: {app_dir}")
         if os.path.islink(prerelease_dir):
@@ -315,7 +306,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def _get_legacy_prerelease_base_dir(self) -> str:
         return os.path.join(
-            self._get_legacy_android_base_dir(), APK_PRERELEASES_DIR_NAME
+            self._get_legacy_android_base_dir(), APP_PRERELEASES_DIR_NAME
         )
 
     def _get_split_android_base_dir(self) -> str:
@@ -323,7 +314,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def _get_split_android_prerelease_base_dir(self) -> str:
         return os.path.join(
-            self._get_split_android_base_dir(), APK_PRERELEASES_DIR_NAME
+            self._get_split_android_base_dir(), APP_PRERELEASES_DIR_NAME
         )
 
     def _get_split_desktop_base_dir(self) -> str:
@@ -331,7 +322,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     def _get_split_desktop_prerelease_base_dir(self) -> str:
         return os.path.join(
-            self._get_split_desktop_base_dir(), APK_PRERELEASES_DIR_NAME
+            self._get_split_desktop_base_dir(), APP_PRERELEASES_DIR_NAME
         )
 
     def _is_within_download_tree(self, path: str) -> bool:
@@ -544,7 +535,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         - app/desktop/prerelease/<version>
         """
         app_dir = self._get_app_base_dir()
-        prerelease_dir = os.path.join(app_dir, APK_PRERELEASES_DIR_NAME)
+        prerelease_dir = os.path.join(app_dir, APP_PRERELEASES_DIR_NAME)
         if os.path.islink(app_dir) or not self._is_within_download_tree(app_dir):
             logger.warning("Skipping client app migration because app root is unsafe")
             return
@@ -606,7 +597,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                     "Skipping symlink during client app migration: %s", entry.path
                 )
                 continue
-            if entry.name == APK_PRERELEASES_DIR_NAME:
+            if entry.name == APP_PRERELEASES_DIR_NAME:
                 continue
             self._move_legacy_path(
                 entry.path, os.path.join(destination_dir, entry.name)
@@ -632,7 +623,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             is_prerelease = (
                 is_client_app_prerelease_tag(release_tag)
                 or self.version_manager.is_prerelease_version(release_tag) is True
-                or _is_apk_prerelease_by_name(release_tag, self.version_manager)
+                or _is_client_app_prerelease_by_name(release_tag, self.version_manager)
             )
 
         version_dir = self._resolve_release_dir(
@@ -650,7 +641,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         create_if_missing: bool,
     ) -> str:
         preferred_base_dir = (
-            os.path.join(self.download_dir, APP_DIR_NAME, APK_PRERELEASES_DIR_NAME)
+            os.path.join(self.download_dir, APP_DIR_NAME, APP_PRERELEASES_DIR_NAME)
             if is_prerelease
             else os.path.join(self.download_dir, APP_DIR_NAME)
         )
@@ -711,7 +702,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             release.prerelease
             or is_client_app_prerelease_tag(release.tag_name)
             or self.version_manager.is_prerelease_version(release.tag_name) is True
-            or _is_apk_prerelease_by_name(release.tag_name, self.version_manager)
+            or _is_client_app_prerelease_by_name(release.tag_name, self.version_manager)
         )
 
     def _is_client_app_stable(self, release: Release) -> bool:
@@ -722,14 +713,6 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         if is_snapshot_tag(release.tag_name):
             return False
         return not self._is_client_app_prerelease(release)
-
-    def _is_android_prerelease(self, release: Release) -> bool:
-        """Compatibility alias."""
-        return self._is_client_app_prerelease(release)
-
-    def _is_desktop_prerelease(self, release: Release) -> bool:
-        """Compatibility alias."""
-        return self._is_client_app_prerelease(release)
 
     def _get_storage_tag_for_release(self, release: Release) -> str:
         if is_snapshot_tag(release.tag_name):
@@ -1037,14 +1020,6 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                 error_type=error_type,
             )
 
-    def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
-        """Compatibility alias."""
-        return self.download_app(release, asset)
-
-    def download_desktop(self, release: Release, asset: Asset) -> DownloadResult:
-        """Compatibility alias."""
-        return self.download_app(release, asset)
-
     def is_release_complete(self, release: Release) -> bool:
         try:
             version_dir = self._resolve_release_dir(
@@ -1155,9 +1130,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         expected_stable = _safe_tags(stable_releases[:keep_limit], "release")
         expected_prerelease = _safe_tags(prerelease_releases, "prerelease")
         self._remove_unexpected_entries(
-            app_dir, expected_stable | {APK_PRERELEASES_DIR_NAME}
+            app_dir, expected_stable | {APP_PRERELEASES_DIR_NAME}
         )
-        prerelease_dir = os.path.join(app_dir, APK_PRERELEASES_DIR_NAME)
+        prerelease_dir = os.path.join(app_dir, APP_PRERELEASES_DIR_NAME)
         if self._is_safe_managed_dir(prerelease_dir):
             self._remove_unexpected_entries(prerelease_dir, expected_prerelease)
         self._validate_latest_pointer(app_dir, expected_stable)
@@ -1573,7 +1548,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         """Fetch the rolling snapshot release from GitHub by tag. Returns None on 404/error."""
         try:
             response = make_github_api_request(
-                MESHTASTIC_ANDROID_SNAPSHOT_RELEASE_URL,
+                MESHTASTIC_CLIENT_APP_SNAPSHOT_RELEASE_URL,
                 github_token=self.config.get("GITHUB_TOKEN"),
             )
             if response is None:
@@ -1955,10 +1930,10 @@ def _is_supported_client_app_release(
     version_tuple = manager.get_release_tuple(tag_name)
     if not version_tuple:
         return True
-    max_len = max(len(version_tuple), len(MIN_ANDROID_TRACKED_VERSION))
+    max_len = max(len(version_tuple), len(MIN_CLIENT_APP_TRACKED_VERSION))
     padded_version = version_tuple + (0,) * (max_len - len(version_tuple))
-    padded_minimum = MIN_ANDROID_TRACKED_VERSION + (0,) * (
-        max_len - len(MIN_ANDROID_TRACKED_VERSION)
+    padded_minimum = MIN_CLIENT_APP_TRACKED_VERSION + (0,) * (
+        max_len - len(MIN_CLIENT_APP_TRACKED_VERSION)
     )
     return padded_version >= padded_minimum
 
@@ -1970,4 +1945,10 @@ def _is_client_app_prerelease_payload(release: dict[str, Any]) -> bool:
     return is_release_prerelease(
         release,
         tag_prerelease_matcher=is_client_app_prerelease_tag,
-    ) or _is_apk_prerelease_by_name(tag_name)
+    ) or _is_client_app_prerelease_by_name(tag_name)
+
+
+def is_client_app_prerelease(release: dict[str, Any]) -> bool:
+    """Classify legacy release tags using the shared tracking threshold."""
+    tag = (release or {}).get("tag_name", "")
+    return isinstance(tag, str) and _is_client_app_prerelease_by_name(tag)

@@ -76,7 +76,7 @@ def test_wifi_only_skips_downloads_when_not_connected_to_wifi(
         ) as mock_discover_firmware,
         patch.object(
             orchestrator,
-            "_discover_available_apk_versions_when_wifi_skipped",
+            "_discover_available_client_app_versions_when_wifi_skipped",
             return_value=[],
         ) as mock_discover_apk,
     ):

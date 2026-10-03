@@ -3,11 +3,21 @@
 from collections.abc import Sequence
 from typing import Any
 
+import requests
 from pick import pick
 
-from fetchtastic import menu_apk, menu_desktop
+from fetchtastic.client_release_discovery import (
+    extract_matching_asset_dicts,
+    is_client_app_prerelease_tag,
+    select_best_release_with_assets,
+)
+from fetchtastic.constants import (
+    APK_EXTENSION,
+    DESKTOP_EXTENSIONS,
+    MESHTASTIC_CLIENT_APP_RELEASES_URL,
+)
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import extract_base_name
+from fetchtastic.utils import extract_base_name, make_github_api_request
 
 
 def _asset_name(asset: str | dict[str, Any]) -> str | None:
@@ -20,24 +30,22 @@ def _asset_name(asset: str | dict[str, Any]) -> str | None:
 
 
 def _normalize_assets(
-    apk_assets: Sequence[str | dict[str, Any]],
-    desktop_assets: Sequence[str],
+    assets: Sequence[str | dict[str, Any]],
 ) -> list[tuple[str, str]]:
     entries: list[tuple[str, str]] = []
-    for asset in apk_assets:
+    for asset in assets:
         name = _asset_name(asset)
         if name:
-            entries.append((f"Android APK: {name}", name))
-    for name in desktop_assets:
-        if name:
-            platform = get_desktop_platform_label(name) or "Desktop"
+            platform = get_asset_platform_label(name) or "Client app"
             entries.append((f"{platform}: {name}", name))
     return entries
 
 
-def get_desktop_platform_label(asset_name: str) -> str | None:
-    """Return a user-facing Desktop platform label for a client app asset."""
+def get_asset_platform_label(asset_name: str) -> str | None:
+    """Return the target platform to help choose an installer."""
     lower = asset_name.lower()
+    if lower.endswith(".apk"):
+        return "Android"
     if lower.endswith(".dmg"):
         return "macOS"
     if lower.endswith((".exe", ".msi")):
@@ -48,11 +56,10 @@ def get_desktop_platform_label(asset_name: str) -> str | None:
 
 
 def select_assets(
-    apk_assets: Sequence[str | dict[str, Any]],
-    desktop_assets: Sequence[str],
+    assets: Sequence[str | dict[str, Any]],
 ) -> dict[str, list[str]] | None:
-    """Select client app asset patterns from Android and Desktop artifacts."""
-    entries = _normalize_assets(apk_assets, desktop_assets)
+    """Select client app patterns from one collection of installers."""
+    entries = _normalize_assets(assets)
     if not entries:
         print("No client app assets found. Client app releases will not be downloaded.")
         return None
@@ -78,24 +85,56 @@ Options include Android APKs and Desktop installers from the same upstream relea
     patterns = []
     for name in selected_names:
         pattern = extract_base_name(name)
-        if get_desktop_platform_label(name):
+        if not name.lower().endswith(APK_EXTENSION):
             pattern = pattern.lower()
         patterns.append(pattern)
     return {"selected_assets": patterns}
 
 
+def fetch_app_assets() -> list[dict[str, Any]]:
+    """Discover installer formats from a single release feed request.
+
+    Prefer a stable release for each format, falling back to a prerelease when
+    necessary. A release missing one installer format does not hide that format
+    from setup if it is available in another recent release.
+    """
+    response = make_github_api_request(MESHTASTIC_CLIENT_APP_RELEASES_URL)
+    releases = response.json()
+    if not isinstance(releases, list):
+        raise ValueError("Expected a list of client app releases")
+    # Rolling snapshots are an opt-in channel, not setup's source of selections.
+    releases = [
+        r for r in releases if isinstance(r, dict) and r.get("tag_name") != "snapshot"
+    ]
+    assets: list[dict[str, Any]] = []
+    for extension in (APK_EXTENSION, *DESKTOP_EXTENSIONS):
+
+        def matches(name: str, extension: str = extension) -> bool:
+            return name.lower().endswith(extension.lower())
+
+        release = select_best_release_with_assets(
+            releases,
+            asset_name_matcher=matches,
+            tag_prerelease_matcher=is_client_app_prerelease_tag,
+        )
+        if release:
+            assets.extend(
+                extract_matching_asset_dicts(release, asset_name_matcher=matches)
+            )
+    return sorted(assets, key=lambda asset: asset["name"].lower())
+
+
 def run_menu() -> dict[str, list[str]] | None:
-    """Show one asset selector for Android APKs and Desktop installers."""
+    """Show the shared installer selector."""
     try:
-        apk_assets = menu_apk.fetch_apk_assets() or []
-    except (OSError, ValueError, TypeError, RuntimeError) as exc:
-        logger.warning("Unable to fetch Android APK assets: %s", exc)
-        print(f"Warning: unable to fetch Android APK assets: {exc}")
-        apk_assets = []
-    try:
-        desktop_assets = menu_desktop.fetch_desktop_assets() or []
-    except (OSError, ValueError, TypeError, RuntimeError) as exc:
-        logger.warning("Unable to fetch Desktop installer assets: %s", exc)
-        print(f"Warning: unable to fetch Desktop installer assets: {exc}")
-        desktop_assets = []
-    return select_assets(apk_assets, desktop_assets)
+        return select_assets(fetch_app_assets())
+    except (
+        requests.RequestException,
+        OSError,
+        ValueError,
+        TypeError,
+        RuntimeError,
+    ) as exc:
+        logger.warning("Unable to fetch client app assets: %s", exc)
+        print(f"Warning: unable to fetch client app assets: {exc}")
+        return None

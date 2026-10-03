@@ -45,7 +45,7 @@ def test_config():
 
 
 @pytest.fixture
-def android_downloader(test_config):
+def client_app_downloader(test_config):
     """
     Create a MeshtasticAndroidAppDownloader configured for tests.
 
@@ -69,24 +69,24 @@ class TestMeshtasticAndroidAppDownloader:
         assert downloader.download_dir == test_config["DOWNLOAD_DIR"]
         assert downloader.config == test_config
 
-    def test_get_target_path_for_release(self, android_downloader):
+    def test_get_target_path_for_release(self, client_app_downloader):
         """Test getting target path for Android release."""
         release_tag = "v2.7.14"
         file_name = "meshtastic.apk"
 
-        target_path = android_downloader.get_target_path_for_release(
+        target_path = client_app_downloader.get_target_path_for_release(
             release_tag, file_name
         )
 
         expected_path = os.path.join(
-            android_downloader.download_dir,
+            client_app_downloader.download_dir,
             APP_DIR_NAME,
             release_tag,
             file_name,
         )
         assert target_path == expected_path
 
-    def test_get_assets(self, android_downloader):
+    def test_get_assets(self, client_app_downloader):
         """Test getting assets from a release."""
         release = Release(
             tag_name="v2.7.14",
@@ -107,12 +107,12 @@ class TestMeshtasticAndroidAppDownloader:
             )
         )
 
-        assets = android_downloader.get_assets(release)
+        assets = client_app_downloader.get_assets(release)
 
-        assert len(assets) == 1
+        assert len(assets) == 2
         assert assets[0].name == "meshtastic.apk"
 
-    def test_get_download_url(self, android_downloader):
+    def test_get_download_url(self, client_app_downloader):
         """Test getting download URL for an asset."""
         asset = Asset(
             name="meshtastic.apk",
@@ -120,55 +120,61 @@ class TestMeshtasticAndroidAppDownloader:
             size=1024000,
         )
 
-        download_url = android_downloader.get_download_url(asset)
+        download_url = client_app_downloader.get_download_url(asset)
 
         assert download_url == "https://example.com/meshtastic.apk"
 
-    def test_should_download_asset_matching_patterns(self, android_downloader):
+    def test_should_download_asset_matching_patterns(self, client_app_downloader):
         """Test asset selection with specific patterns configured."""
-        android_downloader.config["SELECTED_APP_ASSETS"] = ["meshtastic.apk"]
-        android_downloader.config.pop("SELECTED_PATTERNS", None)
-        assert android_downloader.should_download_asset("meshtastic.apk") is True
+        client_app_downloader.config["SELECTED_APP_ASSETS"] = ["meshtastic.apk"]
+        client_app_downloader.config.pop("SELECTED_PATTERNS", None)
+        assert client_app_downloader.should_download_asset("meshtastic.apk") is True
 
-        assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
+        assert (
+            client_app_downloader.should_download_asset("meshtastic-debug.apk") is False
+        )
 
-        assert android_downloader.should_download_asset("Meshtastic.dmg") is False
+        assert client_app_downloader.should_download_asset("Meshtastic.dmg") is False
 
     def test_should_download_asset_empty_selected_downloads_nothing(
-        self, android_downloader
+        self, client_app_downloader
     ):
         """Empty SELECTED_APP_ASSETS means download no client app assets."""
-        android_downloader.config["SELECTED_APP_ASSETS"] = []
-        android_downloader.config.pop("SELECTED_PATTERNS", None)
-        assert android_downloader.should_download_asset("meshtastic.apk") is False
-        assert android_downloader.should_download_asset("Meshtastic.dmg") is False
+        client_app_downloader.config["SELECTED_APP_ASSETS"] = []
+        client_app_downloader.config.pop("SELECTED_PATTERNS", None)
+        assert client_app_downloader.should_download_asset("meshtastic.apk") is False
+        assert client_app_downloader.should_download_asset("Meshtastic.dmg") is False
 
     def test_should_download_asset_missing_selected_downloads_nothing(
-        self, android_downloader
+        self, client_app_downloader
     ):
         """Missing SELECTED_APP_ASSETS and no legacy keys downloads nothing."""
-        android_downloader.config.pop("SELECTED_APP_ASSETS", None)
-        android_downloader.config.pop("SELECTED_APK_ASSETS", None)
-        android_downloader.config.pop("SELECTED_DESKTOP_ASSETS", None)
-        android_downloader.config.pop("SELECTED_PATTERNS", None)
-        assert android_downloader.should_download_asset("meshtastic.apk") is False
+        client_app_downloader.config.pop("SELECTED_APP_ASSETS", None)
+        client_app_downloader.config.pop("SELECTED_APK_ASSETS", None)
+        client_app_downloader.config.pop("SELECTED_DESKTOP_ASSETS", None)
+        client_app_downloader.config.pop("SELECTED_PATTERNS", None)
+        assert client_app_downloader.should_download_asset("meshtastic.apk") is False
 
-    def test_should_download_asset_wildcard_downloads_all(self, android_downloader):
+    def test_should_download_asset_wildcard_downloads_all(self, client_app_downloader):
         """Android compatibility wrapper scopes wildcard selection to APK assets."""
-        android_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
-        android_downloader.config.pop("SELECTED_PATTERNS", None)
-        assert android_downloader.should_download_asset("meshtastic.apk") is True
-        assert android_downloader.should_download_asset("Meshtastic.dmg") is False
-        assert android_downloader.should_download_asset("readme.txt") is False
+        client_app_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
+        client_app_downloader.config.pop("SELECTED_PATTERNS", None)
+        assert client_app_downloader.should_download_asset("meshtastic.apk") is True
+        assert client_app_downloader.should_download_asset("Meshtastic.dmg") is True
+        assert client_app_downloader.should_download_asset("readme.txt") is False
 
-    def test_should_download_asset_wildcard_respects_excludes(self, android_downloader):
+    def test_should_download_asset_wildcard_respects_excludes(
+        self, client_app_downloader
+    ):
         """Wildcard selection still respects exclude patterns."""
-        android_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
-        android_downloader.config.pop("SELECTED_PATTERNS", None)
-        assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
+        client_app_downloader.config["SELECTED_APP_ASSETS"] = ["*"]
+        client_app_downloader.config.pop("SELECTED_PATTERNS", None)
+        assert (
+            client_app_downloader.should_download_asset("meshtastic-debug.apk") is False
+        )
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download_app")
-    def test_download_apk_success(self, mock_download_app, android_downloader):
+    def test_download_apk_success(self, mock_download_app, client_app_downloader):
         """Test successful APK download."""
         mock_download_app.return_value = DownloadResult(
             success=True,
@@ -183,16 +189,16 @@ class TestMeshtasticAndroidAppDownloader:
             size=1024000,
         )
 
-        result = android_downloader.download_apk(release, asset)
+        result = client_app_downloader.download_app(release, asset)
 
         mock_download_app.assert_called_once_with(release, asset)
         assert result is mock_download_app.return_value
         assert result.success is True
         assert result.release_tag == "v2.7.14"
-        assert result.file_type == "android"
+        assert result.file_type == "client_app"
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download_app")
-    def test_download_apk_method_exists(self, mock_download_app, android_downloader):
+    def test_download_apk_method_exists(self, mock_download_app, client_app_downloader):
         """Test that download_apk method exists and can be called."""
         mock_download_app.return_value = DownloadResult(
             success=True,
@@ -206,14 +212,14 @@ class TestMeshtasticAndroidAppDownloader:
             size=1024000,
         )
 
-        result = android_downloader.download_apk(release, asset)
+        result = client_app_downloader.download_app(release, asset)
         assert result is mock_download_app.return_value
         assert hasattr(result, "success")
-        assert result.file_type == "android_prerelease"
+        assert result.file_type == "client_app_prerelease"
 
-    def test_cleanup_old_versions(self, android_downloader, tmp_path):
+    def test_cleanup_old_versions(self, client_app_downloader, tmp_path):
         """Test cleanup of old Android versions."""
-        android_downloader.download_dir = str(tmp_path)
+        client_app_downloader.download_dir = str(tmp_path)
 
         # Create multiple version directories
         versions = ["v2.7.10", "v2.7.11", "v2.7.12", "v2.7.13", "v2.7.14"]
@@ -222,7 +228,9 @@ class TestMeshtasticAndroidAppDownloader:
             version_dir.mkdir(parents=True)
 
         releases = [Release(tag_name=version, prerelease=False) for version in versions]
-        android_downloader.cleanup_old_versions(keep_limit=2, cached_releases=releases)
+        client_app_downloader.cleanup_old_versions(
+            keep_limit=2, cached_releases=releases
+        )
 
         # Should keep 2 newest versions
         remaining_dirs = list((tmp_path / APP_DIR_NAME).iterdir())
@@ -233,53 +241,53 @@ class TestMeshtasticAndroidAppDownloader:
         assert "v2.7.14" in remaining_names
         assert "v2.7.13" in remaining_names
 
-    def test_update_latest_release_tag(self, android_downloader):
+    def test_update_latest_release_tag(self, client_app_downloader):
         """Test updating the latest Android release tag."""
         release_tag = "v2.7.14"
 
         # Method should exist and return a boolean
-        result = android_downloader.update_latest_release_tag(release_tag)
+        result = client_app_downloader.update_latest_release_tag(release_tag)
         assert isinstance(result, bool)
 
-    def test_should_download_prerelease_disabled(self, android_downloader):
+    def test_should_download_prerelease_disabled(self, client_app_downloader):
         """Test prerelease download check when prereleases are disabled."""
-        android_downloader.config["CHECK_APP_PRERELEASES"] = False
-        android_downloader.config.pop("CHECK_ANDROID_PRERELEASES", None)
+        client_app_downloader.config["CHECK_APP_PRERELEASES"] = False
+        client_app_downloader.config.pop("CHECK_ANDROID_PRERELEASES", None)
 
-        result = android_downloader.should_download_prerelease("v2.7.15-rc1")
+        result = client_app_downloader.should_download_prerelease("v2.7.15-rc1")
 
         assert result is False
 
-    def test_should_download_prerelease_enabled(self, android_downloader):
+    def test_should_download_prerelease_enabled(self, client_app_downloader):
         """Test prerelease download check when prereleases are enabled."""
-        android_downloader.config["CHECK_APP_PRERELEASES"] = True
-        android_downloader.config.pop("CHECK_ANDROID_PRERELEASES", None)
+        client_app_downloader.config["CHECK_APP_PRERELEASES"] = True
+        client_app_downloader.config.pop("CHECK_ANDROID_PRERELEASES", None)
 
-        result = android_downloader.should_download_prerelease("v2.7.15-rc1")
+        result = client_app_downloader.should_download_prerelease("v2.7.15-rc1")
 
         # Method should return a boolean
         assert isinstance(result, bool)
 
-    def test_get_prerelease_tracking_file(self, android_downloader):
+    def test_get_prerelease_tracking_file(self, client_app_downloader):
         """Test getting Android prerelease tracking file path."""
-        tracking_file = android_downloader.get_prerelease_tracking_file()
+        tracking_file = client_app_downloader.get_prerelease_tracking_file()
 
-        expected_path = android_downloader.cache_manager.get_cache_file_path(
-            android_downloader.latest_prerelease_file
+        expected_path = client_app_downloader.cache_manager.get_cache_file_path(
+            client_app_downloader.latest_prerelease_file
         )
         assert tracking_file == expected_path
 
-    def test_update_prerelease_tracking(self, android_downloader):
+    def test_update_prerelease_tracking(self, client_app_downloader):
         """Test updating Android prerelease tracking information."""
         prerelease_tag = "v2.7.15-rc1"
 
-        result = android_downloader.update_prerelease_tracking(prerelease_tag)
+        result = client_app_downloader.update_prerelease_tracking(prerelease_tag)
 
         assert isinstance(result, bool)
 
-    def test_handle_prereleases(self, android_downloader):
+    def test_handle_prereleases(self, client_app_downloader):
         """Test Android prerelease handling functionality."""
-        android_downloader.config["CHECK_ANDROID_PRERELEASES"] = True
+        client_app_downloader.config["CHECK_ANDROID_PRERELEASES"] = True
 
         # Create some releases including prereleases
         releases = [
@@ -288,18 +296,18 @@ class TestMeshtasticAndroidAppDownloader:
             Release(tag_name="v2.7.15-rc2", prerelease=True),
         ]
 
-        filtered_prereleases = android_downloader.handle_prereleases(releases)
+        filtered_prereleases = client_app_downloader.handle_prereleases(releases)
 
         # Should return a list
         assert isinstance(filtered_prereleases, list)
 
-    def test_manage_prerelease_tracking_files(self, android_downloader):
+    def test_manage_prerelease_tracking_files(self, client_app_downloader):
         """Test management of Android prerelease tracking files."""
         with patch("os.path.exists", return_value=False):
             # Should not raise any exceptions
-            android_downloader.manage_prerelease_tracking_files()
+            client_app_downloader.manage_prerelease_tracking_files()
 
-    def test_error_handling_api_failure(self, android_downloader):
+    def test_error_handling_api_failure(self, client_app_downloader):
         """Test error handling with API failures."""
         with (
             patch(
@@ -307,39 +315,39 @@ class TestMeshtasticAndroidAppDownloader:
                 side_effect=requests.RequestException("API Error"),
             ),
             patch.object(
-                android_downloader.cache_manager,
+                client_app_downloader.cache_manager,
                 "read_releases_cache_entry",
                 return_value=None,
             ),
         ):
-            releases = android_downloader.get_releases()
+            releases = client_app_downloader.get_releases()
             assert releases == []
 
-    def test_configuration_persistence(self, android_downloader):
+    def test_configuration_persistence(self, client_app_downloader):
         """Test that configuration is properly stored and accessible."""
-        assert android_downloader.config is not None
-        assert "DOWNLOAD_DIR" in android_downloader.config
-        assert "ANDROID_VERSIONS_TO_KEEP" in android_downloader.config
+        assert client_app_downloader.config is not None
+        assert "DOWNLOAD_DIR" in client_app_downloader.config
+        assert "APP_VERSIONS_TO_KEEP" in client_app_downloader.config
 
-    def test_file_operations_integration(self, android_downloader):
+    def test_file_operations_integration(self, client_app_downloader):
         """Test integration with file operations."""
         # Test that file_operations attribute exists
-        assert hasattr(android_downloader, "file_operations")
-        assert android_downloader.file_operations is not None
+        assert hasattr(client_app_downloader, "file_operations")
+        assert client_app_downloader.file_operations is not None
 
-    def test_validate_extraction_patterns(self, android_downloader):
+    def test_validate_extraction_patterns(self, client_app_downloader):
         """Test validation of extraction patterns."""
         patterns = ["*.apk", "*.aab"]
         exclude_patterns = ["*debug*"]
 
-        result = android_downloader.validate_extraction_patterns(
+        result = client_app_downloader.validate_extraction_patterns(
             patterns, exclude_patterns
         )
 
         # Should return a boolean
         assert isinstance(result, bool)
 
-    def test_update_release_history_with_prereleases(self, android_downloader):
+    def test_update_release_history_with_prereleases(self, client_app_downloader):
         """Test that prereleases are filtered out before history update."""
         releases = [
             Release(tag_name="v2.7.14", prerelease=False),
@@ -347,29 +355,35 @@ class TestMeshtasticAndroidAppDownloader:
             Release(tag_name="v2.7.16", prerelease=False),
         ]
 
-        result = android_downloader.update_release_history(releases, log_summary=False)
+        result = client_app_downloader.update_release_history(
+            releases, log_summary=False
+        )
 
         # Should return history dict
         assert result is not None
         assert isinstance(result, dict)
 
-    def test_update_release_history_all_prereleases(self, android_downloader):
+    def test_update_release_history_all_prereleases(self, client_app_downloader):
         """Test that history returns None when all releases are prereleases."""
         releases = [
             Release(tag_name="v2.7.15-rc1", prerelease=True),
             Release(tag_name="v2.7.15-rc2", prerelease=True),
         ]
 
-        result = android_downloader.update_release_history(releases, log_summary=False)
+        result = client_app_downloader.update_release_history(
+            releases, log_summary=False
+        )
 
         # Should return None (no stable releases)
         assert result is None
 
-    def test_update_release_history_empty_list(self, android_downloader):
+    def test_update_release_history_empty_list(self, client_app_downloader):
         """Test that history returns None when releases list is empty."""
         releases = []
 
-        result = android_downloader.update_release_history(releases, log_summary=False)
+        result = client_app_downloader.update_release_history(
+            releases, log_summary=False
+        )
 
         # Should return None (no releases)
         assert result is None

@@ -229,10 +229,10 @@ def test_setup_downloads_apk_only(mocker, capsys):
 
     assert save_apks is True
     assert save_firmware is False
-    assert result_config["SAVE_APKS"] is True
+    assert result_config["SAVE_CLIENT_APPS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
     assert result_config["CHECK_APP_PRERELEASES"] is True
-    assert result_config["CHECK_APK_PRERELEASES"] is True
+    assert result_config["CHECK_APP_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
@@ -262,7 +262,7 @@ def test_setup_downloads_firmware_only(mocker, capsys):
 
     assert save_apks is False
     assert save_firmware is True
-    assert result_config["SAVE_APKS"] is False
+    assert result_config["SAVE_CLIENT_APPS"] is False
     assert result_config["SAVE_FIRMWARE"] is True
 
 
@@ -298,7 +298,7 @@ def test_setup_downloads_both_selected(mocker, capsys):
 
     assert save_apks is True
     assert save_firmware is True
-    assert result_config["SAVE_APKS"] is True
+    assert result_config["SAVE_CLIENT_APPS"] is True
     assert result_config["SAVE_FIRMWARE"] is True
 
 
@@ -441,7 +441,7 @@ def test_setup_downloads_desktop_snapshot_prompt(mocker):
     )
 
     assert result_config["SAVE_CLIENT_APPS"] is True
-    assert result_config["SAVE_APKS"] is False
+    assert "SAVE_APKS" not in result_config
     assert result_config["CHECK_APP_SNAPSHOTS"] is True
     assert save_firmware is False
     assert any("snapshot" in p.lower() for p in captured_prompts)
@@ -469,7 +469,7 @@ def test_setup_downloads_no_selection(mocker, capsys):
 
     assert save_apks is False
     assert save_firmware is False
-    assert result_config["SAVE_APKS"] is False
+    assert result_config["SAVE_CLIENT_APPS"] is False
     assert result_config["SAVE_FIRMWARE"] is False
 
     captured = capsys.readouterr()
@@ -531,9 +531,9 @@ def test_setup_downloads_apk_empty_selection(mocker):
 
     assert save_apks is False
     assert save_firmware is False
-    assert result_config["SAVE_APKS"] is False
-    assert result_config["CHECK_APK_PRERELEASES"] is False
-    assert result_config["SELECTED_APK_ASSETS"] == []
+    assert result_config["SAVE_CLIENT_APPS"] is False
+    assert result_config["CHECK_APP_PRERELEASES"] is False
+    assert result_config["SELECTED_APP_ASSETS"] == []
 
 
 @pytest.mark.configuration
@@ -564,10 +564,10 @@ def test_setup_downloads_partial_run(mocker):
 
     assert save_apks is True
     assert save_firmware is False
-    assert result_config["SAVE_APKS"] is True
+    assert result_config["SAVE_CLIENT_APPS"] is True
     assert result_config["SAVE_FIRMWARE"] is False
     assert result_config["CHECK_APP_PRERELEASES"] is True
-    assert result_config["CHECK_APK_PRERELEASES"] is True
+    assert result_config["CHECK_APP_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
@@ -600,8 +600,8 @@ def test_setup_downloads_partial_run_apk_keep_existing_skips_menu(mocker):
 
     assert save_apks is True
     assert save_firmware is False
-    assert result_config["SAVE_APKS"] is True
-    assert result_config["CHECK_APK_PRERELEASES"] is False
+    assert result_config["SAVE_CLIENT_APPS"] is True
+    assert result_config["CHECK_APP_PRERELEASES"] is False
     mock_menu.assert_not_called()
 
 

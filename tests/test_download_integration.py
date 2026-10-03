@@ -67,7 +67,7 @@ class TestDownloadIntegration:
                 orchestrator.firmware_downloader, "get_releases", return_value=[]
             ),
             patch.object(
-                orchestrator.android_downloader, "get_releases", return_value=[]
+                orchestrator.client_app_downloader, "get_releases", return_value=[]
             ),
             patch.object(orchestrator, "cleanup_old_versions"),
             patch.object(orchestrator, "update_version_tracking"),
@@ -86,7 +86,7 @@ class TestDownloadIntegration:
 
         # Check that all downloaders are initialized
         assert orch.firmware_downloader is not None
-        assert orch.android_downloader is not None
+        assert orch.client_app_downloader is not None
         assert orch.version_manager is not None
         assert orch.prerelease_manager is not None
         assert orch.cache_manager is not None
@@ -107,7 +107,7 @@ class TestDownloadIntegration:
         """Test integration with version management."""
         with (
             patch.object(
-                orchestrator.android_downloader, "get_releases", return_value=[]
+                orchestrator.client_app_downloader, "get_releases", return_value=[]
             ),
             patch.object(
                 orchestrator.firmware_downloader,
@@ -118,15 +118,15 @@ class TestDownloadIntegration:
                 orchestrator.firmware_downloader, "get_releases", return_value=[]
             ),
             patch.object(
-                orchestrator.desktop_downloader, "get_releases", return_value=[]
+                orchestrator.client_app_downloader, "get_releases", return_value=[]
             ) as mock_get_releases,
         ):
             orchestrator.config["SAVE_DESKTOP_APP"] = True
             versions = orchestrator.get_latest_versions()
         mock_get_releases.assert_called_once()
         assert isinstance(versions, dict)
-        assert versions["desktop"] is None
-        assert versions["desktop_prerelease"] is None
+        assert versions["client_app"] is None
+        assert versions["client_app_prerelease"] is None
 
     def test_error_handling_in_pipeline(self, orchestrator):
         """Test error handling in the download pipeline."""
@@ -138,7 +138,7 @@ class TestDownloadIntegration:
                 side_effect=ValueError("API Error"),
             ),
             patch.object(
-                orchestrator.android_downloader, "get_releases", return_value=[]
+                orchestrator.client_app_downloader, "get_releases", return_value=[]
             ),
             patch.object(orchestrator, "cleanup_old_versions"),
             patch.object(orchestrator, "update_version_tracking"),
@@ -172,18 +172,20 @@ class TestDownloadIntegration:
         """Test that components interact correctly."""
         # Test that components have their own version managers (current architecture)
         assert hasattr(orchestrator.firmware_downloader, "version_manager")
-        assert hasattr(orchestrator.android_downloader, "version_manager")
+        assert hasattr(orchestrator.client_app_downloader, "version_manager")
         assert hasattr(orchestrator, "version_manager")
 
         # Test that components have cache managers
         assert hasattr(orchestrator.firmware_downloader, "cache_manager")
-        assert hasattr(orchestrator.android_downloader, "cache_manager")
+        assert hasattr(orchestrator.client_app_downloader, "cache_manager")
         assert hasattr(orchestrator, "cache_manager")
 
     def test_prerelease_management_integration(self, orchestrator):
         """Test prerelease management integration."""
         # Should not raise exceptions
-        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.client_app_releases = [
+            Release(tag_name="v1.0.0", prerelease=False)
+        ]
         orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
         with patch.object(orchestrator, "_refresh_commit_history_cache"):
             orchestrator._manage_prerelease_tracking()
@@ -191,7 +193,9 @@ class TestDownloadIntegration:
     def test_cleanup_coordination(self, orchestrator):
         """Test that cleanup is coordinated across components."""
         # Should not raise exceptions
-        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.client_app_releases = [
+            Release(tag_name="v1.0.0", prerelease=False)
+        ]
         orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
         with (
             patch.object(orchestrator.firmware_downloader, "cleanup_old_versions"),
@@ -241,7 +245,7 @@ class TestDownloadIntegration:
                 return_value=mock_releases,
             ),
             patch.object(
-                orchestrator.android_downloader, "get_releases", return_value=[]
+                orchestrator.client_app_downloader, "get_releases", return_value=[]
             ),
             patch.object(
                 orchestrator.firmware_downloader,
@@ -289,5 +293,5 @@ class TestDownloadIntegration:
         """Test cache integration across components."""
         # All components should have cache managers (current architecture has separate instances)
         assert orchestrator.firmware_downloader.cache_manager is not None
-        assert orchestrator.android_downloader.cache_manager is not None
+        assert orchestrator.client_app_downloader.cache_manager is not None
         assert orchestrator.cache_manager is not None

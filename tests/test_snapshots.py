@@ -1237,7 +1237,7 @@ def test_orch_snapshot_success_counts_in_statistics(tmp_path, cache_manager):
 
     stats = orch.get_download_statistics()
     assert stats["client_app_downloads"] >= 1
-    assert stats["android_downloads"] >= 1
+    assert stats["client_app_downloads"] >= 1
 
 
 # ==================================================================

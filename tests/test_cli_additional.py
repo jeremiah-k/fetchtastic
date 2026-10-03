@@ -40,9 +40,9 @@ def mock_cli_dependencies(mocker):
     mock_integration.clear_cache.return_value = True
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
-        "android": "",
+        "client_app": "",
         "firmware_prerelease": "",
-        "android_prerelease": "",
+        "client_app_prerelease": "",
     }
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadCLIIntegration",

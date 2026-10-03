@@ -550,14 +550,14 @@ def test_is_client_app_prerelease(downloader):
     assert downloader._is_client_app_prerelease(release) is True
 
 
-def test_is_android_prerelease_alias(downloader):
+def test_is_client_app_prerelease_alias(downloader):
     release = Release(tag_name="v2.7.14-closed.1", prerelease=False)
-    assert downloader._is_android_prerelease(release) is True
+    assert downloader._is_client_app_prerelease(release) is True
 
 
-def test_is_desktop_prerelease_alias(downloader):
+def test_is_client_app_prerelease_alias_legacy_alias(downloader):
     release = Release(tag_name="v2.7.14-internal.1", prerelease=False)
-    assert downloader._is_desktop_prerelease(release) is True
+    assert downloader._is_client_app_prerelease(release) is True
 
 
 def test_get_storage_tag_for_release(downloader):
@@ -1023,7 +1023,7 @@ def test_download_apk_alias(downloader, mocker):
     mocker.patch.object(
         downloader, "download_app", return_value=DownloadResult(success=True)
     )
-    downloader.download_apk(release, asset)
+    downloader.download_app(release, asset)
     downloader.download_app.assert_called_once_with(release, asset)
 
 
@@ -1035,7 +1035,7 @@ def test_download_desktop_alias(downloader, mocker):
     mocker.patch.object(
         downloader, "download_app", return_value=DownloadResult(success=True)
     )
-    downloader.download_desktop(release, asset)
+    downloader.download_app(release, asset)
     downloader.download_app.assert_called_once_with(release, asset)
 
 
