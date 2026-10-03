@@ -10,89 +10,57 @@ curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetc
 
 > **Security Note:** For security-conscious users, you can [download and inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh) before running it.
 
-This script will:
+The script installs uv when needed, installs Fetchtastic in its tool environment,
+and prints the setup command. Homebrew is optional on macOS.
 
-- Check if Homebrew is installed and install it if needed
-- Check if Python is installed and install it via Homebrew if needed
-- Install pipx for better package isolation
-- Install Fetchtastic via pipx
-- Run the initial setup process
+## Manual Installation with uv
 
-## Manual Installation
-
-If you prefer to install manually or need more control over the process:
-
-### Prerequisites
-
-- macOS 10.15 (Catalina) or later
-- Homebrew (recommended) or Python 3.10+
-
-### Step 1: Install Homebrew (if not already installed)
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+uv tool install --python '>=3.10' fetchtastic
+uv tool update-shell
 ```
 
-### Step 2: Install Python
+Restart your terminal if PATH was updated, then run `fetchtastic setup`.
+uv installs Fetchtastic in an isolated environment and supplies a suitable
+Python when needed.
+
+## Install with pip
+
+Use Python 3.10+ in a virtual environment.
 
 ```bash
-brew install python
+python3 -m venv ~/.local/share/fetchtastic/venv
+~/.local/share/fetchtastic/venv/bin/python -m pip install fetchtastic
+~/.local/share/fetchtastic/venv/bin/fetchtastic setup
 ```
 
-### Step 3: Install pipx
-
-```bash
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-
-# Restart your terminal or run:
-source ~/.zshrc  # or ~/.bash_profile if using bash
-```
-
-### Step 4: Install Fetchtastic
-
-```bash
-pipx install fetchtastic
-```
-
-### Step 5: Run Setup
-
-```bash
-fetchtastic setup
-```
-
-## Alternative Installation Methods
-
-### Using pip directly (not recommended)
-
-```bash
-pip3 install --user fetchtastic
-fetchtastic setup
-```
-
-### Using system Python (if available)
-
-If you have Python installed via Xcode Command Line Tools:
-
-```bash
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-pipx install fetchtastic
-```
+The shell installer also supports `bash setup_fetchtastic.sh pip`, which creates
+this environment and links the command in `~/.local/bin`. Existing pipx
+installations remain supported (`bash setup_fetchtastic.sh pipx`). A no-argument
+rerun preserves the recognized manager; it does not migrate pip or pipx to uv.
 
 ## Upgrading
 
-To upgrade Fetchtastic to the latest version:
+Use your installation's manager:
 
 ```bash
+uv tool upgrade fetchtastic
+# pip:
+~/.local/share/fetchtastic/venv/bin/python -m pip install --upgrade fetchtastic
+# pipx:
 pipx upgrade fetchtastic
 ```
 
-If pipx reports "already at latest version" but you know there's a newer version:
+## Migrating to uv
 
-```bash
-pipx install fetchtastic --force
-```
+Configuration and downloads are stored outside the package environment. Keep
+those directories when switching installers. Remove the package using the
+manager that installed it (`pipx uninstall fetchtastic`, or the existing
+environment's `python -m pip uninstall fetchtastic`), then install with uv as
+above. Refresh scheduled commands and shortcuts with `fetchtastic setup` so they
+use the uv executable path. Do not remove your configuration or downloads.
 
 ## Scheduling (Optional)
 
@@ -111,7 +79,7 @@ crontab -l
 Configuration is stored at:
 
 ```text
-~/.config/fetchtastic/fetchtastic.yaml
+~/Library/Application Support/fetchtastic/fetchtastic.yaml
 ```
 
 Downloads are saved to:
@@ -151,17 +119,17 @@ brew install python@3.11
 If `fetchtastic` command is not found after installation:
 
 ```bash
-python3 -m pipx ensurepath
+uv tool update-shell
 source ~/.zshrc  # or ~/.bash_profile
 ```
 
 ### Permission Issues
 
-If you encounter permission issues, avoid using `sudo`. Use the `--user` flag with pip or use pipx as recommended.
+If you encounter permission issues, avoid using `sudo`. Use uv or pip in a virtual environment.
 
 ### M1/M2 Mac Considerations
 
-On Apple Silicon Macs, make sure you're using the native ARM64 version of Python and Homebrew. The installer script handles this automatically.
+On Apple Silicon Macs, make sure you're using the native ARM64 version of Python and Homebrew. uv chooses the native platform build.
 
 ## Uninstalling
 
@@ -169,10 +137,10 @@ To completely remove Fetchtastic:
 
 ```bash
 # Remove the application
-pipx uninstall fetchtastic
+uv tool uninstall fetchtastic
 
 # Remove configuration and downloads (optional)
-rm -rf ~/.config/fetchtastic
+rm -rf ~/Library/Application\ Support/fetchtastic
 rm -rf ~/Downloads/Meshtastic
 
 # Remove cron job (if you set one up)

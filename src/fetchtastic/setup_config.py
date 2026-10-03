@@ -44,6 +44,7 @@ from fetchtastic.constants import (
     NTFY_REQUEST_TIMEOUT,
     WINDOWS_SHORTCUT_FILE,
 )
+from fetchtastic.installation import is_tool_installation, upgrade_command
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import coerce_bool, expand_apk_selected_patterns
 
@@ -286,8 +287,8 @@ if platform.system() == "Windows":
         print(
             "Windows detected. For full Windows integration, install optional dependencies:"
         )
-        print("pipx install -e .[win]")
-        print("or if using pip: pip install fetchtastic[win]")
+        print("uv tool install 'fetchtastic[win]'")
+        print("or if using pip: python -m pip install fetchtastic[win]")
 else:
     WINDOWS_MODULES_AVAILABLE = False
 
@@ -459,35 +460,24 @@ def is_fetchtastic_installed_via_pip() -> bool:
             timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
-            return "fetchtastic" in result.stdout.lower()
+            return any(
+                line.split() and line.split()[0].lower() == "fetchtastic"
+                for line in result.stdout.splitlines()
+            )
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
         # pip command not found or failed to execute
         pass
     return False
 
 
-def is_fetchtastic_installed_via_pipx() -> bool:
-    """
-    Check if fetchtastic is installed via pipx.
+def is_fetchtastic_installed_via_uv() -> bool:
+    """Return whether the running interpreter belongs to uv's tool installation."""
+    return is_tool_installation("uv")
 
-    Returns:
-        bool: True if installed via pipx, False otherwise
-    """
-    try:
-        # Check if fetchtastic is in pipx list
-        result = subprocess.run(
-            ["pipx", "list"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
-        )
-        if result.returncode == 0:
-            return "fetchtastic" in result.stdout.lower()
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        # pipx command not found or failed to execute
-        pass
-    return False
+
+def is_fetchtastic_installed_via_pipx() -> bool:
+    """Return whether the running interpreter belongs to pipx's tool installation."""
+    return is_tool_installation("pipx")
 
 
 def get_fetchtastic_installation_method() -> str:
@@ -495,8 +485,10 @@ def get_fetchtastic_installation_method() -> str:
     Determine the method used to install Fetchtastic.
 
     Returns:
-        str: 'pipx' if installed via pipx, 'pip' if installed via pip, 'unknown' otherwise.
+        str: 'uv', 'pipx', 'pip', or 'unknown'.
     """
+    if is_fetchtastic_installed_via_uv():
+        return "uv"
     if is_fetchtastic_installed_via_pipx():
         return "pipx"
     elif is_fetchtastic_installed_via_pip():
@@ -525,7 +517,7 @@ def migrate_pip_to_pipx() -> bool:
     print("\n" + "=" * 50)
     print("MIGRATING FROM PIP TO PIPX")
     print("=" * 50)
-    print("We recommend using pipx for better package isolation.")
+    print("This explicit migration installs pipx; uv is the default installer.")
     print("This will:")
     print("1. Backup your current configuration")
     print("2. Install pipx if not available")
@@ -539,7 +531,7 @@ def migrate_pip_to_pipx() -> bool:
         default="y",
     )
     if not _coerce_bool(migrate, default=True):
-        print("Migration cancelled. You can continue using pip, but we recommend pipx.")
+        print("Migration cancelled. You can continue using pip.")
         return False
 
     try:
@@ -2187,73 +2179,13 @@ def _setup_base(
                 "Termux storage is not set up; skipping Termux storage-dependent steps."
             )
 
-        # Check for pip installation and offer migration to pipx
         if get_fetchtastic_installation_method() == "pip":
-            print("\n" + "=" * 60)
-            print("NOTICE: Fetchtastic is installed via pip")
-            print("=" * 60)
-            print("We now recommend using pipx for better package isolation.")
-            print("pipx provides:")
-            print("• Isolated environments for each package")
-            print("• Better dependency management")
-            print("• Consistent experience across platforms")
-            print("\nTo migrate to pipx:")
-            print("1. Install pipx: pkg install python-pipx")
-            print("2. Uninstall current version: pip uninstall fetchtastic")
-            print("3. Install with pipx: pipx install fetchtastic")
-            print("4. Restart your terminal")
-            print("=" * 60)
-
-            migrate_to_pipx = _coerce_bool(
-                _safe_input(
-                    "Would you like to migrate to pipx now? [y/n] (default: no): ",
-                    default="n",
-                ),
-                default=False,
+            print("\nFetchtastic is installed via pip; pip upgrades remain supported.")
+            print("For an isolated uv installation: pkg install uv")
+            print(
+                'Then run: uv tool install --python "$PREFIX/bin/python" fetchtastic && uv tool update-shell'
             )
-
-            if migrate_to_pipx:
-                print("Starting migration to pipx...")
-                try:
-                    # Install pipx if not already installed
-                    pkg_exe = shutil.which("pkg") or "pkg"
-                    subprocess.run(
-                        [pkg_exe, "install", "python-pipx"],
-                        check=True,
-                        capture_output=True,
-                        timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
-                    )
-                    print("✓ pipx installed")
-
-                    # Uninstall current fetchtastic
-                    pip_exe = shutil.which("pip") or "pip"
-                    subprocess.run(
-                        [pip_exe, "uninstall", "fetchtastic", "-y"],
-                        check=True,
-                        capture_output=True,
-                        timeout=CRON_COMMAND_TIMEOUT_SECONDS,
-                    )
-                    print("✓ Removed pip installation")
-
-                    # Install with pipx
-                    pipx_exe = shutil.which("pipx") or "pipx"
-                    subprocess.run(
-                        [pipx_exe, "install", "fetchtastic"],
-                        check=True,
-                        capture_output=True,
-                        timeout=CRON_COMMAND_TIMEOUT_SECONDS * 4,
-                    )
-                    print("✓ Installed with pipx")
-
-                    print("\nMigration complete! Please restart your terminal.")
-                    print("You can then run 'fetchtastic setup' to continue.")
-                    sys.exit(0)
-
-                except subprocess.CalledProcessError as e:
-                    print(f"Migration failed: {e}")
-                    if e.stderr:
-                        print(f"Error details:\n{e.stderr.decode(errors='ignore')}")
-                    print("You can migrate manually later using the steps above.")
+            print("Your configuration and downloads are shared across installers.")
 
         separator = "=" * 60
         logger.info(f"{separator}\n")
@@ -2363,7 +2295,7 @@ def _setup_base(
             print(
                 "Windows shortcuts not available. Install optional dependencies for full Windows integration:"
             )
-            print("pip install fetchtastic[windows]")
+            print("uv tool install 'fetchtastic[win]'")
 
     return config
 
@@ -2618,24 +2550,10 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
 
 
 def get_upgrade_command() -> str:
-    """
-    Choose the shell command to upgrade Fetchtastic for the current platform and installation method.
-
-    On Termux this returns "pip install --upgrade fetchtastic" when Fetchtastic was installed via pip, otherwise "pipx upgrade fetchtastic". On non-Termux platforms this returns "pipx upgrade fetchtastic".
-
-    Returns:
-        str: Shell command to run to upgrade Fetchtastic.
-    """
-    if is_termux():
-        # Check how fetchtastic is installed in Termux
-        install_method = get_fetchtastic_installation_method()
-        if install_method == "pip":
-            return "pip install --upgrade fetchtastic"
-        else:
-            # Default to pipx for new installations and pipx installations
-            return "pipx upgrade fetchtastic"
-    else:
-        return "pipx upgrade fetchtastic"
+    """Choose the upgrade command for the active installation on every platform."""
+    return upgrade_command(
+        get_fetchtastic_installation_method(), windows=platform.system() == "Windows"
+    )
 
 
 def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
@@ -2900,47 +2818,12 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
             f.write("echo Checking for Fetchtastic updates...\n")
             f.write("echo.\n")
 
-            # Use pipx to upgrade fetchtastic with improved logic
-            pipx_path = shutil.which("pipx")
-            if pipx_path:
-                f.write("echo Attempting to upgrade Fetchtastic...\n")
-                f.write(f'"{pipx_path}" upgrade fetchtastic\n')
-                f.write("if %ERRORLEVEL% EQU 0 (\n")
-                f.write("    echo Upgrade completed successfully!\n")
-                f.write(") else (\n")
-                f.write("    echo Upgrade failed or already at latest version.\n")
-                f.write("    echo Trying force reinstall...\n")
-                f.write(f'    "{pipx_path}" install "fetchtastic[win]" --force\n')
-                f.write("    if %ERRORLEVEL% EQU 0 (\n")
-                f.write("        echo Force reinstall completed successfully!\n")
-                f.write("    ) else (\n")
-                f.write(
-                    "        echo Force reinstall failed. Trying uninstall/reinstall...\n"
-                )
-                f.write(
-                    f'        "{pipx_path}" uninstall fetchtastic --force >nul 2>&1\n'
-                )
-                f.write(f'        "{pipx_path}" install "fetchtastic[win]"\n')
-                f.write("        if %ERRORLEVEL% EQU 0 (\n")
-                f.write("            echo Reinstall completed successfully!\n")
-                f.write("        ) else (\n")
-                f.write(
-                    "            echo All upgrade methods failed. Please check your internet connection.\n"
-                )
-                f.write("        )\n")
-                f.write("    )\n")
-                f.write(")\n")
-                f.write("echo.\n")
-                f.write("echo Checking final version...\n")
-                f.write("fetchtastic version\n")
-            else:
-                # Fallback to pip if pipx is not found
-                pip_path = shutil.which("pip")
-                if pip_path:
-                    f.write(f'"{pip_path}" install --upgrade "fetchtastic[win]"\n')
-                else:
-                    f.write("echo Error: Neither pipx nor pip was found in PATH.\n")
-                    f.write("echo Please install pipx or pip to upgrade Fetchtastic.\n")
+            f.write(get_upgrade_command() + "\n")
+            f.write("if %ERRORLEVEL% NEQ 0 (\n")
+            f.write("    echo Upgrade failed. Check the error above and retry.\n")
+            f.write(") else (\n")
+            f.write("    echo Upgrade completed successfully.\n")
+            f.write(")\n")
             f.write("echo.\n")
             f.write("echo Press any key to close this window...\n")
             f.write("pause >nul\n")
@@ -3379,19 +3262,19 @@ def _resolve_fetchtastic_executable() -> Optional[str]:
     """Return an absolute executable path for automation, or None if unavailable.
 
     Cron and Termux:Boot do not necessarily inherit the interactive shell's
-    PATH. In particular, pipx installs Fetchtastic into ``~/.local/bin`` by
-    default while Termux cronie uses ``$PREFIX/bin`` as its default PATH.
-    Prefer the currently resolvable executable and fall back to the standard
-    pipx bin directory (including an explicit ``PIPX_BIN_DIR`` override).
+    PATH. uv and pipx normally expose tools in ``~/.local/bin``, while
+    Termux cronie uses ``$PREFIX/bin``. Honor their configured executable
+    directories when the command is absent from the interactive PATH.
     """
     executable = shutil.which("fetchtastic")
     if executable:
         return os.path.abspath(executable)
 
     candidate_dirs: List[str] = []
-    pipx_bin_dir = os.environ.get("PIPX_BIN_DIR", "").strip()
-    if pipx_bin_dir:
-        candidate_dirs.append(os.path.expanduser(pipx_bin_dir))
+    for variable in ("UV_TOOL_BIN_DIR", "PIPX_BIN_DIR", "XDG_BIN_HOME"):
+        directory = os.environ.get(variable, "").strip()
+        if directory:
+            candidate_dirs.append(os.path.expanduser(directory))
     candidate_dirs.append(os.path.expanduser("~/.local/bin"))
 
     for directory in candidate_dirs:
@@ -3455,7 +3338,7 @@ def setup_cron_job(frequency: str = "hourly", *, crontab_path: str = "crontab") 
         ]
 
         # Always use an absolute executable path. Cron has a deliberately
-        # minimal PATH; this is essential on Termux where the recommended pipx
+        # minimal PATH; this is essential on Termux where uv or pipx
         # install normally places the shim in ~/.local/bin while cronie's
         # compiled default PATH contains only $PREFIX/bin.
         fetchtastic_path = _resolve_fetchtastic_executable()

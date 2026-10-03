@@ -25,7 +25,10 @@ Requires Python 3.10+; Python 3.9 and earlier are unsupported.
 
 ### One-Line Installation
 
-Requires Python 3.10+.
+New installations use uv by default. Re-running the installer preserves a recognized
+existing uv, pipx, or pip installation instead of silently changing managers. On
+Linux, macOS, and Windows, uv can provide Python 3.10+ automatically; Termux uses
+its native Python package. Migration to uv is explicit.
 
 **Linux/MacOS/Android (Termux):**
 
@@ -137,11 +140,18 @@ Set up automatic downloads:
 - **Windows**: Use Start Menu → Fetchtastic → "Check for Updates"
 - **Linux/macOS/Termux**: Re-run the installation script
 
-**Manual:**
+**Manual (use the manager that installed Fetchtastic):**
 
 ```bash
+uv tool upgrade fetchtastic
+# Existing pipx installations:
 pipx upgrade fetchtastic
+# Existing pip installations, using their environment's Python:
+python -m pip install --upgrade fetchtastic
 ```
+
+pip remains supported. See the platform guides for virtual environment
+installation and migration to uv; configuration and downloads are preserved.
 
 ## 🤝 Contributing
 
@@ -157,16 +167,14 @@ Visit the [GitHub repository](https://github.com/jeremiah-k/fetchtastic) to get 
 ## 🧪 Development & Testing
 
 ```bash
-# create and activate environment
-python3 -m venv .venv
-. .venv/bin/activate
-
-# install dependencies
-pip install -e ".[test]"
-
-# run tests
-python -m pytest tests/
+uv sync --locked --extra test
+uv run --locked --no-sync python -m pytest tests/
+uv run --locked --no-sync python scripts/build_and_check.py
 ```
+
+For pip development, activate a Python 3.10+ virtual environment and run
+`python -m pip install -e ".[test]"` followed by `python -m pytest tests/`. See
+[the testing guide](docs/TESTING_GUIDE.md) for lock updates and build checks.
 
 Test suite organization uses markers such as `unit`, `integration`, `core_downloads`, `user_interface`, `configuration`, and `infrastructure`.
 
