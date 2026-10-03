@@ -2,7 +2,7 @@ name: Tests and Coverage
 
 on:
   push:
-    branches: [main, develop, "**-review"]
+    branches: ["**"]
   pull_request:
     branches: [main, develop, "**-review"]
   workflow_dispatch:
@@ -10,41 +10,62 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: Python ${{ matrix.python-version }} (${{ matrix.installer }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
-
+        installer: [uv]
+        include:
+          - python-version: "3.10"
+            installer: pip
+          - python-version: "3.14"
+            installer: pip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Cache pip dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          cache: ${{ matrix.installer == 'pip' && 'pip' || '' }}
+          cache-dependency-path: pyproject.toml
+      - name: Set up uv
+        if: matrix.installer == 'uv'
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[test]
-          pip install pytest-cov
-
-      - name: Run tests with coverage
-        run: |
-          python -m pytest tests/ -v --cov=src/fetchtastic --cov-report=xml --cov-report=term-missing --junitxml=junit.xml
-
+          version: 0.12.22
+          enable-cache: true
+          cache-suffix: ${{ matrix.python-version }}
+      - name: Install locked dependencies with uv
+        if: matrix.installer == 'uv'
+        run: uv sync --locked --extra test --python '${{ matrix.python-version }}'
+      - name: Install dependencies with pip
+        if: matrix.installer == 'pip'
+        run: python -m pip install -e '.[test]'
+      - name: Test uv installation
+        if: matrix.installer == 'uv'
+        run: uv run --locked --no-sync python -m pytest tests/ --junitxml=junit.xml
+      - name: Test pip installation
+        if: matrix.installer == 'pip'
+        run: python -m pytest tests/ --junitxml=junit.xml
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: test-reports-${{ matrix.installer }}-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            junit.xml
+          retention-days: 7
       - name: Upload coverage reports to Codecov
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.11' && matrix.installer == 'uv'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -52,12 +73,45 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
-
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.python-version == '3.11' && matrix.installer == 'uv' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           report_type: test_results
           files: ./junit.xml
           fail_ci_if_error: false
+
+  package:
+    name: Build and check distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: 0.12.22
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --locked --no-sync python scripts/build_and_check.py
+
+  windows-installer:
+    name: Validate Windows installer syntax
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'src/fetchtastic/tools/setup_fetchtastic.ps1'),
+            [ref]$tokens, [ref]$errors)
+          if ($errors.Count) {
+            $errors | Format-List
+            exit 1
+          }
