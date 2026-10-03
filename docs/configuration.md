@@ -33,13 +33,13 @@ Client app assets include Android APKs and desktop installers from the Meshtasti
 | `SELECTED_APP_ASSETS`           | setup choice | Preferred selection list for APKs and desktop installers. Supports exact names and patterns.        |
 | `APP_VERSIONS_TO_KEEP`          | `2`          | Number of stable client app releases to retain.                                                     |
 | `CHECK_APP_PRERELEASES`         | `true`       | Enables client app prerelease processing when client app downloads are enabled.                     |
-| `CHECK_APP_SNAPSHOTS`           | `false`      | Opt-in for Android snapshot debug builds. These are non-production builds signed with a debug key.  |
+| `CHECK_APP_SNAPSHOTS`           | `false`      | Opt-in for client app snapshots: debug-keyed APKs and unsigned desktop installers.                  |
 | `APP_SNAPSHOT_VERSIONS_TO_KEEP` | `1`          | Number of snapshot build directories to retain.                                                     |
 | `NOTIFY_ON_SNAPSHOTS`           | `false`      | Include snapshot versionCodes in NTFY notifications. Does not affect local logs or download counts. |
 
 ### Snapshot Debug Builds
 
-When `CHECK_APP_SNAPSHOTS` is enabled, Fetchtastic downloads rolling Android snapshot debug builds. These are not release builds: they are signed with a debug key and intended for testing only. Snapshot assets are stored under `app/snapshots/<YYYYMMDD-HHMMSS>-<versionCode>/` (timestamp-prefixed for chronological visibility). Plain `<versionCode>/` directories from older versions are also supported.
+When `CHECK_APP_SNAPSHOTS` is enabled, Fetchtastic downloads rolling client app snapshot builds. These include Android APKs signed with a debug key and unsigned desktop installers, intended for testing only. Snapshot assets are stored under `app/snapshots/<YYYYMMDD-HHMMSS>-<versionCode>/` (timestamp-prefixed for chronological visibility). Plain `<versionCode>/` directories from older versions are also supported.
 
 **Accumulation and cleanup:** Multiple snapshot builds accumulate across commits. Old snapshots are pruned only when a new stable release or channel prerelease ships (not on every snapshot download). `APP_SNAPSHOT_VERSIONS_TO_KEEP` (default 1, minimum 1 when snapshots are enabled) controls how many snapshot directories are retained when cleanup runs.
 
@@ -47,16 +47,20 @@ When `CHECK_APP_SNAPSHOTS` is enabled, Fetchtastic downloads rolling Android sna
 
 **Asset selection:** Snapshot assets are matched semantically against `SELECTED_APP_ASSETS` patterns. A stable-release selection like `app-fdroid-universal-release.apk` automatically selects the corresponding snapshot build (`androidApp-fdroid-universal-debug-<vc>.apk`). Wildcard patterns like `*fdroid*.apk` select all ABIs for that flavor. Legacy generic names like `meshtastic.apk` map to Google universal. See the table below for examples.
 
-| Configured pattern                 | Snapshot assets selected                             |
-| ---------------------------------- | ---------------------------------------------------- |
-| `app-fdroid-universal-release.apk` | F-Droid universal only                               |
-| `app-fdroid-arm64-v8a-release.apk` | F-Droid arm64-v8a only                               |
-| `app-google-release.apk`           | Google universal only                                |
-| `*fdroid*.apk`                     | All F-Droid ABIs (universal, arm64-v8a, armeabi-v7a) |
-| `*google*.apk`                     | All Google ABIs                                      |
-| `*.apk` or `*`                     | All six snapshot APKs                                |
-| `meshtastic.apk` (legacy)          | Google universal                                     |
-| `meshtastic.dmg` (desktop)         | None (desktop-only)                                  |
+| Configured pattern                   | Snapshot assets selected                             |
+| ------------------------------------ | ---------------------------------------------------- |
+| `app-fdroid-universal-release.apk`   | F-Droid universal only                               |
+| `app-fdroid-arm64-v8a-release.apk`   | F-Droid arm64-v8a only                               |
+| `app-google-release.apk`             | Google universal only                                |
+| `*fdroid*.apk`                       | All F-Droid ABIs (universal, arm64-v8a, armeabi-v7a) |
+| `*google*.apk`                       | All Google ABIs                                      |
+| `*.apk`                              | All six snapshot APKs                                |
+| `*`                                  | All snapshot APKs and desktop installers             |
+| `meshtastic.dmg`                     | The stamped macOS snapshot installer                 |
+| `meshtastic_desktop-x86_64.appimage` | The x86_64 snapshot AppImage                         |
+| `meshtastic.apk` (legacy)            | Google universal                                     |
+
+Desktop snapshot installers use the same selections as stable releases. The upstream `-<versionCode>` suffix and AppImage `snapshot` version token are removed for matching; architecture and package type remain part of the selection. A partially uploaded release can be retried to fetch selected assets as they become available. Mixed versionCodes across APKs and desktop installers are rejected.
 
 **Exclusions:** `EXCLUDE_PATTERNS` applies to snapshot assets. Note that `*debug*` in exclusion patterns will block all snapshot APKs since every snapshot filename contains "debug." A warning is logged when all otherwise-selected snapshot assets are removed by exclusions.
 

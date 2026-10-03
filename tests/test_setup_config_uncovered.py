@@ -101,7 +101,7 @@ def test_setup_downloads_full_run_desktop_only(mocker):
 
     mocker.patch(
         "builtins.input",
-        side_effect=["d", "n", "n"],  # desktop choice, no prerelease, no snapshots
+        side_effect=["d", "n", "n", "n"],  # desktop choice, no prerelease, no snapshots
     )
     mock_menu = mocker.patch(
         "fetchtastic.menu_app.run_menu",
@@ -135,6 +135,7 @@ def test_setup_downloads_full_run_reprompts_invalid_choice(mocker, capsys):
         side_effect=[
             "invalid-choice",
             "d",
+            "n",
             "n",
             "n",
         ],  # invalid, desktop choice, no prerelease, no snapshots
@@ -273,6 +274,7 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
         "builtins.input",
         side_effect=[
             "y",
+            "n",
             "n",
             "n",
             "n",
@@ -430,6 +432,7 @@ def test_setup_downloads_backward_compat_old_key(mocker):
         "builtins.input",
         side_effect=[
             "y",
+            "n",
             "n",
             "n",
             "n",

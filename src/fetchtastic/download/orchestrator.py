@@ -511,7 +511,7 @@ class DownloadOrchestrator:
                 and self.client_app_downloader.has_local_snapshot_builds()
             ):
                 logger.info(
-                    "Android snapshot downloads are disabled; existing app/snapshots "
+                    "Client app snapshot downloads are disabled; existing app/snapshots "
                     "builds will not refresh. Run 'fetchtastic setup app' to enable them."
                 )
 
@@ -691,7 +691,7 @@ class DownloadOrchestrator:
 
             # --- Snapshot Debug Builds (rolling "snapshot" tag) ---
             if snapshots_enabled:
-                logger.info("Checking for Android snapshot debug builds...")
+                logger.info("Checking for Client app snapshot debug builds...")
                 snapshot_release = self.client_app_downloader.fetch_snapshot_release()
                 handled_snapshot = self.client_app_downloader.handle_snapshots(
                     snapshot_release
@@ -764,7 +764,7 @@ class DownloadOrchestrator:
                                 "Snapshot release has no parsable versionCode; skipping"
                             )
                 elif snapshot_release is not None:
-                    logger.debug("Snapshot release has no debug APK assets")
+                    logger.debug("Snapshot release has no stamped client app assets")
                 else:
                     logger.debug("No snapshot release found")
 

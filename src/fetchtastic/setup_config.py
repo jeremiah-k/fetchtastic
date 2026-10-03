@@ -1118,17 +1118,13 @@ def _setup_downloads(
         normalize_client_app_config(config)
 
     # --- Client App Snapshot (Debug Build) Configuration ---
-    if (
-        save_client_apps
-        and app_section_requested
-        and _coerce_bool(config.get("SAVE_APKS", False))
-    ):
+    if save_client_apps and app_section_requested:
         check_app_snapshots_current = _coerce_bool(
             config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
         )
         check_app_snapshots_default = "yes" if check_app_snapshots_current else "no"
         check_app_snapshots_input = _safe_input(
-            f"\nWould you like to check for and download Android snapshot debug builds? These are rolling builds replaced on every push to Android main, debug-keyed (not for production), and stored separately under app/snapshots/. [y/n] (default: {check_app_snapshots_default}): ",
+            f"\nWould you like to check for and download client app snapshot debug builds? These rolling builds include debug-keyed APKs and unsigned desktop installers, are intended for testing, and are stored separately under app/snapshots/. [y/n] (default: {check_app_snapshots_default}): ",
             default=check_app_snapshots_default,
         )
         config["CHECK_APP_SNAPSHOTS"] = _coerce_bool(
@@ -1222,7 +1218,7 @@ def _setup_client_app(
             )
         )
         snapshot_keep_input = _safe_input(
-            f"How many Android snapshot builds would you like to keep? "
+            f"How many client app snapshot builds would you like to keep? "
             f"(current: {current_keep}): ",
             default=str(current_keep),
         ).strip()
@@ -2010,7 +2006,7 @@ def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
             check_default=DEFAULT_CHECK_APP_SNAPSHOTS,
             notify_key="NOTIFY_ON_SNAPSHOTS",
             notify_default=DEFAULT_NOTIFY_ON_SNAPSHOTS,
-            build_label="Android snapshot debug builds",
+            build_label="Client app snapshot debug builds",
         )
         _prompt_experimental_notification_preference(
             config,
