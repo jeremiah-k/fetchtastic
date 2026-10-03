@@ -22,11 +22,11 @@ def get_install_script_path(platform: str) -> str:
     Get the filesystem path to the Fetchtastic installation script for the given platform.
 
     Parameters:
-        platform (str): Platform name; use 'windows' to select the Windows batch installer, any other value selects the Unix shell installer.
+        platform (str): Use 'windows' for the PowerShell installer; other values select the shell installer.
 
     Returns:
         str: Filesystem path to the selected installation script.
     """
-    filename = f"fetchtastic-setup.{'bat' if platform == 'windows' else 'sh'}"
+    filename = f"setup_fetchtastic.{'ps1' if platform == 'windows' else 'sh'}"
     # For Python 3.10+
     return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
