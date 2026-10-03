@@ -1,133 +1,85 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "==================================="
-echo "Fetchtastic Installer"
-echo "==================================="
-echo
+installer=${1:-uv}
+case "${installer}" in
+uv | pip | pipx) ;;
+-h | --help)
+	echo "Usage: $0 [uv|pip|pipx] (default: uv)"
+	exit 0
+	;;
+*)
+	echo "Unknown installer: ${installer}. Choose uv, pip, or pipx." >&2
+	exit 2
+	;;
+esac
 
-# Detect OS
-if [[ ${OSTYPE} == "darwin"* ]]; then
-	OS_TYPE="macOS"
-elif [[ ${OSTYPE} == "linux-android"* ]]; then
-	OS_TYPE="Termux"
-else
-	OS_TYPE="Linux"
+termux=false
+if [[ -n ${TERMUX_VERSION:-} || ${PREFIX:-} == */com.termux/* ]]; then
+	termux=true
 fi
 
-echo "Detected platform: ${OS_TYPE}"
-echo
-
-# Check if running as root
-if [[ ${EUID} -eq 0 ]]; then
-	echo "This script doesn't need to be run as root."
-	echo "Continuing anyway..."
-fi
-
-echo
-echo "This script will:"
-echo " 1. Check if Python is installed"
-echo " 2. Install Python if needed"
-if [[ ${OS_TYPE} == "macOS" ]]; then
-	echo " 3. Check if Homebrew is installed"
-	echo " 4. Install Homebrew if needed"
-fi
-echo " 3. Install pipx"
-echo " 4. Install Fetchtastic"
-echo " 5. Run the Fetchtastic setup"
-echo
-echo "Press Ctrl+C to cancel or Enter to continue..."
-read -r
-
-# macOS-specific setup
-if [[ ${OS_TYPE} == "macOS" ]]; then
-	# Check if Homebrew is installed
-	if command -v brew &>/dev/null; then
-		echo "Homebrew is already installed."
-	else
-		echo "Homebrew is not installed. Installing Homebrew..."
-		/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
-
-		# Add Homebrew to PATH for this session
-		ARCH=$(uname -m)
-		if [[ ${ARCH} == "arm64" ]]; then
-			# M1/M2 Mac
-			eval "$(/opt/homebrew/bin/brew shellenv)" || true
+echo "Installing Fetchtastic with ${installer}..."
+case "${installer}" in
+uv)
+	if ! command -v uv >/dev/null 2>&1; then
+		if ${termux}; then
+			pkg install -y python uv
 		else
-			# Intel Mac
-			eval "$(/usr/local/bin/brew shellenv)" || true
-		fi
-
-		# Verify Homebrew installation
-		if command -v brew &>/dev/null; then
-			echo "Homebrew installed successfully."
-		else
-			echo "Failed to install Homebrew. Please install Homebrew manually."
-			echo "After installing Homebrew, run this script again."
-			exit 1
+			curl -LsSf https://astral.sh/uv/install.sh | sh
+			export PATH="${UV_INSTALL_DIR:-${XDG_BIN_HOME:-${HOME}/.local/bin}}:${PATH}"
 		fi
 	fi
-fi
-
-# Check if Python is installed
-if command -v python3 &>/dev/null; then
-	echo "Python is already installed."
-	python3 --version
-else
-	echo "Python is not installed. Installing Python..."
-
-	if [[ ${OS_TYPE} == "macOS" ]]; then
-		# macOS - use Homebrew
-		brew install python
-	elif [[ ${OS_TYPE} == "Termux" ]]; then
-		# Termux
-		pkg install python python-pip -y
+	if ${termux}; then
+		# Termux requires its native Python rather than a managed Linux build.
+		uv tool install --upgrade --python "${PREFIX}/bin/python" fetchtastic
 	else
-		# Linux - detect package manager
-		if command -v apt-get &>/dev/null; then
-			# Debian/Ubuntu
-			sudo apt-get update
-			sudo apt-get install -y python3 python3-pip python3-venv
-		elif command -v dnf &>/dev/null; then
-			# Fedora
-			sudo dnf install -y python3 python3-pip
-		elif command -v yum &>/dev/null; then
-			# CentOS/RHEL
-			sudo yum install -y python3 python3-pip
-		elif command -v pacman &>/dev/null; then
-			# Arch Linux
-			sudo pacman -Sy python python-pip
-		else
-			echo "Could not detect package manager. Please install Python manually."
-			echo "After installing Python, run this script again."
-			exit 1
-		fi
+		uv tool install --upgrade --python '>=3.10' fetchtastic
 	fi
-
-	# Verify Python installation
-	if command -v python3 &>/dev/null; then
-		echo "Python installed successfully."
-		python3 --version
-	else
-		echo "Failed to install Python. Please install Python manually."
-		echo "After installing Python, run this script again."
+	uv tool update-shell
+	fetchtastic_bin="$(uv tool dir --bin)/fetchtastic"
+	;;
+pip)
+	if ${termux}; then
+		pkg install -y python python-pip
+	fi
+	if ! command -v python3 >/dev/null 2>&1; then
+		echo "Install Python 3.10 or later with venv support, then rerun this script." >&2
 		exit 1
 	fi
-fi
+	python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else "Python 3.10 or later is required")'
+	fetchtastic_venv="${XDG_DATA_HOME:-${HOME}/.local/share}/fetchtastic/venv"
+	fetchtastic_link="${XDG_BIN_HOME:-${HOME}/.local/bin}/fetchtastic"
+	if [[ -e ${fetchtastic_link} || -L ${fetchtastic_link} ]]; then
+		if [[ ! -L ${fetchtastic_link} ]]; then
+			echo "${fetchtastic_link} belongs to another installation. Remove it before switching installers." >&2
+			exit 1
+		fi
+		existing_target=$(readlink "${fetchtastic_link}")
+		if [[ ${existing_target} != "${fetchtastic_venv}/bin/fetchtastic" ]]; then
+			echo "${fetchtastic_link} belongs to another installation. Remove it before switching installers." >&2
+			exit 1
+		fi
+	fi
+	python3 -m venv "${fetchtastic_venv}"
+	"${fetchtastic_venv}/bin/python" -m pip install --upgrade fetchtastic
+	mkdir -p "${fetchtastic_link%/*}"
+	ln -sfn "${fetchtastic_venv}/bin/fetchtastic" "${fetchtastic_link}"
+	fetchtastic_bin="${fetchtastic_venv}/bin/fetchtastic"
+	;;
+pipx)
+	if ! command -v pipx >/dev/null 2>&1; then
+		echo "Install pipx with your platform's package manager, then rerun this script." >&2
+		exit 1
+	fi
+	pipx install --python python3 fetchtastic
+	pipx upgrade fetchtastic
+	pipx ensurepath
+	fetchtastic_bin="$(pipx environment --value PIPX_BIN_DIR)/fetchtastic"
+	;;
+*) exit 2 ;;
+esac
 
-# Install pipx
-echo
-echo "Installing pipx..."
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-
-# Add pipx to PATH for this session
-export PATH="${HOME}/.local/bin:${PATH}"
-
-# Install Fetchtastic
-echo
-pipx install fetchtastic
-
-# Run Fetchtastic setup
-echo
-echo "You can now run Fetchtastic setup:"
-echo "  fetchtastic setup"
+"${fetchtastic_bin}" version
+echo "Installation complete. Restart your terminal if PATH was updated."
+echo "Run '${fetchtastic_bin} setup' to choose downloads."

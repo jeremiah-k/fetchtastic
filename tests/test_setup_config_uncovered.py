@@ -1491,7 +1491,7 @@ def test_setup_base_windows_no_modules(mocker, capsys):
     captured = capsys.readouterr()
 
     assert "Windows shortcuts not available" in captured.out
-    assert "pip install fetchtastic[windows]" in captured.out
+    assert "uv tool install 'fetchtastic[win]'" in captured.out
 
 
 # Tests for run_setup desktop configuration (lines 2119-2139, 2141->2145, 2146->2162)
