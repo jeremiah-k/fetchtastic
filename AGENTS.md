@@ -4,6 +4,32 @@ This document provides instructions for setting up the development environment a
 
 ## Environment Setup
 
+### Recommended: uv
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
+
+```bash
+uv sync --locked --extra test
+uv run --locked --no-sync python -m pytest tests/
+```
+
+This creates `.venv`, installs the project in editable mode, and includes the
+locked test and development dependencies. No activation is required when using
+`uv run`. For the commands below, either prefix `python` with
+`uv run --locked --no-sync` or activate `.venv`.
+
+After changing dependencies, run `uv lock`, commit `uv.lock` with
+`pyproject.toml`, and sync again. Build and check the installed wheel with:
+
+```bash
+uv run --locked --no-sync python scripts/build_and_check.py
+```
+
+### pip compatibility
+
+Python 3.10 or later and pip remain supported. The test extra continues to be
+installable without uv. Follow these pip setup steps.
+
 ### 1. Create Virtual Environment
 
 If a virtual environment doesn't exist, create one using the patterns from `.gitignore`:
@@ -38,7 +64,7 @@ Install the package with dependencies:
 
 ```bash
 # Install with production + development dependencies
-pip install -e ".[test]"
+python -m pip install -e ".[test]"
 ```
 
 ## Running Tests
@@ -112,10 +138,10 @@ python -m pytest tests/ -m "not slow"
 
 2. **ModuleNotFoundError**
    - Solution: Ensure virtual environment is activated
-   - Install dependencies with `pip install -e ".[test]"`
+   - Install dependencies with `python -m pip install -e ".[test]"`
 
 3. **Coverage-related errors**
-   - Solution: Install pytest-cov with `pip install pytest-cov`
+   - Solution: Install pytest-cov with `python -m pip install pytest-cov`
    - This is included in the `test` optional dependency group
 
 ### Verification Commands
@@ -128,7 +154,7 @@ which python  # Use 'where.exe python' on Windows
 python -m pytest --version
 
 # Test basic imports
-python -c "import src.fetchtastic; print('Imports successful')"
+python -c "import fetchtastic; print('Imports successful')"
 ```
 
 ## Development Workflow
