@@ -672,15 +672,15 @@ def test_config_snapshots_forced_false_empty_assets():
 
 
 @pytest.mark.configuration
-def test_config_snapshots_forced_false_desktop_only():
-    """CHECK_APP_SNAPSHOTS must be False when only desktop assets are selected."""
+def test_config_snapshots_preserved_desktop_only():
+    """Desktop selections preserve explicit snapshot opt-in."""
     config = {
         "SAVE_CLIENT_APPS": True,
         "CHECK_APP_SNAPSHOTS": True,
         "SELECTED_APP_ASSETS": ["meshtastic.dmg"],
     }
     result = normalize_client_app_config(config)
-    assert result["CHECK_APP_SNAPSHOTS"] is False
+    assert result["CHECK_APP_SNAPSHOTS"] is True
 
 
 @pytest.mark.configuration
