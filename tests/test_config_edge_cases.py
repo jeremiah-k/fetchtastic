@@ -216,7 +216,13 @@ class TestConfigEdgeCases:
         assert setup_config.is_fetchtastic_installed_via_pip() is True
 
         # Test pipx installation
-        mock_subprocess.return_value.stdout = "fetchtastic 1.0.0"
+        mock_subprocess.return_value.stdout = "/tmp/pipx/venvs"
+        mocker.patch(
+            "fetchtastic.installation.sys.prefix", "/tmp/pipx/venvs/fetchtastic"
+        )
+        mocker.patch(
+            "fetchtastic.installation.shutil.which", return_value="/usr/bin/pipx"
+        )
         assert setup_config.is_fetchtastic_installed_via_pipx() is True
 
         # Test pipx not installed

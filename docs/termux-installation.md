@@ -23,46 +23,37 @@ curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetc
 
 > **Security Note:** For security-conscious users, you can [download and inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh) before running it.
 
-This script will:
+The script installs native Termux Python and uv when needed, installs Fetchtastic
+in an isolated tool environment, and prints the setup command.
 
-- Install Python and required packages
-- Install pipx for better package isolation
-- Install Fetchtastic via pipx
-- Run the initial setup process
-- Set up storage access permissions
-
-## Manual Installation
-
-If you prefer to install manually:
-
-### Step 1: Update Termux and Install Dependencies
+## Manual Installation with uv
 
 ```bash
-# Update package lists
 pkg update
-
-# Install required packages
-pkg install python python-pip openssl -y
+pkg install python uv openssl -y
+uv tool install --python "$PREFIX/bin/python" fetchtastic
+uv tool update-shell
 ```
 
-### Step 2: Install pipx (Recommended)
+Use Termux's Python explicitly: managed Linux Python builds target a different
+runtime from Android. Restart Termux if PATH was updated.
+
+## Install with pip
+
+pip remains supported in a virtual environment:
 
 ```bash
-# Install pipx
-pip install --user pipx
-python -m pipx ensurepath
-
-# Restart Termux or run:
-source ~/.bashrc
+pkg install python python-pip -y
+python -m venv ~/.local/share/fetchtastic/venv
+~/.local/share/fetchtastic/venv/bin/python -m pip install fetchtastic
 ```
 
-### Step 3: Install Fetchtastic
+The downloaded shell installer also supports `bash setup_fetchtastic.sh pip`.
+Existing pipx installations continue to work. A no-argument rerun preserves a
+recognized existing uv, pipx, or pip installation; new installations default to uv.
+Migration between managers is always explicit.
 
-```bash
-pipx install fetchtastic
-```
-
-### Step 4: Set Up Storage Access
+## Set Up Storage Access
 
 ```bash
 termux-setup-storage
@@ -70,7 +61,7 @@ termux-setup-storage
 
 Grant storage permissions when prompted. This allows Fetchtastic to save files to your device's storage.
 
-### Step 5: Run Setup
+## Run Setup
 
 ```bash
 fetchtastic setup
@@ -101,8 +92,8 @@ script, cron will resume after you next open a Termux login shell.
 Termux supports cron for scheduled tasks. During setup, you can schedule
 Fetchtastic to run automatically. Fetchtastic installs/enables `cronie` and
 `termux-services` as needed and writes the absolute Fetchtastic executable path
-into the crontab. The absolute path matters for the recommended pipx install:
-pipx normally places the command in `~/.local/bin`, while Termux cronie uses a
+into the crontab. The absolute path matters for uv and pipx installations:
+they normally place the command in `~/.local/bin`, while Termux cronie uses a
 minimal `$PREFIX/bin` PATH for cron jobs.
 
 After setup, verify all three pieces independently:
@@ -157,32 +148,22 @@ currently configures cronie.
 
 ## Upgrading
 
-### pipx Installation (Recommended)
-
 ```bash
+uv tool upgrade fetchtastic
+# pip (use the Python belonging to the installed environment):
+~/.local/share/fetchtastic/venv/bin/python -m pip install --upgrade fetchtastic
+# pipx:
 pipx upgrade fetchtastic
 ```
 
-### Legacy pip Installation
+## Migrating to uv
 
-```bash
-pip install --upgrade fetchtastic
-```
-
-### Migrating from pip to pipx
-
-If you have an existing pip installation and want to migrate:
-
-```bash
-# Run setup to get migration prompts
-fetchtastic setup
-
-# Or manually migrate:
-pip uninstall fetchtastic -y
-pip install --user pipx
-python -m pipx ensurepath
-pipx install fetchtastic
-```
+Keep your configuration and downloads. Uninstall the package using its existing
+manager (`pipx uninstall fetchtastic`, or
+`~/.local/share/fetchtastic/venv/bin/python -m pip uninstall fetchtastic`), then
+follow the uv commands above.
+Run `fetchtastic setup` to refresh cron and boot scripts to the uv executable
+path. Setup continues to support pip installations.
 
 ## Configuration
 
@@ -224,10 +205,10 @@ If you get compilation errors:
 
 ```bash
 # Install build dependencies
-pkg install clang make libjpeg-turbo-dev
+pkg install clang make pkg-config
 
 # Try installing again
-pip install --user pipx
+uv tool install --python "$PREFIX/bin/python" fetchtastic
 ```
 
 ### Network Issues
@@ -285,8 +266,10 @@ Save downloads to shared storage so you can access them from other Android apps:
 To completely remove Fetchtastic:
 
 ```bash
-# Remove the application
+# Run only the command for the manager that installed Fetchtastic.
+uv tool uninstall fetchtastic
 pipx uninstall fetchtastic
+~/.local/share/fetchtastic/venv/bin/python -m pip uninstall fetchtastic
 
 # Remove configuration and downloads (optional)
 rm -rf ~/.config/fetchtastic

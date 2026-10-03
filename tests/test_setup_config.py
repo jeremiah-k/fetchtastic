@@ -1,7 +1,9 @@
 import copy
 import importlib
 import os
+import shlex
 import subprocess
+import sys
 from collections.abc import Callable
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -552,8 +554,11 @@ def test_is_fetchtastic_installed_via_pip_error(mock_run):
 @patch("subprocess.run")
 def test_is_fetchtastic_installed_via_pipx_true(mock_run):
     """Test detection of pipx installation."""
-    mock_run.return_value = MagicMock(stdout="fetchtastic 1.0.0", returncode=0)
-    assert setup_config.is_fetchtastic_installed_via_pipx() is True
+    mock_run.return_value = MagicMock(stdout="/tmp/pipx/venvs", returncode=0)
+    with patch(
+        "fetchtastic.installation.sys.prefix", "/tmp/pipx/venvs/fetchtastic"
+    ), patch("fetchtastic.installation.shutil.which", return_value="/usr/bin/pipx"):
+        assert setup_config.is_fetchtastic_installed_via_pipx() is True
 
 
 @pytest.mark.configuration
@@ -799,7 +804,7 @@ def test_get_upgrade_command_termux_pip():
         ):
             assert (
                 setup_config.get_upgrade_command()
-                == "pip install --upgrade fetchtastic"
+                == f"{shlex.quote(sys.executable)} -m pip install --upgrade fetchtastic"
             )
 
 
@@ -819,8 +824,11 @@ def test_get_upgrade_command_termux_pipx():
 @pytest.mark.unit
 def test_get_upgrade_command_non_termux():
     """Test upgrade command for non-Termux platforms."""
-    with patch("fetchtastic.setup_config.is_termux", return_value=False):
-        assert setup_config.get_upgrade_command() == "pipx upgrade fetchtastic"
+    with patch(
+        "fetchtastic.setup_config.get_fetchtastic_installation_method",
+        return_value="uv",
+    ):
+        assert setup_config.get_upgrade_command() == "uv tool upgrade fetchtastic"
 
 
 @pytest.mark.configuration
@@ -993,7 +1001,11 @@ def test_migrate_config_handles_load_error(tmp_path, mocker):
 @pytest.mark.parametrize(
     "is_termux_val, install_method, expected",
     [
-        (True, "pip", "pip install --upgrade fetchtastic"),
+        (
+            True,
+            "pip",
+            f"{shlex.quote(sys.executable)} -m pip install --upgrade fetchtastic",
+        ),
         (True, "pipx", "pipx upgrade fetchtastic"),
         (False, "pipx", "pipx upgrade fetchtastic"),
     ],
@@ -1124,13 +1136,14 @@ def test_migration_functions_simple(mocker):
 @pytest.mark.unit
 def test_get_upgrade_command_basic(mocker):
     """Test get_upgrade_command basic scenarios."""
-    # Test with non-Termux environment (should default to pipx)
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch(
+        "fetchtastic.setup_config.get_fetchtastic_installation_method",
+        return_value="uv",
+    )
 
     result = setup_config.get_upgrade_command()
 
-    # Should return pipx upgrade command for non-Termux
-    assert result == "pipx upgrade fetchtastic"
+    assert result == "uv tool upgrade fetchtastic"
 
 
 @pytest.mark.configuration
@@ -1154,7 +1167,9 @@ def test_upgrade_command_termux_scenarios(mocker):
     )
 
     result = setup_config.get_upgrade_command()
-    assert result == "pip install --upgrade fetchtastic"
+    assert (
+        result == f"{shlex.quote(sys.executable)} -m pip install --upgrade fetchtastic"
+    )
 
     # Test with Termux and pipx installation
     mocker.patch(
@@ -1778,7 +1793,6 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 ):
     """Test a simple first-run setup process on a Termux system."""
     user_inputs = [
-        "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
         # _setup_downloads: firmware prerelease/nightly/channel-suffix moved to _setup_firmware
