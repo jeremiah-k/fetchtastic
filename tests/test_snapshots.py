@@ -1120,6 +1120,21 @@ def test_orch_snapshot_release_without_stamped_assets_logs_skip(tmp_path):
 
 
 @pytest.mark.integration
+def test_orch_snapshot_current_build_is_reported_up_to_date(tmp_path):
+    orch = _make_orchestrator_for_snapshots(tmp_path)
+    release = _make_snapshot_release(vc=100)
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=release)
+    orch.client_app_downloader.get_snapshot_version_code = Mock(return_value=100)
+    orch.client_app_downloader.should_process_snapshot = Mock(return_value=False)
+
+    with patch("fetchtastic.download.orchestrator.logger") as mock_logger:
+        assert orch._process_client_app_snapshots() is False
+
+    mock_logger.debug.assert_any_call("Snapshot build %s is up to date", 100)
+
+
+@pytest.mark.integration
 def test_orch_snapshot_disabled_skips_entirely(tmp_path, cache_manager):
     """CHECK_APP_SNAPSHOTS=False → fetch never called."""
     orch = _make_orchestrator_for_snapshots(tmp_path, CHECK_APP_SNAPSHOTS=False)
@@ -1634,3 +1649,179 @@ def test_cleanup_timestamp_prefixed_dirs(downloader, tmp_path):
     assert (base / "20260711-100000-29321447").is_dir()
     # Non-numeric dir untouched
     assert (base / "not_a_number").is_dir()
+
+
+@pytest.mark.parametrize(
+    "payload", [None, [], {}, {"tag_name": "snapshot", "assets": []}]
+)
+def test_snapshot_invalid_payload_marks_check_failed(downloader, payload):
+    with patch(
+        "fetchtastic.download.client_app.make_github_api_request",
+        return_value=Mock(json=Mock(return_value=payload)),
+    ):
+        assert downloader.fetch_snapshot_release() is None
+    assert downloader.last_snapshot_fetch_failed
+
+
+def test_snapshot_transport_failure_and_404_reset(downloader):
+    with patch(
+        "fetchtastic.download.client_app.make_github_api_request",
+        side_effect=requests.ConnectionError("offline"),
+    ):
+        assert downloader.fetch_snapshot_release() is None
+    assert downloader.last_snapshot_fetch_failed
+    with patch(
+        "fetchtastic.download.client_app.make_github_api_request",
+        side_effect=requests.HTTPError(response=Mock(status_code=404)),
+    ):
+        assert downloader.fetch_snapshot_release() is None
+    assert not downloader.last_snapshot_fetch_failed
+
+
+@pytest.mark.parametrize("status", [403, 429, 500])
+def test_snapshot_http_failure_is_not_absence(downloader, status):
+    with patch(
+        "fetchtastic.download.client_app.make_github_api_request",
+        side_effect=requests.HTTPError(response=Mock(status_code=status)),
+    ):
+        assert downloader.fetch_snapshot_release() is None
+    assert downloader.last_snapshot_fetch_failed
+
+
+def test_snapshot_fetch_without_response_marks_failure(downloader):
+    with patch(
+        "fetchtastic.download.client_app.make_github_api_request", return_value=None
+    ):
+        assert downloader.fetch_snapshot_release() is None
+    assert downloader.last_snapshot_fetch_failed
+
+
+def test_snapshot_fetch_failure_prevents_up_to_date_message(tmp_path):
+    orch = _make_orchestrator_for_snapshots(tmp_path)
+    with (
+        patch(
+            "fetchtastic.download.client_app.make_github_api_request",
+            side_effect=requests.ConnectionError("offline"),
+        ),
+        patch("fetchtastic.download.orchestrator.logger") as log,
+    ):
+        orch._process_client_app_downloads()
+    assert orch.release_check_failed
+    assert not any(
+        "All client app assets are up to date" in str(call)
+        for call in log.info.call_args_list
+    )
+
+
+def test_snapshot_empty_ordinary_feed_still_downloads(tmp_path):
+    orch = _make_orchestrator_for_snapshots(tmp_path)
+    orch._ensure_client_app_releases = Mock(return_value=[])
+    release = _make_snapshot_release(vc=100)
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(
+        return_value=[release.assets[0]]
+    )
+    orch.client_app_downloader.download_snapshot_asset = Mock(
+        return_value=DownloadResult(
+            success=True, release_tag="snapshot", file_type=FILE_TYPE_APP_SNAPSHOT
+        )
+    )
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=True)
+    orch.client_app_downloader.cleanup_superseded_snapshots = Mock()
+    orch._process_client_app_downloads()
+    orch.client_app_downloader.download_snapshot_asset.assert_called_once()
+    orch.client_app_downloader.update_snapshot_tracking.assert_called_once()
+    orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
+
+
+def test_snapshot_mixed_builds_marks_check_failed(tmp_path):
+    orch = _make_orchestrator_for_snapshots(tmp_path)
+    release = _make_snapshot_release(vc=100)
+    release.assets.append(
+        Asset(
+            name="Meshtastic.Desktop-2.8.3-101.dmg",
+            download_url="https://example.com/app",
+            size=3,
+        )
+    )
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch._process_client_app_downloads()
+    assert orch.release_check_failed
+    assert not orch.download_results
+
+
+def test_snapshot_tracking_failure_marks_check_failed(tmp_path):
+    orch = _make_orchestrator_for_snapshots(tmp_path)
+    release = _make_snapshot_release(vc=100)
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.get_selected_snapshot_assets = Mock(
+        return_value=[release.assets[0]]
+    )
+    orch.client_app_downloader.download_snapshot_asset = Mock(
+        return_value=DownloadResult(
+            success=True, was_skipped=True, file_type=FILE_TYPE_APP_SNAPSHOT
+        )
+    )
+    orch.client_app_downloader.update_snapshot_tracking = Mock(return_value=False)
+    orch._process_client_app_downloads()
+    assert orch.release_check_failed
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["backup-99", "20261301-000000-99", "20260101-250000-99", "99-extra", "９９"],
+)
+def test_snapshot_foreign_directories_survive_cleanup(downloader, tmp_path, name):
+    base = tmp_path / "downloads" / "app" / "snapshots"
+    for directory in (name, "100", "101"):
+        (base / directory).mkdir(parents=True)
+    assert downloader.cleanup_superseded_snapshots() == 1
+    assert (base / name).is_dir()
+    assert downloader._find_snapshot_release_dir(str(base), 99) == str(base / "99")
+
+
+def test_snapshot_cleanup_same_version_keeps_newest_timestamp(downloader, tmp_path):
+    base = tmp_path / "downloads" / "app" / "snapshots"
+    for name in (
+        "20260101-000000-100",
+        "20260102-000000-100",
+        "99",
+    ):
+        (base / name).mkdir(parents=True)
+
+    assert downloader.cleanup_superseded_snapshots() == 2
+    assert not (base / "20260101-000000-100").exists()
+    assert (base / "20260102-000000-100").is_dir()
+    assert not (base / "99").exists()
+
+
+def test_snapshot_directory_discovery_is_deterministic(downloader, tmp_path):
+    base = tmp_path / "downloads" / "app" / "snapshots"
+    for name in ("20260101-000000-100", "20260102-000000-100", "backup-100"):
+        (base / name).mkdir(parents=True)
+    assert downloader._find_snapshot_release_dir(str(base), 100) == str(
+        base / "20260102-000000-100"
+    )
+
+
+def test_snapshot_symlinked_build_is_incomplete_and_preserved(downloader, tmp_path):
+    base = tmp_path / "downloads" / "app" / "snapshots"
+    base.mkdir(parents=True)
+    external = tmp_path / "external"
+    external.mkdir()
+    (base / "100").symlink_to(external, target_is_directory=True)
+    assert not downloader.is_snapshot_complete(_make_snapshot_release(vc=100), 100)
+    assert downloader.cleanup_superseded_snapshots() == 0
+    assert (base / "100").is_symlink()
+
+
+def test_snapshot_parent_symlink_is_not_managed(downloader, tmp_path):
+    download = tmp_path / "downloads"
+    actual = download / "actual-app"
+    (actual / "snapshots" / "100").mkdir(parents=True)
+    (actual / "snapshots" / "101").mkdir()
+    (download / "app").symlink_to(actual, target_is_directory=True)
+    assert not downloader.has_local_snapshot_builds()
+    assert not downloader.is_snapshot_complete(_make_snapshot_release(vc=100), 100)
+    assert downloader.cleanup_superseded_snapshots() == 0
+    assert (actual / "snapshots" / "100").is_dir()

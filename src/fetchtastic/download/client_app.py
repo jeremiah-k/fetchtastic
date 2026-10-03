@@ -169,7 +169,7 @@ def is_client_app_asset_name(asset_name: str) -> bool:
 
 
 def is_snapshot_tag(tag_name: str) -> bool:
-    """Return True when the tag is the rolling Android snapshot debug-build tag."""
+    """Return True when the tag is the rolling client app snapshot tag."""
     return (tag_name or "").strip().lower() == MESHTASTIC_CLIENT_APP_SNAPSHOT_TAG
 
 
@@ -179,11 +179,15 @@ def _parse_snapshot_vc_from_dirname(name: str) -> int | None:
     Handles both plain ``<versionCode>`` and timestamp-prefixed
     ``<YYYYMMDD-HHMMSS>-<versionCode>`` formats.
     """
-    if name.isdigit():
+    if re.fullmatch(r"[0-9]+", name):
         return int(name)
-    parts = name.rsplit("-", 1)
-    if len(parts) == 2 and parts[1].isdigit():
-        return int(parts[1])
+    match = re.fullmatch(r"([0-9]{8}-[0-9]{6})-([0-9]+)", name)
+    if match:
+        try:
+            datetime.strptime(match.group(1), "%Y%m%d-%H%M%S")
+        except ValueError:
+            return None
+        return int(match.group(2))
     return None
 
 
@@ -225,6 +229,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         # HTTP / payload error) rather than legitimately finding no releases.
         # Fail-open callers read this to tell the two apart.
         self.last_releases_fetch_failed: bool = False
+        self.last_snapshot_fetch_failed: bool = False
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
         )
@@ -1545,22 +1550,31 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         return release_dir
 
     def fetch_snapshot_release(self) -> Release | None:
-        """Fetch the rolling snapshot release from GitHub by tag. Returns None on 404/error."""
+        """Fetch the rolling tag and distinguish absence from a failed check."""
+        self.last_snapshot_fetch_failed = False
         try:
             response = make_github_api_request(
                 MESHTASTIC_CLIENT_APP_SNAPSHOT_RELEASE_URL,
                 github_token=self.config.get("GITHUB_TOKEN"),
             )
             if response is None:
-                return None
-            return create_release_from_github_data(response.json())
+                raise ValueError("Snapshot request returned no response")
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a snapshot release object")
+            release = create_release_from_github_data(payload)
+            if release is None or not is_snapshot_tag(release.tag_name):
+                raise ValueError("Invalid snapshot release payload")
+            return release
         except requests.HTTPError as exc:
             if exc.response is not None and exc.response.status_code == 404:
                 logger.debug("Snapshot release tag not found (may not exist yet)")
-            else:
-                logger.warning("Failed to fetch snapshot release: %s", exc)
+                return None
+            self.last_snapshot_fetch_failed = True
+            logger.warning("Failed to fetch snapshot release: %s", exc)
             return None
-        except (requests.RequestException, OSError, ValueError) as exc:
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+            self.last_snapshot_fetch_failed = True
             logger.warning("Failed to fetch snapshot release: %s", exc)
             return None
 
@@ -1712,34 +1726,48 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         )
 
     def _find_snapshot_release_dir(self, base_dir: str, version_code: int) -> str:
-        """Find the existing snapshot directory for a versionCode (handles timestamp prefix)."""
-        # Try exact match first (legacy or no-timestamp)
+        """Find a managed directory without following symlinks or foreign names."""
+        app_dir = os.path.dirname(base_dir)
+        if (
+            os.path.islink(app_dir)
+            or os.path.islink(base_dir)
+            or not self._is_within_download_tree(base_dir)
+        ):
+            raise ValueError(f"Refusing unsafe snapshot directory: {base_dir}")
         exact = os.path.join(base_dir, str(version_code))
+        if os.path.islink(exact):
+            raise ValueError(f"Refusing symlinked snapshot directory: {exact}")
         if os.path.isdir(exact):
             return exact
-        # Try timestamp-prefixed dirs: <YYYYMMDD-HHMMSS>-<versionCode>
-        suffix = f"-{version_code}"
+        matches = []
         try:
-            if os.path.isdir(base_dir):
-                with os.scandir(base_dir) as it:
-                    for entry in it:
-                        if entry.is_dir() and entry.name.endswith(suffix):
-                            return entry.path
-        except OSError:
+            with os.scandir(base_dir) as entries:
+                for entry in entries:
+                    if (
+                        entry.is_dir(follow_symlinks=False)
+                        and _parse_snapshot_vc_from_dirname(entry.name) == version_code
+                    ):
+                        matches.append(entry.path)
+        except FileNotFoundError:
             pass
-        return exact  # fallback to plain name
+        return max(matches) if matches else exact
 
     def is_snapshot_complete(self, release: Release, version_code: int) -> bool:
-        """Check whether all selected snapshot assets are present and complete on disk."""
+        """Check selected snapshot assets only inside the managed download tree."""
         selected = self.get_selected_snapshot_assets(release)
         if not selected:
             return False
-        for asset in selected:
-            target = self.get_snapshot_target_path(
-                version_code, asset.name, published_at=release.published_at
-            )
-            if not self._is_asset_complete_for_target(target, asset):
-                return False
+        try:
+            for asset in selected:
+                target = self.get_snapshot_target_path(
+                    version_code, asset.name, published_at=release.published_at
+                )
+                if os.path.islink(target) or not self._is_asset_complete_for_target(
+                    target, asset
+                ):
+                    return False
+        except (OSError, ValueError):
+            return False
         return True
 
     def should_process_snapshot(self, release: Release, version_code: int) -> bool:
@@ -1876,7 +1904,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def has_local_snapshot_builds(self) -> bool:
         """Return whether the managed snapshot tree contains a valid snapshot build."""
         base_dir = os.path.join(self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
-        if not self._is_safe_managed_dir(base_dir):
+        if os.path.islink(os.path.dirname(base_dir)) or not self._is_safe_managed_dir(
+            base_dir
+        ):
             return False
         try:
             with os.scandir(base_dir) as entries:
@@ -1891,7 +1921,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
     def cleanup_superseded_snapshots(self) -> int:
         """Remove old snapshot dirs beyond the retention limit. Returns count deleted."""
         base_dir = os.path.join(self.download_dir, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
-        if not self._is_safe_managed_dir(base_dir):
+        if os.path.islink(os.path.dirname(base_dir)) or not self._is_safe_managed_dir(
+            base_dir
+        ):
             return 0
         raw_keep = self.config.get(
             "APP_SNAPSHOT_VERSIONS_TO_KEEP",
@@ -1915,7 +1947,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
                     entries.append((vc, entry.path))
         except FileNotFoundError:
             return 0
-        entries.sort(key=lambda x: x[0], reverse=True)
+        entries.sort(
+            key=lambda item: (item[0], os.path.basename(item[1])), reverse=True
+        )
         deleted = 0
         for vc, path in entries[keep_count:]:
             if _safe_rmtree(path, base_dir, f"snapshot {vc}"):
