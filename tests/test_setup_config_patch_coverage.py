@@ -196,7 +196,8 @@ def test_run_setup_first_run_calls_download_cli_integration(mocker, tmp_path):
         "fetchtastic.setup_config._setup_downloads", return_value=({}, True, False)
     )
     mocker.patch(
-        "fetchtastic.setup_config._setup_android", side_effect=lambda config, *_: config
+        "fetchtastic.setup_config._setup_client_app",
+        side_effect=lambda config, *_: config,
     )
     mocker.patch(
         "fetchtastic.setup_config._setup_automation",

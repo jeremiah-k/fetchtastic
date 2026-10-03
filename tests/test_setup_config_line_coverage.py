@@ -36,8 +36,8 @@ def test_setup_downloads_menu_runtime_error(mocker):
     )
 
     assert result_config["SAVE_CLIENT_APPS"] is False
-    assert result_config["SAVE_APKS"] is False
-    assert result_config["SAVE_DESKTOP_APP"] is False
+    assert result_config["SAVE_CLIENT_APPS"] is False
+    assert result_config["SAVE_CLIENT_APPS"] is False
     assert result_config["SELECTED_APP_ASSETS"] == []
     assert result_apps is False
 

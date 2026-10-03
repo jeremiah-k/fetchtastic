@@ -11,11 +11,13 @@ import pytest
 
 from fetchtastic.constants import DESKTOP_EXTENSIONS
 from fetchtastic.download.desktop import MeshtasticDesktopDownloader
-from fetchtastic.menu_desktop import (
-    _get_platform_label,
-    extract_wildcard_pattern,
-)
-from fetchtastic.utils import matches_selected_patterns
+from fetchtastic.menu_app import get_asset_platform_label as _get_platform_label
+from fetchtastic.utils import extract_base_name, matches_selected_patterns
+
+
+def extract_wildcard_pattern(filename):
+    return extract_base_name(filename).lower()
+
 
 pytestmark = [
     pytest.mark.unit,
