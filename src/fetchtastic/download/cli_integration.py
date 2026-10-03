@@ -1,7 +1,7 @@
 """
-CLI Integration for New Download Subsystem
+CLI reporting for the download pipeline
 
-This module provides integration between the new download subsystem and the existing CLI.
+Run the artifact pipeline and report firmware and shared client app results.
 """
 
 import os
@@ -14,9 +14,9 @@ from typing import (
     Dict,
     Iterable,
     List,
+    NamedTuple,
     Optional,
     Tuple,
-    Union,
     cast,
 )
 
@@ -25,14 +25,11 @@ if TYPE_CHECKING:
 
 import requests  # type: ignore[import-untyped]
 
-from fetchtastic.client_release_discovery import (
-    is_android_asset_name,
-    is_desktop_asset_name,
-)
+from fetchtastic.client_app_config import client_app_downloads_enabled
 from fetchtastic.constants import (
     ANDROID_FILE_TYPES,
-    APK_PRERELEASES_DIR_NAME,
     APP_DIR_NAME,
+    APP_PRERELEASES_DIR_NAME,
     APP_SNAPSHOTS_DIR_NAME,
     CLIENT_APP_FILE_TYPES,
     DEFAULT_CHECK_APP_PRERELEASES,
@@ -50,6 +47,7 @@ from fetchtastic.constants import (
     FILE_TYPE_DESKTOP_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_MANIFEST,
+    FILE_TYPE_FIRMWARE_NIGHTLY,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
@@ -76,21 +74,38 @@ from fetchtastic.utils import (
     get_effective_github_token,
 )
 
-from .android import MeshtasticAndroidAppDownloader
-from .desktop import MeshtasticDesktopDownloader
+from .client_app import MeshtasticClientAppDownloader
 from .firmware import FirmwareReleaseDownloader
 from .orchestrator import DownloadOrchestrator
 
 _SNAPSHOT_VC_RE = re.compile(SNAPSHOT_VERSION_CODE_PATTERN)
 
 
+class DownloadReport(NamedTuple):
+    """Release-level results shared by every client app artifact type."""
+
+    downloaded_firmwares: List[str]
+    new_firmware_versions: List[str]
+    downloaded_client_apps: List[str]
+    new_client_app_versions: List[str]
+    downloaded_firmware_prereleases: List[str]
+    downloaded_client_app_prereleases: List[str]
+    failed_downloads: List[Dict[str, Any]]
+    latest_firmware_version: str
+    latest_client_app_version: str
+
+    @classmethod
+    def empty(cls) -> "DownloadReport":
+        return cls([], [], [], [], [], [], [], "", "")
+
+
 class DownloadCLIIntegration:
     """
-    Integrates the new download subsystem with the existing CLI.
+    Connects the CLI to the artifact download pipeline.
 
     This class provides:
-    - Compatibility with existing CLI interface
-    - Translation between CLI parameters and new architecture
+    - Shared release reports for every installer format
+    - Download pipeline coordination
     - Error handling and reporting
     - Progress reporting
     """
@@ -101,54 +116,21 @@ class DownloadCLIIntegration:
 
         Sets attributes used to connect CLI to download subsystem:
         - orchestrator: Orchestrator instance or None until initialized.
-        - android_downloader: Android downloader instance or None until initialized.
+        - client_app_downloader: Client app downloader instance or None until initialized.
         - firmware_downloader: Firmware downloader instance or None until initialized.
         - config: Configuration mapping or None until provided.
         """
         self.orchestrator: Optional[DownloadOrchestrator] = None
-        self.android_downloader: Optional[MeshtasticAndroidAppDownloader] = None
-        self.desktop_downloader: Optional[MeshtasticDesktopDownloader] = None
+        self.client_app_downloader: Optional[MeshtasticClientAppDownloader] = None
         self.firmware_downloader: Optional[FirmwareReleaseDownloader] = None
         self.config: Optional[Dict[str, Any]] = None
-
-    def _empty_cli_integration_result(self, include_desktop: bool) -> Union[
-        Tuple[list, list, list, list, list, list, list, str, str],
-        Tuple[
-            list,
-            list,
-            list,
-            list,
-            list,
-            list,
-            list,
-            list,
-            list,
-            list,
-            str,
-            str,
-            str,
-        ],
-    ]:
-        """
-        Return an empty CLI integration result tuple of the appropriate shape.
-
-        Parameters:
-            include_desktop (bool): If True, return a 13-item tuple with desktop fields;
-                otherwise return a 9-item tuple.
-
-        Returns:
-            Union[Tuple[...], Tuple[...]]: Empty tuple matching the expected return shape.
-        """
-        if include_desktop:
-            return ([], [], [], [], [], [], [], [], [], [], "", "", "")
-        else:
-            return ([], [], [], [], [], [], [], "", "")
+        self.download_run_failed = False
 
     def _initialize_components(self, config: Dict[str, Any]) -> None:
         """
         Set up the DownloadOrchestrator and expose its downloaders on the integration instance.
 
-        Stores the provided configuration on self, constructs a DownloadOrchestrator using that configuration, and assigns the orchestrator's android_downloader and firmware_downloader to instance attributes for shared state and caches.
+        Stores the provided configuration on self, constructs a DownloadOrchestrator using that configuration, and assigns the orchestrator's client_app_downloader and firmware_downloader to instance attributes for shared state and caches.
 
         Parameters:
             config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
@@ -156,213 +138,97 @@ class DownloadCLIIntegration:
         self.config = config
         self.orchestrator = DownloadOrchestrator(config)
         # Reuse the orchestrator's downloaders so state and caches stay unified
-        self.android_downloader = self.orchestrator.android_downloader
-        self.desktop_downloader = self.orchestrator.desktop_downloader
+        self.client_app_downloader = self.orchestrator.client_app_downloader
         self.firmware_downloader = self.orchestrator.firmware_downloader
 
     def run_download(
-        self,
-        config: Dict[str, Any],
-        force_refresh: bool = False,
-        include_desktop: bool = False,
-    ) -> Union[
-        Tuple[
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[Dict[str, Any]],
-            str,
-            str,
-        ],  # Legacy 9-item tuple
-        Tuple[
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[Dict[str, Any]],
-            str,
-            str,
-            str,
-        ],  # Extended 13-item tuple with desktop
-    ]:
-        """
-        Run the download pipeline using the provided configuration and return results formatted for the legacy CLI.
-
-        Initializes the orchestrator and downloaders from `config`, optionally clears downloader caches when `force_refresh` is True, executes the download pipeline, performs cleanup and version tracking, and collects failed download records.
-
-        Parameters:
-            config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
-            force_refresh (bool): If True, clear downloader caches before running the pipeline.
-            include_desktop (bool): If True, include desktop download results. When True, the return tuple will be extended with 4 additional fields: downloaded_desktop, new_desktop_versions, downloaded_desktop_prereleases, and latest_desktop_version.
-
-        Returns:
-            Tuple containing (by default, 9 items):
-                - downloaded_firmwares: Paths or identifiers of firmware files that were downloaded.
-                - new_firmware_versions: Firmware release tags that are newer than the currently tracked firmware.
-                - downloaded_apks: Paths or identifiers of Android APK files that were downloaded.
-                - new_apk_versions: Android release tags that are newer than the currently tracked Android version.
-                - downloaded_firmware_prereleases: Paths or identifiers of firmware prerelease files that were downloaded.
-                - downloaded_apk_prereleases: Paths or identifiers of Android APK prerelease files that were downloaded.
-                - failed_downloads: List of failure records; each record includes keys such as `file_name`, `release_tag`, `url`, `type`, `path_to_download`, `error`, `retryable`, and `http_status`.
-                - latest_firmware_version: Latest known firmware version (empty string if unavailable).
-                - latest_apk_version: Latest known Android APK version (empty string if unavailable).
-
-            When include_desktop=True, the tuple is extended with 4 additional fields (13 items total):
-                - downloaded_desktop: Paths or identifiers of desktop files that were downloaded.
-                - new_desktop_versions: Desktop release tags that are newer than the currently tracked desktop version.
-                - downloaded_desktop_prereleases: Paths or identifiers of desktop prerelease files that were downloaded.
-                - latest_desktop_version: Latest known desktop version (empty string if unavailable).
-        """
+        self, config: Dict[str, Any], force_refresh: bool = False
+    ) -> DownloadReport:
+        """Run downloads and return one report for firmware and client apps."""
+        self.download_run_failed = False
         try:
             self._initialize_components(config)
-            # _initialize_components guarantees orchestrator is set
             if self.orchestrator is None:
                 raise RuntimeError("Failed to initialize download orchestrator")
             orchestrator = self.orchestrator
-
-            tracked_versions = (
-                self._get_tracked_desktop_versions() if include_desktop else None
-            )
-
-            # Clear caches if force refresh is requested
+            tracked_versions = self._get_tracked_client_app_versions()
             if force_refresh and not self._clear_caches():
                 raise OSError("Failed to clear downloader caches for force refresh")
-
-            # Run the download pipeline
             success_results, _failed_results = orchestrator.run_download_pipeline()
-
-            # Convert results to legacy format
-            (
-                downloaded_firmwares,
-                new_firmware_versions,
-                downloaded_apks,
-                new_apk_versions,
-                downloaded_desktop,
-                new_desktop_versions,
-                downloaded_firmware_prereleases,
-                downloaded_apk_prereleases,
-                downloaded_desktop_prereleases,
-            ) = self._convert_results_to_legacy_format(
-                success_results,
-                tracked_versions=tracked_versions,
-            )
-
-            # Handle cleanup
+            report = self._collect_download_report(success_results, tracked_versions)
             orchestrator.cleanup_old_versions()
-
-            # Update version tracking
             orchestrator.update_version_tracking()
-
-            # Get failed downloads
-            failed_downloads = self.get_failed_downloads()
-
-            # Get latest versions
-            latest_versions = (
-                self.orchestrator.get_latest_versions() if self.orchestrator else {}
+            latest = orchestrator.get_latest_versions()
+            return report._replace(
+                failed_downloads=self.get_failed_downloads(),
+                latest_firmware_version=latest.get("firmware") or "",
+                latest_client_app_version=latest.get("client_app") or "",
             )
-            latest_firmware_version = latest_versions.get("firmware", "") or ""
-            latest_apk_version = latest_versions.get("android", "") or ""
-            latest_desktop_version = latest_versions.get("desktop", "") or ""
-
-            # Return legacy 9-item tuple by default, or extended 13-item tuple if include_desktop=True
-            if include_desktop:
-                return (
-                    downloaded_firmwares,
-                    new_firmware_versions,
-                    downloaded_apks,
-                    new_apk_versions,
-                    downloaded_desktop,
-                    new_desktop_versions,
-                    downloaded_firmware_prereleases,
-                    downloaded_apk_prereleases,
-                    downloaded_desktop_prereleases,
-                    failed_downloads,
-                    latest_firmware_version,
-                    latest_apk_version,
-                    latest_desktop_version,
-                )
-            else:
-                return (
-                    downloaded_firmwares,
-                    new_firmware_versions,
-                    downloaded_apks,
-                    new_apk_versions,
-                    downloaded_firmware_prereleases,
-                    downloaded_apk_prereleases,
-                    failed_downloads,
-                    latest_firmware_version,
-                    latest_apk_version,
-                )
-
         except (
             requests.RequestException,
             OSError,
             ValueError,
             TypeError,
             KeyError,
-        ) as e:
-            logger.exception("Error in CLI integration: %s", e)
-            # Return empty tuple with appropriate shape based on include_desktop
-            return self._empty_cli_integration_result(include_desktop)
+        ) as exc:
+            self.download_run_failed = True
+            logger.exception("Error in CLI integration: %s", exc)
+            return DownloadReport.empty()
 
-    def _get_tracked_desktop_versions(self) -> Dict[str, Optional[str]]:
+    def _get_tracked_client_app_versions(self) -> Dict[str, Optional[str]]:
         """
-        Return desktop tracking versions from local tracking files before a pipeline run.
+        Return client app tracking versions from local tracking files before a pipeline run.
 
         Returns:
             Dict[str, Optional[str]]: Mapping with keys `current` and
                 `prerelease` representing locally tracked versions.
         """
-        tracked_desktop: Optional[str] = None
-        tracked_desktop_prerelease: Optional[str] = None
+        tracked_client_app: Optional[str] = None
+        tracked_client_app_prerelease: Optional[str] = None
 
-        if self.desktop_downloader:
+        if self.client_app_downloader:
             try:
-                tracked_desktop = self.desktop_downloader.get_latest_release_tag()
+                tracked_client_app = self.client_app_downloader.get_latest_release_tag()
             except (OSError, ValueError, TypeError):
-                tracked_desktop = None
+                tracked_client_app = None
 
             try:
-                tracking_file = self.desktop_downloader.get_prerelease_tracking_file()
+                tracking_file = (
+                    self.client_app_downloader.get_prerelease_tracking_file()
+                )
                 if (
                     isinstance(tracking_file, str)
                     and tracking_file
                     and os.path.exists(tracking_file)
                 ):
                     tracking_data = (
-                        self.desktop_downloader.cache_manager.read_json(tracking_file)
+                        self.client_app_downloader.cache_manager.read_json(
+                            tracking_file
+                        )
                         or {}
                     )
                     if isinstance(tracking_data, dict):
                         tracked_value = tracking_data.get("latest_version")
                         if isinstance(tracked_value, str):
-                            tracked_desktop_prerelease = tracked_value
+                            tracked_client_app_prerelease = tracked_value
             except (OSError, ValueError, TypeError, KeyError):
-                tracked_desktop_prerelease = None
+                tracked_client_app_prerelease = None
 
-        if not isinstance(tracked_desktop, str):
-            tracked_desktop = None
-        if not isinstance(tracked_desktop_prerelease, str):
-            tracked_desktop_prerelease = None
+        if not isinstance(tracked_client_app, str):
+            tracked_client_app = None
+        if not isinstance(tracked_client_app_prerelease, str):
+            tracked_client_app_prerelease = None
 
         return {
-            "current": tracked_desktop,
-            "prerelease": tracked_desktop_prerelease,
+            "current": tracked_client_app,
+            "prerelease": tracked_client_app_prerelease,
         }
 
     def _clear_caches(self) -> bool:
         """
         Clear downloader caches managed by this integration.
 
-        This calls the Android downloader's cache manager to remove all cached data; exceptions raised during the clear operation (e.g., OSError, ValueError) are caught and logged and are not propagated.
+        This calls the Client app downloader's cache manager to remove all cached data; exceptions raised during the clear operation (e.g., OSError, ValueError) are caught and logged and are not propagated.
 
         Returns:
             bool: True if cache was cleared successfully, False otherwise.
@@ -370,9 +236,9 @@ class DownloadCLIIntegration:
         try:
             # Clear shared cache manager (same instance used by all downloaders)
             success = True
-            if self.android_downloader:
-                if not self.android_downloader.clear_cache():
-                    logger.warning("Failed to clear cache for Android downloader")
+            if self.client_app_downloader:
+                if not self.client_app_downloader.clear_cache():
+                    logger.warning("Failed to clear cache for Client app downloader")
                     success = False
 
             if success:
@@ -553,7 +419,7 @@ class DownloadCLIIntegration:
             return None
         if prerelease:
             return self._first_existing_dir(
-                os.path.join(base, APP_DIR_NAME, APK_PRERELEASES_DIR_NAME), tag
+                os.path.join(base, APP_DIR_NAME, APP_PRERELEASES_DIR_NAME), tag
             )
         return self._first_existing_dir(os.path.join(base, APP_DIR_NAME), tag)
 
@@ -610,21 +476,17 @@ class DownloadCLIIntegration:
         logger_override: Any = None,
         elapsed_seconds: float,
         downloaded_firmwares: List[str],
-        downloaded_apks: List[str],
+        downloaded_client_apps: List[str],
         downloaded_firmware_prereleases: Optional[List[str]] = None,
-        downloaded_apk_prereleases: Optional[List[str]] = None,
-        downloaded_desktop: Optional[List[str]] = None,
-        downloaded_desktop_prereleases: Optional[List[str]] = None,
+        downloaded_client_app_prereleases: Optional[List[str]] = None,
         failed_downloads: List[Dict[str, Any]],
         latest_firmware_version: str,
-        latest_apk_version: str,
-        latest_desktop_version: str = "",
+        latest_client_app_version: str,
         new_firmware_versions: Optional[List[str]] = None,
-        new_apk_versions: Optional[List[str]] = None,
-        new_desktop_versions: Optional[List[str]] = None,
+        new_client_app_versions: Optional[List[str]] = None,
     ) -> None:
         """
-        Emit a legacy-style summary of download results to the provided logger.
+        Emit a release summary of download results to the provided logger.
 
         Logs elapsed time, counts of downloaded assets, a latest-version line for every asset type configured for download (firmware release/prerelease/nightly, client app release/prerelease, app snapshots) annotated with how long ago the newest local copy was downloaded, detailed information about any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an up-to-date timestamp. If this instance has a configured `config`, sends notifications for completion or up-to-date state.
 
@@ -632,15 +494,11 @@ class DownloadCLIIntegration:
             logger_override (logging-like, optional): Logger to use instead of the module logger.
             elapsed_seconds (float): Total time elapsed for the download run.
             downloaded_firmwares (List[str]): Downloaded firmware filenames or tags.
-            downloaded_apks (List[str]): Downloaded APK filenames or tags.
+            downloaded_client_apps (List[str]): Downloaded client app release tags.
             downloaded_firmware_prereleases (Optional[List[str]]): Downloaded firmware prerelease tags, if any.
-            downloaded_apk_prereleases (Optional[List[str]]): Downloaded APK prerelease tags, if any.
-            downloaded_desktop (Optional[List[str]]): Downloaded desktop filenames or tags.
-            downloaded_desktop_prereleases (Optional[List[str]]): Downloaded desktop prerelease tags, if any.
-            latest_desktop_version (str): Reported latest desktop release tag (empty string if none).
+            downloaded_client_app_prereleases (Optional[List[str]]): Downloaded client app prerelease tags, if any.
             new_firmware_versions (List[str]): Retained for backward compatibility; not used by this method.
-            new_apk_versions (List[str]): Retained for backward compatibility; not used by this method.
-            new_desktop_versions (List[str]): Retained for backward compatibility; not used by this method.
+            new_client_app_versions (List[str]): Retained for backward compatibility; not used by this method.
         """
         log = logger_override or logger
 
@@ -650,9 +508,7 @@ class DownloadCLIIntegration:
         log.info(f"\nCompleted in {elapsed_seconds:.1f}s")
 
         downloaded_firmware_prereleases = downloaded_firmware_prereleases or []
-        downloaded_apk_prereleases = downloaded_apk_prereleases or []
-        downloaded_desktop = downloaded_desktop or []
-        downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
+        downloaded_client_app_prereleases = downloaded_client_app_prereleases or []
 
         # Snapshot debug builds — always collect successful versionCodes for
         # local logging and download counts.  NTFY inclusion is gated by
@@ -716,11 +572,9 @@ class DownloadCLIIntegration:
         # local reporting.
         downloaded_count = (
             len(downloaded_firmwares)
-            + len(downloaded_apks)
-            + len(downloaded_desktop)
+            + len(downloaded_client_apps)
             + len(downloaded_firmware_prereleases)
-            + len(downloaded_apk_prereleases)
-            + len(downloaded_desktop_prereleases)
+            + len(downloaded_client_app_prereleases)
             + len(downloaded_app_snapshots)
             + len(downloaded_firmware_nightlies)
         )
@@ -737,19 +591,10 @@ class DownloadCLIIntegration:
 
         latest_versions = self.get_latest_versions()
         latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
-        # Prefer the unified client app key; fall back to legacy APK/Desktop
-        # values while older result summaries and config files are transitioning.
         latest_client_app = (
-            latest_versions.get("client_app")
-            or latest_apk_version
-            or latest_desktop_version
+            latest_versions.get("client_app") or latest_client_app_version
         )
-        # Same compatibility fallback for the unified prerelease line.
-        latest_client_app_prerelease = (
-            latest_versions.get("client_app_prerelease")
-            or latest_versions.get("android_prerelease")
-            or latest_versions.get("desktop_prerelease")
-        )
+        latest_client_app_prerelease = latest_versions.get("client_app_prerelease")
 
         # Latest-version lines: exactly one line per asset type configured for
         # download (firmware releases, repo-based firmware prereleases, firmware
@@ -762,11 +607,7 @@ class DownloadCLIIntegration:
             # An attached config — even an empty one — decides gating; only
             # library use without any config keeps the legacy ungated lines.
             save_firmware = coerce_bool(cfg.get("SAVE_FIRMWARE", False))
-            save_apps = (
-                coerce_bool(cfg.get("SAVE_CLIENT_APPS", False))
-                or coerce_bool(cfg.get("SAVE_APKS", False))
-                or coerce_bool(cfg.get("SAVE_DESKTOP_APP", False))
-            )
+            save_apps = client_app_downloads_enabled(cfg)
         else:
             save_firmware = True
             save_apps = True
@@ -860,7 +701,7 @@ class DownloadCLIIntegration:
 
         if downloaded_app_snapshots:
             log.info(
-                "Downloaded Android snapshot debug builds: %s",
+                "Downloaded client app snapshot builds: %s",
                 ", ".join(downloaded_app_snapshots),
             )
 
@@ -911,6 +752,7 @@ class DownloadCLIIntegration:
         if (
             downloaded_count == 0
             and not failed_downloads
+            and not self.download_run_failed
             and not nightly_incomplete
             and not release_check_failed
             and not pipeline_lock_skipped
@@ -919,6 +761,8 @@ class DownloadCLIIntegration:
                 "All assets are up to date.\n%s",
                 time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             )
+        elif downloaded_count == 0 and self.download_run_failed:
+            log.info("Download run failed; check logs for details.")
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
         elif downloaded_count == 0 and not failed_downloads and pipeline_lock_skipped:
@@ -958,9 +802,7 @@ class DownloadCLIIntegration:
                 )
 
         new_versions_available = bool(
-            (new_firmware_versions or [])
-            or (new_apk_versions or [])
-            or (new_desktop_versions or [])
+            (new_firmware_versions or []) or (new_client_app_versions or [])
         )
 
         # Send notifications based on download results
@@ -969,11 +811,9 @@ class DownloadCLIIntegration:
                 send_download_completion_notification(
                     self.config,
                     downloaded_firmwares,
-                    downloaded_apks,
+                    downloaded_client_apps,
                     downloaded_firmware_prereleases,
-                    downloaded_apk_prereleases,
-                    downloaded_desktop,
-                    downloaded_desktop_prereleases,
+                    downloaded_client_app_prereleases,
                     downloaded_app_snapshots=notified_app_snapshots,
                     downloaded_firmware_nightlies=notified_firmware_nightlies,
                 )
@@ -985,11 +825,12 @@ class DownloadCLIIntegration:
                 send_new_releases_available_notification(
                     self.config,
                     self.orchestrator.available_new_firmware_versions,
-                    self.orchestrator.available_new_apk_versions,
+                    self.orchestrator.available_new_client_app_versions,
                     downloads_skipped_reason="Downloads skipped: not connected to Wi-Fi.",
                 )
             elif (
                 not failed_downloads
+                and not self.download_run_failed
                 and not new_versions_available
                 and not nightly_incomplete
                 and not release_check_failed
@@ -1005,201 +846,79 @@ class DownloadCLIIntegration:
                 "📊 GitHub API Summary: No API requests made (all data served from cache)"
             )
 
-    def _convert_results_to_legacy_format(
+    def _collect_download_report(
         self,
         success_results: List[Any],
         tracked_versions: Optional[Dict[str, Optional[str]]] = None,
-    ) -> Tuple[
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-        List[str],
-    ]:
-        """
-        Translate new-architecture successful download results into legacy CLI lists.
-
-        Parameters:
-            success_results (List[Any]): Iterable of result objects from the orchestrator; each object may have attributes `release_tag`, `file_path`, and `was_skipped`.
-            tracked_versions (Optional[Dict[str, Optional[str]]]): Optional local
-                tracking values to prefer over remote/latest release tags for
-                version comparison.
-
-        Returns:
-            Tuple containing:
-                - downloaded_firmwares: Unique firmware release tags that were downloaded (excludes skipped results).
-                - new_firmware_versions: Firmware release tags from `downloaded_firmwares` that are newer than the currently known firmware version.
-                - downloaded_apks: Unique Android (APK) release tags that were downloaded (excludes skipped results).
-                - new_apk_versions: Android release tags from `downloaded_apks` that are newer than the currently known Android version.
-                - downloaded_desktop: Unique desktop release tags that were downloaded (excludes skipped results).
-                - new_desktop_versions: Desktop release tags that are newer than the currently known desktop version.
-                - downloaded_firmware_prereleases: Unique firmware prerelease release tags that were downloaded (excludes skipped results).
-                - downloaded_apk_prereleases: Unique Android (APK) prerelease release tags that were downloaded (excludes skipped results).
-                - downloaded_desktop_prereleases: Unique desktop prerelease release tags that were downloaded (excludes skipped results).
-        """
-        downloaded_firmwares: list[str] = []
-        new_firmware_versions: list[str] = []
-        downloaded_apks: list[str] = []
-        new_apk_versions: list[str] = []
-        downloaded_desktop: list[str] = []
-        new_desktop_versions: list[str] = []
-        downloaded_firmware_prereleases: list[str] = []
-        downloaded_apk_prereleases: list[str] = []
-        downloaded_desktop_prereleases: list[str] = []
-        downloaded_firmware_set: set[str] = set()
-        downloaded_apk_set: set[str] = set()
-        downloaded_desktop_set: set[str] = set()
-        downloaded_firmware_prerelease_set: set[str] = set()
-        downloaded_apk_prerelease_set: set[str] = set()
-        downloaded_desktop_prerelease_set: set[str] = set()
-        new_firmware_set: set[str] = set()
-        new_apk_set: set[str] = set()
-        new_desktop_set: set[str] = set()
-
-        latest_versions: Dict[str, Optional[str]] = {}
-        if self.orchestrator:
-            latest_versions = cast(
-                Dict[str, Optional[str]],
-                self.orchestrator.get_latest_versions(),
-            )
-        if tracked_versions:
-            # Map tracked version keys to expected latest_versions keys
-            if tracked_versions.get("current"):
-                latest_versions["desktop"] = tracked_versions["current"]
-            if tracked_versions.get("prerelease"):
-                latest_versions["desktop_prerelease"] = tracked_versions["prerelease"]
-
-        current_android = latest_versions.get("android")
-        current_firmware = latest_versions.get("firmware")
-        current_android_prerelease = latest_versions.get("android_prerelease")
-        current_firmware_prerelease = latest_versions.get("firmware_prerelease")
-        current_desktop = latest_versions.get("desktop")
-        current_desktop_prerelease = latest_versions.get("desktop_prerelease")
-
-        for result in success_results:
-            release_tag = result.release_tag
-            if not release_tag:
-                continue
-
-            file_type = result.file_type
-            is_firmware_manifest = file_type == FILE_TYPE_FIRMWARE_MANIFEST
-            is_firmware = file_type in FIRMWARE_FILE_TYPES and not is_firmware_manifest
-            is_android = file_type in ANDROID_FILE_TYPES
-            is_desktop = file_type in DESKTOP_FILE_TYPES
-            is_client_app = file_type in CLIENT_APP_FILE_TYPES
-            is_client_app_prerelease = file_type == FILE_TYPE_CLIENT_APP_PRERELEASE
-            if is_client_app:
-                file_path = getattr(result, "file_path", None)
-                download_url = getattr(result, "download_url", None)
-                file_name = (
-                    os.path.basename(str(file_path))
-                    if file_path
-                    else os.path.basename(str(download_url)) if download_url else ""
-                )
-                is_android = is_android or is_android_asset_name(file_name)
-                is_desktop = is_desktop or is_desktop_asset_name(file_name)
-                if not is_android and not is_desktop:
-                    logger.debug("Unclassified client app asset, defaulting to Android")
-                    is_android = True
-            is_android_prerelease = file_type == FILE_TYPE_ANDROID_PRERELEASE or (
-                is_client_app_prerelease and is_android
-            )
-            is_desktop_prerelease = file_type == FILE_TYPE_DESKTOP_PRERELEASE or (
-                is_client_app_prerelease and is_desktop
-            )
-            was_skipped = getattr(result, "was_skipped", False)
-
-            # Legacy parity: only mark new versions when a download actually occurred.
-            if was_skipped:
-                continue
-
-            if is_firmware:
-                compare_current = current_firmware
-                compare_release_tag = None
-                if file_type in {
-                    FILE_TYPE_FIRMWARE_PRERELEASE,
-                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
-                }:
-                    compare_release_tag = self._normalize_firmware_prerelease_tag(
-                        release_tag
-                    )
-                    compare_current = self._normalize_firmware_prerelease_tag(
-                        current_firmware_prerelease or current_firmware
-                    )
-                self._update_new_versions(
-                    release_tag,
-                    compare_current,
-                    new_firmware_versions,
-                    new_firmware_set,
-                    comparison_release_tag=compare_release_tag,
-                )
-            if is_android:
-                compare_current = current_android
-                if is_android_prerelease:
-                    compare_current = current_android_prerelease or current_android
-                self._update_new_versions(
-                    release_tag,
-                    compare_current,
-                    new_apk_versions,
-                    new_apk_set,
-                )
-            if is_desktop:
-                compare_current = current_desktop
-                if is_desktop_prerelease:
-                    compare_current = current_desktop_prerelease or current_desktop
-                self._update_new_versions(
-                    release_tag,
-                    compare_current,
-                    new_desktop_versions,
-                    new_desktop_set,
-                )
-
-            if is_firmware:
-                if file_type in {
-                    FILE_TYPE_FIRMWARE_PRERELEASE,
-                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
-                }:
-                    if release_tag not in downloaded_firmware_prerelease_set:
-                        downloaded_firmware_prereleases.append(release_tag)
-                        downloaded_firmware_prerelease_set.add(release_tag)
-                else:
-                    self._add_downloaded_asset(
-                        release_tag, downloaded_firmwares, downloaded_firmware_set
-                    )
-            if is_android:
-                if is_android_prerelease:
-                    if release_tag not in downloaded_apk_prerelease_set:
-                        downloaded_apk_prereleases.append(release_tag)
-                        downloaded_apk_prerelease_set.add(release_tag)
-                else:
-                    self._add_downloaded_asset(
-                        release_tag, downloaded_apks, downloaded_apk_set
-                    )
-            if is_desktop:
-                if is_desktop_prerelease:
-                    if release_tag not in downloaded_desktop_prerelease_set:
-                        downloaded_desktop_prereleases.append(release_tag)
-                        downloaded_desktop_prerelease_set.add(release_tag)
-                else:
-                    self._add_downloaded_asset(
-                        release_tag, downloaded_desktop, downloaded_desktop_set
-                    )
-
-        return (
-            downloaded_firmwares,
-            new_firmware_versions,
-            downloaded_apks,
-            new_apk_versions,
-            downloaded_desktop,
-            new_desktop_versions,
-            downloaded_firmware_prereleases,
-            downloaded_apk_prereleases,
-            downloaded_desktop_prereleases,
+    ) -> DownloadReport:
+        """Deduplicate release versions across all selected installer formats."""
+        report = DownloadReport.empty()
+        latest = self.get_latest_versions()
+        current_app = (
+            tracked_versions.get("current")
+            if tracked_versions is not None
+            else latest.get("client_app")
         )
+        current_app_prerelease = (
+            tracked_versions.get("prerelease")
+            if tracked_versions is not None
+            else latest.get("client_app_prerelease")
+        )
+        new_firmware_set: set[str] = set()
+        new_app_set: set[str] = set()
+        for result in success_results:
+            tag = result.release_tag
+            if not tag or getattr(result, "was_skipped", False):
+                continue
+            kind = result.file_type
+            if kind in CLIENT_APP_FILE_TYPES | ANDROID_FILE_TYPES | DESKTOP_FILE_TYPES:
+                prerelease = kind in {
+                    FILE_TYPE_CLIENT_APP_PRERELEASE,
+                    FILE_TYPE_ANDROID_PRERELEASE,
+                    FILE_TYPE_DESKTOP_PRERELEASE,
+                }
+                versions = (
+                    report.downloaded_client_app_prereleases
+                    if prerelease
+                    else report.downloaded_client_apps
+                )
+                current = (
+                    (current_app_prerelease or current_app)
+                    if prerelease
+                    else current_app
+                )
+                self._update_new_versions(
+                    tag, current, report.new_client_app_versions, new_app_set
+                )
+            elif kind in FIRMWARE_FILE_TYPES and kind != FILE_TYPE_FIRMWARE_MANIFEST:
+                prerelease = kind in {
+                    FILE_TYPE_FIRMWARE_PRERELEASE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                }
+                versions = (
+                    report.downloaded_firmware_prereleases
+                    if prerelease
+                    else report.downloaded_firmwares
+                )
+                current = latest.get("firmware")
+                comparison_tag = None
+                if prerelease:
+                    comparison_tag = self._normalize_firmware_prerelease_tag(tag)
+                    current = self._normalize_firmware_prerelease_tag(
+                        latest.get("firmware_prerelease") or current
+                    )
+                self._update_new_versions(
+                    tag,
+                    current,
+                    report.new_firmware_versions,
+                    new_firmware_set,
+                    comparison_release_tag=comparison_tag,
+                )
+            else:
+                continue
+            if tag not in versions:
+                versions.append(tag)
+        return report
 
     def _update_new_versions(
         self,
@@ -1308,17 +1027,17 @@ class DownloadCLIIntegration:
 
     def _get_version_manager(self) -> Optional["VersionManager"]:
         """
-        Acquire version manager exposed by Android downloader.
+        Acquire version manager exposed by Client app downloader.
         """
-        if not self.android_downloader:
+        if not self.client_app_downloader:
             return None
         # Check for method first (for backward compatibility and mocks),
         # then fall back to direct attribute access
-        getter = getattr(self.android_downloader, "get_version_manager", None)
+        getter = getattr(self.client_app_downloader, "get_version_manager", None)
         if callable(getter):
             result = getter()
             return cast(Optional["VersionManager"], result)
-        result = getattr(self.android_downloader, "version_manager", None)
+        result = getattr(self.client_app_downloader, "version_manager", None)
         return cast(Optional["VersionManager"], result)
 
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
@@ -1329,7 +1048,7 @@ class DownloadCLIIntegration:
             file_name: Base filename of the intended download or "unknown".
             release_tag: Associated release tag or "unknown".
             url: Download URL or "unknown".
-            type: Human-readable file type (e.g., "Firmware", "Android APK", "Repository", "Firmware Prerelease", "Android APK Prerelease", or "Unknown").
+            type: Human-readable file type (e.g., "Firmware", "Client App", "Repository", "Firmware Prerelease", "Client App Prerelease", or "Unknown").
             path_to_download: Full path where the file was to be saved, or "unknown".
             error: Error message for the failure, or empty string if none.
             retryable: Whether the failure is considered retryable.
@@ -1346,13 +1065,15 @@ class DownloadCLIIntegration:
         file_type_map = {
             FILE_TYPE_FIRMWARE: "Firmware",
             FILE_TYPE_FIRMWARE_MANIFEST: "Firmware Manifest",
-            FILE_TYPE_ANDROID: "Android APK",
+            FILE_TYPE_FIRMWARE_NIGHTLY: "Firmware Nightly",
+            FILE_TYPE_APP_SNAPSHOT: "Client App Snapshot",
+            FILE_TYPE_ANDROID: "Client App",
             FILE_TYPE_FIRMWARE_PRERELEASE: "Firmware Prerelease",
             FILE_TYPE_FIRMWARE_PRERELEASE_REPO: "Firmware Prerelease",
             FILE_TYPE_REPOSITORY: "Repository",
-            FILE_TYPE_ANDROID_PRERELEASE: "Android APK Prerelease",
-            FILE_TYPE_DESKTOP: "Desktop",
-            FILE_TYPE_DESKTOP_PRERELEASE: "Desktop Prerelease",
+            FILE_TYPE_ANDROID_PRERELEASE: "Client App Prerelease",
+            FILE_TYPE_DESKTOP: "Client App",
+            FILE_TYPE_DESKTOP_PRERELEASE: "Client App Prerelease",
             FILE_TYPE_CLIENT_APP: "Client App",
             FILE_TYPE_CLIENT_APP_PRERELEASE: "Client App Prerelease",
         }
@@ -1385,64 +1106,9 @@ class DownloadCLIIntegration:
         return failed_downloads
 
     def main(
-        self,
-        config: Dict[str, Any],
-        force_refresh: bool = False,
-        include_desktop: bool = False,
-    ) -> Union[
-        Tuple[
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[Dict[str, Any]],
-            str,
-            str,
-        ],  # Legacy 9-item tuple
-        Tuple[
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[str],
-            List[Dict[str, Any]],
-            str,
-            str,
-            str,
-        ],  # Extended 13-item tuple with desktop
-    ]:
-        """
-        Entry point for CLI commands that uses a provided configuration, normalizes tokens, and runs the download workflow to produce legacy-compatible results.
-
-         Parameters:
-            config (Dict[str, Any]): Configuration mapping for the download run. Must not be None; passing None raises TypeError.
-            force_refresh (bool): When True, forces refresh behavior for downloaders (e.g., clears caches) for this run.
-            include_desktop (bool): If True, include desktop download results. When True, the return tuple will be extended with 4 additional fields: downloaded_desktop, new_desktop_versions, downloaded_desktop_prereleases, and latest_desktop_version.
-
-        Returns:
-            Tuple containing (by default, 9 items):
-                downloaded_firmwares (List[str]): List of firmware release tags or identifiers that were downloaded during the run.
-                new_firmware_versions (List[str]): Subset of downloaded_firmwares that are newer than previously known firmware versions.
-                downloaded_apks (List[str]): List of Android APK release tags or identifiers that were downloaded during the run.
-                new_apk_versions (List[str]): Subset of downloaded_apks that are newer than previously known APK versions.
-                downloaded_firmware_prereleases (List[str]): List of firmware prerelease release tags or identifiers that were downloaded during the run.
-                downloaded_apk_prereleases (List[str]): List of Android APK prerelease release tags or identifiers that were downloaded during the run.
-                failed_downloads (List[Dict[str, Any]]): List of failure records formatted for legacy CLI consumption; each record includes keys like file_name, release_tag, url, type, path_to_download, error, retryable, and http_status.
-                latest_firmware_version (str): The latest known firmware version after the run (empty string if unknown).
-                latest_apk_version (str): The latest known Android APK version after the run (empty string if unknown).
-
-            When include_desktop=True, the tuple is extended with 4 additional fields (13 items total):
-                downloaded_desktop (List[str]): List of desktop release tags or identifiers that were downloaded during the run.
-                new_desktop_versions (List[str]): Subset of downloaded_desktop that are newer than previously known desktop versions.
-                downloaded_desktop_prereleases (List[str]): List of desktop prerelease release tags or identifiers that were downloaded during the run.
-                latest_desktop_version (str): The latest known desktop version after the run (empty string if unknown).
-        """
+        self, config: Dict[str, Any], force_refresh: bool = False
+    ) -> DownloadReport:
+        """Normalize authentication and run the shared artifact pipeline."""
         if config is None:
             raise TypeError("config must be provided to the download integration.")
 
@@ -1458,7 +1124,7 @@ class DownloadCLIIntegration:
             else:
                 config.pop("GITHUB_TOKEN", None)
 
-            results = self.run_download(config, force_refresh, include_desktop)
+            results = self.run_download(config, force_refresh)
             return results
 
         except (
@@ -1469,8 +1135,7 @@ class DownloadCLIIntegration:
             KeyError,
         ) as error:
             self.handle_cli_error(error)
-            # Return empty tuple with appropriate shape based on include_desktop
-            return self._empty_cli_integration_result(include_desktop)
+            return DownloadReport.empty()
 
     def clear_cache(self, config: Dict[str, Any]) -> bool:
         """
@@ -1509,8 +1174,6 @@ class DownloadCLIIntegration:
                 - "success_rate": overall success percentage as a float (0-100).
                 - "client_app_downloads": count of successful client app artifact downloads.
                 - "firmware_downloads": count of successful firmware artifact downloads.
-                - "android_downloads": legacy compat — count of client app downloads with Android-compatible filenames.
-                - "desktop_downloads": legacy compat — count of client app downloads with Desktop-compatible filenames.
                 - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
         """
         if self.orchestrator:
@@ -1523,8 +1186,6 @@ class DownloadCLIIntegration:
             "success_rate": 0.0,
             "client_app_downloads": 0,
             "firmware_downloads": 0,
-            "android_downloads": 0,
-            "desktop_downloads": 0,
             "repository_downloads": 0,
         }
 
@@ -1533,15 +1194,11 @@ class DownloadCLIIntegration:
         Get the latest known version strings for each artifact type.
 
         Returns:
-            dict: Mapping with keys 'android', 'firmware', 'firmware_prerelease', 'android_prerelease', 'desktop', and 'desktop_prerelease' to the latest version string for each; an empty string indicates the version is not available.
+            dict: Mapping with keys 'client_app', 'client_app_prerelease', 'firmware', and 'firmware_prerelease'; an empty string indicates that a version is unavailable.
         """
         versions: Dict[str, Any] = {
-            "android": "",
             "firmware": "",
             "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop": "",
-            "desktop_prerelease": "",
             "client_app": "",
             "client_app_prerelease": "",
         }

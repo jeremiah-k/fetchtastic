@@ -1225,7 +1225,7 @@ def test_has_local_snapshot_builds_handles_scan_error(downloader, tmp_path):
 
 @pytest.mark.integration
 def test_orch_snapshot_success_counts_in_statistics(tmp_path, cache_manager):
-    """Snapshot success counts in client_app_downloads and android_downloads."""
+    """Snapshot success contributes to the shared client app download count."""
     orch = _make_orchestrator_for_snapshots(tmp_path)
     release = _make_snapshot_release(vc=100)
     orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
@@ -1253,7 +1253,6 @@ def test_orch_snapshot_success_counts_in_statistics(tmp_path, cache_manager):
 
     stats = orch.get_download_statistics()
     assert stats["client_app_downloads"] >= 1
-    assert stats["android_downloads"] >= 1
 
 
 # ==================================================================

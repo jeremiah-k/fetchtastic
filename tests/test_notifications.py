@@ -341,7 +341,7 @@ class TestNotificationEdgeCases:
             ["2.7.4"],
             ["1.2.3"],
             downloaded_firmware_prereleases=["2.8.0-alpha"],
-            downloaded_apk_prereleases=["1.3.0-beta"],
+            downloaded_client_app_prereleases=["1.3.0-beta"],
         )
 
         expected_message = (
@@ -403,10 +403,8 @@ class TestNotificationEdgeCases:
         notifications.send_download_completion_notification(
             config,
             [],
-            ["v2.7.14"],
-            downloaded_desktop=["v2.7.14", "v2.7.13"],
-            downloaded_apk_prereleases=["v2.7.15-open.1"],
-            downloaded_desktop_prereleases=["v2.7.15-open.1"],
+            downloaded_client_apps=["v2.7.14", "v2.7.14", "v2.7.13"],
+            downloaded_client_app_prereleases=["v2.7.15-open.1"] + ["v2.7.15-open.1"],
         )
 
         expected_message = (
@@ -459,7 +457,7 @@ class TestNotificationEdgeCases:
             [],
             [],
             downloaded_firmware_prereleases=["2.8.0-alpha"],
-            downloaded_apk_prereleases=["1.3.0-beta"],
+            downloaded_client_app_prereleases=["1.3.0-beta"],
         )
 
         # Should still send notification for prereleases

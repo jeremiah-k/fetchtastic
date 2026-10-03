@@ -37,7 +37,9 @@ component_management:
       name: User Interface
       paths:
         - src/fetchtastic/cli.py
+        - src/fetchtastic/menu_app.py
         - src/fetchtastic/menu_apk.py
+        - src/fetchtastic/menu_desktop.py
         - src/fetchtastic/menu_firmware.py
         - src/fetchtastic/menu_repo.py
       statuses:

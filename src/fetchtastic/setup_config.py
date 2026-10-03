@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, ca
 import platformdirs
 import yaml  # type: ignore[import-untyped]
 
-from fetchtastic import menu_apk, menu_app, menu_desktop, menu_firmware
+from fetchtastic import menu_app, menu_firmware
 from fetchtastic.client_app_config import normalize_client_app_config
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
@@ -45,9 +45,8 @@ from fetchtastic.constants import (
     WINDOWS_SHORTCUT_FILE,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import coerce_bool, expand_apk_selected_patterns
+from fetchtastic.utils import coerce_bool
 
-_LEGACY_MENU_MODULES = (menu_apk, menu_desktop)
 DEFAULT_DESKTOP_VERSIONS_TO_KEEP = _DEFAULT_DESKTOP_VERSIONS_TO_KEEP
 
 # Recommended default exclude patterns for firmware extraction
@@ -69,73 +68,11 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
 ]
 
 
-# Backward compatibility helper functions for desktop assets config key
-# Old key: SELECTED_DESKTOP_PLATFORMS -> New key: SELECTED_DESKTOP_ASSETS
-def _get_desktop_assets(config: dict) -> list:
-    """Get selected desktop assets, checking both old and new config keys."""
-    # Prefer new key by presence, even when intentionally empty.
-    if "SELECTED_DESKTOP_ASSETS" in config:
-        return config.get("SELECTED_DESKTOP_ASSETS") or []
-    return config.get("SELECTED_DESKTOP_PLATFORMS") or []
-
-
-def _set_desktop_assets(config: dict, assets: list) -> None:
-    """Set selected desktop assets in the new config key only, removing old key if it exists."""
-    config["SELECTED_DESKTOP_ASSETS"] = assets
-    # Remove old key if it exists (migration complete)
-    config.pop("SELECTED_DESKTOP_PLATFORMS", None)
-
-
-def _clear_desktop_assets(config: dict) -> None:
-    """Clear selected desktop assets and remove old config key if it exists."""
-    config["SELECTED_DESKTOP_ASSETS"] = []
-    # Remove old key if it exists
-    config.pop("SELECTED_DESKTOP_PLATFORMS", None)
-
-
 def _clear_client_app_flags(config: Dict[str, Any]) -> None:
-    """Clear all client-app prerelease/snapshot/selection flags in one call."""
+    """Disable optional client app channels and clear installer selections."""
     config["CHECK_APP_PRERELEASES"] = False
-    config["CHECK_APK_PRERELEASES"] = False
-    config["CHECK_DESKTOP_PRERELEASES"] = False
     config["CHECK_APP_SNAPSHOTS"] = False
     config["SELECTED_APP_ASSETS"] = []
-    config["SELECTED_APK_ASSETS"] = []
-    _clear_desktop_assets(config)
-
-
-def _migrate_desktop_asset_key(config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Normalize legacy desktop asset selection key to SELECTED_DESKTOP_ASSETS.
-
-    If SELECTED_DESKTOP_ASSETS already exists it remains authoritative (with
-    non-list values normalized to []). Otherwise, SELECTED_DESKTOP_PLATFORMS is
-    migrated to the new key and then removed.
-    """
-    if "SELECTED_DESKTOP_ASSETS" in config:
-        if not isinstance(config.get("SELECTED_DESKTOP_ASSETS"), list):
-            config["SELECTED_DESKTOP_ASSETS"] = []
-        config.pop("SELECTED_DESKTOP_PLATFORMS", None)
-        return config
-
-    if "SELECTED_DESKTOP_PLATFORMS" in config:
-        legacy_value = config.get("SELECTED_DESKTOP_PLATFORMS")
-        config["SELECTED_DESKTOP_ASSETS"] = (
-            legacy_value if isinstance(legacy_value, list) else []
-        )
-        del config["SELECTED_DESKTOP_PLATFORMS"]
-
-    return config
-
-
-def _set_apk_assets(config: dict, assets: list) -> None:
-    """
-    Store selected APK assets with compatibility expansion for naming migrations.
-
-    This preserves user-chosen patterns while appending compatibility patterns that
-    bridge legacy and architecture-split F-Droid naming schemes.
-    """
-    config["SELECTED_APK_ASSETS"] = expand_apk_selected_patterns(assets)
 
 
 def _safe_input(prompt: str, *, default: str = "") -> str:
@@ -861,22 +798,22 @@ def _disable_asset_downloads(
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary to update in place and return.
-        asset_type (str): Asset type to disable; expected values include "firmware" or "APK".
+        asset_type (str): Asset type to disable; expected values include "firmware" or "client app".
         message (Optional[str]): Message to print to the user; if None a default message is printed.
 
     Returns:
         Tuple[Dict[str, Any], bool]: The (possibly mutated) configuration dictionary and `False` to indicate asset downloads are disabled.
     """
     if message is None:
-        asset_plural = {"firmware": "Firmware", "APK": "APKs"}
+        asset_plural = {"firmware": "Firmware", "client app": "Client app assets"}
         message = f"No {asset_type} assets selected. {asset_plural.get(asset_type, asset_type)} will not be downloaded."
     print(message)
-    config["SAVE_FIRMWARE" if asset_type == "firmware" else "SAVE_APKS"] = False
+    config["SAVE_FIRMWARE" if asset_type == "firmware" else "SAVE_CLIENT_APPS"] = False
     config[
         (
             "SELECTED_FIRMWARE_ASSETS"
             if asset_type == "firmware"
-            else "SELECTED_APK_ASSETS"
+            else "SELECTED_APP_ASSETS"
         )
     ] = []
     if asset_type == "firmware":
@@ -884,7 +821,7 @@ def _disable_asset_downloads(
         config["SELECTED_PRERELEASE_ASSETS"] = []
         config["CHECK_FIRMWARE_NIGHTLIES"] = False
     else:
-        config["CHECK_APK_PRERELEASES"] = False
+        config["CHECK_APP_PRERELEASES"] = False
     return config, False
 
 
@@ -894,7 +831,7 @@ def _setup_downloads(
     """
     Configure which asset types (client app assets and firmware) should be downloaded and update the provided configuration accordingly.
 
-    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, ``CHECK_APP_SNAPSHOTS``, ``CHECK_FIRMWARE_NIGHTLIES``, ``APP_VERSIONS_TO_KEEP``, ``APP_SNAPSHOT_VERSIONS_TO_KEEP``, ``FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``.  Legacy keys ``SAVE_APKS`` and ``SELECTED_APK_ASSETS`` are also set for backward compatibility. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
+    Updates the config in place with keys such as ``SAVE_CLIENT_APPS``, ``SAVE_FIRMWARE``, and, when asset selection menus run, ``SELECTED_APP_ASSETS``, ``SELECTED_FIRMWARE_ASSETS``, ``CHECK_PRERELEASES``, ``CHECK_APP_PRERELEASES``, ``CHECK_APP_SNAPSHOTS``, ``CHECK_FIRMWARE_NIGHTLIES``, ``APP_VERSIONS_TO_KEEP``, ``APP_SNAPSHOT_VERSIONS_TO_KEEP``, ``FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP``, and ``ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES``. Prompts the user as needed (or reuses existing values during a partial run) and may disable downloads if no assets are selected.
 
     Parameters:
         config (dict): Mutable configuration dictionary to update.
@@ -985,20 +922,14 @@ def _setup_downloads(
                 or current_fw_default
             )
             save_firmware = _coerce_bool(choice)
-    save_apks = save_client_apps
-    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", save_client_apps))
     config["SAVE_CLIENT_APPS"] = save_client_apps
-    config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
-    config["SAVE_DESKTOP_APP"] = save_desktop
     if not save_firmware and (not is_partial_run or wants("firmware")):
         config["CHECK_PRERELEASES"] = False
         config["SELECTED_PRERELEASE_ASSETS"] = []
         config["CHECK_FIRMWARE_NIGHTLIES"] = False
     if save_client_apps_was_enabled and not save_client_apps:
         _clear_client_app_flags(config)
-        config["SAVE_DESKTOP_APP"] = False
-        save_desktop = False
 
     # Firmware asset-selection menu is deferred to after the client-app
     # section so the full setup flow keeps the firmware section contiguous
@@ -1025,12 +956,8 @@ def _setup_downloads(
                     exc,
                 )
                 config["SAVE_CLIENT_APPS"] = False
-                config["SAVE_APKS"] = False
-                config["SAVE_DESKTOP_APP"] = False
                 _clear_client_app_flags(config)
                 save_client_apps = False
-                save_apks = False
-                save_desktop = False
                 app_selection = {"selected_assets": []}
             selected_assets = (
                 app_selection.get("selected_assets")
@@ -1054,28 +981,18 @@ def _setup_downloads(
                         "No client app assets selected. Client app releases will not be downloaded."
                     )
                 config["SAVE_CLIENT_APPS"] = False
-                config["SAVE_APKS"] = False
-                config["SAVE_DESKTOP_APP"] = False
                 _clear_client_app_flags(config)
                 save_client_apps = False
-                save_apks = False
-                save_desktop = False
             else:
                 config["SELECTED_APP_ASSETS"] = selected_assets
-                config.pop("SELECTED_APK_ASSETS", None)
-                _clear_desktop_assets(config)
                 normalize_client_app_config(config)
         elif not config.get("SELECTED_APP_ASSETS"):
             print(
                 "No existing client app asset selection found. Client app releases will not be downloaded."
             )
             config["SAVE_CLIENT_APPS"] = False
-            config["SAVE_APKS"] = False
-            config["SAVE_DESKTOP_APP"] = False
             _clear_client_app_flags(config)
             save_client_apps = False
-            save_apks = False
-            save_desktop = False
         else:
             normalize_client_app_config(config)
 
@@ -1083,7 +1000,7 @@ def _setup_downloads(
     if save_client_apps and app_section_requested:
         current_versions = config.get(
             "APP_VERSIONS_TO_KEEP",
-            config.get("ANDROID_VERSIONS_TO_KEEP", DEFAULT_APP_VERSIONS_TO_KEEP),
+            DEFAULT_APP_VERSIONS_TO_KEEP,
         )
         raw_versions = _safe_input(
             f"\nHow many versions of the client app would you like to keep? (current: {current_versions}): ",
@@ -1131,13 +1048,9 @@ def _setup_downloads(
             check_app_snapshots_input,
             default=check_app_snapshots_current,
         )
-    elif save_client_apps and app_section_requested:
-        config["CHECK_APP_SNAPSHOTS"] = False
 
     # --- Client App Compatibility Normalization ---
     normalize_client_app_config(config)
-    save_apks = save_client_apps
-    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
     # Firmware asset-selection menu — runs after the client-app section so
     # the full setup flow has a contiguous firmware section: once the firmware
@@ -1197,9 +1110,9 @@ def _setup_downloads(
             )
         else:
             print("Run 'fetchtastic setup' again and select at least one asset.")
-        return config, save_apks, save_firmware
+        return config, save_client_apps, save_firmware
 
-    return config, save_apks, save_firmware
+    return config, save_client_apps, save_firmware
 
 
 def _setup_client_app(
@@ -1229,13 +1142,6 @@ def _setup_client_app(
             print("Invalid value — keeping current value. Minimum is 1.")
 
     return config
-
-
-def _setup_android(
-    config: Dict[str, Any], is_first_run: bool, default_versions: int
-) -> Dict[str, Any]:
-    """Backward-compatible alias for _setup_client_app."""
-    return _setup_client_app(config, is_first_run, default_versions)
 
 
 def configure_exclude_patterns(_config: Dict[str, Any]) -> List[str]:
@@ -2423,12 +2329,13 @@ def run_setup(
     config = _setup_base({}, is_partial_run, is_first_run, wants)
 
     # Handle download type selection and asset menus
-    config, save_apks, save_firmware = _setup_downloads(config, is_partial_run, wants)
-    if save_apks and "SAVE_CLIENT_APPS" not in config:
+    config, save_client_apps, save_firmware = _setup_downloads(
+        config, is_partial_run, wants
+    )
+    if save_client_apps and "SAVE_CLIENT_APPS" not in config:
         config["SAVE_CLIENT_APPS"] = True
     config = normalize_client_app_config(config)
     save_client_apps = _coerce_bool(config.get("SAVE_CLIENT_APPS", False))
-    save_desktop = _coerce_bool(config.get("SAVE_DESKTOP_APP", False))
 
     # If all download types are disabled, only short-circuit when this run is either
     # full setup or a partial run that requested download sections only.
@@ -2509,10 +2416,7 @@ def run_setup(
     if not is_partial_run or wants("github"):
         config = _setup_github(config)
 
-    if not _coerce_bool(config.get("SAVE_CLIENT_APPS", False)):
-        config.pop("SELECTED_APK_ASSETS", None)
-        config.pop("SELECTED_DESKTOP_ASSETS", None)
-        config.pop("SELECTED_DESKTOP_PLATFORMS", None)
+    normalize_client_app_config(config)
     _normalize_latest_symlink_config(config)
 
     # Persist configuration after all interactive sections
@@ -2546,9 +2450,7 @@ def run_setup(
                 print(
                     "Setup complete. Starting first run, this may take a few minutes..."
                 )
-                DownloadCLIIntegration().main(
-                    config=config, include_desktop=save_desktop
-                )
+                DownloadCLIIntegration().main(config=config)
             else:
                 print(
                     "Setup complete. Run 'fetchtastic download' to start downloading."
@@ -2948,7 +2850,7 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
         winshell.CreateShortcut(
             Path=download_shortcut_path,
             Target=download_batch_path,
-            Description="Download Meshtastic firmware and APKs",
+            Description="Download Meshtastic firmware and client app assets",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 
@@ -3845,7 +3747,6 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         config = _load_yaml_mapping(config_path)
         if config is None:
             return None
-        config = _migrate_desktop_asset_key(config)
         config = normalize_client_app_config(config)
         config = _normalize_latest_symlink_config(config)
 
@@ -3864,7 +3765,6 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             config = _load_yaml_mapping(CONFIG_FILE)
             if config is None:
                 return None
-            config = _migrate_desktop_asset_key(config)
             config = normalize_client_app_config(config)
             config = _normalize_latest_symlink_config(config)
 
@@ -3878,7 +3778,6 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
             config = _load_yaml_mapping(OLD_CONFIG_FILE)
             if config is None:
                 return None
-            config = _migrate_desktop_asset_key(config)
             config = normalize_client_app_config(config)
             config = _normalize_latest_symlink_config(config)
 

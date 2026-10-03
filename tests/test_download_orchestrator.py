@@ -67,14 +67,6 @@ class TestDownloadOrchestrator:
         orch.client_app_downloader.should_download_prerelease.return_value = True
         orch.client_app_downloader.update_prerelease_tracking.return_value = True
         orch.client_app_downloader.last_releases_fetch_failed = False
-        orch.android_downloader = Mock()
-        orch.android_downloader.download_dir = "/tmp/test"
-        orch.android_downloader.should_download_prerelease.return_value = True
-        orch.android_downloader.update_prerelease_tracking.return_value = True
-        orch.desktop_downloader = Mock()
-        orch.desktop_downloader.download_dir = "/tmp/test"
-        orch.desktop_downloader.should_download_prerelease.return_value = True
-        orch.desktop_downloader.update_prerelease_tracking.return_value = True
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
@@ -377,11 +369,10 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions_reports_android_prerelease(self, orchestrator):
         """Latest versions should prefer stable Android releases and surface prereleases."""
-        orchestrator.android_releases = [
+        orchestrator.client_app_releases = [
             Release(tag_name="v2.7.10-open.1", prerelease=True, assets=[]),
             Release(tag_name="v2.7.9", prerelease=False, assets=[]),
         ]
-        orchestrator.desktop_releases = []
         orchestrator.client_app_downloader.get_latest_prerelease_tag = Mock(
             return_value="v2.7.10-open.1"
         )
@@ -391,13 +382,13 @@ class TestDownloadOrchestrator:
 
         versions = orchestrator.get_latest_versions()
 
-        assert versions["android"] == "v2.7.9"
-        assert versions["android_prerelease"] == "v2.7.10-open.1"
+        assert versions["client_app"] == "v2.7.9"
+        assert versions["client_app_prerelease"] == "v2.7.10-open.1"
 
     def test_get_latest_versions_reports_desktop_versions(self, orchestrator):
         """Latest versions should include Desktop stable and prerelease tags."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = [
+        orchestrator.client_app_releases = []
+        orchestrator.client_app_releases = [
             Release(tag_name="v2.7.12-open.1", prerelease=True, assets=[]),
             Release(tag_name="v2.7.11", prerelease=False, assets=[]),
         ]
@@ -410,8 +401,8 @@ class TestDownloadOrchestrator:
 
         versions = orchestrator.get_latest_versions()
 
-        assert versions["desktop"] == "v2.7.11"
-        assert versions["desktop_prerelease"] == "v2.7.12-open.1"
+        assert versions["client_app"] == "v2.7.11"
+        assert versions["client_app_prerelease"] == "v2.7.12-open.1"
 
     def test_firmware_prerelease_cleanup_only_removes_managed_dirs(self, tmp_path):
         """
@@ -781,14 +772,14 @@ class TestDownloadOrchestrator:
         # Mock downloaders
         mock_android = Mock()
         mock_firmware = Mock()
-        orchestrator.android_downloader = mock_android
+        orchestrator.client_app_downloader = mock_android
         orchestrator.firmware_downloader = mock_firmware
 
         orchestrator.cleanup_old_versions()
 
         mock_android.cleanup_old_versions.assert_called_once_with(
             2,
-            cached_releases=orchestrator.android_releases,
+            cached_releases=orchestrator.client_app_releases,
         )
         mock_firmware.cleanup_old_versions.assert_called_once()
 
@@ -798,10 +789,9 @@ class TestDownloadOrchestrator:
         mock_android_release = Mock(spec=Release)
         mock_android_release.tag_name = "v1.0.0"
         mock_android_release.prerelease = False
-        orchestrator.android_downloader.get_releases.return_value = [
+        orchestrator.client_app_downloader.get_releases.return_value = [
             mock_android_release
         ]
-        orchestrator.desktop_releases = []
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.0.0"
         orchestrator.version_manager.extract_clean_version.return_value = "2.0.0"
         orchestrator.version_manager.calculate_expected_prerelease_version.return_value = (
@@ -814,7 +804,7 @@ class TestDownloadOrchestrator:
 
         versions = orchestrator.get_latest_versions()
 
-        assert versions["android"] == "v1.0.0"
+        assert versions["client_app"] == "v1.0.0"
         assert versions["firmware"] == "v2.0.0"
         assert versions["firmware_prerelease"] == "2.0.1.abcdef"
         orchestrator.firmware_downloader.get_latest_release_tag.assert_called_once()
@@ -823,30 +813,22 @@ class TestDownloadOrchestrator:
         self, orchestrator
     ):
         """Version tracking should record stable Android/Desktop tags and latest firmware tag."""
-        orchestrator.android_releases = [
+        orchestrator.client_app_releases = [
             Release(tag_name="v2.7.12-open.1", prerelease=True),
             Release(tag_name="v2.7.11", prerelease=False),
         ]
         orchestrator.firmware_releases = [Release(tag_name="v2.7.20", prerelease=False)]
-        orchestrator.desktop_releases = [
-            Release(tag_name="v2.7.12-open.1", prerelease=True),
-            Release(tag_name="v2.7.11", prerelease=False),
-        ]
-        orchestrator.android_downloader.update_latest_release_tag = Mock()
+        orchestrator.client_app_downloader.update_latest_release_tag = Mock()
         orchestrator.firmware_downloader.update_latest_release_tag = Mock()
-        orchestrator.desktop_downloader = Mock()
         orchestrator._manage_prerelease_tracking = Mock()
 
         orchestrator.update_version_tracking()
 
-        orchestrator.android_downloader.update_latest_release_tag.assert_called_once_with(
+        orchestrator.client_app_downloader.update_latest_release_tag.assert_called_once_with(
             "v2.7.11"
         )
         orchestrator.firmware_downloader.update_latest_release_tag.assert_called_once_with(
             "v2.7.20"
-        )
-        orchestrator.desktop_downloader.update_latest_release_tag.assert_called_once_with(
-            "v2.7.11"
         )
 
     def test_update_version_tracking_skips_revoked_firmware_head(self, orchestrator):
@@ -862,13 +844,10 @@ class TestDownloadOrchestrator:
             name="Meshtastic Firmware 2.7.21 Alpha (Revoked)",
         )
         stable = Release(tag_name="v2.7.20", prerelease=False)
-        orchestrator.android_releases = [
+        orchestrator.client_app_releases = [
             Release(tag_name="v2.7.11", prerelease=False),
         ]
         orchestrator.firmware_releases = [revoked, stable]
-        orchestrator.desktop_releases = [
-            Release(tag_name="v2.7.11", prerelease=False),
-        ]
         orchestrator.version_manager.get_release_tuple.side_effect = lambda tag: {
             "v2.7.21": (2, 7, 21),
             "v2.7.20": (2, 7, 20),
@@ -876,9 +855,8 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.is_release_revoked.side_effect = (
             lambda release: release is revoked
         )
-        orchestrator.android_downloader.update_latest_release_tag = Mock()
+        orchestrator.client_app_downloader.update_latest_release_tag = Mock()
         orchestrator.firmware_downloader.update_latest_release_tag = Mock()
-        orchestrator.desktop_downloader = Mock()
         orchestrator._manage_prerelease_tracking = Mock()
 
         orchestrator.update_version_tracking()
@@ -1473,7 +1451,7 @@ class TestDownloadOrchestrator:
 
     def test_ensure_releases_with_zero_limit(self, orchestrator):
         """_ensure_releases should return empty list when limit is 0."""
-        result = orchestrator._ensure_android_releases(limit=0)
+        result = orchestrator._ensure_client_app_releases(limit=0)
         assert result == []
 
     def test_ensure_releases_with_cached_and_limit(self, orchestrator):
@@ -1482,10 +1460,10 @@ class TestDownloadOrchestrator:
             Release(tag_name="v1.0.0", prerelease=False, assets=[]),
             Release(tag_name="v2.0.0", prerelease=False, assets=[]),
         ]
-        orchestrator.android_releases = releases
-        orchestrator._android_releases_fetch_limit = 10
+        orchestrator.client_app_releases = releases
+        orchestrator._client_app_releases_fetch_limit = 10
 
-        result = orchestrator._ensure_android_releases(limit=1)
+        result = orchestrator._ensure_client_app_releases(limit=1)
 
         assert len(result) == 1
         assert result[0].tag_name == "v1.0.0"
@@ -2555,13 +2533,13 @@ class TestDownloadOrchestrator:
         failed_result.file_type = "desktop"
         failed_result.file_size = 1000
 
-        orchestrator.desktop_downloader.download = Mock(return_value=True)
-        orchestrator.desktop_downloader.verify = Mock(return_value=True)
+        orchestrator.client_app_downloader.download = Mock(return_value=True)
+        orchestrator.client_app_downloader.verify = Mock(return_value=True)
 
         result = orchestrator._retry_single_failure(failed_result)
 
         assert result.success is True
-        orchestrator.desktop_downloader.download.assert_called_once()
+        orchestrator.client_app_downloader.download.assert_called_once()
 
     def test_retry_single_failure_desktop_prerelease_type(self, orchestrator, tmp_path):
         """_retry_single_failure should use desktop downloader for desktop_prerelease type."""
@@ -2576,8 +2554,8 @@ class TestDownloadOrchestrator:
         failed_result.file_type = "desktop_prerelease"
         failed_result.file_size = 1000
 
-        orchestrator.desktop_downloader.download = Mock(return_value=True)
-        orchestrator.desktop_downloader.verify = Mock(return_value=True)
+        orchestrator.client_app_downloader.download = Mock(return_value=True)
+        orchestrator.client_app_downloader.verify = Mock(return_value=True)
 
         result = orchestrator._retry_single_failure(failed_result)
 
@@ -2595,13 +2573,13 @@ class TestDownloadOrchestrator:
         failed_result.file_type = "android_prerelease"
         failed_result.file_size = 1000
 
-        orchestrator.android_downloader.download = Mock(return_value=True)
-        orchestrator.android_downloader.verify = Mock(return_value=True)
+        orchestrator.client_app_downloader.download = Mock(return_value=True)
+        orchestrator.client_app_downloader.verify = Mock(return_value=True)
 
         result = orchestrator._retry_single_failure(failed_result)
 
         assert result.success is True
-        orchestrator.android_downloader.download.assert_called_once()
+        orchestrator.client_app_downloader.download.assert_called_once()
 
     def test_retry_single_failure_firmware_manifest_type(self, orchestrator, tmp_path):
         """_retry_single_failure should use firmware downloader for firmware_manifest type."""
@@ -2663,8 +2641,8 @@ class TestDownloadOrchestrator:
         failed_result.file_type = "android"
         failed_result.file_size = 1000
 
-        orchestrator.android_downloader.download = Mock(return_value=True)
-        orchestrator.android_downloader.verify = Mock(return_value=False)
+        orchestrator.client_app_downloader.download = Mock(return_value=True)
+        orchestrator.client_app_downloader.verify = Mock(return_value=False)
 
         result = orchestrator._retry_single_failure(failed_result)
 
@@ -2680,7 +2658,7 @@ class TestDownloadOrchestrator:
         failed_result.file_type = "android"
         failed_result.file_size = 1000
 
-        orchestrator.android_downloader.download = Mock(
+        orchestrator.client_app_downloader.download = Mock(
             side_effect=OSError("download error")
         )
 
@@ -2775,9 +2753,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._enhance_download_results_with_metadata()
 
-        from fetchtastic.constants import FILE_TYPE_DESKTOP
-
-        assert result.file_type == FILE_TYPE_DESKTOP
+        assert result.file_type == "client_app"
 
     def test_enhance_metadata_with_unknown_path(self, orchestrator):
         """_enhance_download_results_with_metadata should handle unknown paths."""
@@ -2936,13 +2912,13 @@ class TestDownloadOrchestrator:
 
         orchestrator.cleanup_old_versions()
 
-        orchestrator.desktop_downloader.cleanup_old_versions.assert_called_once_with(
-            2, cached_releases=orchestrator.desktop_releases
+        orchestrator.client_app_downloader.cleanup_old_versions.assert_called_once_with(
+            2, cached_releases=orchestrator.client_app_releases
         )
 
     def test_cleanup_old_versions_error(self, orchestrator):
         """cleanup_old_versions should handle exceptions gracefully."""
-        orchestrator.android_downloader.cleanup_old_versions.side_effect = OSError(
+        orchestrator.client_app_downloader.cleanup_old_versions.side_effect = OSError(
             "test error"
         )
 
@@ -3045,8 +3021,7 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions_with_firmware_prerelease_prefix(self, orchestrator):
         """get_latest_versions should strip firmware- prefix from prerelease."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
             return_value="v1.0.0"
         )
@@ -3057,10 +3032,7 @@ class TestDownloadOrchestrator:
         orchestrator.prerelease_manager.get_latest_active_prerelease_from_history = (
             Mock(return_value=("firmware-1.0.1.abcdef", []))
         )
-        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
-            return_value=None
-        )
-        orchestrator.desktop_downloader.get_latest_prerelease_tag = Mock(
+        orchestrator.client_app_downloader.get_latest_prerelease_tag = Mock(
             return_value=None
         )
 
@@ -3070,8 +3042,7 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions_respects_verified_no_prerelease(self, orchestrator):
         """Verified no-prerelease state must suppress history fallback."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.latest_available_firmware_prerelease_dir = None
         orchestrator.firmware_prerelease_availability_checked = True
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
@@ -3089,8 +3060,7 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions_prefers_available_prerelease_dir(self, orchestrator):
         """Verified available prerelease dir should win over stale commit-history latest."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.latest_available_firmware_prerelease_dir = (
             "firmware-2.7.23.7be5426"
         )
@@ -3108,8 +3078,7 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions_with_firmware_prerelease_no_prefix(self, orchestrator):
         """get_latest_versions should keep prerelease without firmware- prefix."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
             return_value="v1.0.0"
         )
@@ -3120,10 +3089,7 @@ class TestDownloadOrchestrator:
         orchestrator.prerelease_manager.get_latest_active_prerelease_from_history = (
             Mock(return_value=("custom-1.0.1.abcdef", []))
         )
-        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
-            return_value=None
-        )
-        orchestrator.desktop_downloader.get_latest_prerelease_tag = Mock(
+        orchestrator.client_app_downloader.get_latest_prerelease_tag = Mock(
             return_value=None
         )
 
@@ -3133,7 +3099,7 @@ class TestDownloadOrchestrator:
 
     def test_update_version_tracking_error(self, orchestrator):
         """update_version_tracking should handle exceptions gracefully."""
-        orchestrator.android_downloader.get_releases = Mock(
+        orchestrator.client_app_downloader.get_releases = Mock(
             side_effect=OSError("test error")
         )
 
@@ -3153,13 +3119,13 @@ class TestDownloadOrchestrator:
 
         orchestrator._manage_prerelease_tracking()
 
-        orchestrator.android_downloader.manage_prerelease_tracking_files.assert_called_once()
+        orchestrator.client_app_downloader.manage_prerelease_tracking_files.assert_called_once()
         orchestrator.firmware_downloader.manage_prerelease_tracking_files.assert_called_once()
-        orchestrator.desktop_downloader.manage_prerelease_tracking_files.assert_called_once()
+        orchestrator.client_app_downloader.manage_prerelease_tracking_files.assert_called_once()
 
     def test_manage_prerelease_tracking_error(self, orchestrator):
         """_manage_prerelease_tracking should handle exceptions gracefully."""
-        orchestrator.android_downloader.manage_prerelease_tracking_files = Mock(
+        orchestrator.client_app_downloader.manage_prerelease_tracking_files = Mock(
             side_effect=OSError("test error")
         )
 
@@ -3889,8 +3855,7 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions_no_expected_version(self, orchestrator):
         """Test get_latest_versions when expected_version is None."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
             return_value="v1.0.0"
         )
@@ -3905,31 +3870,31 @@ class TestDownloadOrchestrator:
 
     def test_update_version_tracking_no_android_release(self, orchestrator):
         """Test update_version_tracking when no stable Android release found."""
-        orchestrator.android_releases = [
+        orchestrator.client_app_releases = [
             Release(tag_name="v2.7.12-open.1", prerelease=True),
         ]
         orchestrator.firmware_releases = []
-        orchestrator.desktop_releases = []
-        orchestrator.android_downloader.update_latest_release_tag = Mock()
+        orchestrator.client_app_releases = []
+        orchestrator.client_app_downloader.update_latest_release_tag = Mock()
 
         orchestrator.update_version_tracking()
 
         # Should not call update_latest_release_tag for Android since no stable release
-        orchestrator.android_downloader.update_latest_release_tag.assert_not_called()
+        orchestrator.client_app_downloader.update_latest_release_tag.assert_not_called()
 
     def test_update_version_tracking_no_desktop_release(self, orchestrator):
         """Test update_version_tracking when no stable Desktop release found."""
-        orchestrator.android_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.firmware_releases = []
-        orchestrator.desktop_releases = [
+        orchestrator.client_app_releases = [
             Release(tag_name="v2.7.12-open.1", prerelease=True),
         ]
-        orchestrator.desktop_downloader = Mock()
+        orchestrator.client_app_downloader = Mock()
 
         orchestrator.update_version_tracking()
 
         # Should not call update_latest_release_tag for Desktop since no stable release
-        orchestrator.desktop_downloader.update_latest_release_tag.assert_not_called()
+        orchestrator.client_app_downloader.update_latest_release_tag.assert_not_called()
 
     def test_run_download_pipeline_non_termux_wifi_only(self, orchestrator):
         """Test pipeline runs normally on non-Termux even with WIFI_ONLY."""
@@ -3977,9 +3942,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._enhance_download_results_with_metadata()
 
-        from fetchtastic.constants import FILE_TYPE_DESKTOP
-
-        assert result.file_type == FILE_TYPE_DESKTOP
+        assert result.file_type == "client_app"
 
     def test_enhance_metadata_with_deb_extension(self, orchestrator):
         """Test enhancing metadata detects .deb as desktop file type."""
@@ -3993,9 +3956,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._enhance_download_results_with_metadata()
 
-        from fetchtastic.constants import FILE_TYPE_DESKTOP
-
-        assert result.file_type == FILE_TYPE_DESKTOP
+        assert result.file_type == "client_app"
 
     def test_process_android_prerelease_asset_downloaded(self, orchestrator):
         """Test client app prerelease when asset is successfully downloaded."""
@@ -4199,9 +4160,11 @@ class TestDownloadOrchestrator:
             Release(tag_name="v2.7.9", prerelease=False, assets=[]),
         ]
         orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
-        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.client_app_downloader.get_releases.return_value = apk_releases
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
-        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+        orchestrator.client_app_downloader.get_latest_release_tag.return_value = (
+            "v2.7.9"
+        )
 
         from fetchtastic.download.version import VersionManager
 
@@ -4225,8 +4188,8 @@ class TestDownloadOrchestrator:
         assert orchestrator.wifi_skipped is True
         assert "v2.7.20" in orchestrator.available_new_firmware_versions
         assert "v2.7.19" not in orchestrator.available_new_firmware_versions
-        assert "v2.7.10" in orchestrator.available_new_apk_versions
-        assert "v2.7.9" not in orchestrator.available_new_apk_versions
+        assert "v2.7.10" in orchestrator.available_new_client_app_versions
+        assert "v2.7.9" not in orchestrator.available_new_client_app_versions
 
     def test_discover_available_versions_no_side_effects(self, orchestrator):
         """Wi-Fi skip discovery must not call download, cleanup, or tracking-update methods."""
@@ -4238,9 +4201,11 @@ class TestDownloadOrchestrator:
             Release(tag_name="v2.7.10", prerelease=False, assets=[]),
         ]
         orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
-        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.client_app_downloader.get_releases.return_value = apk_releases
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
-        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+        orchestrator.client_app_downloader.get_latest_release_tag.return_value = (
+            "v2.7.9"
+        )
 
         from fetchtastic.download.version import VersionManager
 
@@ -4263,9 +4228,9 @@ class TestDownloadOrchestrator:
         orchestrator.firmware_downloader.download_firmware.assert_not_called()
         orchestrator.client_app_downloader.download_app.assert_not_called()
         orchestrator.firmware_downloader.update_latest_release_tag.assert_not_called()
-        orchestrator.android_downloader.update_latest_release_tag.assert_not_called()
+        orchestrator.client_app_downloader.update_latest_release_tag.assert_not_called()
         orchestrator.firmware_downloader.cleanup_old_versions.assert_not_called()
-        orchestrator.android_downloader.cleanup_old_versions.assert_not_called()
+        orchestrator.client_app_downloader.cleanup_old_versions.assert_not_called()
         assert orchestrator.download_results == []
         assert orchestrator.failed_downloads == []
 
@@ -4283,9 +4248,9 @@ class TestDownloadOrchestrator:
             Release(tag_name="v2.7.9", prerelease=False, assets=[]),
         ]
         orchestrator.firmware_downloader.get_releases.return_value = firmware_releases
-        orchestrator.android_downloader.get_releases.return_value = apk_releases
+        orchestrator.client_app_downloader.get_releases.return_value = apk_releases
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = None
-        orchestrator.android_downloader.get_latest_release_tag.return_value = None
+        orchestrator.client_app_downloader.get_latest_release_tag.return_value = None
 
         from fetchtastic.download.version import VersionManager
 
@@ -4310,7 +4275,7 @@ class TestDownloadOrchestrator:
             "v2.7.20",
             "v2.7.19",
         ]
-        assert orchestrator.available_new_apk_versions == ["v2.7.10", "v2.7.9"]
+        assert orchestrator.available_new_client_app_versions == ["v2.7.10", "v2.7.9"]
 
     def test_firmware_skip_discovery_ignores_revoked_releases(self, orchestrator):
         """Skip discovery should exclude revoked firmware releases just like normal processing."""
@@ -4338,7 +4303,7 @@ class TestDownloadOrchestrator:
             older,
         ]
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.19"
-        orchestrator.android_downloader.get_releases.return_value = []
+        orchestrator.client_app_downloader.get_releases.return_value = []
 
         from fetchtastic.download.version import VersionManager
 
@@ -4384,7 +4349,7 @@ class TestDownloadOrchestrator:
             stable3,
         ]
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.7.18"
-        orchestrator.android_downloader.get_releases.return_value = []
+        orchestrator.client_app_downloader.get_releases.return_value = []
 
         from fetchtastic.download.version import VersionManager
 
@@ -4418,12 +4383,14 @@ class TestDownloadOrchestrator:
         stable1 = Release(tag_name="v2.7.11", prerelease=False, assets=[])
         stable2 = Release(tag_name="v2.7.10", prerelease=False, assets=[])
 
-        orchestrator.android_downloader.get_releases.return_value = [
+        orchestrator.client_app_downloader.get_releases.return_value = [
             pre,
             stable1,
             stable2,
         ]
-        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+        orchestrator.client_app_downloader.get_latest_release_tag.return_value = (
+            "v2.7.9"
+        )
         orchestrator.firmware_downloader.get_releases.return_value = []
 
         from fetchtastic.download.version import VersionManager
@@ -4444,9 +4411,9 @@ class TestDownloadOrchestrator:
         ):
             orchestrator.run_download_pipeline()
 
-        assert "v2.7.11" in orchestrator.available_new_apk_versions
-        assert "v2.7.10" in orchestrator.available_new_apk_versions
-        assert "v2.7.12-open.1" not in orchestrator.available_new_apk_versions
+        assert "v2.7.11" in orchestrator.available_new_client_app_versions
+        assert "v2.7.10" in orchestrator.available_new_client_app_versions
+        assert "v2.7.12-open.1" not in orchestrator.available_new_client_app_versions
 
     def test_skip_discovery_isolates_firmware_and_apk_failures(self, orchestrator):
         """Firmware discovery failure must not suppress APK discovery results."""
@@ -4459,8 +4426,10 @@ class TestDownloadOrchestrator:
         apk_releases = [
             Release(tag_name="v2.7.10", prerelease=False, assets=[]),
         ]
-        orchestrator.android_downloader.get_releases.return_value = apk_releases
-        orchestrator.android_downloader.get_latest_release_tag.return_value = "v2.7.9"
+        orchestrator.client_app_downloader.get_releases.return_value = apk_releases
+        orchestrator.client_app_downloader.get_latest_release_tag.return_value = (
+            "v2.7.9"
+        )
 
         from fetchtastic.download.version import VersionManager
 
@@ -4482,7 +4451,7 @@ class TestDownloadOrchestrator:
 
         assert result == ([], [])
         assert orchestrator.available_new_firmware_versions == []
-        assert "v2.7.10" in orchestrator.available_new_apk_versions
+        assert "v2.7.10" in orchestrator.available_new_client_app_versions
 
     def test_process_firmware_hash_suffixed_is_valid_baseline_when_latest(
         self, orchestrator
@@ -5027,14 +4996,12 @@ class TestFirmwareSummaryUsesSelectedReleases:
         orch.cache_manager = Mock()
         orch.version_manager = Mock()
         orch.prerelease_manager = Mock()
-        orch.android_downloader = Mock()
-        orch.android_downloader.download_dir = "/tmp/test"
+        orch.client_app_downloader = Mock()
+        orch.client_app_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader.is_release_revoked = Mock(return_value=False)
         orch.firmware_downloader.get_zips_needing_extraction = Mock(return_value=[])
-        orch.desktop_downloader = Mock()
-        orch.desktop_downloader.download_dir = "/tmp/test"
 
         def _collect_non_revoked(*, initial_releases, current_fetch_limit, **_unused):
             return initial_releases, initial_releases, current_fetch_limit
@@ -5209,8 +5176,7 @@ class TestFirmwareSummaryUsesSelectedReleases:
 
     def test_firmware_prerelease_chronology_in_orchestrator_summary(self, orchestrator):
         """Orchestrator should report chronologically newest prerelease, not hash-sorted newest."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
             return_value="v2.7.22.96dd647"
         )
@@ -5224,8 +5190,7 @@ class TestFirmwareSummaryUsesSelectedReleases:
 
     def test_firmware_prerelease_chronology_overrides_stale_history(self, orchestrator):
         """Run-scoped prerelease dir should override stale history returning older hash."""
-        orchestrator.android_releases = []
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = []
         orchestrator.firmware_downloader.get_latest_release_tag = Mock(
             return_value="v2.7.22.96dd647"
         )
@@ -5241,10 +5206,7 @@ class TestFirmwareSummaryUsesSelectedReleases:
         orchestrator.prerelease_manager.get_latest_active_prerelease_from_history = (
             Mock(return_value=("firmware-2.7.23.7be5426", []))
         )
-        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
-            return_value=None
-        )
-        orchestrator.desktop_downloader.get_latest_prerelease_tag = Mock(
+        orchestrator.client_app_downloader.get_latest_prerelease_tag = Mock(
             return_value=None
         )
 
