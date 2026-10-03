@@ -21,7 +21,7 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
         (),
         {
             "get_latest_versions": lambda self: {
-                "android": "v1.0.0",
+                "client_app": "v1.0.0",
                 "firmware": "v1.0.0",
             }
         },
@@ -45,7 +45,7 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
         "MockFirmwareDownloader", (), {"get_latest_release_tag": lambda self: "v1.0.0"}
     )()
 
-    integration.android_downloader = mock_android  # type: ignore
+    integration.client_app_downloader = mock_android  # type: ignore
     integration.firmware_downloader = mock_firmware  # type: ignore
 
     skipped_firmware = DownloadResult(
@@ -65,27 +65,12 @@ def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
         was_skipped=True,
     )
 
-    (
-        downloaded,
-        new_fw,
-        apks,
-        new_apks,
-        _downloaded_desktop,
-        _new_desktop_versions,
-        _downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(
-        [skipped_firmware, skipped_android]
-    )
+    report = integration._collect_download_report([skipped_firmware, skipped_android])
 
-    assert downloaded == []
+    assert report.downloaded_firmwares == []
     # Skipped assets should not be reported as new versions
-    assert new_fw == []
-    assert apks == []
-    assert new_apks == []
-    assert _downloaded_desktop == []
-    assert _new_desktop_versions == []
-    assert _downloaded_firmware_prereleases == []
-    assert _downloaded_apk_prereleases == []
-    assert _downloaded_desktop_prereleases == []
+    assert report.new_firmware_versions == []
+    assert report.downloaded_client_apps == []
+    assert report.new_client_app_versions == []
+    assert report.downloaded_firmware_prereleases == []
+    assert report.downloaded_client_app_prereleases == []

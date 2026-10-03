@@ -1,11 +1,4 @@
-"""
-Compatibility wrapper for the unified Meshtastic client app downloader.
-
-Desktop installers are now client app assets stored under app/<version>/ and
-app/prerelease/<version>/ with APKs from the same upstream release feed. This
-module keeps legacy imports working without owning a separate storage or cleanup
-lifecycle.
-"""
+"""Compatibility wrapper for the unified Meshtastic client app downloader."""
 
 from __future__ import annotations
 
@@ -31,10 +24,9 @@ MIN_DESKTOP_TRACKED_VERSION = (2, 7, 14)
 
 
 class MeshtasticDesktopDownloader(MeshtasticClientAppDownloader):
-    """Backward-compatible Desktop-scoped wrapper for MeshtasticClientAppDownloader."""
+    """Keep legacy Desktop callers scoped to desktop installer assets."""
 
     def get_assets(self, release: Release) -> list[Asset]:
-        """Return Desktop installer assets only for legacy Desktop callers."""
         return [
             asset
             for asset in super().get_assets(release)
@@ -42,13 +34,11 @@ class MeshtasticDesktopDownloader(MeshtasticClientAppDownloader):
         ]
 
     def should_download_asset(self, asset_name: str) -> bool:
-        """Return whether a Desktop installer asset is selected for download."""
         return is_desktop_asset_name(asset_name) and super().should_download_asset(
             asset_name
         )
 
     def download_desktop(self, release: Release, asset: Asset) -> DownloadResult:
-        """Compatibility alias for the unified client app download method."""
         result = self.download_app(release, asset)
         if result.file_type == FILE_TYPE_CLIENT_APP:
             result.file_type = FILE_TYPE_DESKTOP
@@ -60,7 +50,6 @@ class MeshtasticDesktopDownloader(MeshtasticClientAppDownloader):
 def _is_desktop_prerelease_by_name(
     tag_name: str, version_manager: Optional[VersionManager] = None
 ) -> bool:
-    """Return whether a Desktop tag should be treated as a tracked prerelease."""
     if not is_desktop_prerelease_tag(tag_name):
         return False
     manager = version_manager or VersionManager()
@@ -72,6 +61,13 @@ def _is_desktop_prerelease_by_name(
 
 
 def _is_desktop_prerelease(release: dict[str, Any]) -> bool:
-    """Return whether a release payload is a Desktop prerelease."""
     tag_name = (release or {}).get("tag_name", "")
     return isinstance(tag_name, str) and _is_desktop_prerelease_by_name(tag_name)
+
+
+__all__ = [
+    "MIN_DESKTOP_TRACKED_VERSION",
+    "MeshtasticDesktopDownloader",
+    "_is_desktop_prerelease",
+    "_is_desktop_prerelease_by_name",
+]

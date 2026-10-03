@@ -68,11 +68,9 @@ def send_ntfy_notification(
 def send_download_completion_notification(
     config: Dict[str, Any],
     downloaded_firmwares: List[str],
-    downloaded_apks: List[str],
+    downloaded_client_apps: List[str],
     downloaded_firmware_prereleases: Optional[List[str]] = None,
-    downloaded_apk_prereleases: Optional[List[str]] = None,
-    downloaded_desktop: Optional[List[str]] = None,
-    downloaded_desktop_prereleases: Optional[List[str]] = None,
+    downloaded_client_app_prereleases: Optional[List[str]] = None,
     downloaded_app_snapshots: Optional[List[str]] = None,
     downloaded_firmware_nightlies: Optional[List[str]] = None,
 ) -> None:
@@ -82,11 +80,9 @@ def send_download_completion_notification(
     Parameters:
         config (Dict[str, Any]): Configuration containing NTFY settings.
         downloaded_firmwares (List[str]): List of firmware versions that were downloaded.
-        downloaded_apks (List[str]): Legacy list of client app APK versions that were downloaded.
+        downloaded_client_apps (List[str]): List of client app versions that were downloaded.
         downloaded_firmware_prereleases (Optional[List[str]]): List of firmware prerelease versions that were downloaded.
-        downloaded_apk_prereleases (Optional[List[str]]): Legacy list of client app APK prerelease versions that were downloaded.
-        downloaded_desktop (Optional[List[str]]): Legacy list of client app desktop versions that were downloaded.
-        downloaded_desktop_prereleases (Optional[List[str]]): Legacy list of client app desktop prerelease versions that were downloaded.
+        downloaded_client_app_prereleases (Optional[List[str]]): List of client app prerelease versions that were downloaded.
         downloaded_app_snapshots (Optional[List[str]]): List of snapshot debug build versionCodes that were downloaded.
         downloaded_firmware_nightlies (Optional[List[str]]): List of firmware nightly build identifiers that were downloaded.
 
@@ -97,25 +93,19 @@ def send_download_completion_notification(
     ntfy_topic = config.get("NTFY_TOPIC", "")
 
     downloaded_firmware_prereleases = downloaded_firmware_prereleases or []
-    downloaded_apk_prereleases = downloaded_apk_prereleases or []
-    downloaded_desktop = downloaded_desktop or []
-    downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
+    downloaded_client_app_prereleases = downloaded_client_app_prereleases or []
     downloaded_app_snapshots = downloaded_app_snapshots or []
     downloaded_firmware_nightlies = downloaded_firmware_nightlies or []
-    downloaded_client_apps = _dedupe_preserving_order(
-        [*downloaded_apks, *downloaded_desktop]
-    )
+    downloaded_client_apps = _dedupe_preserving_order(downloaded_client_apps)
     downloaded_client_app_prereleases = _dedupe_preserving_order(
-        [*downloaded_apk_prereleases, *downloaded_desktop_prereleases]
+        downloaded_client_app_prereleases
     )
 
     if (
         not downloaded_firmwares
-        and not downloaded_apks
+        and not downloaded_client_apps
         and not downloaded_firmware_prereleases
-        and not downloaded_apk_prereleases
-        and not downloaded_desktop
-        and not downloaded_desktop_prereleases
+        and not downloaded_client_app_prereleases
         and not downloaded_app_snapshots
         and not downloaded_firmware_nightlies
     ):
@@ -174,7 +164,7 @@ def send_download_completion_notification(
 def send_new_releases_available_notification(
     config: Dict[str, Any],
     new_firmware_versions: List[str],
-    new_apk_versions: List[str],
+    new_client_app_versions: List[str],
     downloads_skipped_reason: Optional[str] = None,
 ) -> None:
     """
@@ -186,7 +176,7 @@ def send_new_releases_available_notification(
             - "NTFY_TOPIC": NTFY topic to post the notification to.
             - "NOTIFY_ON_DOWNLOAD_ONLY": if True, suppresses this notification.
         new_firmware_versions (List[str]): Available firmware version identifiers to report.
-        new_apk_versions (List[str]): Available client app version identifiers to report.
+        new_client_app_versions (List[str]): Available client app version identifiers to report.
         downloads_skipped_reason (Optional[str]): Human-readable reason why downloads were skipped;
             if provided it is included as the first line of the notification.
 
@@ -202,7 +192,7 @@ def send_new_releases_available_notification(
 
     if (
         not new_firmware_versions
-        and not new_apk_versions
+        and not new_client_app_versions
         and not downloads_skipped_reason
     ):
         return  # No new releases and no skip reason, no notification needed
@@ -217,9 +207,9 @@ def send_new_releases_available_notification(
             f"Firmware versions available: {', '.join(new_firmware_versions)}"
         )
 
-    if new_apk_versions:
+    if new_client_app_versions:
         message_lines.append(
-            f"Meshtastic Client versions available: {', '.join(new_apk_versions)}"
+            f"Meshtastic Client versions available: {', '.join(new_client_app_versions)}"
         )
 
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")

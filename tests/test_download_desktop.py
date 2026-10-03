@@ -1,10 +1,10 @@
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 from fetchtastic.constants import APP_DIR_NAME
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.client_app import MeshtasticClientAppDownloader
 from fetchtastic.download.desktop import (
     MeshtasticDesktopDownloader,
     _is_desktop_prerelease,
@@ -28,8 +28,8 @@ def downloader(tmp_path):
     )
 
 
-def test_desktop_downloader_is_client_app_wrapper(downloader):
-    assert isinstance(downloader, MeshtasticClientAppDownloader)
+def test_client_app_downloader_is_legacy_wrapper(downloader):
+    assert isinstance(downloader, MeshtasticDesktopDownloader)
 
 
 def test_desktop_wrapper_uses_unified_app_path(downloader):
@@ -56,33 +56,30 @@ def test_desktop_wrapper_uses_unified_prerelease_path(downloader):
     )
 
 
-def test_download_desktop_mutates_client_app_result_to_legacy_desktop_file_type(
-    downloader, mocker
-):
-    """Wrapper mutates download_app result in-place to expose legacy desktop file_type."""
+def test_legacy_import_preserves_desktop_result_type(downloader, monkeypatch):
+    """Legacy download_desktop keeps the historical file type."""
     release = Release(tag_name="v2.7.14", prerelease=False)
     asset = Asset(
         name="Meshtastic-2.7.14.dmg",
         download_url="https://example.invalid/Meshtastic-2.7.14.dmg",
         size=1,
     )
-    mock_download_app = mocker.patch.object(
-        downloader,
-        "download_app",
+    mock_download_app = Mock(
         return_value=DownloadResult(
             success=True,
             release_tag="v2.7.14",
             file_type="client_app",
-        ),
+        )
     )
+    monkeypatch.setattr(downloader, "download_app", mock_download_app)
     original_file_type = mock_download_app.return_value.file_type
 
     result = downloader.download_desktop(release, asset)
 
     mock_download_app.assert_called_once_with(release, asset)
     assert result is mock_download_app.return_value
-    assert original_file_type == "client_app"  # mock returned unified type
-    assert result.file_type == "desktop"  # mutated in-place by wrapper
+    assert original_file_type == "client_app"
+    assert result.file_type == "desktop"
 
 
 def test_desktop_release_notes_use_single_client_app_file(downloader):

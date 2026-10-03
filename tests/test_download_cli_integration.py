@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fetchtastic.download.cli_integration import DownloadCLIIntegration
+from fetchtastic.download.cli_integration import DownloadCLIIntegration, DownloadReport
 from fetchtastic.download.files import _get_existing_prerelease_dirs
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_interface]
@@ -22,7 +22,7 @@ def test_cli_integration_main_loads_config_and_runs(mocker, tmp_path):
     run_download = mocker.patch.object(
         integration,
         "run_download",
-        return_value=(
+        return_value=DownloadReport(
             ["fw"],
             ["new_fw"],
             ["apk"],
@@ -30,40 +30,18 @@ def test_cli_integration_main_loads_config_and_runs(mocker, tmp_path):
             [],
             [],
             [],
-            [],
-            [],
-            [],
             "fw_latest",
             "apk_latest",
-            "desktop_latest",
         ),
     )
 
-    result = integration.main(config=config, include_desktop=True)
+    result = integration.main(config=config)
 
-    run_download.assert_called_once_with({"DOWNLOAD_DIR": str(tmp_path)}, False, True)
+    run_download.assert_called_once_with({"DOWNLOAD_DIR": str(tmp_path)}, False)
 
-    # Unpack the 13-field tuple into named locals
-    (
-        downloaded_firmwares,
-        _new_firmware_versions,
-        _downloaded_apks,
-        _new_apk_versions,
-        _downloaded_desktop,
-        _new_desktop_versions,
-        _downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-        _failed_downloads,
-        latest_firmware_version,
-        latest_apk_version,
-        latest_desktop_version,
-    ) = result
-
-    assert downloaded_firmwares == ["fw"]
-    assert latest_firmware_version == "fw_latest"
-    assert latest_apk_version == "apk_latest"
-    assert latest_desktop_version == "desktop_latest"
+    assert result.downloaded_firmwares == ["fw"]
+    assert result.latest_firmware_version == "fw_latest"
+    assert result.latest_client_app_version == "apk_latest"
 
 
 def test_cli_integration_main_requires_config_argument():
@@ -81,24 +59,27 @@ def test_cli_integration_main_with_config_parameter(mocker):
     run_download = mocker.patch.object(
         integration,
         "run_download",
-        return_value=(
+        return_value=DownloadReport(
             ["fw"],
             ["new_fw"],
             ["apk"],
             ["new_apk"],
             [],
             [],
+            [],
             "fw_latest",
             "apk_latest",
-            "",
         ),
     )
 
     result = integration.main(config=config)
 
-    run_download.assert_called_once_with(config, False, False)
+    run_download.assert_called_once_with(config, False)
     assert len(result) == 9
     assert result[0] == ["fw"]
+    assert result.failed_downloads == []
+    assert result.latest_firmware_version == "fw_latest"
+    assert result.latest_client_app_version == "apk_latest"
 
 
 def test_cli_integration_main_with_force_refresh(mocker, tmp_path):
@@ -112,12 +93,12 @@ def test_cli_integration_main_with_force_refresh(mocker, tmp_path):
     run_download = mocker.patch.object(
         integration,
         "run_download",
-        return_value=([], [], [], [], [], [], [], "", ""),
+        return_value=DownloadReport([], [], [], [], [], [], [], "", ""),
     )
 
     integration.main(config=config, force_refresh=True)
 
-    run_download.assert_called_once_with({"DOWNLOAD_DIR": str(tmp_path)}, True, False)
+    run_download.assert_called_once_with({"DOWNLOAD_DIR": str(tmp_path)}, True)
 
 
 def test_cli_integration_main_rejects_none_config(mocker):
@@ -136,7 +117,7 @@ def test_cli_integration_clear_cache_loads_config(mocker):
     integration = DownloadCLIIntegration()
     config = {"DOWNLOAD_DIR": "/tmp"}
     mock_orchestrator = mocker.MagicMock(
-        android_downloader=mocker.MagicMock(),
+        client_app_downloader=mocker.MagicMock(),
         firmware_downloader=mocker.MagicMock(),
     )
     mocker.patch(
@@ -158,7 +139,7 @@ def test_cli_integration_clear_cache_returns_false_when_cache_clear_fails(
     integration = DownloadCLIIntegration()
     config = {"DOWNLOAD_DIR": str(tmp_path)}
     mock_orchestrator = mocker.MagicMock(
-        android_downloader=mocker.MagicMock(),
+        client_app_downloader=mocker.MagicMock(),
         firmware_downloader=mocker.MagicMock(),
     )
     mocker.patch(
@@ -214,8 +195,7 @@ def test_run_download_successful(mocker):
     mock_orchestrator.update_version_tracking.return_value = None
     mock_orchestrator.get_latest_versions.return_value = {
         "firmware": "v0.9.0",
-        "android": "v1.9.0",
-        "desktop": "",
+        "client_app": "v1.9.0",
     }
 
     # Mock version manager for comparisons
@@ -234,19 +214,18 @@ def test_run_download_successful(mocker):
             return 0
 
     mock_version_manager.compare_versions.side_effect = compare_side_effect
-    mock_android_downloader = MagicMock()
-    mock_android_downloader.get_version_manager.return_value = mock_version_manager
-    mock_orchestrator.android_downloader = mock_android_downloader
+    mock_client_app_downloader = MagicMock()
+    mock_client_app_downloader.get_version_manager.return_value = mock_version_manager
+    mock_client_app_downloader.get_latest_release_tag.return_value = "v1.9.0"
+    mock_orchestrator.client_app_downloader = mock_client_app_downloader
 
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
 
-    # Test successful run with include_desktop=True to get extended 13-item tuple
-    result = integration.run_download(
-        config=config, force_refresh=False, include_desktop=True
-    )
+    # Exercise the shared release report.
+    result = integration.run_download(config=config, force_refresh=False)
 
     # Verify orchestrator was called correctly
     mock_orchestrator.run_download_pipeline.assert_called_once()
@@ -255,38 +234,17 @@ def test_run_download_successful(mocker):
     mock_orchestrator.get_latest_versions.assert_called()
 
     # Verify conversion logic was exercised and result format
-    assert len(result) == 13
+    assert len(result) == 9
 
-    # Unpack the 13-field tuple into named locals
-    (
-        downloaded_firmwares,
-        new_firmware_versions,
-        downloaded_apks,
-        new_apk_versions,
-        downloaded_desktop,
-        new_desktop_versions,
-        downloaded_firmware_prereleases,
-        downloaded_apk_prereleases,
-        downloaded_desktop_prereleases,
-        failed_downloads,
-        latest_firmware_version,
-        latest_apk_version,
-        latest_desktop_version,
-    ) = result
-
-    assert downloaded_firmwares == ["v1.0.0"]  # skipped one excluded
-    assert new_firmware_versions == ["v1.0.0"]  # newer than v0.9.0
-    assert downloaded_apks == ["v2.0.0"]
-    assert new_apk_versions == ["v2.0.0"]  # newer than v1.9.0
-    assert downloaded_desktop == []
-    assert new_desktop_versions == []
-    assert downloaded_firmware_prereleases == []
-    assert downloaded_apk_prereleases == []
-    assert downloaded_desktop_prereleases == []
-    assert failed_downloads == []
-    assert latest_firmware_version == "v0.9.0"  # from orchestrator
-    assert latest_apk_version == "v1.9.0"  # from orchestrator
-    assert latest_desktop_version == ""  # from orchestrator
+    assert result.downloaded_firmwares == ["v1.0.0"]  # skipped one excluded
+    assert result.new_firmware_versions == ["v1.0.0"]  # newer than v0.9.0
+    assert result.downloaded_client_apps == ["v2.0.0"]
+    assert result.new_client_app_versions == ["v2.0.0"]  # newer than v1.9.0
+    assert result.downloaded_firmware_prereleases == []
+    assert result.downloaded_client_app_prereleases == []
+    assert result.failed_downloads == []
+    assert result.latest_firmware_version == "v0.9.0"  # from orchestrator
+    assert result.latest_client_app_version == "v1.9.0"  # from orchestrator
 
     # Verify version comparison was called for new version detection
     # Should be called for each downloaded item (2 times in this test)
@@ -319,38 +277,31 @@ def test_run_download_uses_tracked_desktop_version_for_new_detection(mocker, tmp
     # Remote/latest value matches downloaded tag and should not be used for "new".
     mock_orchestrator.get_latest_versions.return_value = {
         "firmware": "",
-        "android": "",
+        "client_app": "v2.0.0",
         "firmware_prerelease": "",
-        "android_prerelease": "",
-        "desktop": "v2.0.0",
-        "desktop_prerelease": "",
+        "client_app_prerelease": "",
     }
 
     mock_version_manager = MagicMock()
     mock_version_manager.compare_versions.side_effect = lambda version1, version2: (
         1 if (version1, version2) == ("v2.0.0", "v1.9.0") else 0
     )
-    mock_android_downloader = MagicMock()
-    mock_android_downloader.get_version_manager.return_value = mock_version_manager
-    mock_orchestrator.android_downloader = mock_android_downloader
+    mock_client_app_downloader = MagicMock()
+    mock_client_app_downloader.get_version_manager.return_value = mock_version_manager
+    mock_client_app_downloader.get_latest_release_tag.return_value = "v1.9.0"
+    mock_orchestrator.client_app_downloader = mock_client_app_downloader
     mock_orchestrator.firmware_downloader = MagicMock()
-
-    mock_desktop_downloader = MagicMock()
-    mock_desktop_downloader.get_latest_release_tag.return_value = "v1.9.0"
-    mock_desktop_downloader.get_latest_prerelease_tag.return_value = ""
-    mock_orchestrator.desktop_downloader = mock_desktop_downloader
+    mock_client_app_downloader.get_latest_prerelease_tag.return_value = ""
 
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
 
-    result = integration.run_download(
-        config=config, force_refresh=False, include_desktop=True
-    )
+    result = integration.run_download(config=config, force_refresh=False)
 
-    assert result[4] == ["v2.0.0"]  # downloaded_desktop (index 4 in 13-item tuple)
-    assert result[5] == ["v2.0.0"]  # new_desktop_versions (index 5 in 13-item tuple)
+    assert result.downloaded_client_apps == ["v2.0.0"]
+    assert result.new_client_app_versions == ["v2.0.0"]
 
 
 def test_log_download_results_summary_logs_history_summary(mocker):
@@ -358,18 +309,18 @@ def test_log_download_results_summary_logs_history_summary(mocker):
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
-        return_value={"firmware_prerelease": "", "android_prerelease": ""}
+        return_value={"firmware_prerelease": "", "client_app_prerelease": ""}
     )
 
     integration.log_download_results_summary(
         elapsed_seconds=1.23,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="v1.0.0",
-        latest_apk_version="v2.0.0",
+        latest_client_app_version="v2.0.0",
         new_firmware_versions=[],
-        new_apk_versions=[],
+        new_client_app_versions=[],
     )
 
     integration.orchestrator.log_firmware_release_history_summary.assert_called_once()
@@ -417,7 +368,7 @@ def test_run_download_force_refresh_fails_when_cache_clear_fails(mocker, tmp_pat
 
     result = integration.run_download(config=config, force_refresh=True)
 
-    assert result == ([], [], [], [], [], [], [], "", "")
+    assert result == DownloadReport([], [], [], [], [], [], [], "", "")
     mock_orchestrator.run_download_pipeline.assert_not_called()
 
 
@@ -433,9 +384,8 @@ def test_run_download_force_refresh_reads_desktop_tracking_before_clear(
     mock_orchestrator.cleanup_old_versions.return_value = None
     mock_orchestrator.update_version_tracking.return_value = None
     mock_orchestrator.get_latest_versions.return_value = {}
-    mock_orchestrator.android_downloader = MagicMock()
+    mock_orchestrator.client_app_downloader = MagicMock()
     mock_orchestrator.firmware_downloader = MagicMock()
-    mock_orchestrator.desktop_downloader = MagicMock()
 
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
@@ -445,7 +395,7 @@ def test_run_download_force_refresh_reads_desktop_tracking_before_clear(
     call_order: list[str] = []
     mocker.patch.object(
         integration,
-        "_get_tracked_desktop_versions",
+        "_get_tracked_client_app_versions",
         side_effect=lambda: (
             call_order.append("tracked")
             or {"current": "v1.0.0", "prerelease": "v1.0.0-open.1"}
@@ -460,11 +410,10 @@ def test_run_download_force_refresh_reads_desktop_tracking_before_clear(
     result = integration.run_download(
         config=config,
         force_refresh=True,
-        include_desktop=True,
     )
 
     assert call_order[:2] == ["tracked", "clear"]
-    assert len(result) == 13
+    assert len(result) == 9
 
 
 def test_run_download_handles_exception(mocker):
@@ -485,15 +434,15 @@ def test_run_download_handles_exception(mocker):
     result = integration.run_download(config=config, force_refresh=False)
 
     # Verify empty legacy 9-item tuple is returned on error
-    assert result == ([], [], [], [], [], [], [], "", "")
+    assert result == DownloadReport([], [], [], [], [], [], [], "", "")
 
 
 def test_is_newer_version_equal():
     """_is_newer_version should return False for equal versions."""
     integration = DownloadCLIIntegration()
-    integration.android_downloader = MagicMock()
+    integration.client_app_downloader = MagicMock()
     mock_version_manager = MagicMock()
-    integration.android_downloader.get_version_manager.return_value = (
+    integration.client_app_downloader.get_version_manager.return_value = (
         mock_version_manager
     )
 
@@ -591,17 +540,17 @@ def test_get_latest_versions():
     integration.orchestrator = MagicMock()
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v1.0",
-        "android": "v2.0",
+        "client_app": "v2.0",
         "firmware_prerelease": None,
-        "android_prerelease": None,
+        "client_app_prerelease": None,
     }
 
     result = integration.get_latest_versions()
 
     assert result["firmware"] == "v1.0"
-    assert result["android"] == "v2.0"
+    assert result["client_app"] == "v2.0"
     assert result["firmware_prerelease"] == ""
-    assert result["android_prerelease"] == ""
+    assert result["client_app_prerelease"] == ""
 
 
 def test_get_latest_versions_no_orchestrator():
@@ -611,7 +560,7 @@ def test_get_latest_versions_no_orchestrator():
 
     result = integration.get_latest_versions()
 
-    assert result["android"] == ""
+    assert result["client_app"] == ""
     assert result["firmware"] == ""
     assert result["firmware_prerelease"] == ""
 
@@ -644,8 +593,8 @@ def test_get_existing_prerelease_dirs_no_directory():
     assert result == []
 
 
-def test_convert_results_to_legacy_format_with_file_type_categorization():
-    """Test _convert_results_to_legacy_format properly categorizes file types."""
+def test_collect_download_report_with_file_type_categorization():
+    """Test _collect_download_report properly categorizes file types."""
     integration = DownloadCLIIntegration()
 
     # Mock result objects
@@ -665,24 +614,14 @@ def test_convert_results_to_legacy_format_with_file_type_categorization():
     ]
 
     # Test the function
-    (
-        downloaded_firmwares,
-        _new_firmware_versions,
-        downloaded_apks,
-        _new_apk_versions,
-        _downloaded_desktop,
-        _new_desktop_versions,
-        _downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(results)
+    _report = integration._collect_download_report(results)
 
     # Verify file type categorization worked correctly
-    assert "v1.0" in downloaded_firmwares  # firmware
-    assert "v2.0" in downloaded_apks  # android
-    assert "v1.1" in _downloaded_firmware_prereleases  # firmware_prerelease
-    assert "v1.2" in _downloaded_firmware_prereleases  # firmware_prerelease_repo
-    assert "v2.1" in _downloaded_apk_prereleases  # android_prerelease
+    assert "v1.0" in _report.downloaded_firmwares  # firmware
+    assert "v2.0" in _report.downloaded_client_apps  # android
+    assert "v1.1" in _report.downloaded_firmware_prereleases  # firmware_prerelease
+    assert "v1.2" in _report.downloaded_firmware_prereleases  # firmware_prerelease_repo
+    assert "v2.1" in _report.downloaded_client_app_prereleases  # android_prerelease
 
 
 def test_convert_results_excludes_manifest_from_firmware_download_lists(mocker):
@@ -691,11 +630,9 @@ def test_convert_results_excludes_manifest_from_firmware_download_lists(mocker):
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.0.0",
-        "android": None,
+        "client_app": None,
         "firmware_prerelease": None,
-        "android_prerelease": None,
-        "desktop": None,
-        "desktop_prerelease": None,
+        "client_app_prerelease": None,
     }
 
     class MockResult:
@@ -705,20 +642,10 @@ def test_convert_results_excludes_manifest_from_firmware_download_lists(mocker):
             self.was_skipped = was_skipped
 
     results = [MockResult("v2.1.0", "firmware_manifest")]
-    (
-        downloaded_firmwares,
-        new_firmware_versions,
-        _downloaded_apks,
-        _new_apk_versions,
-        _downloaded_desktop,
-        _new_desktop_versions,
-        _downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(results)
+    _report = integration._collect_download_report(results)
 
-    assert downloaded_firmwares == []
-    assert new_firmware_versions == []
+    assert _report.downloaded_firmwares == []
+    assert _report.new_firmware_versions == []
 
 
 def test_convert_results_uses_android_prerelease_for_comparison(mocker):
@@ -727,9 +654,9 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": None,
-        "android": "v2.7.9",
+        "client_app": "v2.7.9",
         "firmware_prerelease": None,
-        "android_prerelease": "v2.7.10-open.1",
+        "client_app_prerelease": "v2.7.10-open.1",
     }
 
     mock_version_manager = mocker.MagicMock()
@@ -755,8 +682,8 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
         return 0
 
     mock_version_manager.compare_versions.side_effect = compare_side_effect
-    integration.android_downloader = mocker.MagicMock()
-    integration.android_downloader.get_version_manager.return_value = (
+    integration.client_app_downloader = mocker.MagicMock()
+    integration.client_app_downloader.get_version_manager.return_value = (
         mock_version_manager
     )
 
@@ -775,21 +702,11 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
             self.was_skipped = was_skipped
 
     results = [MockResult("v2.7.10-open.1", "android_prerelease", False)]
-    (
-        _downloaded_fw,
-        _new_fw,
-        downloaded_apks,
-        new_apks,
-        _downloaded_desktop,
-        _new_desktop_versions,
-        _downloaded_firmware_prereleases,
-        downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(results)
+    _report = integration._collect_download_report(results)
 
-    assert new_apks == []
-    assert downloaded_apks == []
-    assert downloaded_apk_prereleases == ["v2.7.10-open.1"]
+    assert _report.new_client_app_versions == []
+    assert _report.downloaded_client_apps == []
+    assert _report.downloaded_client_app_prereleases == ["v2.7.10-open.1"]
     calls = [call[0] for call in mock_version_manager.compare_versions.call_args_list]
     assert ("v2.7.10-open.1", "v2.7.10-open.1") in calls
     assert ("v2.7.10-open.1", "v2.7.9") not in calls
@@ -801,9 +718,9 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.7.9",
-        "android": None,
+        "client_app": None,
         "firmware_prerelease": "2.7.10-abcdef",
-        "android_prerelease": None,
+        "client_app_prerelease": None,
     }
 
     mock_version_manager = mocker.MagicMock()
@@ -826,8 +743,8 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
         return 0
 
     mock_version_manager.compare_versions.side_effect = compare_side_effect
-    integration.android_downloader = mocker.MagicMock()
-    integration.android_downloader.get_version_manager.return_value = (
+    integration.client_app_downloader = mocker.MagicMock()
+    integration.client_app_downloader.get_version_manager.return_value = (
         mock_version_manager
     )
 
@@ -846,21 +763,11 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
             self.was_skipped = was_skipped
 
     results = [MockResult("firmware-2.7.10-abcdef", "firmware_prerelease", False)]
-    (
-        downloaded_fw,
-        new_fw,
-        _downloaded_apks,
-        _new_apks,
-        _downloaded_desktop,
-        _new_desktop_versions,
-        downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(results)
+    _report = integration._collect_download_report(results)
 
-    assert new_fw == []
-    assert downloaded_fw == []
-    assert downloaded_firmware_prereleases == ["firmware-2.7.10-abcdef"]
+    assert _report.new_firmware_versions == []
+    assert _report.downloaded_firmwares == []
+    assert _report.downloaded_firmware_prereleases == ["firmware-2.7.10-abcdef"]
     calls = [call[0] for call in mock_version_manager.compare_versions.call_args_list]
     assert ("2.7.10-abcdef", "2.7.10-abcdef") in calls
     assert ("firmware-2.7.10-abcdef", "2.7.10-abcdef") not in calls
@@ -875,9 +782,9 @@ def test_log_download_results_summary_logging_order(mocker):
     mock_orchestrator.log_firmware_release_history_summary = MagicMock()
     mock_orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.7.18.fb3bf78",
-        "android": "v2.7.11",
+        "client_app": "v2.7.11",
         "firmware_prerelease": "v2.7.19-prerelease",
-        "android_prerelease": None,
+        "client_app_prerelease": None,
     }
 
     mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
@@ -886,14 +793,14 @@ def test_log_download_results_summary_logging_order(mocker):
         logger_override=mock_logger,
         elapsed_seconds=19.5,
         downloaded_firmwares=["firmware.zip"],
-        downloaded_apks=["android.apk"],
+        downloaded_client_apps=["android.apk"],
         downloaded_firmware_prereleases=["prerelease.zip"],
-        downloaded_apk_prereleases=[],
+        downloaded_client_app_prereleases=[],
         failed_downloads=[],
         latest_firmware_version="v2.7.18.fb3bf78",
-        latest_apk_version="v2.7.11",
+        latest_client_app_version="v2.7.11",
         new_firmware_versions=[],
-        new_apk_versions=[],
+        new_client_app_versions=[],
     )
 
     latest_version_calls = []
@@ -990,10 +897,10 @@ def test_log_download_results_summary_configured_types_with_download_ages(
         logger_override=mock_logger,
         elapsed_seconds=19.5,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="v2.8.0.47db0e3",
-        latest_apk_version="v2.8.1",
+        latest_client_app_version="v2.8.1",
     )
 
     messages = []
@@ -1038,10 +945,10 @@ def test_log_download_results_summary_hides_unconfigured_types(mocker, tmp_path)
         logger_override=mock_logger,
         elapsed_seconds=2.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="v2.8.0.47db0e3",
-        latest_apk_version="v2.8.1",
+        latest_client_app_version="v2.8.1",
     )
 
     messages = []
@@ -1075,10 +982,10 @@ def test_log_download_results_summary_none_for_unavailable_configured_stable_ver
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
+        latest_client_app_version="",
     )
 
     messages = []
@@ -1105,10 +1012,10 @@ def test_log_download_results_summary_empty_attached_config_is_gated(mocker):
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="v2.8.0.47db0e3",
-        latest_apk_version="v2.8.1",
+        latest_client_app_version="v2.8.1",
     )
 
     messages = []
@@ -1164,10 +1071,10 @@ def test_log_download_results_summary_prefers_newest_local_copy(mocker, tmp_path
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="v2.8.0.47db0e3",
-        latest_apk_version="",
+        latest_client_app_version="",
     )
 
     messages = []
@@ -1201,10 +1108,10 @@ def test_log_download_results_summary_hides_disabled_firmware_prereleases(
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="v2.8.2",
-        latest_apk_version="",
+        latest_client_app_version="",
     )
 
     joined = " ".join(str(call) for call in mock_logger.info.call_args_list)
@@ -1236,10 +1143,10 @@ def test_log_download_results_summary_metadata_only_dir_is_not_downloaded(
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="v2.8.1",
+        latest_client_app_version="v2.8.1",
     )
 
     messages = []
@@ -1345,10 +1252,10 @@ def test_log_download_results_summary_warns_on_storage_errors(mocker, tmp_path):
     integration.log_download_results_summary(
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="v2.8.0.47db0e3",
-        latest_apk_version="v2.8.1",
+        latest_client_app_version="v2.8.1",
     )
 
     messages = []
@@ -1382,69 +1289,71 @@ def test_run_download_orchestrator_none_after_init(mocker):
         integration.run_download(config=config, force_refresh=False)
 
 
-def test_get_tracked_desktop_versions_no_downloader(mocker):
-    """_get_tracked_desktop_versions should return Nones when no desktop downloader (lines 221, 231)."""
+def test_get_tracked_client_app_versions_no_downloader(mocker):
+    """_get_tracked_client_app_versions should return Nones when no desktop downloader (lines 221, 231)."""
     integration = DownloadCLIIntegration()
-    integration.desktop_downloader = None
+    integration.client_app_downloader = None
 
-    result = integration._get_tracked_desktop_versions()
+    result = integration._get_tracked_client_app_versions()
 
     assert result == {"current": None, "prerelease": None}
 
 
-def test_get_tracked_desktop_versions_with_exceptions(mocker):
-    """_get_tracked_desktop_versions should handle exceptions from downloader (lines 224-225, 231-232)."""
+def test_get_tracked_client_app_versions_with_exceptions(mocker):
+    """_get_tracked_client_app_versions should handle exceptions from downloader (lines 224-225, 231-232)."""
     integration = DownloadCLIIntegration()
-    mock_desktop_downloader = mocker.MagicMock()
-    mock_desktop_downloader.get_latest_release_tag.side_effect = OSError("io error")
-    mock_desktop_downloader.get_prerelease_tracking_file.side_effect = ValueError(
+    mock_client_app_downloader = mocker.MagicMock()
+    mock_client_app_downloader.get_latest_release_tag.side_effect = OSError("io error")
+    mock_client_app_downloader.get_prerelease_tracking_file.side_effect = ValueError(
         "value error"
     )
-    integration.desktop_downloader = mock_desktop_downloader
+    integration.client_app_downloader = mock_client_app_downloader
 
-    result = integration._get_tracked_desktop_versions()
+    result = integration._get_tracked_client_app_versions()
 
     assert result == {"current": None, "prerelease": None}
 
 
-def test_get_tracked_desktop_versions_non_string_return(mocker, tmp_path):
-    """_get_tracked_desktop_versions should handle non-string returns (lines 234-237)."""
+def test_get_tracked_client_app_versions_non_string_return(mocker, tmp_path):
+    """_get_tracked_client_app_versions should handle non-string returns (lines 234-237)."""
     integration = DownloadCLIIntegration()
-    mock_desktop_downloader = mocker.MagicMock()
-    mock_desktop_downloader.get_latest_release_tag.return_value = 123
-    mock_desktop_downloader.get_prerelease_tracking_file.return_value = str(
+    mock_client_app_downloader = mocker.MagicMock()
+    mock_client_app_downloader.get_latest_release_tag.return_value = 123
+    mock_client_app_downloader.get_prerelease_tracking_file.return_value = str(
         tmp_path / "desktop-prerelease.json"
     )
-    mock_desktop_downloader.cache_manager.read_json.return_value = {
+    mock_client_app_downloader.cache_manager.read_json.return_value = {
         "latest_version": 456
     }
     mocker.patch(
         "fetchtastic.download.cli_integration.os.path.exists", return_value=True
     )
-    integration.desktop_downloader = mock_desktop_downloader
+    integration.client_app_downloader = mock_client_app_downloader
 
-    result = integration._get_tracked_desktop_versions()
+    result = integration._get_tracked_client_app_versions()
 
     assert result == {"current": None, "prerelease": None}
 
 
-def test_get_tracked_desktop_versions_reads_prerelease_tracking_file(mocker, tmp_path):
-    """_get_tracked_desktop_versions should read prerelease tag from local tracking file."""
+def test_get_tracked_client_app_versions_reads_prerelease_tracking_file(
+    mocker, tmp_path
+):
+    """_get_tracked_client_app_versions should read prerelease tag from local tracking file."""
     integration = DownloadCLIIntegration()
-    mock_desktop_downloader = mocker.MagicMock()
-    mock_desktop_downloader.get_latest_release_tag.return_value = "v2.7.20"
-    mock_desktop_downloader.get_prerelease_tracking_file.return_value = str(
+    mock_client_app_downloader = mocker.MagicMock()
+    mock_client_app_downloader.get_latest_release_tag.return_value = "v2.7.20"
+    mock_client_app_downloader.get_prerelease_tracking_file.return_value = str(
         tmp_path / "desktop-prerelease.json"
     )
-    mock_desktop_downloader.cache_manager.read_json.return_value = {
+    mock_client_app_downloader.cache_manager.read_json.return_value = {
         "latest_version": "v2.7.20-open.1"
     }
     mocker.patch(
         "fetchtastic.download.cli_integration.os.path.exists", return_value=True
     )
-    integration.desktop_downloader = mock_desktop_downloader
+    integration.client_app_downloader = mock_client_app_downloader
 
-    result = integration._get_tracked_desktop_versions()
+    result = integration._get_tracked_client_app_versions()
 
     assert result == {"current": "v2.7.20", "prerelease": "v2.7.20-open.1"}
 
@@ -1454,7 +1363,7 @@ def test_clear_caches_handles_error(mocker):
     integration = DownloadCLIIntegration()
     mock_android = mocker.MagicMock()
     mock_android.clear_cache.side_effect = OSError("cache error")
-    integration.android_downloader = mock_android
+    integration.client_app_downloader = mock_android
 
     mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
     result = integration._clear_caches()
@@ -1463,10 +1372,10 @@ def test_clear_caches_handles_error(mocker):
     mock_logger.warning.assert_called()
 
 
-def test_clear_caches_no_android_downloader(mocker):
+def test_clear_caches_no_client_app_downloader(mocker):
     """_clear_caches should handle missing android downloader (line 252)."""
     integration = DownloadCLIIntegration()
-    integration.android_downloader = None
+    integration.client_app_downloader = None
 
     mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
     integration._clear_caches()
@@ -1479,7 +1388,7 @@ def test_log_download_results_summary_no_orchestrator(mocker):
     integration = DownloadCLIIntegration()
     integration.orchestrator = None
     integration.get_latest_versions = mocker.MagicMock(
-        return_value={"firmware_prerelease": "", "android_prerelease": ""}
+        return_value={"firmware_prerelease": "", "client_app_prerelease": ""}
     )
     mock_logger = mocker.MagicMock()
 
@@ -1487,10 +1396,10 @@ def test_log_download_results_summary_no_orchestrator(mocker):
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
+        latest_client_app_version="",
     )
 
     # Verify logger was called (function works with no orchestrator)
@@ -1502,11 +1411,7 @@ def test_log_download_results_summary_empty_versions(mocker):
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
-        return_value={
-            "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "",
-        }
+        return_value={"firmware_prerelease": "", "client_app_prerelease": ""}
     )
     mock_logger = mocker.MagicMock()
 
@@ -1514,11 +1419,10 @@ def test_log_download_results_summary_empty_versions(mocker):
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
-        latest_desktop_version="",
+        latest_client_app_version="" or "",
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
@@ -1536,11 +1440,7 @@ def test_log_download_results_summary_with_desktop_prerelease(mocker):
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
-        return_value={
-            "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "v2.0.0-beta",
-        }
+        return_value={"firmware_prerelease": "", "client_app_prerelease": "v2.0.0-beta"}
     )
     mock_logger = mocker.MagicMock()
 
@@ -1548,11 +1448,10 @@ def test_log_download_results_summary_with_desktop_prerelease(mocker):
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
-        latest_desktop_version="v2.0.0",
+        latest_client_app_version="" or "v2.0.0",
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
@@ -1569,12 +1468,11 @@ def test_log_download_results_summary_removes_desktop_wip_note_for_known_2714_mi
     integration = DownloadCLIIntegration()
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": True}
-    integration.desktop_downloader = mocker.MagicMock()
+    integration.client_app_downloader = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "v2.7.14-closed.10",
+            "client_app_prerelease": "v2.7.14-closed.10",
         }
     )
     mock_logger = mocker.MagicMock()
@@ -1583,12 +1481,10 @@ def test_log_download_results_summary_removes_desktop_wip_note_for_known_2714_mi
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
-        downloaded_desktop=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
-        latest_desktop_version="",
+        latest_client_app_version="" or "",
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
@@ -1602,12 +1498,11 @@ def test_log_download_results_summary_does_not_call_desktop_mismatch_helpers(
     integration = DownloadCLIIntegration()
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": True}
-    integration.desktop_downloader = mocker.MagicMock()
+    integration.client_app_downloader = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "v2.7.14-closed.10",
+            "client_app_prerelease": "v2.7.14-closed.10",
         }
     )
     mock_logger = mocker.MagicMock()
@@ -1616,20 +1511,18 @@ def test_log_download_results_summary_does_not_call_desktop_mismatch_helpers(
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
-        downloaded_desktop=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
-        latest_desktop_version="",
+        latest_client_app_version="" or "",
     )
 
     assert (
-        integration.desktop_downloader.has_known_2714_prerelease_version_mismatch.call_count
+        integration.client_app_downloader.has_known_2714_prerelease_version_mismatch.call_count
         == 0
     )
     assert (
-        integration.desktop_downloader.get_known_2714_prerelease_mismatch_tags.call_count
+        integration.client_app_downloader.get_known_2714_prerelease_mismatch_tags.call_count
         == 0
     )
 
@@ -1641,12 +1534,11 @@ def test_log_download_results_summary_suppresses_wip_note_for_non_2714_latest_pr
     integration = DownloadCLIIntegration()
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": True}
-    integration.desktop_downloader = mocker.MagicMock()
+    integration.client_app_downloader = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "v2.8.0-open.1",
+            "client_app_prerelease": "v2.8.0-open.1",
         }
     )
     mock_logger = mocker.MagicMock()
@@ -1655,12 +1547,10 @@ def test_log_download_results_summary_suppresses_wip_note_for_non_2714_latest_pr
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
-        downloaded_desktop=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
-        latest_desktop_version="",
+        latest_client_app_version="" or "",
     )
 
     logged_info_messages = [str(call) for call in mock_logger.info.call_args_list]
@@ -1674,12 +1564,11 @@ def test_log_download_results_summary_skips_desktop_wip_note_when_desktop_disabl
     integration = DownloadCLIIntegration()
     integration.orchestrator = None
     integration.config = {"SAVE_DESKTOP_APP": False}
-    integration.desktop_downloader = mocker.MagicMock()
+    integration.client_app_downloader = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
         return_value={
             "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "v2.7.14-closed.10",
+            "client_app_prerelease": "v2.7.14-closed.10",
         }
     )
     mock_logger = mocker.MagicMock()
@@ -1688,12 +1577,10 @@ def test_log_download_results_summary_skips_desktop_wip_note_when_desktop_disabl
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
-        downloaded_desktop=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
-        latest_desktop_version="",
+        latest_client_app_version="" or "",
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
@@ -1705,11 +1592,7 @@ def test_log_download_results_summary_with_failed_downloads(mocker):
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
-        return_value={
-            "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "",
-        }
+        return_value={"firmware_prerelease": "", "client_app_prerelease": ""}
     )
     mock_logger = mocker.MagicMock()
 
@@ -1729,10 +1612,10 @@ def test_log_download_results_summary_with_failed_downloads(mocker):
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=failed_downloads,
         latest_firmware_version="",
-        latest_apk_version="",
+        latest_client_app_version="",
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
@@ -1744,11 +1627,7 @@ def test_log_download_results_summary_all_failed(mocker):
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
-        return_value={
-            "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "",
-        }
+        return_value={"firmware_prerelease": "", "client_app_prerelease": ""}
     )
     mock_logger = mocker.MagicMock()
 
@@ -1756,7 +1635,7 @@ def test_log_download_results_summary_all_failed(mocker):
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[
             {
                 "type": "Firmware",
@@ -1769,7 +1648,7 @@ def test_log_download_results_summary_all_failed(mocker):
             }
         ],
         latest_firmware_version="",
-        latest_apk_version="",
+        latest_client_app_version="",
     )
 
     logged_messages = [str(call) for call in mock_logger.info.call_args_list]
@@ -1781,11 +1660,7 @@ def test_log_download_results_summary_api_requests(mocker):
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.get_latest_versions = mocker.MagicMock(
-        return_value={
-            "firmware_prerelease": "",
-            "android_prerelease": "",
-            "desktop_prerelease": "",
-        }
+        return_value={"firmware_prerelease": "", "client_app_prerelease": ""}
     )
     mock_logger = mocker.MagicMock()
 
@@ -1802,24 +1677,23 @@ def test_log_download_results_summary_api_requests(mocker):
         logger_override=mock_logger,
         elapsed_seconds=1.0,
         downloaded_firmwares=[],
-        downloaded_apks=[],
+        downloaded_client_apps=[],
         failed_downloads=[],
         latest_firmware_version="",
-        latest_apk_version="",
+        latest_client_app_version="",
     )
 
     mock_logger.debug.assert_called()
 
 
 def test_convert_results_desktop_release(mocker):
-    """_convert_results_to_legacy_format should handle desktop releases (line 507, 538-540)."""
+    """_collect_download_report should handle desktop releases (line 507, 538-540)."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": None,
-        "android": None,
-        "desktop": "v1.9.0",
-        "desktop_prerelease": None,
+        "client_app": "v1.9.0",
+        "client_app_prerelease": None,
     }
 
     class MockResult:
@@ -1830,37 +1704,26 @@ def test_convert_results_desktop_release(mocker):
 
     mock_version_manager = mocker.MagicMock()
     mock_version_manager.compare_versions.return_value = 1
-    integration.android_downloader = mocker.MagicMock()
-    integration.android_downloader.get_version_manager.return_value = (
+    integration.client_app_downloader = mocker.MagicMock()
+    integration.client_app_downloader.get_version_manager.return_value = (
         mock_version_manager
     )
 
     results = [MockResult("v2.0.0", "desktop", False)]
-    (
-        _downloaded_fw,
-        _new_fw,
-        _downloaded_apks,
-        _new_apks,
-        downloaded_desktop,
-        new_desktop,
-        _downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(results)
+    _report = integration._collect_download_report(results)
 
-    assert downloaded_desktop == ["v2.0.0"]
-    assert new_desktop == ["v2.0.0"]
+    assert _report.downloaded_client_apps == ["v2.0.0"]
+    assert _report.new_client_app_versions == ["v2.0.0"]
 
 
 def test_convert_results_desktop_prerelease(mocker):
-    """_convert_results_to_legacy_format should handle desktop prereleases (lines 507, 538-540)."""
+    """_collect_download_report should handle desktop prereleases (lines 507, 538-540)."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": None,
-        "android": None,
-        "desktop": "v1.9.0",
-        "desktop_prerelease": "v1.9.5-beta",
+        "client_app": "v1.9.0",
+        "client_app_prerelease": "v1.9.5-beta",
     }
 
     class MockResult:
@@ -1871,29 +1734,19 @@ def test_convert_results_desktop_prerelease(mocker):
 
     mock_version_manager = mocker.MagicMock()
     mock_version_manager.compare_versions.return_value = 1
-    integration.android_downloader = mocker.MagicMock()
-    integration.android_downloader.get_version_manager.return_value = (
+    integration.client_app_downloader = mocker.MagicMock()
+    integration.client_app_downloader.get_version_manager.return_value = (
         mock_version_manager
     )
 
     results = [MockResult("v2.0.0-beta", "desktop_prerelease", False)]
-    (
-        _downloaded_fw,
-        _new_fw,
-        _downloaded_apks,
-        _new_apks,
-        _downloaded_desktop,
-        _new_desktop,
-        _downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(results)
+    _report = integration._collect_download_report(results)
 
-    assert downloaded_desktop_prereleases == ["v2.0.0-beta"]
+    assert _report.downloaded_client_app_prereleases == ["v2.0.0-beta"]
 
 
 def test_convert_results_empty_release_tag(mocker):
-    """_convert_results_to_legacy_format should skip empty release tags (line 462)."""
+    """_collect_download_report should skip empty release tags (line 462)."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = mocker.MagicMock()
     integration.orchestrator.get_latest_versions.return_value = {}
@@ -1905,19 +1758,9 @@ def test_convert_results_empty_release_tag(mocker):
             self.was_skipped = was_skipped
 
     results = [MockResult("", "firmware", False), MockResult(None, "firmware", False)]
-    (
-        downloaded_fw,
-        _new_fw,
-        _downloaded_apks,
-        _new_apks,
-        _downloaded_desktop,
-        _new_desktop,
-        _downloaded_firmware_prereleases,
-        _downloaded_apk_prereleases,
-        _downloaded_desktop_prereleases,
-    ) = integration._convert_results_to_legacy_format(results)
+    _report = integration._collect_download_report(results)
 
-    assert downloaded_fw == []
+    assert _report.downloaded_firmwares == []
 
 
 def test_add_downloaded_asset_already_exists():
@@ -1932,10 +1775,10 @@ def test_add_downloaded_asset_already_exists():
     assert downloaded_set == {"v1.0.0"}
 
 
-def test_get_version_manager_no_android_downloader():
+def test_get_version_manager_no_client_app_downloader():
     """_get_version_manager should return None when no android downloader (line 641)."""
     integration = DownloadCLIIntegration()
-    integration.android_downloader = None
+    integration.client_app_downloader = None
 
     result = integration._get_version_manager()
 
@@ -1948,7 +1791,7 @@ def test_get_version_manager_via_attribute(mocker):
     mock_android = mocker.MagicMock()
     del mock_android.get_version_manager
     mock_android.version_manager = "version_manager_instance"
-    integration.android_downloader = mock_android
+    integration.client_app_downloader = mock_android
 
     result = integration._get_version_manager()
 
@@ -1972,7 +1815,8 @@ def test_main_handles_exception(mocker, tmp_path):
 
     result = integration.main(config=config)
 
-    assert result == ([], [], [], [], [], [], [], "", "")
+    assert result == DownloadReport.empty()
+    assert integration.download_run_failed is True
 
 
 def test_clear_cache_handles_exception(mocker, tmp_path):

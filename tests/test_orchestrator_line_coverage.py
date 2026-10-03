@@ -71,8 +71,6 @@ def orchestrator(mock_config):
     orch.client_app_downloader.download_dir = mock_config["DOWNLOAD_DIR"]
     orch.client_app_downloader.should_download_prerelease.return_value = True
     orch.client_app_downloader.update_prerelease_tracking.return_value = True
-    orch.android_downloader = orch.client_app_downloader
-    orch.desktop_downloader = orch.client_app_downloader
     orch.firmware_downloader = Mock()
     orch.firmware_downloader.download_dir = mock_config["DOWNLOAD_DIR"]
     return orch
@@ -81,8 +79,8 @@ def orchestrator(mock_config):
 class TestDiscoverAvailableApkVersionsWhenWifiSkipped:
     def test_early_return_when_save_client_apps_false(self, orchestrator):
         orchestrator.config["SAVE_CLIENT_APPS"] = False
-        orchestrator._discover_available_apk_versions_when_wifi_skipped()
-        assert orchestrator.available_new_apk_versions == []
+        orchestrator._discover_available_client_app_versions_when_wifi_skipped()
+        assert orchestrator.available_new_client_app_versions == []
 
     def test_invalid_app_versions_to_keep_fallback(self, orchestrator):
         orchestrator.config["APP_VERSIONS_TO_KEEP"] = "invalid"
@@ -91,8 +89,8 @@ class TestDiscoverAvailableApkVersionsWhenWifiSkipped:
         orchestrator.client_app_releases = [release]
         orchestrator.version_manager.compare_versions.return_value = 1
         orchestrator.client_app_downloader.get_latest_release_tag.return_value = None
-        orchestrator._discover_available_apk_versions_when_wifi_skipped()
-        assert orchestrator.available_new_apk_versions == [release.tag_name]
+        orchestrator._discover_available_client_app_versions_when_wifi_skipped()
+        assert orchestrator.available_new_client_app_versions == [release.tag_name]
 
 
 class TestProcessClientAppDownloadsEarlyReturn:
@@ -168,9 +166,12 @@ class TestPrereleaseTrackingUpdate:
         )
 
 
-class TestProcessDesktopDownloadsShim:
-    def test_process_desktop_downloads_delegates(self, orchestrator):
-        orchestrator._process_desktop_downloads()
+class TestProcessClientAppDownloadsDelegation:
+    def test_process_client_app_downloads_delegates(self, orchestrator):
+        orchestrator.client_app_downloader.get_releases.return_value = []
+        orchestrator._process_client_app_downloads()
+        orchestrator.client_app_downloader.migrate_legacy_layout.assert_called_once()
+        orchestrator.client_app_downloader.get_releases.assert_called_once()
         assert orchestrator._client_app_downloads_processed is True
 
 
@@ -297,7 +298,7 @@ class TestClassifyDownloadResult:
         orchestrator.failed_downloads = []
         orchestrator._is_firmware_manifest_asset = Mock(return_value=False)
         orchestrator._enhance_download_results_with_metadata()
-        assert result.file_type == "desktop"
+        assert result.file_type == "client_app"
 
 
 class TestCountDownloadsByType:
@@ -308,7 +309,7 @@ class TestCountDownloadsByType:
             was_skipped=False,
         )
         orchestrator.download_results = [result]
-        count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
+        count = orchestrator._count_artifact_downloads("client_app")
         assert count == 1
 
     def test_desktop_prerelease_file_type_matching(self, orchestrator):
@@ -318,7 +319,7 @@ class TestCountDownloadsByType:
             was_skipped=False,
         )
         orchestrator.download_results = [result]
-        count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
+        count = orchestrator._count_artifact_downloads("client_app")
         assert count == 1
 
     def test_legacy_fallback_for_untyped(self, orchestrator):
@@ -344,20 +345,20 @@ class TestCleanupOldVersionsInvalidKeep:
         orchestrator.client_app_downloader.cleanup_old_versions.assert_called()
 
 
-class TestUpdateLatestReleaseTagsSeparateAndroid:
-    def test_android_sync_when_different_from_client_app(self, mock_config, tmp_path):
+class TestUpdateLatestClientReleaseTags:
+    def test_tracking_fetches_uninitialized_client_releases(
+        self, mock_config, tmp_path
+    ):
         orch = DownloadOrchestrator(mock_config)
         orch.version_manager = Mock()
         orch.prerelease_manager = Mock()
         orch.client_app_downloader = Mock()
-        orch.android_downloader = Mock()
-        orch.desktop_downloader = Mock()
         orch.firmware_downloader = Mock()
         release = make_release("v3.0.0")
-        orch.client_app_releases = [release]
-        orch.android_releases = None
-        orch.desktop_releases = None
-        orch._ensure_android_releases = Mock(return_value=[release])
+        orch.client_app_releases = None
+        orch._ensure_client_app_releases = Mock(return_value=[release])
         orch._ensure_firmware_releases = Mock(return_value=[])
         orch.update_version_tracking()
-        orch.android_downloader.update_latest_release_tag.assert_called_with("v3.0.0")
+        orch.client_app_downloader.update_latest_release_tag.assert_called_with(
+            "v3.0.0"
+        )

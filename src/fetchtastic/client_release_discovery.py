@@ -29,16 +29,15 @@ def is_desktop_asset_name(asset_name: str) -> bool:
     return asset_name.lower().endswith(_DESKTOP_EXTENSIONS_LOWER)
 
 
-def is_android_prerelease_tag(tag_name: str) -> bool:
-    """Return True for Android legacy prerelease tag styles."""
+def is_client_app_prerelease_tag(tag_name: str) -> bool:
+    """Recognize legacy prerelease tag styles from the shared app repository."""
     lowered = (tag_name or "").lower()
-    return "-open" in lowered or "-closed" in lowered
+    return any(marker in lowered for marker in ("-open", "-closed", "-internal"))
 
 
-def is_desktop_prerelease_tag(tag_name: str) -> bool:
-    """Return True for Desktop legacy prerelease tag styles."""
-    lowered = (tag_name or "").lower()
-    return "-open" in lowered or "-closed" in lowered or "-internal" in lowered
+# Historical imports share the same classification policy.
+is_android_prerelease_tag = is_client_app_prerelease_tag
+is_desktop_prerelease_tag = is_client_app_prerelease_tag
 
 
 def _iter_release_asset_dicts(release: Mapping[str, Any]) -> Sequence[Dict[str, Any]]:

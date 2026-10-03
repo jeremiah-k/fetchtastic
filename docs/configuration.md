@@ -25,7 +25,9 @@ Boolean values accept normal YAML booleans and common strings such as `true`, `f
 
 ## Client App Downloads
 
-Client app assets include Android APKs and desktop installers from the Meshtastic Android release feed. They are stored together under `app/<version>/`.
+Client app assets include Android APKs and desktop installers from the Meshtastic Android release feed. They are stored together under `app/<version>/`. One release check, version history, retention policy, and download report cover every selected installer format. Platform and architecture labels only help choose the files to download.
+
+Legacy `SAVE_APKS`/`SAVE_DESKTOP_APP`, asset-selection lists, retention counts, and prerelease flags are read during migration. Their selections are combined, the larger retention count is preserved, and an enabled prerelease flag enables the shared channel. Explicit `SAVE_CLIENT_APPS`, `SELECTED_APP_ASSETS`, `APP_VERSIONS_TO_KEEP`, and `CHECK_APP_PRERELEASES` take precedence, including explicit false or empty values. Setup saves only the shared client app keys. Existing `apks/`, `app/android/`, and `app/desktop/` downloads are migrated into the shared app tree without overwriting different files.
 
 | Key                             | Default      | Description                                                                                         |
 | ------------------------------- | ------------ | --------------------------------------------------------------------------------------------------- |
