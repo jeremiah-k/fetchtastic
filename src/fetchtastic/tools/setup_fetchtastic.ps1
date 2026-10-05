@@ -1,236 +1,207 @@
+param(
+    [ValidateSet('auto', 'uv', 'pip', 'pipx')]
+    [string]$Installer = 'auto'
+)
+
+$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-Write-Host "=== Fetchtastic Installer ===`n" -ForegroundColor Cyan
-
-function Prompt-Key {
-    Write-Host "Press any key to continue or Ctrl+C to cancel..."
-    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-}
-
-function Install-Python {
-    $pyVersion = "3.11.8"
-    $installer = "python-$pyVersion-amd64.exe"
-    $url = "https://www.python.org/ftp/python/$pyVersion/$installer"
-    $dest = "$env:TEMP\$installer"
-
-    Write-Host "Downloading Python $pyVersion..."
-    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-
-    Write-Host "Installing Python..."
-    & $dest /quiet PrependPath=1 Include_launcher=1 | Out-Null
-    Remove-Item $dest -Force
-
-    Start-Sleep -Seconds 3
-    $exists = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $exists) {
-        Write-Error "Python installation failed. Install manually: https://www.python.org/downloads/"
-        exit 1
-    }
-    Write-Host "Python installed successfully."
-}
-
-function Ensure-Python {
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $python) {
-        Write-Host "Python not found. Installing..."
-        Install-Python
-    } else {
-        Write-Host "Python is already installed."
+function Invoke-Checked {
+    param([string]$Executable, [string[]]$Arguments)
+    & $Executable @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Executable exited with code $LASTEXITCODE"
     }
 }
 
-function Ensure-Pipx {
-    Write-Host "Ensuring pipx is available..."
-    python -m pip install --upgrade pip > $null 2>&1
-    python -m pip install --user pipx > $null 2>&1
-    python -m pipx ensurepath > $null 2>&1
+function Get-NativeOutput {
+    param([string]$Executable, [string[]]$Arguments)
+    # Windows PowerShell 5.1 turns redirected native stderr into a terminating
+    # NativeCommandError while $ErrorActionPreference is 'Stop'; probe commands
+    # run with 'Continue' so manager warnings degrade to empty output instead.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Executable @Arguments 2>$null
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
 
-    $envPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+function Add-UserPath {
+    param([string]$Directory)
+    $userPath = [System.Environment]::GetEnvironmentVariable('PATH', 'User')
+    if ($Directory -notin ($userPath -split ';')) {
+        $updated = if ($userPath) { "$userPath;$Directory" } else { $Directory }
+        [System.Environment]::SetEnvironmentVariable('PATH', $updated, 'User')
+    }
+    if ($Directory -notin ($env:PATH -split ';')) {
+        $env:PATH = "$env:PATH;$Directory"
+    }
+}
+
+function Test-UvOwnsFetchtastic {
+    $uv = Get-Command uv -ErrorAction SilentlyContinue
+    if (-not $uv) { return $false }
+    $listing = Get-NativeOutput $uv.Source @('tool', 'list')
+    return $LASTEXITCODE -eq 0 -and [bool]($listing -match '(?m)^fetchtastic(?:\s|$)')
+}
+
+function Get-PipxList {
     $pipx = Get-Command pipx -ErrorAction SilentlyContinue
-    if (-not $pipx -and $envPath) {
-        $env:PATH = $envPath
-        $pipx = Get-Command pipx -ErrorAction SilentlyContinue
+    if (-not $pipx) { return $null }
+    $listing = Get-NativeOutput $pipx.Source @('list', '--short')
+    if ($LASTEXITCODE -ne 0) {
+        $listing = Get-NativeOutput $pipx.Source @('list')
+        if ($LASTEXITCODE -ne 0) { return $null }
     }
-    if (-not $pipx) {
-        Write-Error "pipx installation failed. Please restart your terminal and run this script again."
-        exit 1
-    }
-    Write-Host "pipx installed and available."
+    return ($listing -join "`n")
 }
 
-function Get-PyPI-Version {
-    param([string]$PackageName)
+function Test-PipxOwnsFetchtastic {
+    $listing = Get-PipxList
+    return $null -ne $listing -and [bool]($listing -match '(?m)(^|\s)fetchtastic(?:\s|$)')
+}
 
-    try {
-        $response = Invoke-RestMethod -Uri "https://pypi.org/pypi/$PackageName/json" -TimeoutSec 10
-        return $response.info.version
-    } catch {
-        Write-Host "Could not check PyPI version: $($_.Exception.Message)" -ForegroundColor Yellow
-        return $null
+function Select-DefaultInstaller {
+    $existing = Get-Command fetchtastic -ErrorAction SilentlyContinue
+    if (-not $existing) { return 'uv' }
+
+    $uvOwns = $false
+    if (Test-UvOwnsFetchtastic) {
+        $uv = Get-Command uv -ErrorAction Stop
+        $uvBinOutput = & $uv.Source tool dir --bin
+        $uvBinExitCode = $LASTEXITCODE
+        $uvBin = $uvBinOutput | Where-Object { $_ -and $_.Trim() } | Select-Object -Last 1
+        if ($uvBinExitCode -eq 0 -and $uvBin) {
+            $uvBin = $uvBin.Trim()
+            $uvOwns = $existing.Source -eq (Join-Path $uvBin 'fetchtastic.exe')
+        }
+    }
+    $pipxOwns = $false
+    if (Test-PipxOwnsFetchtastic) {
+        $pipx = Get-Command pipx -ErrorAction Stop
+        $pipxBinOutput = & $pipx.Source environment --value PIPX_BIN_DIR
+        $pipxBinExitCode = $LASTEXITCODE
+        $pipxBin = $pipxBinOutput | Where-Object { $_ -and $_.Trim() } | Select-Object -Last 1
+        if ($pipxBinExitCode -eq 0 -and $pipxBin) {
+            $pipxBin = $pipxBin.Trim()
+            $pipxOwns = $existing.Source -eq (Join-Path $pipxBin 'fetchtastic.exe')
+        }
+    }
+    if ($uvOwns -and -not $pipxOwns) { return 'uv' }
+    if ($pipxOwns -and -not $uvOwns) { return 'pipx' }
+    if ($uvOwns -and $pipxOwns) {
+        throw "Existing Fetchtastic is registered with both uv and pipx; refusing to guess which installation owns '$($existing.Source)'."
+    }
+
+    $managedPip = Join-Path $env:LOCALAPPDATA 'Fetchtastic\venv\Scripts\fetchtastic.exe'
+    if ($existing.Source -eq $managedPip) { return 'pip' }
+
+    $adjacentPython = Join-Path (Split-Path $existing.Source) 'python.exe'
+    if (Test-Path $adjacentPython) {
+        Get-NativeOutput $adjacentPython @('-m', 'pip', 'show', 'fetchtastic') | Out-Null
+        if ($LASTEXITCODE -eq 0) { return 'legacy-pip' }
+    }
+
+    throw "Existing Fetchtastic found at '$($existing.Source)', but its installer could not be identified safely. Upgrade it with its current Python/package manager, or uninstall it before explicitly selecting uv, pip, or pipx."
+}
+
+$isUpgrade = [bool](Get-Command fetchtastic -ErrorAction SilentlyContinue)
+$selectedInstaller = if ($Installer -eq 'auto') { Select-DefaultInstaller } else { $Installer }
+$displayInstaller = if ($selectedInstaller -eq 'legacy-pip') { 'existing pip' } else { $selectedInstaller }
+Write-Host "Installing Fetchtastic with $displayInstaller..." -ForegroundColor Cyan
+
+switch ($selectedInstaller) {
+    'uv' {
+        $uv = Get-Command uv -ErrorAction SilentlyContinue
+        if (-not $uv) {
+            Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+            $uvDirectory = if ($env:UV_INSTALL_DIR) {
+                $env:UV_INSTALL_DIR
+            } elseif ($env:XDG_BIN_HOME) {
+                $env:XDG_BIN_HOME
+            } elseif ($env:XDG_DATA_HOME) {
+                [System.IO.Path]::GetFullPath((Join-Path $env:XDG_DATA_HOME '..\bin'))
+            } else {
+                Join-Path $HOME '.local\bin'
+            }
+            Add-UserPath $uvDirectory
+            $uv = Get-Command uv -ErrorAction Stop
+        }
+        if (Test-UvOwnsFetchtastic) {
+            Invoke-Checked $uv.Source @('tool', 'install', '--force', 'fetchtastic[win]')
+        } else {
+            Invoke-Checked $uv.Source @('tool', 'install', '--python', '>=3.10', 'fetchtastic[win]')
+        }
+        Invoke-Checked $uv.Source @('tool', 'update-shell')
+        $toolBinOutput = & $uv.Source tool dir --bin
+        $toolBinExitCode = $LASTEXITCODE
+        $toolBin = $toolBinOutput | Where-Object { $_ -and $_.Trim() } | Select-Object -Last 1
+        if ($toolBinExitCode -ne 0 -or -not $toolBin) { throw 'Unable to locate uv tool executables' }
+        $toolBin = $toolBin.Trim()
+        Add-UserPath $toolBin
+        $fetchtastic = Join-Path $toolBin 'fetchtastic.exe'
+    }
+    'pip' {
+        $python = Get-Command python -ErrorAction Stop
+        Invoke-Checked $python.Source @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else "Python 3.10 or later is required")')
+        $venvDirectory = Join-Path $env:LOCALAPPDATA 'Fetchtastic\venv'
+        $expectedCommand = Join-Path $venvDirectory 'Scripts\fetchtastic.exe'
+        $existingCommand = Get-Command fetchtastic -ErrorAction SilentlyContinue
+        if ($existingCommand -and $existingCommand.Source -ne $expectedCommand) {
+            throw 'Fetchtastic belongs to another installation. Uninstall that package before switching to pip.'
+        }
+        Invoke-Checked $python.Source @('-m', 'venv', $venvDirectory)
+        $venvPython = Join-Path $venvDirectory 'Scripts\python.exe'
+        Invoke-Checked $venvPython @('-m', 'pip', 'install', '--upgrade', 'fetchtastic[win]')
+        $toolBin = Join-Path $venvDirectory 'Scripts'
+        Add-UserPath $toolBin
+        $fetchtastic = Join-Path $toolBin 'fetchtastic.exe'
+    }
+    'legacy-pip' {
+        $existingCommand = Get-Command fetchtastic -ErrorAction Stop
+        $legacyPython = Join-Path (Split-Path $existingCommand.Source) 'python.exe'
+        Invoke-Checked $legacyPython @('-m', 'pip', 'install', '--upgrade', 'fetchtastic[win]')
+        $fetchtastic = $existingCommand.Source
+    }
+    'pipx' {
+        $pipx = Get-Command pipx -ErrorAction Stop
+        if (Test-PipxOwnsFetchtastic) {
+            Invoke-Checked $pipx.Source @('install', '--force', '--upgrade', 'fetchtastic[win]')
+        } else {
+            Invoke-Checked $pipx.Source @('install', 'fetchtastic[win]')
+        }
+        Invoke-Checked $pipx.Source @('ensurepath')
+        $toolBinOutput = & $pipx.Source environment --value PIPX_BIN_DIR
+        $toolBinExitCode = $LASTEXITCODE
+        $toolBin = $toolBinOutput | Where-Object { $_ -and $_.Trim() } | Select-Object -Last 1
+        if ($toolBinExitCode -ne 0 -or -not $toolBin) { throw 'Unable to locate pipx tool executables' }
+        $toolBin = $toolBin.Trim()
+        Add-UserPath $toolBin
+        $fetchtastic = Join-Path $toolBin 'fetchtastic.exe'
     }
 }
 
-function Install-Or-Upgrade-Fetchtastic {
-    Write-Host "Checking for existing Fetchtastic installation..."
-
-    # Check if fetchtastic is already installed
-    $existing = pipx list | Select-String "fetchtastic"
-
-    if ($existing) {
-        Write-Host "Fetchtastic is already installed. Checking for updates..."
-
-        # Get current version
-        $currentVersion = ""
+Invoke-Checked $fetchtastic @('version')
+if ($isUpgrade) {
+    $updateIntegrations = Read-Host 'Update Windows integrations (Start Menu shortcuts, etc.)? [y/n] (default: yes)'
+    if ([string]::IsNullOrWhiteSpace($updateIntegrations) -or $updateIntegrations.Trim().ToLower() -eq 'y') {
         try {
-            $versionOutput = fetchtastic version 2>$null
-            if ($versionOutput -match "Fetchtastic v(\d+\.\d+\.\d+)") {
-                $currentVersion = $matches[1]
-                Write-Host "Current version: $currentVersion"
-            }
+            Invoke-Checked $fetchtastic @('setup', '--update-integrations')
         } catch {
-            Write-Host "Could not determine current version."
-        }
-
-        # Try to upgrade first
-        Write-Host "Upgrading Fetchtastic..."
-        $upgradeResult = pipx upgrade fetchtastic 2>&1
-
-        # Check if upgrade says "already at latest version" but we might not be
-        if ($upgradeResult -match "already at latest version") {
-            Write-Host "pipx reports already at latest version. Checking PyPI for actual latest..." -ForegroundColor Yellow
-
-            # Check actual PyPI version
-            $pypiVersion = Get-PyPI-Version "fetchtastic"
-            if ($pypiVersion) {
-                Write-Host "Latest version on PyPI: $pypiVersion" -ForegroundColor Cyan
-                if ($currentVersion -and $currentVersion -ne $pypiVersion) {
-                    Write-Host "Version mismatch detected! Current: $currentVersion, PyPI: $pypiVersion" -ForegroundColor Yellow
-                }
+            Write-Warning "Windows integration update failed after the package upgrade: $($_.Exception.Message)"
+            $runRecoverySetup = Read-Host 'Run full setup now to repair integrations? [y/n] (default: yes)'
+            if ([string]::IsNullOrWhiteSpace($runRecoverySetup) -or $runRecoverySetup.Trim().ToLower() -eq 'y') {
+                Invoke-Checked $fetchtastic @('setup')
             }
-
-            # Try force reinstall to ensure we get the actual latest from PyPI
-            Write-Host "Force reinstalling to ensure latest version..."
-            pipx install "fetchtastic[win]" --force
-
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "Fetchtastic force reinstalled successfully!" -ForegroundColor Green
-            } else {
-                Write-Host "Force install failed. Trying uninstall/reinstall..." -ForegroundColor Yellow
-                pipx uninstall fetchtastic --force 2>$null
-                pipx install "fetchtastic[win]"
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
-                } else {
-                    Write-Error "Failed to install Fetchtastic. Please check the error messages above."
-                    exit 1
-                }
-            }
-        } elseif ($LASTEXITCODE -eq 0) {
-            Write-Host "Fetchtastic upgraded successfully!" -ForegroundColor Green
-        } else {
-            Write-Host "Upgrade failed. Trying force reinstall..." -ForegroundColor Yellow
-            pipx install "fetchtastic[win]" --force
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "Fetchtastic force reinstalled successfully!" -ForegroundColor Green
-            } else {
-                pipx uninstall fetchtastic --force 2>$null
-                pipx install "fetchtastic[win]"
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
-                } else {
-                    Write-Error "Failed to install Fetchtastic. Please check the error messages above."
-                    exit 1
-                }
-            }
-        }
-    } else {
-        Write-Host "Installing Fetchtastic via pipx..."
-        pipx install "fetchtastic[win]"
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Fetchtastic installed successfully!" -ForegroundColor Green
-        } else {
-            Write-Error "Failed to install Fetchtastic. Please check the error messages above."
-            exit 1
         }
     }
-
-    # Verify installation
-    $fetchtastic = Get-Command fetchtastic -ErrorAction SilentlyContinue
-    if (-not $fetchtastic) {
-        Write-Error "Fetchtastic installation verification failed. Please restart your terminal and try again."
-        exit 1
+    $runSetup = Read-Host 'Run setup to review your configuration? [y/n] (default: no)'
+    if (-not [string]::IsNullOrWhiteSpace($runSetup) -and $runSetup.Trim().ToLower() -eq 'y') {
+        Invoke-Checked $fetchtastic @('setup')
     }
-
-    # Show final version and check against PyPI
-    try {
-        $finalVersion = fetchtastic version 2>$null
-        if ($finalVersion) {
-            Write-Host "Final version: $finalVersion" -ForegroundColor Cyan
-
-            # Extract version number for comparison
-            if ($finalVersion -match "Fetchtastic v(\d+\.\d+\.\d+)") {
-                $installedVersion = $matches[1]
-                $pypiVersion = Get-PyPI-Version "fetchtastic"
-
-                if ($pypiVersion -and $installedVersion -ne $pypiVersion) {
-                    Write-Host "Note: PyPI shows version $pypiVersion, but you have $installedVersion" -ForegroundColor Yellow
-                    Write-Host "This may indicate a delay in PyPI publishing or local cache issues." -ForegroundColor Yellow
-                    Write-Host "If you experience issues, try: pipx uninstall fetchtastic && pipx install fetchtastic[win]" -ForegroundColor Cyan
-                }
-            }
-        }
-    } catch {
-        Write-Host "Installation complete, but could not verify version."
-    }
+} else {
+    Invoke-Checked $fetchtastic @('setup')
 }
-
-function Run-Setup {
-    param([bool]$IsUpgrade = $false)
-
-    if ($IsUpgrade) {
-        Write-Host "`nFetchtastic has been upgraded successfully!" -ForegroundColor Green
-
-        # Check if Windows integrations need updating
-        $updateIntegrationsInput = Read-Host "Would you like to update Windows integrations (Start Menu shortcuts, etc.)? [y/n] (default: yes)"
-        $updateIntegrations = if ([string]::IsNullOrWhiteSpace($updateIntegrationsInput)) { "y" } else { $updateIntegrationsInput.Trim().ToLower() }
-
-        if ($updateIntegrations -eq "y") {
-            Write-Host "Updating Windows integrations..."
-            fetchtastic setup --update-integrations 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                # Fallback: run full setup but skip most prompts
-                Write-Host "Integration update failed. Running setup to refresh integrations..."
-                fetchtastic setup
-            }
-        }
-
-        $runSetupInput = Read-Host "Would you like to run the full setup to review/update your configuration? [y/n] (default: no)"
-        $runSetup = if ([string]::IsNullOrWhiteSpace($runSetupInput)) { "n" } else { $runSetupInput.Trim().ToLower() }
-
-        if ($runSetup -eq "y") {
-            Write-Host "Running fetchtastic setup..."
-            fetchtastic setup
-        } else {
-            Write-Host "Setup skipped. You can run 'fetchtastic setup' later to modify your configuration."
-        }
-    } else {
-        Write-Host "Running fetchtastic setup..."
-        fetchtastic setup
-    }
-}
-
-Prompt-Key
-Ensure-Python
-Ensure-Pipx
-
-# Check if this is an upgrade (fetchtastic already exists)
-$isUpgrade = $false
-$existing = pipx list | Select-String "fetchtastic"
-if ($existing) {
-    $isUpgrade = $true
-}
-
-Install-Or-Upgrade-Fetchtastic
-Run-Setup -IsUpgrade $isUpgrade
-
-Write-Host "`nInstallation complete!" -ForegroundColor Green
+Write-Host 'Installation complete!' -ForegroundColor Green
