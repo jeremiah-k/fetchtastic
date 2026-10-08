@@ -17,6 +17,8 @@ def test_setup_downloads_menu_runtime_error(mocker):
         "SAVE_APKS": True,
         "SAVE_DESKTOP_APP": True,
         "SELECTED_APP_ASSETS": [],
+        "CHECK_APP_PRERELEASES": True,
+        "CHECK_APP_SNAPSHOTS": True,
     }
     wants = MagicMock()
     wants.side_effect = lambda section: section == "app"
@@ -36,8 +38,8 @@ def test_setup_downloads_menu_runtime_error(mocker):
     )
 
     assert result_config["SAVE_CLIENT_APPS"] is False
-    assert result_config["SAVE_APKS"] is False
-    assert result_config["SAVE_DESKTOP_APP"] is False
+    assert result_config["CHECK_APP_PRERELEASES"] is False
+    assert result_config["CHECK_APP_SNAPSHOTS"] is False
     assert result_config["SELECTED_APP_ASSETS"] == []
     assert result_apps is False
 

@@ -15,10 +15,6 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from fetchtastic.client_release_discovery import (
-    is_android_asset_name,
-    is_desktop_asset_name,
-)
 from fetchtastic.constants import (
     DEFAULT_APP_SNAPSHOT_VERSIONS_TO_KEEP,
     DEFAULT_APP_VERSIONS_TO_KEEP,
@@ -26,6 +22,19 @@ from fetchtastic.constants import (
     DEFAULT_CHECK_APP_SNAPSHOTS,
 )
 from fetchtastic.utils import coerce_bool, expand_apk_selected_patterns
+
+LEGACY_CLIENT_APP_KEYS = (
+    "SAVE_APKS",
+    "SAVE_DESKTOP_APP",
+    "SELECTED_APK_ASSETS",
+    "SELECTED_DESKTOP_ASSETS",
+    "SELECTED_DESKTOP_PLATFORMS",
+    "ANDROID_VERSIONS_TO_KEEP",
+    "DESKTOP_VERSIONS_TO_KEEP",
+    "CHECK_APK_PRERELEASES",
+    "CHECK_ANDROID_PRERELEASES",
+    "CHECK_DESKTOP_PRERELEASES",
+)
 
 
 def _as_list(value: Any) -> list[str]:
@@ -61,32 +70,6 @@ def _coerce_keep_count(value: Any, default: int = DEFAULT_APP_VERSIONS_TO_KEEP) 
         return int(default)
 
 
-def _classify_selected_assets(
-    selected_assets: list[str],
-) -> tuple[list[str], list[str], bool]:
-    """
-    Return legacy APK/Desktop selections plus whether any primary asset is ambiguous.
-
-    Primary selection remains SELECTED_APP_ASSETS. When present, it is
-    authoritative and legacy lists are rebuilt from it. Ambiguous entries are
-    kept only in SELECTED_APP_ASSETS and enable both legacy save flags so old
-    callers do not accidentally disable client app downloads for broad patterns.
-    """
-    apk_assets = []
-    desktop_assets = []
-    ambiguous = False
-
-    for item in selected_assets:
-        if is_android_asset_name(item):
-            apk_assets.append(item)
-        elif is_desktop_asset_name(item):
-            desktop_assets.append(item)
-        else:
-            ambiguous = True
-
-    return expand_apk_selected_patterns(apk_assets), _dedupe(desktop_assets), ambiguous
-
-
 def get_selected_app_assets(config: dict[str, Any]) -> list[str]:
     """
     Return normalized selected client app asset patterns.
@@ -110,19 +93,9 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
     """
     Populate primary client app config keys from legacy Android/Desktop keys.
 
-    Existing primary keys remain authoritative. Legacy keys are left in place so
-    older code paths and existing user config remain readable.
+    Existing primary keys remain authoritative. Consume legacy keys at this
+    boundary so runtime code and persisted configuration use one set of settings.
     """
-    has_any_selection_key = any(
-        key in config
-        for key in (
-            "SELECTED_APP_ASSETS",
-            "SELECTED_APK_ASSETS",
-            "SELECTED_DESKTOP_ASSETS",
-            "SELECTED_DESKTOP_PLATFORMS",
-        )
-    )
-
     if "SAVE_CLIENT_APPS" not in config:
         config["SAVE_CLIENT_APPS"] = coerce_bool(
             config.get("SAVE_APKS", False), default=False
@@ -182,41 +155,10 @@ def normalize_client_app_config(config: dict[str, Any]) -> dict[str, Any]:
             default=DEFAULT_CHECK_APP_PRERELEASES,
         )
         config["CHECK_APP_PRERELEASES"] = primary_value
-        apk_check = primary_value
-        desktop_check = primary_value
 
-    # Keep legacy keys readable for compatibility without guessing from substrings.
-    apk_assets, desktop_assets, has_ambiguous_assets = _classify_selected_assets(
-        config["SELECTED_APP_ASSETS"]
-    )
-    config["SELECTED_APK_ASSETS"] = apk_assets
-    config["SELECTED_DESKTOP_ASSETS"] = desktop_assets
-    client_apps_enabled = coerce_bool(config.get("SAVE_CLIENT_APPS", False))
-    if not client_apps_enabled:
-        config["SAVE_APKS"] = False
-        config["SAVE_DESKTOP_APP"] = False
-    elif config["SELECTED_APP_ASSETS"]:
-        config["SAVE_APKS"] = client_apps_enabled and (
-            bool(config["SELECTED_APK_ASSETS"]) or has_ambiguous_assets
-        )
-        config["SAVE_DESKTOP_APP"] = client_apps_enabled and (
-            bool(config["SELECTED_DESKTOP_ASSETS"]) or has_ambiguous_assets
-        )
-    elif has_any_selection_key:
-        config["SAVE_APKS"] = False
-        config["SAVE_DESKTOP_APP"] = False
-    else:
-        config["SAVE_APKS"] = False
-        config["SAVE_DESKTOP_APP"] = False
-    config.pop("SELECTED_DESKTOP_PLATFORMS", None)
-    config["ANDROID_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
-    config["DESKTOP_VERSIONS_TO_KEEP"] = config["APP_VERSIONS_TO_KEEP"]
-    config["CHECK_APK_PRERELEASES"] = apk_check
-    config["CHECK_DESKTOP_PRERELEASES"] = desktop_check
-    if not coerce_bool(config.get("SAVE_DESKTOP_APP", False)) and not config.get(
-        "SELECTED_DESKTOP_ASSETS"
-    ):
-        config["CHECK_DESKTOP_PRERELEASES"] = False
+    config["SAVE_CLIENT_APPS"] = coerce_bool(config["SAVE_CLIENT_APPS"], default=False)
+    for key in LEGACY_CLIENT_APP_KEYS:
+        config.pop(key, None)
 
     config["CHECK_APP_SNAPSHOTS"] = coerce_bool(
         config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS),

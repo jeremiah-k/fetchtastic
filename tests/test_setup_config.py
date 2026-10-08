@@ -11,6 +11,7 @@ import yaml
 # Import package module (matches real usage)
 import fetchtastic.setup_config as setup_config
 from fetchtastic.constants import DEFAULT_CREATE_LATEST_SYMLINKS
+from fetchtastic.utils import expand_apk_selected_patterns
 from tests.test_constants import TEST_CONFIG
 
 
@@ -96,16 +97,16 @@ def test_coerce_bool(value, default, expected):
 @pytest.mark.unit
 def test_migrate_desktop_asset_key_normalizes_non_list_values():
     """SELECTED_DESKTOP_ASSETS should be normalized to a list when malformed."""
-    from fetchtastic.setup_config import _migrate_desktop_asset_key
+    from fetchtastic.client_app_config import normalize_client_app_config
 
     config = {
         "SELECTED_DESKTOP_ASSETS": "linux",
         "SELECTED_DESKTOP_PLATFORMS": ["*.dmg"],
     }
 
-    migrated = _migrate_desktop_asset_key(config)
+    migrated = normalize_client_app_config(config)
 
-    assert migrated["SELECTED_DESKTOP_ASSETS"] == []
+    assert migrated["SELECTED_APP_ASSETS"] == ["linux"]
     assert "SELECTED_DESKTOP_PLATFORMS" not in migrated
 
 
@@ -129,9 +130,8 @@ def test_setup_downloads_partial_non_download_sections_skip_no_download_warning(
     captured = capsys.readouterr()
 
     assert "Please select at least one type of asset to download" not in captured.out
-    assert updated["SAVE_APKS"] is False
+    assert updated["SAVE_CLIENT_APPS"] is False
     assert updated["SAVE_FIRMWARE"] is False
-    assert updated["SAVE_DESKTOP_APP"] is False
     assert save_apks is False
     assert save_firmware is False
 
@@ -166,9 +166,8 @@ def test_setup_downloads_partial_mixed_sections_uses_continue_guidance(mocker, c
         "Run 'fetchtastic setup' again and select at least one asset."
         not in captured.out
     )
-    assert updated["SAVE_APKS"] is False
+    assert updated["SAVE_CLIENT_APPS"] is False
     assert updated["SAVE_FIRMWARE"] is False
-    assert updated["SAVE_DESKTOP_APP"] is False
     assert save_apks is False
     assert save_firmware is False
 
@@ -208,8 +207,8 @@ def test_setup_downloads_desktop_no_selection_avoids_duplicate_message(mocker, c
         "No existing client app asset selection found. Client app releases will not be downloaded."
         not in captured.out
     )
-    assert updated["SAVE_DESKTOP_APP"] is False
-    assert updated["CHECK_DESKTOP_PRERELEASES"] is False
+    assert updated["SAVE_CLIENT_APPS"] is False
+    assert updated["CHECK_APP_PRERELEASES"] is False
     assert save_apks is False
     assert save_firmware is False
 
@@ -294,7 +293,7 @@ def test_setup_downloads_partial_skips_apk_menu(mocker):
 
     assert save_apks is True
     assert save_firmware is False
-    assert updated["SELECTED_APK_ASSETS"] == ["meshtastic.apk"]
+    assert updated["SELECTED_APP_ASSETS"] == ["meshtastic.apk"]
     assert updated["CHECK_APP_SNAPSHOTS"] is False
     mock_menu.assert_not_called()
 
@@ -379,7 +378,7 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
 
     assert save_apks is True
     assert save_firmware is False
-    assert updated["SELECTED_APK_ASSETS"] == ["meshtastic-debug.apk"]
+    assert updated["SELECTED_APP_ASSETS"] == ["meshtastic-debug.apk"]
     mock_menu.assert_called_once()
 
 
@@ -410,9 +409,11 @@ def test_setup_downloads_partial_keeps_existing_apk_patterns_with_fdroid_compat(
 
     assert save_apks is True
     assert save_firmware is False
-    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
-    assert "app-fdroid-universal-release.apk" in updated["SELECTED_APK_ASSETS"]
-    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-release.apk" in expand_apk_selected_patterns(
+        updated["SELECTED_APP_ASSETS"]
+    )
+    assert "app-fdroid-universal-release.apk" in updated["SELECTED_APP_ASSETS"]
+    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APP_ASSETS"]
     mock_menu.assert_not_called()
 
 
@@ -444,8 +445,10 @@ def test_setup_downloads_partial_rerun_apk_menu_adds_legacy_fdroid_compat(mocker
 
     assert save_apks is True
     assert save_firmware is False
-    assert "app-fdroid-release.apk" in updated["SELECTED_APK_ASSETS"]
-    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APK_ASSETS"]
+    assert "app-fdroid-release.apk" in expand_apk_selected_patterns(
+        updated["SELECTED_APP_ASSETS"]
+    )
+    assert "app-fdroid-arm64-v8a-release.apk" in updated["SELECTED_APP_ASSETS"]
 
 
 @pytest.mark.configuration
@@ -644,7 +647,7 @@ def test_load_config_new_location(tmp_path, mocker):
 
     config = setup_config.load_config()
     assert config is not None
-    assert config["SAVE_APKS"] is True
+    assert config["SAVE_CLIENT_APPS"] is True
     assert config["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
 
 
@@ -1619,12 +1622,12 @@ def test_run_setup_first_run_linux_simple(
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
 
-        assert saved_config["SAVE_APKS"] is True
+        assert saved_config["SAVE_CLIENT_APPS"] is True
         assert saved_config["SAVE_FIRMWARE"] is True
-        assert saved_config["ANDROID_VERSIONS_TO_KEEP"] == 2
+        assert saved_config["APP_VERSIONS_TO_KEEP"] == 2
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
         assert saved_config["CHECK_PRERELEASES"] is False
-        assert saved_config["CHECK_APK_PRERELEASES"] is True
+        assert saved_config["CHECK_APP_PRERELEASES"] is True
         assert saved_config["CHECK_APP_SNAPSHOTS"] is False
         assert saved_config["CREATE_LATEST_SYMLINKS"] is DEFAULT_CREATE_LATEST_SYMLINKS
         assert saved_config["AUTO_EXTRACT"] is False
@@ -1720,7 +1723,7 @@ def test_run_setup_first_run_windows(
             "GITHUB_TOKEN" not in saved_config
             or saved_config.get("GITHUB_TOKEN") is None
         )
-        assert saved_config["CHECK_APK_PRERELEASES"] is True
+        assert saved_config["CHECK_APP_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
@@ -1819,7 +1822,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
         assert saved_config["WIFI_ONLY"] is True
-        assert saved_config["CHECK_APK_PRERELEASES"] is True
+        assert saved_config["CHECK_APP_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
@@ -1914,7 +1917,7 @@ def test_run_setup_existing_config(
         saved_config = mock_yaml_dump.call_args[0][0]
 
         assert saved_config["BASE_DIR"] == "/new/base/dir"
-        assert saved_config["SAVE_APKS"] is False
+        assert saved_config["SAVE_CLIENT_APPS"] is False
         assert saved_config["SAVE_FIRMWARE"] is True
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 5
         assert saved_config["AUTO_EXTRACT"] is True

@@ -37,7 +37,9 @@ component_management:
       name: User Interface
       paths:
         - src/fetchtastic/cli.py
+        - src/fetchtastic/menu_app.py
         - src/fetchtastic/menu_apk.py
+        - src/fetchtastic/menu_desktop.py
         - src/fetchtastic/menu_firmware.py
         - src/fetchtastic/menu_repo.py
       statuses:
@@ -51,6 +53,7 @@ component_management:
       name: Configuration
       paths:
         - src/fetchtastic/setup_config.py
+        - src/fetchtastic/client_app_config.py
       statuses:
         - type: project
           target: 50%
