@@ -74,7 +74,7 @@ from fetchtastic.utils import (
     get_effective_github_token,
 )
 
-from .client_app import MeshtasticClientAppDownloader
+from .client_app import MeshtasticClientAppDownloader, _parse_snapshot_vc_from_dirname
 from .firmware import FirmwareReleaseDownloader
 from .orchestrator import DownloadOrchestrator
 
@@ -436,14 +436,18 @@ class DownloadCLIIntegration:
         if not base:
             return None, None
         snapshots_root = os.path.join(base, APP_DIR_NAME, APP_SNAPSHOTS_DIR_NAME)
+        if os.path.islink(os.path.dirname(snapshots_root)) or os.path.islink(
+            snapshots_root
+        ):
+            return None, None
         try:
             entries: list[tuple[int, float, str]] = []
             with os.scandir(snapshots_root) as snapshot_entries:
                 for entry in snapshot_entries:
                     if not entry.is_dir(follow_symlinks=False):
                         continue
-                    version_text = entry.name.rsplit("-", 1)[-1]
-                    if not version_text.isdigit():
+                    version_code = _parse_snapshot_vc_from_dirname(entry.name)
+                    if version_code is None:
                         continue
                     # One unreadable candidate must not discard snapshots that
                     # were listed fine; only failures on the root itself fall
@@ -457,7 +461,7 @@ class DownloadCLIIntegration:
                         continue
                     if not self._dir_has_download_payload(entry.path):
                         continue
-                    entries.append((int(version_text), mtime, entry.path))
+                    entries.append((version_code, mtime, entry.path))
         except FileNotFoundError:
             return None, None
         except OSError as exc:
