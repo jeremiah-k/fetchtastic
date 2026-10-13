@@ -372,7 +372,7 @@ python -c "import fetchtastic; print('Imports successful')"
 
 ## Notes
 
-- The project uses Python 3.10+ (check current version with `python --version`)
+- The project uses Python 3.11+ (check current version with `python --version`)
 - Test configuration is in `pyproject.toml`
 - Coverage configuration is also in `pyproject.toml`
 - All tests should pass before committing changes
