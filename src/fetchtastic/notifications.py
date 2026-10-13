@@ -147,7 +147,7 @@ def send_download_completion_notification(
 
     if downloaded_app_snapshots:
         message = (
-            "Downloaded Android snapshot debug builds: "
+            "Downloaded Client app snapshot debug builds: "
             f"{', '.join(downloaded_app_snapshots)}"
         )
         notification_messages.append(message)

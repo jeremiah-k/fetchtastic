@@ -61,6 +61,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     coerce_bool,
     expand_apk_selected_patterns,
+    extract_base_name,
     make_github_api_request,
     matches_selected_patterns,
 )
@@ -83,6 +84,7 @@ MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
 
 # Snapshot debug-build asset names: androidApp-{flavor}-{abi}-debug-{versionCode}.apk
 _SNAPSHOT_VERSION_CODE_RE = re.compile(SNAPSHOT_VERSION_CODE_PATTERN)
+_DESKTOP_SNAPSHOT_VERSION_CODE_RE = re.compile(r"-(\d+)(\.[^.]+)$")
 # Release title: "Snapshot {versionCode} ({commit_sha})"
 _SNAPSHOT_COMMIT_SHA_RE = re.compile(r"\(([0-9a-f]{7,40})\)")
 
@@ -1504,8 +1506,11 @@ class MeshtasticClientAppDownloader(BaseDownloader):
 
     @staticmethod
     def parse_snapshot_version_code(asset_name: str) -> int | None:
-        """Extract the integer versionCode from a snapshot asset name."""
-        match = _SNAPSHOT_VERSION_CODE_RE.search(asset_name)
+        """Extract the versionCode stamped on a debug APK or desktop installer."""
+        if is_desktop_asset_name(asset_name):
+            match = _DESKTOP_SNAPSHOT_VERSION_CODE_RE.search(asset_name)
+        else:
+            match = _SNAPSHOT_VERSION_CODE_RE.search(asset_name)
         return int(match.group(1)) if match else None
 
     @staticmethod
@@ -1585,7 +1590,7 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return None
 
     def handle_snapshots(self, snapshot_release: Release | None) -> Release | None:
-        """Return the snapshot release only when it has the exact snapshot tag and debug APK assets."""
+        """Return the rolling snapshot release when it has stamped client assets."""
         if not coerce_bool(
             self.config.get("CHECK_APP_SNAPSHOTS", DEFAULT_CHECK_APP_SNAPSHOTS)
         ):
@@ -1594,14 +1599,14 @@ class MeshtasticClientAppDownloader(BaseDownloader):
             return None
         if not is_snapshot_tag(snapshot_release.tag_name):
             return None
-        has_snapshot_apk = any(
+        has_snapshot_asset = any(
             self.parse_snapshot_version_code(asset.name) is not None
             for asset in self.get_assets(snapshot_release)
         )
-        return snapshot_release if has_snapshot_apk else None
+        return snapshot_release if has_snapshot_asset else None
 
     def get_snapshot_version_code(self, release: Release) -> int | None:
-        """Return the single unique versionCode from all snapshot APK assets, or None if mixed/missing."""
+        """Return the unique versionCode across snapshot assets, or None if mixed/missing."""
         vcs: set[int] = set()
         for asset in self.get_assets(release):
             vc = self.parse_snapshot_version_code(asset.name)
@@ -1670,10 +1675,24 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         if raw_selected is None:
             return False
         if raw_selected == ["*"]:
-            return is_android_asset_name(asset_name)
+            return is_client_app_asset_name(asset_name)
         expanded = expand_apk_selected_patterns(raw_selected)
         if not expanded:
             return False
+        if is_desktop_asset_name(asset_name):
+            # Upstream stamps every desktop installer with -<versionCode>.
+            # AppImages also replace the semantic version with "snapshot".
+            unstamped = _DESKTOP_SNAPSHOT_VERSION_CODE_RE.sub(r"\2", asset_name)
+            stable_alias = re.sub(r"[-_]snapshot(?=[-_.])", "", unstamped, flags=re.I)
+            desktop_patterns = [
+                pattern for pattern in expanded if not is_android_asset_name(pattern)
+            ]
+            return any(
+                fnmatch.fnmatchcase(asset_name.lower(), pattern.lower())
+                or fnmatch.fnmatchcase(stable_alias.lower(), pattern.lower())
+                or matches_selected_patterns(stable_alias, [extract_base_name(pattern)])
+                for pattern in desktop_patterns
+            )
         asset_id = _parse_apk_identity(asset_name)
         if asset_id is None:
             return False

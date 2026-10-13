@@ -420,12 +420,12 @@ def test_setup_client_app_preserves_snapshot_retention_when_disabled(monkeypatch
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_desktop_no_snapshot_prompt(mocker):
-    """Desktop-only client app selection must not trigger a snapshot prompt."""
+def test_setup_downloads_desktop_snapshot_prompt(mocker):
+    """Desktop-only client app selection can enable rolling snapshot installers."""
     config = {}
 
     captured_prompts: list[str] = []
-    answers = iter(["d", "2", "n"])
+    answers = iter(["d", "2", "n", "y"])
 
     def _fake_input(prompt: str = "") -> str:
         captured_prompts.append(prompt)
@@ -442,9 +442,9 @@ def test_setup_downloads_desktop_no_snapshot_prompt(mocker):
 
     assert result_config["SAVE_CLIENT_APPS"] is True
     assert result_config["SAVE_APKS"] is False
-    assert result_config["CHECK_APP_SNAPSHOTS"] is False
+    assert result_config["CHECK_APP_SNAPSHOTS"] is True
     assert save_firmware is False
-    assert not any("snapshot" in p.lower() for p in captured_prompts)
+    assert any("snapshot" in p.lower() for p in captured_prompts)
 
 
 @pytest.mark.configuration
@@ -870,7 +870,7 @@ def test_setup_notifications_configures_enabled_experimental_build_channels(
 
     assert result["NOTIFY_ON_SNAPSHOTS"] is True
     assert result["NOTIFY_ON_FIRMWARE_NIGHTLIES"] is True
-    assert any("Android snapshot" in prompt for prompt in prompts)
+    assert any("Client app snapshot" in prompt for prompt in prompts)
     assert any("firmware nightly" in prompt for prompt in prompts)
 
 
@@ -897,7 +897,7 @@ def test_setup_notifications_skips_disabled_experimental_build_channels(monkeypa
 
     assert result["NOTIFY_ON_SNAPSHOTS"] is True
     assert result["NOTIFY_ON_FIRMWARE_NIGHTLIES"] is True
-    assert not any("Android snapshot" in prompt for prompt in prompts)
+    assert not any("Client app snapshot" in prompt for prompt in prompts)
     assert not any("firmware nightly" in prompt for prompt in prompts)
 
 

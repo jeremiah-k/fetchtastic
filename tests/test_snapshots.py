@@ -672,15 +672,15 @@ def test_config_snapshots_forced_false_empty_assets():
 
 
 @pytest.mark.configuration
-def test_config_snapshots_forced_false_desktop_only():
-    """CHECK_APP_SNAPSHOTS must be False when only desktop assets are selected."""
+def test_config_snapshots_preserved_desktop_only():
+    """Desktop selections preserve explicit snapshot opt-in."""
     config = {
         "SAVE_CLIENT_APPS": True,
         "CHECK_APP_SNAPSHOTS": True,
         "SELECTED_APP_ASSETS": ["meshtastic.dmg"],
     }
     result = normalize_client_app_config(config)
-    assert result["CHECK_APP_SNAPSHOTS"] is False
+    assert result["CHECK_APP_SNAPSHOTS"] is True
 
 
 @pytest.mark.configuration
@@ -1101,6 +1101,22 @@ def test_orch_snapshot_tracking_write_failure_no_cleanup(tmp_path, cache_manager
 
     orch.client_app_downloader.update_snapshot_tracking.assert_called_once()
     orch.client_app_downloader.cleanup_superseded_snapshots.assert_not_called()
+
+
+@pytest.mark.integration
+def test_orch_snapshot_release_without_stamped_assets_logs_skip(tmp_path):
+    orch = _make_orchestrator_for_snapshots(tmp_path)
+    release = _make_snapshot_release(vc=100)
+    orch.client_app_downloader.fetch_snapshot_release = Mock(return_value=release)
+    orch.client_app_downloader.handle_snapshots = Mock(return_value=None)
+
+    with patch("fetchtastic.download.orchestrator.logger") as mock_logger:
+        orch._process_client_app_downloads()
+
+    assert any(
+        "stamped client app assets" in str(call).lower()
+        for call in mock_logger.debug.call_args_list
+    )
 
 
 @pytest.mark.integration
