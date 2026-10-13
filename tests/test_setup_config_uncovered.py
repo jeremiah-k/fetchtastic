@@ -76,7 +76,7 @@ def test_get_desktop_assets_prefers_new_key_even_when_empty():
         "SELECTED_DESKTOP_PLATFORMS": ["legacy-value"],
     }
 
-    assert setup_config._get_desktop_assets(config) == []
+    assert setup_config.normalize_client_app_config(config)["SELECTED_APP_ASSETS"] == []
 
 
 @pytest.mark.configuration
@@ -114,8 +114,8 @@ def test_setup_downloads_full_run_desktop_only(mocker):
 
     assert save_apks is True  # Desktop assets count as client apps
     assert save_firmware is False
-    assert updated["SAVE_DESKTOP_APP"] is True
-    assert "meshtastic.dmg" in updated["SELECTED_DESKTOP_ASSETS"]
+    assert updated["SAVE_CLIENT_APPS"] is True
+    assert "meshtastic.dmg" in updated["SELECTED_APP_ASSETS"]
     mock_menu.assert_called_once()
 
 
@@ -153,7 +153,7 @@ def test_setup_downloads_full_run_reprompts_invalid_choice(mocker, capsys):
     assert "Invalid choice. Please enter a, f, d, m, b, or n." in captured.out
     assert save_apks is True  # Desktop assets count as client apps
     assert save_firmware is False
-    assert updated["SAVE_DESKTOP_APP"] is True
+    assert updated["SAVE_CLIENT_APPS"] is True
 
 
 @pytest.mark.configuration
@@ -196,7 +196,7 @@ def test_setup_downloads_full_run_multiple_selection(mocker):
 
     assert save_apks is True
     assert save_firmware is True
-    assert updated["SAVE_DESKTOP_APP"] is True
+    assert updated["SAVE_CLIENT_APPS"] is True
 
 
 @pytest.mark.configuration
@@ -221,7 +221,7 @@ def test_setup_downloads_full_run_none_selection(mocker):
 
     assert save_apks is False
     assert save_firmware is False
-    assert updated["SAVE_DESKTOP_APP"] is False
+    assert updated["SAVE_CLIENT_APPS"] is False
 
 
 @pytest.mark.configuration
@@ -251,7 +251,7 @@ def test_setup_downloads_partial_non_download_preserves_desktop(mocker):
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
-    assert updated["SAVE_DESKTOP_APP"] is True
+    assert updated["SAVE_CLIENT_APPS"] is True
 
 
 @pytest.mark.configuration
@@ -284,7 +284,7 @@ def test_setup_downloads_partial_desktop_keep_existing(mocker):
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
-    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
+    assert updated["SELECTED_APP_ASSETS"] == ["meshtastic.dmg"]
     mock_menu.assert_not_called()
 
 
@@ -315,8 +315,8 @@ def test_setup_downloads_partial_desktop_no_existing_selection(mocker):
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
-    assert updated["SAVE_DESKTOP_APP"] is False  # Disabled because no selection
-    assert updated["SELECTED_DESKTOP_ASSETS"] == []
+    assert updated["SAVE_CLIENT_APPS"] is False  # Disabled because no selection
+    assert updated["SELECTED_APP_ASSETS"] == []
 
 
 @pytest.mark.configuration
@@ -344,8 +344,8 @@ def test_setup_downloads_desktop_no_selection(mocker):
 
     updated, _, _ = _setup_downloads(config, is_partial_run=False, wants=wants)
 
-    assert updated["SAVE_DESKTOP_APP"] is False
-    assert updated["SELECTED_DESKTOP_ASSETS"] == []
+    assert updated["SAVE_CLIENT_APPS"] is False
+    assert updated["SELECTED_APP_ASSETS"] == []
 
 
 @pytest.mark.configuration
@@ -381,9 +381,9 @@ def test_setup_downloads_save_desktop_false_clears_config(mocker):
         config, is_partial_run=False, wants=wants
     )
 
-    assert updated["SAVE_DESKTOP_APP"] is False
-    assert updated["CHECK_DESKTOP_PRERELEASES"] is False
-    assert updated["SELECTED_DESKTOP_ASSETS"] == []
+    assert updated["SAVE_CLIENT_APPS"] is True
+    assert updated["CHECK_APP_PRERELEASES"] is False
+    assert updated["SELECTED_APP_ASSETS"] == ["meshtastic.apk"]
 
 
 @pytest.mark.configuration
@@ -407,9 +407,9 @@ def test_setup_downloads_partial_non_download_preserves_desktop_state(mocker):
 
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
-    assert updated["SAVE_DESKTOP_APP"] is False
-    assert updated["CHECK_DESKTOP_PRERELEASES"] is True
-    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
+    assert updated["SAVE_CLIENT_APPS"] is False
+    assert updated["CHECK_APP_PRERELEASES"] is True
+    assert updated["SELECTED_APP_ASSETS"] == ["meshtastic.dmg"]
 
 
 @pytest.mark.configuration
@@ -443,7 +443,7 @@ def test_setup_downloads_backward_compat_old_key(mocker):
     updated, _, _ = _setup_downloads(config, is_partial_run=True, wants=wants)
 
     # New key should be set, old key should be removed (migration complete)
-    assert updated["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
+    assert updated["SELECTED_APP_ASSETS"] == ["meshtastic.dmg"]
     assert (
         "SELECTED_DESKTOP_PLATFORMS" not in updated
     )  # Old key removed after migration
@@ -482,8 +482,8 @@ def test_disable_asset_downloads_firmware_with_message():
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_disable_asset_downloads_apk_with_default_message(capsys):
-    """Test _disable_asset_downloads with APK using default message (lines 719-722)."""
+def test_disable_client_app_downloads_with_default_message(capsys):
+    """Test shared client app settings when disabling downloads."""
     from fetchtastic.setup_config import _disable_asset_downloads
 
     config = {
@@ -492,13 +492,13 @@ def test_disable_asset_downloads_apk_with_default_message(capsys):
         "CHECK_APK_PRERELEASES": True,
     }
 
-    updated, _ = _disable_asset_downloads(config, "APK")
+    updated, _ = _disable_asset_downloads(config, "client app")
     captured = capsys.readouterr()
 
-    assert "No APK assets selected" in captured.out
-    assert updated["SAVE_APKS"] is False
-    assert updated["SELECTED_APK_ASSETS"] == []
-    assert updated["CHECK_APK_PRERELEASES"] is False
+    assert "No client app assets selected" in captured.out
+    assert updated["SAVE_CLIENT_APPS"] is False
+    assert updated["SELECTED_APP_ASSETS"] == []
+    assert updated["CHECK_APP_PRERELEASES"] is False
 
 
 # Tests for check_storage_setup (lines 614-617)
@@ -516,14 +516,14 @@ def test_check_storage_setup_non_interactive(mocker):
     assert result is False
 
 
-# Tests for _setup_android uncovered lines
+# Tests for _setup_client_app uncovered lines
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_android_invalid_number_current_value(mocker, capsys):
-    """Test _setup_android with no APP_VERSIONS_TO_KEEP sets default."""
-    from fetchtastic.setup_config import _setup_android
+def test_setup_client_app_invalid_number_current_value(mocker, capsys):
+    """Test _setup_client_app with no APP_VERSIONS_TO_KEEP sets default."""
+    from fetchtastic.setup_config import _setup_client_app
 
     config = {
         "ANDROID_VERSIONS_TO_KEEP": "invalid",  # Legacy key, no APP_VERSIONS_TO_KEEP
@@ -531,26 +531,26 @@ def test_setup_android_invalid_number_current_value(mocker, capsys):
 
     mock_input = mocker.patch("builtins.input", return_value="5")
 
-    result = _setup_android(config, is_first_run=False, default_versions=3)
+    result = _setup_client_app(config, _is_first_run=False, default_versions=3)
 
-    # _setup_android no longer prompts; it sets APP_VERSIONS_TO_KEEP to default_versions
+    # _setup_client_app no longer prompts; it sets APP_VERSIONS_TO_KEEP to default_versions
     assert result["APP_VERSIONS_TO_KEEP"] == 3
     mock_input.assert_not_called()
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_android_non_first_run_no_prompt(mocker):
-    """Test _setup_android no longer prompts — normalization only."""
-    from fetchtastic.setup_config import _setup_android
+def test_setup_client_app_non_first_run_no_prompt(mocker):
+    """Test _setup_client_app no longer prompts — normalization only."""
+    from fetchtastic.setup_config import _setup_client_app
 
     config = {"APP_VERSIONS_TO_KEEP": 5}
 
     mock_input = mocker.patch("builtins.input", return_value="5")
 
-    result = _setup_android(config, is_first_run=False, default_versions=2)
+    result = _setup_client_app(config, _is_first_run=False, default_versions=2)
 
-    # _setup_android no longer prompts; it just normalizes
+    # _setup_client_app no longer prompts; it just normalizes
     mock_input.assert_not_called()
     assert result["APP_VERSIONS_TO_KEEP"] == 5
 
@@ -1960,7 +1960,7 @@ def test_load_config_migrates_legacy_desktop_asset_key(mocker, tmp_path):
     result = load_config(tmp_dir)
 
     assert result is not None
-    assert result["SELECTED_DESKTOP_ASSETS"] == ["meshtastic.dmg"]
+    assert result["SELECTED_APP_ASSETS"] == ["meshtastic.dmg"]
     assert "SELECTED_DESKTOP_PLATFORMS" not in result
     mock_load_yaml.assert_called_once_with(expected_path)
 
@@ -1985,7 +1985,7 @@ def test_load_config_new_desktop_asset_key_stays_authoritative(mocker, tmp_path)
     result = load_config(tmp_dir)
 
     assert result is not None
-    assert result["SELECTED_DESKTOP_ASSETS"] == []
+    assert result["SELECTED_APP_ASSETS"] == []
     assert "SELECTED_DESKTOP_PLATFORMS" not in result
     mock_load_yaml.assert_called_once_with(expected_path)
 

@@ -36,7 +36,7 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
             True,
         ),
     )
-    mocker.patch("fetchtastic.setup_config._setup_android", side_effect=passthrough)
+    mocker.patch("fetchtastic.setup_config._setup_client_app", side_effect=passthrough)
     mocker.patch("fetchtastic.setup_config._setup_firmware", side_effect=passthrough)
     mocker.patch("fetchtastic.setup_config._setup_automation", side_effect=passthrough)
     mocker.patch(
@@ -60,7 +60,7 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
     assert isinstance(integration_config, dict)
     assert integration_config["SAVE_CLIENT_APPS"] is True
     assert "Meshtastic.dmg" in integration_config["SELECTED_APP_ASSETS"]
-    assert integration_instance.main.call_args.kwargs.get("include_desktop") is True
+    assert "include_desktop" not in integration_instance.main.call_args.kwargs
 
 
 @pytest.mark.unit
@@ -86,7 +86,7 @@ def test_run_setup_skips_first_run_when_user_declines(tmp_path, mocker):
         "fetchtastic.setup_config._setup_downloads",
         side_effect=lambda config, *_args, **_kwargs: (config, True, True),
     )
-    mocker.patch("fetchtastic.setup_config._setup_android", side_effect=passthrough)
+    mocker.patch("fetchtastic.setup_config._setup_client_app", side_effect=passthrough)
     mocker.patch("fetchtastic.setup_config._setup_firmware", side_effect=passthrough)
     mocker.patch("fetchtastic.setup_config._setup_automation", side_effect=passthrough)
     mocker.patch(

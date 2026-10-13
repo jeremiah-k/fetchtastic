@@ -166,9 +166,11 @@ class TestDownloadOrchestrator:
 
         with (
             patch.object(
-                orchestrator.android_downloader, "download", return_value=True
+                orchestrator.client_app_downloader, "download", return_value=True
             ) as mock_download,
-            patch.object(orchestrator.android_downloader, "verify", return_value=True),
+            patch.object(
+                orchestrator.client_app_downloader, "verify", return_value=True
+            ),
         ):
             result = orchestrator._retry_single_failure(mock_failed_result)
             assert isinstance(result, DownloadResult)
@@ -196,14 +198,16 @@ class TestDownloadOrchestrator:
 
         with (
             patch.object(
-                orchestrator.desktop_downloader, "download", return_value=True
+                orchestrator.client_app_downloader, "download", return_value=True
             ),
-            patch.object(orchestrator.desktop_downloader, "verify", return_value=True),
             patch.object(
-                orchestrator.desktop_downloader, "_is_zip_intact", return_value=False
+                orchestrator.client_app_downloader, "verify", return_value=True
+            ),
+            patch.object(
+                orchestrator.client_app_downloader, "_is_zip_intact", return_value=False
             ) as mock_zip_intact,
             patch.object(
-                orchestrator.desktop_downloader, "cleanup_file"
+                orchestrator.client_app_downloader, "cleanup_file"
             ) as mock_cleanup,
         ):
             result = orchestrator._retry_single_failure(failed_result)
@@ -432,16 +436,8 @@ class TestDownloadOrchestrator:
         assert isinstance(firmware_count, int)
         assert firmware_count == 4
 
-        # Android count should include Android prerelease results.
-        android_count = orchestrator._count_artifact_downloads(FILE_TYPE_ANDROID)
-        assert android_count == 1
-
-        desktop_count = orchestrator._count_artifact_downloads(FILE_TYPE_DESKTOP)
-        desktop_prerelease_count = orchestrator._count_artifact_downloads(
-            FILE_TYPE_DESKTOP_PRERELEASE
-        )
-        assert desktop_count == 2
-        assert desktop_prerelease_count == 1
+        # Count the Android prerelease, Desktop, and Desktop prerelease successes.
+        assert orchestrator._count_artifact_downloads(FILE_TYPE_CLIENT_APP) == 3
 
     def test_count_artifact_downloads_client_app_classification(
         self, orchestrator, tmp_path
@@ -475,35 +471,51 @@ class TestDownloadOrchestrator:
             ),
         ]
 
-        android_count = orchestrator._count_artifact_downloads(
-            FILE_TYPE_CLIENT_APP, artifact_type=FILE_TYPE_ANDROID
-        )
-        assert android_count == 2
-
-        desktop_count = orchestrator._count_artifact_downloads(
-            FILE_TYPE_CLIENT_APP, artifact_type=FILE_TYPE_DESKTOP
-        )
-        assert desktop_count == 3
-
         client_app_count = orchestrator._count_artifact_downloads(FILE_TYPE_CLIENT_APP)
         assert client_app_count == 5
 
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
         # Method should exist and be callable without raising; exact cleanup depends on filesystem contents
-        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.client_app_releases = [
+            Release(tag_name="v1.0.0", prerelease=False)
+        ]
         orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
         with (
-            patch.object(orchestrator.android_downloader, "cleanup_old_versions"),
+            patch.object(orchestrator.client_app_downloader, "cleanup_old_versions"),
             patch.object(orchestrator.firmware_downloader, "cleanup_old_versions"),
             patch.object(orchestrator, "_cleanup_deleted_prereleases"),
         ):
             orchestrator.cleanup_old_versions()
 
+    def test_cleanup_uses_default_app_retention_after_config_replacement(
+        self, orchestrator
+    ):
+        from fetchtastic.constants import DEFAULT_APP_VERSIONS_TO_KEEP
+
+        orchestrator.config = {"FIRMWARE_VERSIONS_TO_KEEP": 2}
+        with (
+            patch.object(
+                orchestrator.client_app_downloader, "cleanup_old_versions"
+            ) as cleanup_apps,
+            patch.object(
+                orchestrator.firmware_downloader, "cleanup_old_versions"
+            ) as cleanup_firmware,
+            patch.object(orchestrator, "_cleanup_deleted_prereleases"),
+        ):
+            orchestrator.cleanup_old_versions()
+
+        cleanup_apps.assert_called_once_with(
+            DEFAULT_APP_VERSIONS_TO_KEEP,
+            cached_releases=orchestrator.client_app_releases,
+        )
+        cleanup_firmware.assert_called_once()
+
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions."""
-        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
-        orchestrator.desktop_releases = []
+        orchestrator.client_app_releases = [
+            Release(tag_name="v1.0.0", prerelease=False)
+        ]
         with (
             patch.object(
                 orchestrator.firmware_downloader,
@@ -513,12 +525,10 @@ class TestDownloadOrchestrator:
         ):
             versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
-        assert "android" in versions
+        assert "client_app" in versions
         assert "firmware" in versions
         assert "firmware_prerelease" in versions
-        assert "android_prerelease" in versions
-        assert "desktop" in versions
-        assert "desktop_prerelease" in versions
+        assert "client_app_prerelease" in versions
         for key, value in versions.items():
             assert isinstance(key, str)
             assert isinstance(value, (str, type(None)))
@@ -528,13 +538,10 @@ class TestDownloadOrchestrator:
         # Method should exist and be callable
         with (
             patch.object(
-                orchestrator.android_downloader, "get_releases", return_value=[]
-            ),
-            patch.object(
                 orchestrator.firmware_downloader, "get_releases", return_value=[]
             ),
             patch.object(
-                orchestrator.desktop_downloader, "get_releases", return_value=[]
+                orchestrator.client_app_downloader, "get_releases", return_value=[]
             ),
             patch.object(orchestrator, "_manage_prerelease_tracking"),
         ):
@@ -543,12 +550,14 @@ class TestDownloadOrchestrator:
     def test_manage_prerelease_tracking(self, orchestrator):
         """Test managing prerelease tracking."""
         # Method should exist and be callable
-        orchestrator.android_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        orchestrator.client_app_releases = [
+            Release(tag_name="v1.0.0", prerelease=False)
+        ]
         orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
         with (
             patch.object(orchestrator, "_refresh_commit_history_cache"),
             patch.object(
-                orchestrator.android_downloader, "manage_prerelease_tracking_files"
+                orchestrator.client_app_downloader, "manage_prerelease_tracking_files"
             ),
             patch.object(
                 orchestrator.firmware_downloader, "manage_prerelease_tracking_files"
@@ -562,13 +571,13 @@ class TestDownloadOrchestrator:
         with patch.object(orchestrator.prerelease_manager, "fetch_recent_repo_commits"):
             orchestrator._refresh_commit_history_cache()
 
-    def test_process_android_downloads(self, orchestrator):
+    def test_process_client_app_downloads(self, orchestrator):
         """Test processing Android downloads."""
         # Mock network operations
         with patch.object(
-            orchestrator.android_downloader, "get_releases", return_value=[]
+            orchestrator.client_app_downloader, "get_releases", return_value=[]
         ):
-            orchestrator._process_android_downloads()
+            orchestrator._process_client_app_downloads()
 
     def test_process_firmware_downloads(self, orchestrator):
         """Test processing firmware downloads."""

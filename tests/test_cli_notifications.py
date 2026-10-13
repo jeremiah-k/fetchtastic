@@ -31,11 +31,9 @@ def integration(mocker):
     integration.orchestrator.pipeline_lock_skipped = False
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v2.8.0",
-        "android": "v1.8.0",
+        "client_app": "v1.8.0",
         "firmware_prerelease": "firmware-2.8.0",
-        "android_prerelease": "v1.8.0-rc1",
-        "desktop": "",
-        "desktop_prerelease": "",
+        "client_app_prerelease": "v1.8.0-rc1",
     }
     return integration
 
@@ -43,12 +41,12 @@ def integration(mocker):
 def _call_summary(
     integration,
     downloaded_fw,
-    downloaded_apks,
+    downloaded_client_apps,
     failed=None,
     new_fw=None,
     new_apks=None,
     downloaded_fw_prereleases=None,
-    downloaded_apk_prereleases=None,
+    downloaded_client_app_prereleases=None,
     downloaded_desktop=None,
     downloaded_desktop_prereleases=None,
     new_desktop=None,
@@ -57,25 +55,22 @@ def _call_summary(
     new_fw = new_fw or []
     new_apks = new_apks or []
     downloaded_fw_prereleases = downloaded_fw_prereleases or []
-    downloaded_apk_prereleases = downloaded_apk_prereleases or []
+    downloaded_client_app_prereleases = downloaded_client_app_prereleases or []
     downloaded_desktop = downloaded_desktop or []
     downloaded_desktop_prereleases = downloaded_desktop_prereleases or []
     new_desktop = new_desktop or []
     integration.log_download_results_summary(
         elapsed_seconds=1.2,
         downloaded_firmwares=downloaded_fw,
-        downloaded_apks=downloaded_apks,
+        downloaded_client_apps=downloaded_client_apps + downloaded_desktop,
         downloaded_firmware_prereleases=downloaded_fw_prereleases,
-        downloaded_apk_prereleases=downloaded_apk_prereleases,
-        downloaded_desktop=downloaded_desktop,
-        downloaded_desktop_prereleases=downloaded_desktop_prereleases,
+        downloaded_client_app_prereleases=downloaded_client_app_prereleases
+        + downloaded_desktop_prereleases,
         failed_downloads=failed,
         latest_firmware_version="v2.8.0",
-        latest_apk_version="v1.8.0",
-        latest_desktop_version="",
+        latest_client_app_version="v1.8.0" or "",
         new_firmware_versions=new_fw,
-        new_apk_versions=new_apks,
-        new_desktop_versions=new_desktop,
+        new_client_app_versions=new_apks + new_desktop,
     )
 
 
@@ -93,8 +88,6 @@ def test_summary_sends_completion_notification(integration):
             integration.config,
             ["v2.8.0"],
             ["v1.8.1"],
-            [],
-            [],
             [],
             [],
             downloaded_app_snapshots=[],
@@ -209,7 +202,7 @@ def test_summary_logs_release_check_failed_instead_of_up_to_date(integration, ca
 def test_summary_sends_skip_notification_when_wifi_skipped(integration):
     integration.orchestrator.wifi_skipped = True
     integration.orchestrator.available_new_firmware_versions = []
-    integration.orchestrator.available_new_apk_versions = []
+    integration.orchestrator.available_new_client_app_versions = []
     with (
         patch(
             "fetchtastic.download.cli_integration.send_new_releases_available_notification"
@@ -231,7 +224,7 @@ def test_summary_sends_skip_notification_when_wifi_skipped(integration):
 def test_summary_sends_skip_notification_with_discovered_versions(integration):
     integration.orchestrator.wifi_skipped = True
     integration.orchestrator.available_new_firmware_versions = ["v2.7.20"]
-    integration.orchestrator.available_new_apk_versions = ["v2.7.10"]
+    integration.orchestrator.available_new_client_app_versions = ["v2.7.10"]
 
     with (
         patch(
@@ -326,10 +319,10 @@ def test_populated_snapshot_notification_displays_version_code(integration):
             logger_override=Mock(),
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     mock_notify.assert_called_once()
@@ -367,10 +360,10 @@ def test_snapshot_only_notifications_disabled_sends_nothing(integration):
             logger_override=mock_log,
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     # No NTFY notifications at all
@@ -417,10 +410,10 @@ def test_failed_snapshot_not_reported_as_downloaded(integration):
             logger_override=Mock(),
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
     # No successful downloads → completion notification must not fire.
     mock_notify.assert_not_called()
@@ -451,10 +444,10 @@ def test_failed_snapshot_plus_successful_firmware(integration):
             logger_override=Mock(),
             elapsed_seconds=1.0,
             downloaded_firmwares=["v2.8.0"],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="v2.8.0",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     mock_notify.assert_called_once()
@@ -551,10 +544,10 @@ def test_populated_firmware_nightly_notification_displays_build_id(integration):
             logger_override=Mock(),
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     mock_notify.assert_called_once()
@@ -596,10 +589,10 @@ def test_firmware_nightly_only_notifications_disabled_sends_nothing(integration)
             logger_override=mock_log,
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     # No NTFY notifications at all
@@ -642,10 +635,10 @@ def test_failed_firmware_nightly_not_reported_as_downloaded(integration):
             logger_override=Mock(),
             elapsed_seconds=1.0,
             downloaded_firmwares=[],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
     # No successful downloads → completion notification must not fire.
     mock_notify.assert_not_called()
@@ -676,10 +669,10 @@ def test_failed_firmware_nightly_plus_successful_firmware(integration):
             logger_override=Mock(),
             elapsed_seconds=1.0,
             downloaded_firmwares=["v2.8.0"],
-            downloaded_apks=[],
+            downloaded_client_apps=[],
             failed_downloads=[],
             latest_firmware_version="v2.8.0",
-            latest_apk_version="",
+            latest_client_app_version="",
         )
 
     mock_notify.assert_called_once()
