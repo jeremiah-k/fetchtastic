@@ -9,6 +9,7 @@ from pick import pick
 from fetchtastic.client_release_discovery import (
     extract_matching_asset_dicts,
     is_client_app_prerelease_tag,
+    is_snapshot_tag,
     select_best_release_with_assets,
 )
 from fetchtastic.constants import (
@@ -16,7 +17,6 @@ from fetchtastic.constants import (
     DESKTOP_EXTENSIONS,
     MESHTASTIC_CLIENT_APP_RELEASES_URL,
 )
-from fetchtastic.download.client_app import is_snapshot_tag
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import extract_base_name, make_github_api_request
 
