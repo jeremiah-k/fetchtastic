@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Sequence
 from fetchtastic.constants import (
     APK_EXTENSION,
     DESKTOP_EXTENSIONS,
+    MESHTASTIC_CLIENT_APP_SNAPSHOT_TAG,
 )
 
 _DESKTOP_EXTENSIONS_LOWER = tuple(ext.lower() for ext in DESKTOP_EXTENSIONS)
@@ -33,6 +34,11 @@ def is_client_app_prerelease_tag(tag_name: str) -> bool:
     """Recognize legacy prerelease tag styles from the shared app repository."""
     lowered = (tag_name or "").lower()
     return any(marker in lowered for marker in ("-open", "-closed", "-internal"))
+
+
+def is_snapshot_tag(tag_name: str) -> bool:
+    """Return True when the tag is the rolling client app snapshot tag."""
+    return (tag_name or "").strip().lower() == MESHTASTIC_CLIENT_APP_SNAPSHOT_TAG
 
 
 # Historical imports share the same classification policy.

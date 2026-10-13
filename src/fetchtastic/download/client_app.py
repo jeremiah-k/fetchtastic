@@ -29,6 +29,7 @@ from fetchtastic.client_release_discovery import (
     is_desktop_asset_name,
     is_release_at_or_above_minimum,
     is_release_prerelease,
+    is_snapshot_tag,
 )
 from fetchtastic.constants import (
     APKS_DIR_NAME,
@@ -53,7 +54,6 @@ from fetchtastic.constants import (
     LATEST_POINTER_NAME,
     MESHTASTIC_CLIENT_APP_RELEASES_URL,
     MESHTASTIC_CLIENT_APP_SNAPSHOT_RELEASE_URL,
-    MESHTASTIC_CLIENT_APP_SNAPSHOT_TAG,
     RELEASE_SCAN_COUNT,
     SNAPSHOT_VERSION_CODE_PATTERN,
 )
@@ -169,11 +169,6 @@ def _resolve_character_class_abi(lower: str) -> str | None:
 def is_client_app_asset_name(asset_name: str) -> bool:
     """Return True when the asset is a supported client app artifact."""
     return is_android_asset_name(asset_name) or is_desktop_asset_name(asset_name)
-
-
-def is_snapshot_tag(tag_name: str) -> bool:
-    """Return True when the tag is the rolling client app snapshot tag."""
-    return (tag_name or "").strip().lower() == MESHTASTIC_CLIENT_APP_SNAPSHOT_TAG
 
 
 def _parse_snapshot_vc_from_dirname(name: str) -> int | None:
