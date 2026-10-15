@@ -302,6 +302,10 @@ Enable prerelease downloads to get the latest development firmware from meshtast
 
 Separate from prereleases, Fetchtastic can download rolling experimental firmware nightly builds from `https://nightly.meshtastic.org` (a Cloudflare R2 bucket; previously `meshtastic.github.io/firmware-nightly`, which stopped refreshing after `meshtastic/firmware#11719`). The layout is flat at the bucket root (`index.json`, release and per-device manifests, and the published binaries). Each publish replaces the rolling upstream contents. The feature is opt-in (`CHECK_FIRMWARE_NIGHTLIES`, default off) and stores builds under `firmware/nightlies/<build_id>/`. Selection uses `EXTRACT_PATTERNS` (the same extraction patterns used for prereleases), not the stable archive selection key; the release-level manifest is always included, and matching per-device manifests and published payloads are selected by the extraction patterns and excludes. Debug `.elf` outputs may appear inside per-device manifests but are packaged separately upstream and are not available from the nightly bucket, so Fetchtastic does not select them. `FIRMWARE_NIGHTLY_VERSIONS_TO_KEEP` (default `1`) controls how many builds are kept, and `NOTIFY_ON_FIRMWARE_NIGHTLIES` (default off) controls NTFY notifications. See the [Configuration Reference](configuration.md) for details.
 
+### Snapshot Builds
+
+Fetchtastic can also download rolling client app snapshot builds (debug-keyed Android APKs and unsigned desktop installers, intended for testing only). The channel is opt-in (`CHECK_APP_SNAPSHOTS`, default off), and snapshot assets follow your `SELECTED_APP_ASSETS` selections. A failed snapshot check surfaces as a failed run rather than a silent skip. See the [Configuration Reference](configuration.md) for snapshot configuration and retention details.
+
 ### Multiple Asset Types
 
 Firmware and client app retention policies are configured independently during a single `fetchtastic setup` run. Re-run setup only when changing those policies later.
