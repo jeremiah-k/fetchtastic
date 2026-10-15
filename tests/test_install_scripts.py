@@ -230,6 +230,39 @@ def test_shell_legacy_pip_verifies_the_command_it_detected(shell_installer):
     assert not any(call.startswith("shadow:") for call in calls)
 
 
+def test_shell_legacy_pip_retries_past_externally_managed_refusals(shell_installer):
+    run, root, _ = shell_installer
+    command = root / "commands" / "fetchtastic"
+    command.write_text(f"#!{root / 'commands' / 'python3'}\nraise SystemExit(0)\n")
+    command.chmod(0o755)
+    python3 = root / "commands" / "python3"
+    python3.write_text(
+        "#!/bin/sh\nset -eu\n"
+        'printf "python:%s\\n" "$*" >> "$INSTALL_TEST_LOG"\n'
+        'if [ "${1:-}" = "-m" ] && [ "${2:-}" = "pip" ]; then\n'
+        '  if [ "${3:-}" = "show" ]; then exit 0; fi\n'
+        '  case "$*" in\n'
+        "    *--break-system-packages*) exit 0 ;;\n"
+        "    *)\n"
+        '      printf "%s\\n" "error: externally-managed-environment" >&2\n'
+        "      exit 1\n"
+        "      ;;\n"
+        "  esac\n"
+        "fi\n"
+    )
+    python3.chmod(0o755)
+    result, calls = run()
+    assert result.returncode == 0, result.stderr
+    assert "python:-m pip install --upgrade fetchtastic" in calls
+    assert (
+        "python:-m pip install --upgrade --break-system-packages fetchtastic" in calls
+    )
+    assert (
+        "Retrying with --break-system-packages for the externally managed interpreter..."
+        in result.stderr
+    )
+
+
 def test_shell_default_refuses_unknown_existing_installation(shell_installer):
     run, root, _ = shell_installer
     command = root / "commands" / "fetchtastic"

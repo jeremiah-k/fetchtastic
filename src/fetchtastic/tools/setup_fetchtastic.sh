@@ -184,7 +184,15 @@ pip)
 	fetchtastic_bin="${fetchtastic_venv}/bin/fetchtastic"
 	;;
 legacy-pip)
-	"${legacy_pip_python}" -m pip install --upgrade fetchtastic
+	if ! upgrade_output=$("${legacy_pip_python}" -m pip install --upgrade fetchtastic 2>&1); then
+		printf '%s\n' "${upgrade_output}" >&2
+		if printf '%s\n' "${upgrade_output}" | grep -q 'externally-managed-environment'; then
+			echo "Retrying with --break-system-packages for the externally managed interpreter..." >&2
+			"${legacy_pip_python}" -m pip install --upgrade --break-system-packages fetchtastic
+		else
+			exit 1
+		fi
+	fi
 	fetchtastic_bin="${legacy_pip_command}"
 	;;
 pipx)
