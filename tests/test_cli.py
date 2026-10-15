@@ -1429,9 +1429,6 @@ def test_copy_to_clipboard_func_unsupported_platform(mocker):
     assert result is False  # Should return False for unsupported platforms
 
 
-# Tests for _normalize_download_main_result function
-
-
 @pytest.mark.unit
 @pytest.mark.user_interface
 def test_copy_to_clipboard_func_subprocess_error(mocker):

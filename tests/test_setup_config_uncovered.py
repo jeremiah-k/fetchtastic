@@ -64,12 +64,12 @@ def test_cron_check_command_required_non_str_path(mocker):
     mock_logger.debug.assert_called_once()
 
 
-# Tests for desktop-related configuration in _setup_downloads
+# Tests for normalize_client_app_config legacy migration behavior
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_desktop_assets_prefers_new_key_even_when_empty():
+def test_explicit_empty_selected_app_assets_stay_empty():
     """Explicit empty new key should not fall back to legacy key."""
     config = {
         "SELECTED_DESKTOP_ASSETS": [],
