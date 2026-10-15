@@ -20,13 +20,15 @@ def is_tool_installation(manager: str) -> bool:
     executable = shutil.which(manager)
     if not executable:
         return False
-    commands = {
+    command = {
         "uv": ["tool", "dir"],
         "pipx": ["environment", "--value", "PIPX_LOCAL_VENVS"],
-    }
+    }.get(manager)
+    if command is None:
+        return False
     try:
         result = subprocess.run(
-            [executable, *commands[manager]],
+            [executable, *command],
             capture_output=True,
             text=True,
             check=False,
