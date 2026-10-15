@@ -59,7 +59,7 @@ def upgrade_command(method: str, *, windows: bool = False) -> str:
         if windows and method == "uv":
             args = [executable, "tool", "install", "--force", package]
         elif windows and method == "pipx":
-            args = [executable, "install", "--force", "--upgrade", package]
+            args = [executable, "install", "--force", package]
         elif method == "uv":
             args = [executable, "tool", "upgrade", "fetchtastic"]
         else:

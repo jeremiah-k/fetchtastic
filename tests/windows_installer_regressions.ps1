@@ -21,7 +21,7 @@ if (([regex]::Matches($source, 'Select-Object -Last 1')).Count -lt 4) {
 if ($source -notmatch [regex]::Escape("@('tool', 'install', '--force', 'fetchtastic[win]')")) {
     throw 'uv upgrades no longer repair the Windows extra'
 }
-if ($source -notmatch [regex]::Escape("@('install', '--force', '--upgrade', 'fetchtastic[win]')")) {
+if ($source -notmatch [regex]::Escape("@('install', '--force', 'fetchtastic[win]')")) {
     throw 'pipx upgrades no longer repair the Windows extra'
 }
 if ($source -notmatch [regex]::Escape("`$ErrorActionPreference = 'Continue'")) {

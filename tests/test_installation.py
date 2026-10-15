@@ -175,7 +175,7 @@ def test_windows_pipx_upgrade_restores_windows_extra(mocker):
     )
     assert (
         installation.upgrade_command("pipx", windows=True)
-        == '"C:/tools with spaces/pipx.exe" install --force --upgrade fetchtastic[win]'
+        == '"C:/tools with spaces/pipx.exe" install --force fetchtastic[win]'
     )
 
 
