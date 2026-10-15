@@ -222,6 +222,33 @@ def test_absent_primary_still_ors_legacy_prerelease_flags():
     assert "CHECK_DESKTOP_PRERELEASES" not in normalized
 
 
+def test_legacy_android_prerelease_flag_migrates_and_explicit_apk_flag_wins():
+    """CHECK_ANDROID_PRERELEASES migrates into CHECK_APP_PRERELEASES; explicit CHECK_APK_PRERELEASES wins."""
+    config = {
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["meshtastic.apk"],
+        "CHECK_ANDROID_PRERELEASES": True,
+    }
+
+    normalized = normalize_client_app_config(config)
+
+    assert normalized["CHECK_APP_PRERELEASES"] is True
+    assert "CHECK_ANDROID_PRERELEASES" not in normalized
+
+    both_flags = {
+        "SAVE_CLIENT_APPS": True,
+        "SELECTED_APP_ASSETS": ["meshtastic.apk"],
+        "CHECK_APK_PRERELEASES": False,
+        "CHECK_ANDROID_PRERELEASES": True,
+    }
+
+    both_normalized = normalize_client_app_config(both_flags)
+
+    assert both_normalized["CHECK_APP_PRERELEASES"] is False
+    assert "CHECK_APK_PRERELEASES" not in both_normalized
+    assert "CHECK_ANDROID_PRERELEASES" not in both_normalized
+
+
 def test_normalization_is_idempotent_and_preserves_unknown_settings():
     config = {"SAVE_APKS": "yes", "SELECTED_APK_ASSETS": ["app.apk"], "EXTRA": 42}
     normalized = normalize_client_app_config(config)
