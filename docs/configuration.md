@@ -45,6 +45,8 @@ When `CHECK_APP_SNAPSHOTS` is enabled, Fetchtastic downloads rolling client app 
 
 **Accumulation and cleanup:** Multiple snapshot builds accumulate across commits. Old snapshots are pruned only when a new stable release or channel prerelease ships (not on every snapshot download). `APP_SNAPSHOT_VERSIONS_TO_KEEP` (default 1, minimum 1 when snapshots are enabled) controls how many snapshot directories are retained when cleanup runs.
 
+**Failure handling:** A failed snapshot check marks the whole download run as failed and suppresses the up-to-date summary and the new-release notification for that run. This covers transport errors, invalid or mixed-build payloads, and snapshot-tracking write failures. The snapshot channel is still checked when the ordinary client app release feed returns no releases. When a timestamped directory and a legacy plain directory share a versionCode, retention keeps the timestamped directory.
+
 **Notifications:** `NOTIFY_ON_SNAPSHOTS` (default `false`) controls whether snapshot downloads trigger NTFY notifications. When disabled, snapshot downloads are still logged locally and counted in download summaries, but no push notification is sent.
 
 **Asset selection:** Snapshot assets are matched semantically against `SELECTED_APP_ASSETS` patterns. A stable-release selection like `app-fdroid-universal-release.apk` automatically selects the corresponding snapshot build (`androidApp-fdroid-universal-debug-<vc>.apk`). Wildcard patterns like `*fdroid*.apk` select all ABIs for that flavor. Legacy generic names like `meshtastic.apk` map to Google universal. See the table below for examples.
@@ -76,6 +78,7 @@ Legacy keys are still accepted and normalized:
 - `ANDROID_VERSIONS_TO_KEEP`
 - `DESKTOP_VERSIONS_TO_KEEP`
 - `CHECK_APK_PRERELEASES`
+- `CHECK_ANDROID_PRERELEASES`
 - `CHECK_DESKTOP_PRERELEASES`
 
 Use `SELECTED_APP_ASSETS` for new configs. It is the authoritative client app selection key when present.

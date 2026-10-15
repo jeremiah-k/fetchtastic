@@ -97,7 +97,7 @@ def test_coerce_bool(value, default, expected):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_migrate_desktop_asset_key_normalizes_non_list_values():
+def test_normalize_client_app_config_coerces_non_list_asset_selection():
     """SELECTED_DESKTOP_ASSETS should be normalized to a list when malformed."""
     from fetchtastic.client_app_config import normalize_client_app_config
 

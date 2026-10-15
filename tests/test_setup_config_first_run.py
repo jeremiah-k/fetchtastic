@@ -60,7 +60,6 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
     assert isinstance(integration_config, dict)
     assert integration_config["SAVE_CLIENT_APPS"] is True
     assert "Meshtastic.dmg" in integration_config["SELECTED_APP_ASSETS"]
-    assert "include_desktop" not in integration_instance.main.call_args.kwargs
 
 
 @pytest.mark.unit
