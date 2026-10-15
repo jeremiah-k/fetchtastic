@@ -992,24 +992,6 @@ class DownloadCLIIntegration:
             return tag
         return tag.removeprefix(FIRMWARE_DIR_PREFIX)
 
-    def _add_downloaded_asset(
-        self,
-        release_tag: str,
-        downloaded_list: List[str],
-        downloaded_set: set[str],
-    ) -> None:
-        """
-        Add a release tag to the downloaded list while ensuring uniqueness via the downloaded set.
-
-        Parameters:
-            release_tag: The release tag to record.
-            downloaded_list: Ordered list of recorded release tags; the tag is appended if not already recorded.
-            downloaded_set: Set used to track recorded tags for fast membership checks and to prevent duplicates.
-        """
-        if release_tag not in downloaded_set:
-            downloaded_list.append(release_tag)
-            downloaded_set.add(release_tag)
-
     def _is_newer_version(self, version1: str, version2: str) -> bool:
         """
         Determine whether `version1` represents a newer version than `version2`.

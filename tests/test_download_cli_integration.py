@@ -1763,18 +1763,6 @@ def test_convert_results_empty_release_tag(mocker):
     assert _report.downloaded_firmwares == []
 
 
-def test_add_downloaded_asset_already_exists():
-    """_add_downloaded_asset should not add duplicates (line 613)."""
-    integration = DownloadCLIIntegration()
-    downloaded_list = ["v1.0.0"]
-    downloaded_set = {"v1.0.0"}
-
-    integration._add_downloaded_asset("v1.0.0", downloaded_list, downloaded_set)
-
-    assert downloaded_list == ["v1.0.0"]
-    assert downloaded_set == {"v1.0.0"}
-
-
 def test_get_version_manager_no_client_app_downloader():
     """_get_version_manager should return None when no android downloader (line 641)."""
     integration = DownloadCLIIntegration()
