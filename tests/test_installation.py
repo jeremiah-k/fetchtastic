@@ -92,6 +92,14 @@ def test_missing_manager(mocker):
     assert not installation.is_tool_installation("uv")
 
 
+def test_unknown_manager_is_not_probed(mocker):
+    mocker.patch.object(installation.sys, "prefix", "/tools/fetchtastic")
+    mocker.patch.object(installation.shutil, "which", return_value="/bin/poetry")
+    run = mocker.patch.object(installation.subprocess, "run")
+    assert not installation.is_tool_installation("poetry")
+    run.assert_not_called()
+
+
 def test_virtual_environment_does_not_probe_managers(mocker):
     mocker.patch.object(installation.sys, "prefix", "/checkout/.venv")
     run = mocker.patch.object(installation.subprocess, "run")
@@ -175,7 +183,7 @@ def test_windows_pipx_upgrade_restores_windows_extra(mocker):
     )
     assert (
         installation.upgrade_command("pipx", windows=True)
-        == '"C:/tools with spaces/pipx.exe" install --force --upgrade fetchtastic[win]'
+        == '"C:/tools with spaces/pipx.exe" install --force fetchtastic[win]'
     )
 
 

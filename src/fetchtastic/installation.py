@@ -20,13 +20,15 @@ def is_tool_installation(manager: str) -> bool:
     executable = shutil.which(manager)
     if not executable:
         return False
-    commands = {
+    command = {
         "uv": ["tool", "dir"],
         "pipx": ["environment", "--value", "PIPX_LOCAL_VENVS"],
-    }
+    }.get(manager)
+    if command is None:
+        return False
     try:
         result = subprocess.run(
-            [executable, *commands[manager]],
+            [executable, *command],
             capture_output=True,
             text=True,
             check=False,
@@ -59,7 +61,7 @@ def upgrade_command(method: str, *, windows: bool = False) -> str:
         if windows and method == "uv":
             args = [executable, "tool", "install", "--force", package]
         elif windows and method == "pipx":
-            args = [executable, "install", "--force", "--upgrade", package]
+            args = [executable, "install", "--force", package]
         elif method == "uv":
             args = [executable, "tool", "upgrade", "fetchtastic"]
         else:

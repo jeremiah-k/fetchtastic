@@ -168,7 +168,7 @@ switch ($selectedInstaller) {
     'pipx' {
         $pipx = Get-Command pipx -ErrorAction Stop
         if (Test-PipxOwnsFetchtastic) {
-            Invoke-Checked $pipx.Source @('install', '--force', '--upgrade', 'fetchtastic[win]')
+            Invoke-Checked $pipx.Source @('install', '--force', 'fetchtastic[win]')
         } else {
             Invoke-Checked $pipx.Source @('install', 'fetchtastic[win]')
         }
