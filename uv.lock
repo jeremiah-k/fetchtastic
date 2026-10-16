@@ -633,7 +633,7 @@ requires-dist = [
     { name = "aioresponses", marker = "extra == 'test'", specifier = "==0.7.9" },
     { name = "packaging" },
     { name = "pick" },
-    { name = "platformdirs", specifier = "==4.13.1" },
+    { name = "platformdirs", specifier = "==4.13.2" },
     { name = "pytest", marker = "extra == 'test'", specifier = "==9.1.1" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = "==1.4.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = "==7.1.0" },
@@ -1110,11 +1110,11 @@ wheels = [
 
 [[package]]
 name = "platformdirs"
-version = "4.13.1"
+version = "4.13.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/16/35/146546aa5b9286a83248d29c51781476bbb4b0a608523361120059e0f7ed/platformdirs-4.13.1.tar.gz", hash = "sha256:ee77cf2d36d5a515b2acf68ede6434cf3a8fc70b822bb6b3264d01b96c69a8e0", size = 61458, upload-time = "2026-10-15T21:56:08.441Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/7d/5f8821cccec8cad4ac57d3b373764c28ada31f3d7ac691a28b9e23ad6198/platformdirs-4.13.2.tar.gz", hash = "sha256:7bea13e899d079e0a59b15ed7e481f8506dd1921df53afe23f4ae48eb3c117af", size = 61560, upload-time = "2026-10-16T00:05:11.132Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/0f/ac79a4e8394193bb228abaaf1c520f629b6ada7fcb75e58cdc8c6acce321/platformdirs-4.13.1-py3-none-any.whl", hash = "sha256:4902b4ad355cb0b202c746b29580ab67c5c2d918e30e3d006353465b82ec3ecc", size = 32737, upload-time = "2026-10-15T21:56:07.059Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/7f/e0090311031e1c101a151c303e06988e217469fef857d0a36b43ac760c1e/platformdirs-4.13.2-py3-none-any.whl", hash = "sha256:0b220b7e6e71041a02b4aa07b69e575436f8268a669477e3b7fd1e4062587f1b", size = 32765, upload-time = "2026-10-16T00:05:09.768Z" },
 ]
 
 [[package]]
