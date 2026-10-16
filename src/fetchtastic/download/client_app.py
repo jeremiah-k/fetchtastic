@@ -1968,6 +1968,9 @@ class MeshtasticClientAppDownloader(BaseDownloader):
         for vc, path in entries[keep_count:]:
             if _safe_rmtree(path, base_dir, f"snapshot {vc}"):
                 deleted += 1
+                logger.info(
+                    "Removed superseded snapshot build: %s", os.path.basename(path)
+                )
         return deleted
 
 

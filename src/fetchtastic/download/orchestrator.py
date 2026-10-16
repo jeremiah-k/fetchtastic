@@ -1234,10 +1234,7 @@ class DownloadOrchestrator:
             if not self.firmware_downloader.should_process_nightly(
                 entries, build_id, selected=selected
             ):
-                logger.debug(
-                    "Firmware-nightly build %s already complete; running maintenance",
-                    build_id,
-                )
+                logger.info("Firmware-nightly build %s is up to date.", build_id)
                 self._run_nightly_maintenance(build_id, entries, selected=selected)
                 self.nightly_run_state = NightlyRunState.MAINTENANCE_ONLY
                 return
@@ -1344,6 +1341,7 @@ class DownloadOrchestrator:
         self.latest_firmware_nightly_build_id = build_id
         self._pending_nightly_build_id = None
         self._pending_nightly_entries = []
+        logger.info("Finalized firmware-nightly build %s.", build_id)
 
         # Determine whether at least one asset was genuinely downloaded in
         # this run (not skipped). Only then is this a "download" outcome.
@@ -1390,11 +1388,11 @@ class DownloadOrchestrator:
         try:
             self.firmware_downloader.cleanup_superseded_nightlies(build_id)
         except (OSError, ValueError, TypeError) as exc:
-            logger.debug("Nightly retention cleanup failed for %s: %s", build_id, exc)
+            logger.warning("Nightly retention cleanup failed for %s: %s", build_id, exc)
         try:
             self.firmware_downloader.recreate_latest_pointer_for_nightly(build_id)
         except (OSError, ValueError, TypeError) as exc:
-            logger.debug(
+            logger.warning(
                 "Nightly latest pointer repair failed for %s: %s", build_id, exc
             )
         try:

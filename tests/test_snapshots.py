@@ -288,15 +288,29 @@ def test_handle_snapshots_get_snapshot_version_code(downloader):
 # ------------------------------------------------------------------
 
 
-def test_cleanup_superseded_snapshots(downloader, tmp_path):
+def test_cleanup_superseded_snapshots(downloader, tmp_path, caplog):
     base = tmp_path / "downloads" / APP_DIR_NAME / APP_SNAPSHOTS_DIR_NAME
     for vc in (100, 200, 300):
         (base / str(vc)).mkdir(parents=True)
         (base / str(vc) / "test.apk").write_text("x")
-    assert downloader.cleanup_superseded_snapshots() == 2
+    import logging as _logging
+
+    with caplog.at_level(_logging.INFO, logger="fetchtastic"):
+        assert downloader.cleanup_superseded_snapshots() == 2
     assert (base / "300").is_dir()
     assert not (base / "200").is_dir()
     assert not (base / "100").is_dir()
+    # INFO users must see which snapshot builds were pruned.
+    removed = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == _logging.INFO
+        and "Removed superseded snapshot build" in r.getMessage()
+    ]
+    assert sorted(removed) == [
+        "Removed superseded snapshot build: 100",
+        "Removed superseded snapshot build: 200",
+    ]
 
 
 def test_cleanup_superseded_snapshots_no_dir(downloader):
