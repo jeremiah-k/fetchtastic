@@ -415,7 +415,9 @@ def test_disabled_does_not_process(downloader_disabled):
 # ==================================================================
 
 
-def test_fetch_firmware_nightlies_returns_flat_listing(downloader, mock_cache_manager):
+def test_fetch_firmware_nightlies_returns_flat_listing(
+    downloader, mock_cache_manager, caplog
+):
     """fetch_firmware_nightlies walks the nightly manifest chain and returns flat entries."""
     index_body = _make_nightly_index_body()
     release_body = _make_nightly_release_body()
@@ -429,7 +431,23 @@ def test_fetch_firmware_nightlies_returns_flat_listing(downloader, mock_cache_ma
     downloader.cache_manager = mock_cache_manager
 
     fetch = _require_method(downloader, "fetch_firmware_nightlies")
-    entries = fetch()
+    import logging as _logging
+
+    with caplog.at_level(_logging.INFO, logger="fetchtastic"):
+        entries = fetch()
+    # INFO users must see the nightly scan header (build + manifest count);
+    # the per-target manifest work below it stays debug-only.
+    header_records = [
+        r
+        for r in caplog.records
+        if r.levelno == _logging.INFO and "Checking firmware-nightly" in r.getMessage()
+    ]
+    assert len(header_records) == 1
+    assert BUILD_2_8_0 in header_records[0].getMessage()
+    assert (
+        f"({len(release_body['targets'])} board manifests)"
+        in header_records[0].getMessage()
+    )
     assert isinstance(entries, list)
     # Every entry has the GitHub Contents shape the rest of the pipeline expects.
     for entry in entries:
@@ -3074,7 +3092,7 @@ def test_nightly_run_state_unchecked_by_default(tmp_path):
     assert orch.nightly_run_state == NightlyRunState.UNCHECKED
 
 
-def test_nightly_run_state_already_complete_when_should_process_false(tmp_path):
+def test_nightly_run_state_already_complete_when_should_process_false(tmp_path, caplog):
     """should_process_nightly False runs maintenance and sets MAINTENANCE_ONLY."""
     from fetchtastic.constants import NightlyRunState
     from fetchtastic.download.orchestrator import DownloadOrchestrator
@@ -3095,10 +3113,20 @@ def test_nightly_run_state_already_complete_when_should_process_false(tmp_path):
     fd.recreate_latest_pointer_for_nightly = Mock(return_value=True)
     fd.repair_nightly_executable_metadata = Mock(return_value=0)
 
-    orch._process_firmware_nightlies()
+    import logging as _logging
+
+    with caplog.at_level(_logging.INFO, logger="fetchtastic"):
+        orch._process_firmware_nightlies()
 
     assert orch.nightly_run_state == NightlyRunState.MAINTENANCE_ONLY
     assert orch.latest_firmware_nightly_build_id is None
+    # INFO users must see the nightly outcome on the common up-to-date path.
+    assert any(
+        record.levelno == _logging.INFO
+        and f"Firmware-nightly build {BUILD_2_8_0} is up to date."
+        in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_nightly_run_state_attempted_incomplete_on_partial_failure(tmp_path):

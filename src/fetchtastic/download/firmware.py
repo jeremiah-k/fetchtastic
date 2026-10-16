@@ -3170,6 +3170,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         entries: List[Dict[str, Any]] = []
 
+        logger.info(
+            "Checking firmware-nightly %s (%d board manifests)…",
+            version,
+            len(targets),
+        )
+
         # Synthetic release-manifest entry. Mirrors the GitHub Contents
         # shape so get_nightly_build_id (which scans for
         # ``firmware-<build-id>.json`` with type=="file") keeps working
