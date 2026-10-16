@@ -260,6 +260,7 @@ def _make_nightly_listing(build: str = BUILD_2_8_0) -> list[dict]:
         _contents_entry("device-install.sh", size=12_000),
         _contents_entry("device-update.sh", size=10_000),
         _contents_entry("device-install.bat", size=8_000),
+        _contents_entry("device-update.bat", size=7_000),
         # BLE OTA blobs (selected by 'bleota' pattern).
         _contents_entry("bleota-c3.bin", size=480_000),
         # ESP32 OTA helpers (selected by 'mt-' pattern).
@@ -438,9 +439,9 @@ def test_fetch_firmware_nightlies_returns_flat_listing(downloader, mock_cache_ma
     # Release manifest is included alongside the device files.
     names = [e["name"] for e in entries]
     assert _release_manifest_name() in names
-    # Synthetic helper-script entries (device-install.sh, device-update.sh)
-    # are also included so the selector can pick them up via a ``device-``
-    # pattern. Pinned to the index.json commit SHA.
+    # Synthetic flasher-helper entries (device-install/device-update as .sh
+    # and .bat) are also included so the selector can pick them up via a
+    # ``device-`` pattern. Pinned to the index.json commit SHA.
     from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
 
     assert all(name in names for name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS)
@@ -602,7 +603,7 @@ def test_fetch_firmware_nightlies_omits_unpublished_elf_outputs(
     assert f"firmware-rak4631-{BUILD_2_8_0}.mt.json" in names
 
 
-# --- Synthetic helper-script entries (device-install.sh / device-update.sh) ---
+# --- Synthetic flasher helpers (device-install/device-update .sh + .bat) ---
 
 
 def test_fetch_firmware_nightlies_appends_helper_scripts_pinned_to_commit(
@@ -709,8 +710,9 @@ def test_helper_scripts_omitted_from_selection_without_device_pattern(
     downloader, mock_cache_manager
 ):
     """Without a 'device-' pattern, helpers aren't auto-included even when present."""
+    from fetchtastic.constants import FIRMWARE_NIGHTLY_HELPER_SCRIPTS
+
     # Default fixture's EXTRACT_PATTERNS is ['rak4631-'], which doesn't match
-    # the helpers. So selection should be free of helpers.
     index_body = _make_nightly_index_body()
     index_body["commit"] = "0becda3017e4a1fba6201ebbd7aeccf9201aa7c5"
     release_body = _make_nightly_release_body()
@@ -728,8 +730,8 @@ def test_helper_scripts_omitted_from_selection_without_device_pattern(
     selected = downloader.get_selected_nightly_assets(entries, build_id)
 
     selected_names = {e["name"] for e in selected}
-    assert "device-install.sh" not in selected_names
-    assert "device-update.sh" not in selected_names
+    for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:
+        assert script_name not in selected_names
 
 
 def test_fetch_firmware_nightlies_skips_target_missing_board(
@@ -1136,6 +1138,8 @@ def test_parse_nightly_build_id_rejects_non_firmware(downloader):
     """Non-firmware-prefixed files must not yield a build-id."""
     parse = _require_method(downloader, "parse_nightly_build_id")
     assert parse("device-install.sh") is None
+    assert parse("device-install.bat") is None
+    assert parse("device-update.bat") is None
     assert parse("bleota.bin") is None
     assert parse("config.json") is None
 
@@ -3960,6 +3964,37 @@ def test_repair_nightly_executable_metadata_chmods_valid_sh(tmp_path):
     assert mode & 0o111
 
 
+def test_repair_nightly_executable_metadata_never_chmods_bat(tmp_path):
+    """A valid .bat flasher helper is left with a non-executable mode."""
+    config = _make_config(tmp_path, EXTRACT_PATTERNS=["device-"])
+    dl = _seed_device_patterns(
+        FirmwareReleaseDownloader(config, CacheManager(cache_dir=str(tmp_path / "c")))
+    )
+    content = b"@echo off\r\necho flash\r\n"
+    target = dl.get_nightly_target_path(BUILD_2_8_0, "device-install.bat", create=True)
+    Path(target).write_bytes(content)
+    from fetchtastic.utils import get_hash_file_path
+
+    hash_path = get_hash_file_path(target)
+    Path(hash_path).parent.mkdir(parents=True, exist_ok=True)
+    import hashlib
+
+    digest = hashlib.sha256(content).hexdigest()
+    Path(hash_path).write_text(f"{digest}  device-install.bat\n")
+
+    manifest_entry = _contents_entry(f"firmware-{BUILD_2_8_0}.json")
+    entry = _contents_entry("device-install.bat", size=len(content))
+    repaired = dl.repair_nightly_executable_metadata(
+        BUILD_2_8_0, [manifest_entry, entry]
+    )
+
+    assert repaired == 0
+    import stat as _stat
+
+    mode = _stat.S_IMODE(os.stat(target).st_mode)
+    assert not (mode & 0o111)
+
+
 def test_repair_nightly_executable_metadata_skips_invalid(tmp_path):
     """An invalid .sh asset is not chmodded."""
     config = _make_config(tmp_path, EXTRACT_PATTERNS=["device-"])
@@ -5196,7 +5231,7 @@ def test_nightly_release_manifest_always_included(downloader):
 
 
 def test_nightly_device_helper_included_when_device_pattern(downloader):
-    """device-install.sh is included when 'device-' pattern is present."""
+    """Flasher helpers are included when 'device-' pattern is present."""
     listing = _make_nightly_listing()
     downloader.config["EXTRACT_PATTERNS"] = ["device-"]
 
@@ -5205,6 +5240,8 @@ def test_nightly_device_helper_included_when_device_pattern(downloader):
     names = [e["name"] for e in selected]
     assert "device-install.sh" in names
     assert "device-update.sh" in names
+    assert "device-install.bat" in names
+    assert "device-update.bat" in names
 
 
 def test_nightly_mt_esp32_ota_included_when_mt_pattern(downloader):
