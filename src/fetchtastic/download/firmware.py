@@ -3144,8 +3144,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 f"firmware-nightly index.json missing 'version': {index!r}"
             )
         # ``commit`` is the git SHA the nightly was built from. Helper
-        # scripts (device-install.sh / device-update.sh) are pinned to
-        # this SHA so they always match the firmware's runtime. When
+        # scripts (device-install.sh/.bat, device-update.sh/.bat) are pinned
+        # to this SHA so they always match the firmware's runtime. When
         # missing (a malformed nightly build), the synthetic helper
         # entries are simply omitted from the listing — the rest of the
         # build still works.
@@ -3388,16 +3388,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
 
         # Synthetic helper-script entries. The nightly R2 bucket doesn't
-        # publish device-install.sh / device-update.sh (they live in
-        # meshtastic/firmware's bin/ directory), but every nightly build
-        # has historically included them in the listing so the selector
-        # could pick them up via a ``device-`` extraction pattern. Append
-        # synthetic entries here, pinned to the same git commit as the
-        # firmware, so the selector / downloader / validator / chmod
-        # pipeline treats them like any other nightly asset. When the
-        # nightly build's index.json is missing a usable commit SHA
-        # (malformed generation), the helpers are omitted rather than
-        # fetched from an unrelated version.
+        # publish the flasher helpers (they live in meshtastic/firmware's
+        # bin/ directory as device-install/device-update shell and batch
+        # scripts), but every nightly build has historically included them
+        # in the listing so the selector could pick them up via a ``device-``
+        # extraction pattern. Append synthetic entries here, pinned to the
+        # same git commit as the firmware, so the selector / downloader /
+        # validator / chmod pipeline treats them like any other nightly
+        # asset. When the nightly build's index.json is missing a usable
+        # commit SHA (malformed generation), the helpers are omitted rather
+        # than fetched from an unrelated version.
         if commit_pinned:
             helper_root = f"{FIRMWARE_NIGHTLY_HELPER_BASE_URL}/{commit}/bin"
             for script_name in FIRMWARE_NIGHTLY_HELPER_SCRIPTS:

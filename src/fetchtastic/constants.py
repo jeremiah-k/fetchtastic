@@ -83,19 +83,26 @@ FIRMWARE_NIGHTLY_MANIFEST_CACHE_EXPIRY_SECONDS = 5 * 60  # 5 minutes
 # reruns do not refetch the entire manifest graph; explicit cache clears / force
 # refreshes still bypass this cache when needed.
 FIRMWARE_NIGHTLY_TARGET_MANIFEST_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
-# Helper scripts (device-install.sh, device-update.sh) are not part of the
-# nightly R2 bucket. They're published in the meshtastic/firmware repo's
-# bin/ directory and fetched directly from raw.githubusercontent.com, pinned
-# to the same git commit as the nightly build (carried in index.json's
-# ``commit`` field) so the helper version always matches the firmware.
-# Synthetic entries are appended to the nightly listing so the existing
-# selector / downloader / validator pipeline treats them like any other
-# nightly asset; the selector's pattern gate keeps them out of the
-# selection when EXTRACT_PATTERNS doesn't include ``device-``.
+# Helper scripts (device-install.sh/.bat, device-update.sh/.bat) are not part
+# of the nightly R2 bucket. They're published in the meshtastic/firmware
+# repo's bin/ directory and fetched directly from raw.githubusercontent.com,
+# pinned to the same git commit as the nightly build (carried in index.json's
+# ``commit`` field) so the helper version always matches the firmware. The
+# Windows .bat variants ship alongside the shell scripts so hosts without a
+# POSIX shell get native flashers. Synthetic entries are appended to the
+# nightly listing so the existing selector / downloader / validator pipeline
+# treats them like any other nightly asset; the selector's pattern gate keeps
+# them out of the selection when EXTRACT_PATTERNS doesn't include ``device-``.
+# Only the shell variants are chmodded executable; .bat files never are.
 FIRMWARE_NIGHTLY_HELPER_BASE_URL = (
     "https://raw.githubusercontent.com/meshtastic/firmware"
 )
-FIRMWARE_NIGHTLY_HELPER_SCRIPTS = ("device-install.sh", "device-update.sh")
+FIRMWARE_NIGHTLY_HELPER_SCRIPTS = (
+    "device-install.sh",
+    "device-update.sh",
+    "device-install.bat",
+    "device-update.bat",
+)
 APKS_DIR_NAME = "apks"
 APP_DIR_NAME = "app"
 LATEST_POINTER_NAME = "latest"
