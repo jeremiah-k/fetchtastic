@@ -28,7 +28,7 @@ dependencies = [
   "PyYAML",
   "urllib3>=2.7.0",
   "packaging",
-  "platformdirs==4.13.3",
+  "platformdirs==4.13.4",
   "rich",
   # Async support for parallel downloads
   "aiohttp>=3.8.0",
